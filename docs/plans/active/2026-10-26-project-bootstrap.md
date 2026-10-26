@@ -13,8 +13,9 @@
 - [x] 기본 앱의 debug·unsigned release 빌드 및 Lint·단위 테스트 통과
 - [x] 차량 상태 미확인 시 상세 조작 차단과 모듈 의존성 규칙 검증
 - [x] 초기 화면 실행 확인 및 Pleos 환경 검증 여부 기록
-- [ ] PR의 ci-required와 Codex 자동 리뷰 실행 확인
-- [ ] main Ruleset과 Codex 저장소 설정 재확인
+- [x] PR의 ci-required 통과와 병합 확인
+- [x] main Ruleset 적용 재확인
+- [ ] Codex 리뷰 완료와 리뷰 대상 설정 검증
 - [x] README를 앱 소개·구조·실행 명령 중심으로 간략히 작성
 
 ## 구현 단계
@@ -33,7 +34,14 @@
 | 워크플로 문법 검사 | 통과 |
 | 배포 예외 처리 | 잘못된 태그·필수 설정 누락 시 중단 확인 |
 | 초기 화면 | 일반 Android 에뮬레이터 실행 확인 |
+| PR CI | [초기 설정 PR](https://github.com/HanGilLab/Android/pull/1)의 필수 검사 통과·병합 확인 |
 | Pleos 전용 환경 | 미검증 |
+
+## 병합 후 정리
+
+- [x] main 동기화와 기존 작업 브랜치의 반영 여부 확인
+- [x] 병합된 작업 브랜치의 로컬 삭제·원격 추적 정보 정리
+- [x] 개발 지침과 README에 병합 후 브랜치 정리 규칙 추가
 
 ## 남은 문제와 인계
 
