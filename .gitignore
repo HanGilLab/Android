@@ -33,3 +33,32 @@ google-services.json
 
 # Android Profiling
 *.hprof
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.vscode/
+
+# Local credentials and signing configuration
+.env
+.env.*
+!.env.example
+secrets.properties
+keystore.properties
+signing.properties
+*.p12
+*.pfx
+*.pem
+
+# Local SDK archives, recordings and exported releases
+dist/
+*.aar
+*.apks
+*.aab
+*.zip
+
+# Keep the Gradle Wrapper and reviewed database schema history
+!gradle/wrapper/gradle-wrapper.jar
+!**/schemas/*.json

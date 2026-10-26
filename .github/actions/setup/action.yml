@@ -1,0 +1,19 @@
+name: Android setup
+description: Install the shared JDK, Android SDK and Gradle cache used by CI and releases.
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-java@v5
+      with:
+        distribution: temurin
+        java-version: '17'
+    - uses: android-actions/setup-android@v3
+      with:
+        packages: platform-tools
+        log-accepted-android-sdk-licenses: false
+    - uses: gradle/actions/setup-gradle@v4
+      with:
+        cache-read-only: ${{ github.event_name == 'pull_request' }}
+    - name: Install compile SDK and build tools
+      shell: bash
+      run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0' > /dev/null
