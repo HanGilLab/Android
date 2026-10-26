@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="home_title">한길졸업</string>
+  <string name="home_tagline">내가 매일 가야 하는 길 하나부터, 내 힘으로.</string>
+  <string name="home_intro">출발 전 준비부터 주차 후 복습까지, 생활 경로 하나를 익히는 연습을 준비하고 있어요.</string>
+  <string name="connection_vehicle">차량 연결</string>
+  <string name="connection_navigation">내비게이션 연결</string>
+  <string name="connection_disconnected">연결되지 않음</string>
+  <string name="connection_connecting">연결 중</string>
+  <string name="connection_connected">연결됨</string>
+  <string name="connection_unavailable">사용할 수 없음</string>
+  <string name="restriction_unknown">차량 상태를 확인할 수 없어 상세 조작이 잠겨 있어요.</string>
+  <string name="restriction_locked">주차 및 화면 조작 허용 상태를 확인한 후 상세 조작을 사용할 수 있어요.</string>
+  <string name="restriction_allowed">주차 및 화면 조작 허용 상태가 확인되었어요.</string>
+  <string name="bootstrap_notice">개발 준비 단계 · 차량 SDK 연동과 연습 기능은 아직 제공하지 않아요.</string>
+</resources>
