@@ -39,6 +39,7 @@ Android Studio에서 JDK 17과 Android SDK Platform 36을 설정한 뒤 실행�
 기능 단위 작업 계획 → 구현 → 검증 → PR → Codex 리뷰 → 수정 순서로 개발합니다.
 PR 병합 후에는 main을 동기화하고 사용한 작업 브랜치를 로컬·원격에서 정리합니다.
 검증 명령과 개발 규칙은 [AGENTS.md](AGENTS.md)를 참고하세요.
+차량용 실행 환경은 [Pleos 에뮬레이터 연결 가이드](docs/development/pleos-emulator.md)를 참고하세요.
 
 ## 진행 상태
 
