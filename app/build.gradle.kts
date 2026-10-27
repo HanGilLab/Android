@@ -44,6 +44,7 @@ android {
 dependencies {
     implementation(project(":feature:home"))
     implementation(project(":feature:course"))
+    implementation(project(":feature:map"))
     implementation(project(":core:designsystem"))
     implementation(project(":core:vehicle"))
     implementation(project(":core:database"))

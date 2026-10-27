@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="map_title">지도로 길 둘러보기</string>
+  <string name="map_demo_region">서울 시청 주변의 시연 지역이에요. 현재 위치나 선택한 연습 코스를 보여주는 지도는 아니에요.</string>
+  <string name="map_demo_badge">시연 지역 지도</string>
+  <string name="map_content_description">서울 시청 주변의 시연 지도. 현재 위치와 연습 코스는 표시하지 않아요.</string>
+  <string name="map_loading">지도를 불러오고 있어요.</string>
+  <string name="map_failed">지도를 표시하지 못했어요. 인터넷 연결을 확인하고 다시 시도해 주세요.</string>
+  <string name="map_retry">다시 불러오기</string>
+  <string name="map_close">닫기</string>
+  <string name="map_sources">지도: OpenFreeMap · © OpenMapTiles · © OpenStreetMap 기여자</string>
+</resources>
