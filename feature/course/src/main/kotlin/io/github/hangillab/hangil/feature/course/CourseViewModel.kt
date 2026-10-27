@@ -13,6 +13,7 @@ import io.github.hangillab.hangil.core.domain.allowsPracticeInteraction
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
@@ -36,6 +37,7 @@ class CourseViewModel
         private val draft = MutableStateFlow(restoreDraft())
         private val saving = MutableStateFlow(false)
         private val saveFailed = MutableStateFlow(false)
+        private val sessionOpen = MutableStateFlow(true)
         private var saveJob: Job? = null
 
         @Volatile private var visible = false
@@ -44,7 +46,7 @@ class CourseViewModel
 
         internal val uiState =
             combine(
-                combine(vehicle.state, restrictions.restrictions) { v, r -> allowsPracticeInteraction(v, r) },
+                combine(vehicle.state, restrictions.restrictions, sessionOpen) { v, r, open -> open && allowsPracticeInteraction(v, r) },
                 draft,
                 saving,
                 saveFailed,
@@ -94,15 +96,26 @@ class CourseViewModel
         }
 
         fun back(): Boolean {
-            if (!canEdit()) return false
+            if (!canEdit()) {
+                leave()
+                return false
+            }
             val previous =
                 when (draft.value.step) {
-                    PreparationStep.GOAL -> return false
+                    PreparationStep.GOAL -> {
+                        leave()
+                        return false
+                    }
                     PreparationStep.COURSE -> PreparationStep.GOAL
                     PreparationStep.BRIEFING -> PreparationStep.COURSE
                 }
             update(draft.value.copy(step = previous))
             return true
+        }
+
+        fun leave() {
+            sessionOpen.value = false
+            saveJob?.cancel()
         }
 
         private fun save() {
@@ -119,7 +132,8 @@ class CourseViewModel
                             repository.saveSelection(selection) {
                                 job.isActive && livePermission() && draft.value == snapshot
                             }
-                        if (committed) savedEvents.send(Unit)
+                        coroutineContext.ensureActive()
+                        if (committed && sessionOpen.value) savedEvents.send(Unit)
                     } catch (cancelled: CancellationException) {
                         throw cancelled
                     } catch (_: Exception) {
@@ -132,7 +146,8 @@ class CourseViewModel
 
         private fun canEdit() = !saving.value && livePermission()
 
-        private fun livePermission() = visible && allowsPracticeInteraction(vehicle.state.value, restrictions.restrictions.value)
+        private fun livePermission() =
+            visible && sessionOpen.value && allowsPracticeInteraction(vehicle.state.value, restrictions.restrictions.value)
 
         private fun update(value: PreparationDraft) {
             savedState["step"] = value.step.name

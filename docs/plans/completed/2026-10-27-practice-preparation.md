@@ -28,10 +28,15 @@
 
 | 명령 또는 시나리오 | 결과 | 근거 |
 |---|---|---|
-| `./scripts/verify.sh` | 통과 | 포맷·모듈 경계·Lint, 테스트 37개, debug·unsigned release |
+| `./scripts/verify.sh` | 통과 | 포맷·모듈 경계·Lint, 테스트 39개, debug·unsigned release |
 | Pleos 선택·저장·화면 재생성 | 통과 | 실제 SDK 주차 상태에서 시연 코스·과제 선택 및 저장 복원 |
 | Pleos 프로세스·AVD 재실행 복원, D 잠금 | 통과 | 전용 API 34 AVD에서 세 UI 테스트 시나리오 확인 |
-| PR #5 CI·Codex 리뷰 | 통과 | 구현 커밋 `bdceccc`: `ci-required` 성공, Codex 완료·지적 없음 |
+| PR #5 CI·Codex 리뷰 | PR에 기록 | [커밋별 검사와 리뷰 결과](https://github.com/HanGilLab/Android/pull/5) |
+
+## 리뷰 보완
+
+저장 대기 중 시스템 뒤로가기로 화면을 떠날 때 저장을 즉시 취소하고, 완료 이벤트의 중복 화면 닫기를 차단했다.
+전환 중 구독 유지와 이전 화면 재구독 상황의 회귀 테스트 2개를 추가했다.
 
 ## 남은 문제와 인계
 

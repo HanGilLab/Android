@@ -18,6 +18,7 @@ import io.github.hangillab.hangil.core.domain.VehicleState
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -27,6 +28,7 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.withContext
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -223,5 +225,43 @@ class CourseViewModelTest {
             observe(outdated)
             assertEquals(PreparationStep.COURSE, outdated.uiState.value.step)
             assertNull(outdated.uiState.value.course)
+        }
+
+    @Test fun `system back revokes a queued save before transition collectors stop`() =
+        runTest {
+            val old = PracticeSelection("b", "c", 2, 3, "u")
+            repository.selection.value = old
+            val gate = CompletableDeferred<Unit>()
+            repository.beforeWrite = { withContext(NonCancellable) { gate.await() } }
+            val model = model()
+            observe(model)
+            val events = mutableListOf<Unit>()
+            backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { model.saved.collect { events += it } }
+            prepare(model)
+            model.next()
+            runCurrent()
+            assertTrue(model.uiState.value.saving)
+            assertFalse(model.back())
+            // Keep the UI collector alive, as NavHost does during its exit animation.
+            gate.complete(Unit)
+            runCurrent()
+            assertEquals(old, repository.selection.value)
+            assertTrue(events.isEmpty())
+            assertFalse(model.uiState.value.allowsInteraction)
+        }
+
+    @Test fun `leaving cannot reopen permissions when an old screen resubscribes`() =
+        runTest {
+            val model = model()
+            val collector = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { model.uiState.collect {} }
+            runCurrent()
+            model.leave()
+            collector.cancel()
+            runCurrent()
+            observe(model)
+            model.selectGoal("a")
+            runCurrent()
+            assertNull(model.uiState.value.goal)
+            assertFalse(model.uiState.value.allowsInteraction)
         }
 }

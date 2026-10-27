@@ -15,6 +15,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -38,10 +42,19 @@ fun CourseRoute(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    LaunchedEffect(viewModel, lifecycle) {
-        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { viewModel.saved.collect { onClose() } }
+    val currentOnClose by rememberUpdatedState(onClose)
+    var closing by remember(viewModel) { mutableStateOf(false) }
+    val close = {
+        if (!closing) {
+            closing = true
+            viewModel.leave()
+            currentOnClose()
+        }
     }
-    val back = { if (!viewModel.back()) onClose() }
+    LaunchedEffect(viewModel, lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { viewModel.saved.collect { close() } }
+    }
+    val back = { if (!viewModel.back()) close() }
     BackHandler(onBack = back)
     CourseScreen(state, viewModel::selectGoal, viewModel::selectCourse, viewModel::selectTask, viewModel::next, back)
 }
