@@ -10,7 +10,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
+import io.github.hangillab.hangil.core.designsystem.HanGilDimensions
+import io.github.hangillab.hangil.core.designsystem.HanGilSpacing
 import io.github.hangillab.hangil.core.domain.ConnectionState
 import io.github.hangillab.hangil.core.domain.GearPosition
 import io.github.hangillab.hangil.core.domain.TurnSignalState
@@ -31,8 +32,8 @@ private fun connectionLabel(state: ConnectionState): String =
 
 @Composable
 internal fun VehicleDiagnostics(state: HomeUiState) {
-    Card(modifier = Modifier.widthIn(max = 720.dp)) {
-        Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Card(modifier = Modifier.widthIn(max = HanGilDimensions.diagnosticsMaxWidth)) {
+        Column(Modifier.padding(HanGilSpacing.xl), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.xs)) {
             Text(stringResource(R.string.vehicle_diagnostics), style = MaterialTheme.typography.titleMedium)
             Text("${stringResource(R.string.connection_vehicle)} · ${connectionLabel(state.vehicle.connection)}")
             Text("${stringResource(R.string.connection_navigation)} · ${connectionLabel(state.navigationConnection)}")
