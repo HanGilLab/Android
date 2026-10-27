@@ -25,6 +25,8 @@ Android Studio에서 다음 항목을 준비한다.
 - SDK Platforms: **Android API 36** — 이 프로젝트의 컴파일용
 - SDK Tools: **Android SDK Build-Tools 35.0.0**, **Android SDK Platform-Tools**, **Android Emulator**
 
+Gradle 명령은 [JDK 17 선택·검증 안내](jdk17.md)에 따라 실행한다. 기본 Java나 IDE 런타임을 Gradle의 실제 JDK로 추정하지 않는다.
+
 SDK Manager의 **Android SDK Location**을 확인해 `ANDROID_HOME`에 지정하고
 `platform-tools`를 PATH에 추가한다. 아래 경로는 설치 위치에 맞게 바꾼다.
 
@@ -89,21 +91,27 @@ adb -s "$PLEOS_SERIAL" shell getprop sys.boot_completed
 ## 5. 한길졸업 APK 설치와 실행
 
 저장소 루트에서 실행한다. Android Studio로 실행할 때도 실행 대상을 Pleos AVD로 지정한다.
+아래 JDK 검색은 macOS 예시다. Linux에서는 첫 줄을 설치한 JDK 17 홈의 `HANGIL_JDK17` 지정으로 바꾼다.
 
 ```bash
-./gradlew :app:assembleDebug
+HANGIL_JDK17="$(/usr/libexec/java_home -v 17 -F)" || exit 1 # macOS
+JAVA_HOME="$HANGIL_JDK17" ./gradlew :app:assembleDebug
 adb -s "$PLEOS_SERIAL" install -r app/build/outputs/apk/debug/app-debug.apk
-adb -s "$PLEOS_SERIAL" shell am start -W -n \
-  io.github.hangillab.hangil.debug/io.github.hangillab.hangil.MainActivity
+adb -s "$PLEOS_SERIAL" shell monkey \
+  -p io.github.hangillab.hangil.debug -c android.intent.category.LAUNCHER 1
 ```
 
 확인할 결과:
 
 - APK 설치 결과 `Success`
-- Activity 실행 결과 `Status: ok`와 한길졸업 초기 화면
+- 정상 Pleos 앱 목록에서 선택한 한길졸업이 실제 중앙 영역에 표시됨
 - SDK 연결 시 ‘차량 연결됨’, 미지원·권한 누락·연결 실패 시 해당 상태 표시
 - P 기어와 UX 제한 해제가 모두 확인되면 상세 내용 표시, 그 외에는 잠금 안내
 - debug APK에서만 주차·UX 허용 시 개발용 차량 상태 표시
+
+LAUNCHER 실행은 [공식 Pleos ADB 안내](https://document.pleos.ai/en/docs/pleos-only/vehicle-app-developer-guide/adb-command-reference-guide)에 따른다.
+직접 `am start -n` 실행이 전체 배경에 앱 창을 만들거나 기본 내비·카메라가 전면에 남을 수 있으므로 실제 앱 목록에서 한길졸업을 선택해 중앙 창의 배치·가시성·그리기를 확인한다.
+빈 UI 계층·종료 코드·native 활성 패키지만으로 화면 성공/실패를 추정하지 않는다. 전환 중 캡처를 다시 확인하며 GNB를 반복해서 눌러 앱을 숨기지 않도록 한다.
 
 debug 패키지명은 `io.github.hangillab.hangil.debug`이고 Activity 클래스에는 `.debug`가 붙지 않는다.
 `install -r`은 기존 앱을 업데이트한다. [ADB 앱 설치 안내](https://developer.android.com/tools/adb#move)
