@@ -15,10 +15,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.hangillab.hangil.core.designsystem.HanGilBrand
+import io.github.hangillab.hangil.core.designsystem.HanGilDimensions
 import io.github.hangillab.hangil.core.designsystem.PracticeBadge
 import io.github.hangillab.hangil.core.designsystem.PracticeColumns
 import io.github.hangillab.hangil.core.designsystem.PracticeLockedNotice
@@ -79,7 +79,7 @@ internal fun HomeScreen(
                             Text(stringResource(R.string.load_failed), style = MaterialTheme.typography.bodyLarge)
                             TextButton(
                                 onClick = onRetry,
-                                modifier = Modifier.heightIn(min = 72.dp),
+                                modifier = Modifier.heightIn(min = HanGilDimensions.secondaryActionMinHeight),
                             ) { Text(stringResource(R.string.retry)) }
                         }
                     is PreparationLoadState.Loaded -> {
@@ -124,7 +124,11 @@ internal fun HomeScreen(
                                 }
                                 Button(
                                     onClick = onPrepare,
-                                    modifier = Modifier.fillMaxWidth().heightIn(min = 76.dp).testTag("home_prepare"),
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .heightIn(min = HanGilDimensions.primaryActionMinHeight)
+                                            .testTag("home_prepare"),
                                 ) {
                                     Text(
                                         stringResource(
@@ -158,11 +162,17 @@ internal fun HomeScreen(
                     }
                 }
                 sessionContent()
-                TextButton(onClick = onMapPreview, modifier = Modifier.heightIn(min = 72.dp).testTag("home_map")) {
+                TextButton(
+                    onClick = onMapPreview,
+                    modifier = Modifier.heightIn(min = HanGilDimensions.secondaryActionMinHeight).testTag("home_map"),
+                ) {
                     Text(stringResource(R.string.map_preview), style = MaterialTheme.typography.titleLarge)
                 }
                 if (showDiagnostics) {
-                    TextButton(onClick = { diagnosticsExpanded = !diagnosticsExpanded }, modifier = Modifier.heightIn(min = 64.dp)) {
+                    TextButton(
+                        onClick = { diagnosticsExpanded = !diagnosticsExpanded },
+                        modifier = Modifier.heightIn(min = HanGilDimensions.compactActionMinHeight),
+                    ) {
                         Text(stringResource(if (diagnosticsExpanded) R.string.diagnostics_hide else R.string.diagnostics_show))
                     }
                     if (diagnosticsExpanded) VehicleDiagnostics(state)

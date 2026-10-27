@@ -21,9 +21,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import io.github.hangillab.hangil.core.designsystem.HanGilDimensions
+import io.github.hangillab.hangil.core.designsystem.HanGilSpacing
 import io.github.hangillab.hangil.core.designsystem.PracticeBadge
 import io.github.hangillab.hangil.core.designsystem.PracticeLockedNotice
 import io.github.hangillab.hangil.core.designsystem.PracticePage
@@ -38,7 +39,10 @@ fun MapRoute(
     PracticePage {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(R.string.map_title), style = MaterialTheme.typography.titleLarge)
-            TextButton(onClick = onClose, modifier = Modifier.heightIn(min = 72.dp).testTag("map_close")) {
+            TextButton(
+                onClick = onClose,
+                modifier = Modifier.heightIn(min = HanGilDimensions.secondaryActionMinHeight).testTag("map_close"),
+            ) {
                 Text(stringResource(R.string.map_close))
             }
         }
@@ -47,11 +51,19 @@ fun MapRoute(
         } else {
             PracticeBadge(stringResource(R.string.map_demo_badge))
             Text(stringResource(R.string.map_demo_region), style = MaterialTheme.typography.bodyLarge)
-            Box(Modifier.fillMaxWidth().height(420.dp).testTag(if (state.load == MapLoadState.READY) "map_ready" else "map_container")) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(HanGilDimensions.mapPreviewHeight)
+                    .testTag(if (state.load == MapLoadState.READY) "map_ready" else "map_container"),
+            ) {
                 if (state.load == MapLoadState.FAILED) {
                     PracticePanel(Modifier.testTag("map_error")) {
                         Text(stringResource(R.string.map_failed), style = MaterialTheme.typography.bodyLarge)
-                        Button(onClick = viewModel::retry, modifier = Modifier.heightIn(min = 72.dp).testTag("map_retry")) {
+                        Button(
+                            onClick = viewModel::retry,
+                            modifier = Modifier.heightIn(min = HanGilDimensions.secondaryActionMinHeight).testTag("map_retry"),
+                        ) {
                             Text(stringResource(R.string.map_retry))
                         }
                     }
@@ -68,11 +80,11 @@ fun MapRoute(
                     }
                     if (state.load == MapLoadState.LOADING) {
                         Surface(
-                            Modifier.align(Alignment.TopCenter).padding(16.dp).testTag("map_loading"),
+                            Modifier.align(Alignment.TopCenter).padding(HanGilSpacing.md).testTag("map_loading"),
                             shape = MaterialTheme.shapes.medium,
                             color = MaterialTheme.colorScheme.surface,
                         ) {
-                            Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                            Row(Modifier.padding(HanGilSpacing.md), horizontalArrangement = Arrangement.spacedBy(HanGilSpacing.md)) {
                                 CircularProgressIndicator()
                                 Text(stringResource(R.string.map_loading), style = MaterialTheme.typography.bodyLarge)
                             }
