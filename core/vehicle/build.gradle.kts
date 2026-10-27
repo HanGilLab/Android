@@ -12,6 +12,7 @@ dependencies {
     implementation(project(":core:domain"))
     implementation(libs.coroutines.core)
     implementation(libs.pleos.vehicle)
+    implementation(libs.pleos.vehicleData)
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test)
 }
