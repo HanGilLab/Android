@@ -3,7 +3,17 @@
 internal object ModuleBoundaries {
     private val allowed =
         mapOf(
-            ":app" to setOf(":feature:home", ":feature:course", ":core:domain", ":core:designsystem", ":core:database", ":core:vehicle"),
+            ":app" to
+                setOf(
+                    ":feature:home",
+                    ":feature:course",
+                    ":feature:map",
+                    ":core:domain",
+                    ":core:designsystem",
+                    ":core:database",
+                    ":core:vehicle",
+                ),
+            ":feature:map" to setOf(":core:domain", ":core:designsystem"),
             ":core:domain" to emptySet(),
             ":core:designsystem" to emptySet(),
             ":core:database" to setOf(":core:domain"),

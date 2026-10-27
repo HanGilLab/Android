@@ -11,7 +11,8 @@ class ModuleBoundariesTest {
                     mapOf(
                         ":feature:home" to setOf(":core:domain", ":core:designsystem"),
                         ":feature:course" to setOf(":core:domain", ":core:designsystem"),
-                        ":app" to setOf(":feature:home", ":feature:course", ":core:database"),
+                        ":feature:map" to setOf(":core:domain", ":core:designsystem"),
+                        ":app" to setOf(":feature:home", ":feature:course", ":feature:map", ":core:database"),
                     ),
                 ).isEmpty(),
         )
