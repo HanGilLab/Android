@@ -8,6 +8,7 @@ android {
     namespace = "io.github.hangillab.hangil"
     defaultConfig {
         applicationId = "io.github.hangillab.hangil"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         versionCode =
             providers
                 .gradleProperty("releaseVersionCode")
@@ -42,8 +43,14 @@ android {
 
 dependencies {
     implementation(project(":feature:home"))
+    implementation(project(":feature:course"))
     implementation(project(":core:designsystem"))
     implementation(project(":core:vehicle"))
     implementation(project(":core:database"))
     implementation(libs.activity.compose)
+    implementation(libs.navigation.compose)
+    androidTestImplementation(platform(libs.compose.bom))
+    androidTestImplementation(libs.compose.ui.test.junit4)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.junit)
 }
