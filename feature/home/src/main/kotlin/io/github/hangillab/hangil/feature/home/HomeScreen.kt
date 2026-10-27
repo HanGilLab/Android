@@ -23,17 +23,26 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.hangillab.hangil.core.designsystem.HanGilTheme
 import io.github.hangillab.hangil.core.domain.ConnectionState
+import io.github.hangillab.hangil.core.domain.GearPosition
 import io.github.hangillab.hangil.core.domain.ParkingState
+import io.github.hangillab.hangil.core.domain.TurnSignalState
 import io.github.hangillab.hangil.core.domain.UxRestrictionState
+import io.github.hangillab.hangil.core.domain.VehicleReading
 
 @Composable
-fun HomeRoute(viewModel: HomeViewModel = hiltViewModel()) {
+fun HomeRoute(
+    showDiagnostics: Boolean = false,
+    viewModel: HomeViewModel = hiltViewModel(),
+) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    HomeScreen(state)
+    HomeScreen(state, showDiagnostics)
 }
 
 @Composable
-internal fun HomeScreen(state: HomeUiState) {
+internal fun HomeScreen(
+    state: HomeUiState,
+    showDiagnostics: Boolean = false,
+) {
     Scaffold { padding ->
         Column(
             modifier =
@@ -45,16 +54,19 @@ internal fun HomeScreen(state: HomeUiState) {
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text(stringResource(R.string.home_title), style = MaterialTheme.typography.displaySmall)
-            Text(stringResource(R.string.home_tagline), style = MaterialTheme.typography.headlineSmall)
-            Text(stringResource(R.string.home_intro), modifier = Modifier.widthIn(max = 720.dp))
-            Spacer(Modifier.height(8.dp))
+            if (state.allowsDetailedInteraction) {
+                Text(stringResource(R.string.home_tagline), style = MaterialTheme.typography.headlineSmall)
+                Text(stringResource(R.string.home_intro), modifier = Modifier.widthIn(max = 720.dp))
+                Spacer(Modifier.height(8.dp))
+            }
             Card(modifier = Modifier.widthIn(max = 720.dp)) {
                 Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("${stringResource(R.string.connection_vehicle)} · ${connectionLabel(state.vehicleConnection)}")
+                    Text("${stringResource(R.string.connection_vehicle)} · ${connectionLabel(state.vehicle.connection)}")
                     Text("${stringResource(R.string.connection_navigation)} · ${connectionLabel(state.navigationConnection)}")
                     val restrictionMessage =
                         when {
-                            state.restrictions.allowsDetailedInteraction -> R.string.restriction_allowed
+                            state.allowsDetailedInteraction -> R.string.restriction_allowed
+                            state.vehicle.connection != ConnectionState.CONNECTED -> R.string.restriction_unknown
                             state.restrictions.parkingState == ParkingState.UNKNOWN ||
                                 state.restrictions.uxRestrictionState == UxRestrictionState.UNKNOWN -> R.string.restriction_unknown
                             else -> R.string.restriction_locked
@@ -62,7 +74,10 @@ internal fun HomeScreen(state: HomeUiState) {
                     Text(stringResource(restrictionMessage))
                 }
             }
-            Text(stringResource(R.string.bootstrap_notice), style = MaterialTheme.typography.bodySmall)
+            if (state.allowsDetailedInteraction) {
+                Text(stringResource(R.string.bootstrap_notice), style = MaterialTheme.typography.bodySmall)
+                if (showDiagnostics) VehicleDiagnostics(state)
+            }
         }
     }
 }
@@ -75,8 +90,68 @@ private fun connectionLabel(state: ConnectionState): String =
             ConnectionState.CONNECTING -> R.string.connection_connecting
             ConnectionState.CONNECTED -> R.string.connection_connected
             ConnectionState.UNAVAILABLE -> R.string.connection_unavailable
+            ConnectionState.PERMISSION_DENIED -> R.string.connection_permission_denied
+            ConnectionState.ERROR -> R.string.connection_error
         },
     )
+
+@Composable
+private fun VehicleDiagnostics(state: HomeUiState) {
+    Card(modifier = Modifier.widthIn(max = 720.dp)) {
+        Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(stringResource(R.string.vehicle_diagnostics), style = MaterialTheme.typography.titleMedium)
+            Text(
+                stringResource(
+                    R.string.vehicle_gear,
+                    readingLabel(state.vehicle.gear) {
+                        when (it) {
+                            GearPosition.PARK -> "P"
+                            GearPosition.REVERSE -> "R"
+                            GearPosition.NEUTRAL -> "N"
+                            GearPosition.DRIVE -> "D"
+                            GearPosition.OTHER -> stringResource(R.string.gear_other)
+                        }
+                    },
+                ),
+            )
+            Text(
+                stringResource(
+                    R.string.vehicle_turn_signal,
+                    readingLabel(state.vehicle.turnSignal) {
+                        stringResource(
+                            when (it) {
+                                TurnSignalState.OFF -> R.string.turn_signal_off
+                                TurnSignalState.LEFT -> R.string.turn_signal_left
+                                TurnSignalState.RIGHT -> R.string.turn_signal_right
+                            },
+                        )
+                    },
+                ),
+            )
+            Text(
+                stringResource(
+                    R.string.vehicle_brake,
+                    readingLabel(state.vehicle.brakePressed) {
+                        stringResource(if (it) R.string.brake_pressed else R.string.brake_released)
+                    },
+                ),
+            )
+        }
+    }
+}
+
+@Composable
+private fun <T : Any> readingLabel(
+    reading: VehicleReading<T>,
+    label: @Composable (T) -> String,
+): String =
+    when (reading) {
+        is VehicleReading.Available -> label(reading.value)
+        VehicleReading.Unknown -> stringResource(R.string.reading_unknown)
+        VehicleReading.Unsupported -> stringResource(R.string.reading_unsupported)
+        VehicleReading.PermissionDenied -> stringResource(R.string.connection_permission_denied)
+        VehicleReading.Error -> stringResource(R.string.connection_error)
+    }
 
 @Preview(widthDp = 1024, heightDp = 600, showBackground = true)
 @Composable

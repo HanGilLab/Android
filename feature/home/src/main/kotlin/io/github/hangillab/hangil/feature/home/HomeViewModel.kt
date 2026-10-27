@@ -8,16 +8,24 @@ import io.github.hangillab.hangil.core.domain.DrivingRestrictions
 import io.github.hangillab.hangil.core.domain.DrivingRestrictionsProvider
 import io.github.hangillab.hangil.core.domain.NavigationGateway
 import io.github.hangillab.hangil.core.domain.VehicleGateway
+import io.github.hangillab.hangil.core.domain.VehicleState
+import io.github.hangillab.hangil.core.domain.toDrivingRestrictions
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
 
 data class HomeUiState(
-    val vehicleConnection: ConnectionState = ConnectionState.DISCONNECTED,
+    val vehicle: VehicleState = VehicleState(),
     val navigationConnection: ConnectionState = ConnectionState.UNAVAILABLE,
     val restrictions: DrivingRestrictions = DrivingRestrictions(),
-)
+) {
+    // combine의 별도 스트림이 갱신되는 사이에도 이전 주차 값으로 잠금을 풀지 않는다.
+    val allowsDetailedInteraction: Boolean
+        get() =
+            restrictions.allowsDetailedInteraction &&
+                vehicle.toDrivingRestrictions(restrictions.uxRestrictionState).allowsDetailedInteraction
+}
 
 @HiltViewModel
 class HomeViewModel
@@ -28,11 +36,15 @@ class HomeViewModel
         restrictionsProvider: DrivingRestrictionsProvider,
     ) : ViewModel() {
         val uiState =
-            combine(vehicleGateway.connection, navigationGateway.connection, restrictionsProvider.restrictions) {
+            combine(vehicleGateway.state, navigationGateway.connection, restrictionsProvider.restrictions) {
                 vehicle,
                 navigation,
                 restrictions,
                 ->
                 HomeUiState(vehicle, navigation, restrictions)
-            }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState())
+            }.stateIn(
+                viewModelScope,
+                SharingStarted.WhileSubscribed(stopTimeoutMillis = 0, replayExpirationMillis = 0),
+                HomeUiState(),
+            )
     }
