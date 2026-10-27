@@ -1,0 +1,5 @@
+<resources>
+    <string name="practice_locked_title">주차 후 이어서 준비해요</string>
+    <string name="practice_locked_description">차량의 주차 상태와 화면 사용 가능 여부가 확인되면 준비를 이어갈 수 있어요.</string>
+    <string name="practice_locked_saved">이미 저장한 준비 내용은 그대로 유지돼요.</string>
+</resources>

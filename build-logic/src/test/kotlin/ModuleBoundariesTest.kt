@@ -8,7 +8,11 @@ class ModuleBoundariesTest {
         assertTrue(
             ModuleBoundaries
                 .violations(
-                    mapOf(":feature:home" to setOf(":core:domain", ":core:designsystem")),
+                    mapOf(
+                        ":feature:home" to setOf(":core:domain", ":core:designsystem"),
+                        ":feature:course" to setOf(":core:domain", ":core:designsystem"),
+                        ":app" to setOf(":feature:home", ":feature:course", ":core:database"),
+                    ),
                 ).isEmpty(),
         )
     }
