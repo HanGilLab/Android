@@ -19,6 +19,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -28,6 +29,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
+import io.github.hangillab.hangil.core.designsystem.HanGilBrand
 import io.github.hangillab.hangil.core.designsystem.PracticeBadge
 import io.github.hangillab.hangil.core.designsystem.PracticeChoice
 import io.github.hangillab.hangil.core.designsystem.PracticeColumns
@@ -69,8 +71,16 @@ internal fun CourseScreen(
     onBack: () -> Unit,
 ) {
     PracticePage {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(stringResource(R.string.course_brand), style = MaterialTheme.typography.titleLarge)
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (state.allowsInteraction) {
+                HanGilBrand(Modifier.weight(1f))
+            } else {
+                Text(stringResource(R.string.course_brand), Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
+            }
             TextButton(onClick = onBack, modifier = Modifier.heightIn(min = 64.dp), enabled = !state.saving) {
                 Text(stringResource(R.string.course_back), style = MaterialTheme.typography.titleMedium)
             }

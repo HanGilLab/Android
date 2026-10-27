@@ -32,6 +32,7 @@ bind가 false이거나 예외여도 생성된 dispatcher를 정리하며 이미 
 ## 실제 장치 검증
 
 전용 AVD와 P+UX 허용 상태에서 아래 시나리오를 개별 실행한다. 권한을 자동 부여하는 테스트는 없다.
+현재 DB v2의 준비·세션 데이터를 보존하려면 main의 마이그레이션을 포함한 APK를 사용한다. v1 전용 과거 APK로 되돌리거나 데이터를 지우지 않는다.
 권한이 없는 상태에서 `missingPermissionIsExplicitAndRecreationClearsTheProbe`, 사용자가 권한을 허용한 뒤 `grantedPermissionIdentifiesTheActualSdkResponse`를 실행한다.
 위치 1건 수신과 Empty 응답은 각각 기록하며, 건너뛴 검사를 통과로 취급하지 않는다.
 
