@@ -14,20 +14,19 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 
 /** Static brand decoration for screens where parking and unrestricted UX have both been confirmed. */
 @Composable
 fun HanGilBrand(modifier: Modifier = Modifier) {
     Row(
         modifier.testTag("hangil_brand").semantics(mergeDescendants = true) {},
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(HanGilSpacing.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Image(
             painter = painterResource(R.drawable.ic_hangil_guide),
             contentDescription = null,
-            modifier = Modifier.size(88.dp),
+            modifier = Modifier.size(HanGilDimensions.brandMarkSize),
         )
         Text(
             text = stringResource(R.string.hangil_brand_name),

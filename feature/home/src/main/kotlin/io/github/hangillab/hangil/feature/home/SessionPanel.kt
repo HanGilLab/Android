@@ -11,9 +11,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import io.github.hangillab.hangil.core.designsystem.HanGilDimensions
 import io.github.hangillab.hangil.core.designsystem.PracticeBadge
 import io.github.hangillab.hangil.core.designsystem.PracticePanel
 import io.github.hangillab.hangil.core.domain.CourseReviewStatus
@@ -43,7 +43,10 @@ internal fun SessionPanel(
             SessionLoadState.Loading -> Text(stringResource(R.string.session_loading))
             SessionLoadState.Failed -> {
                 Text(stringResource(R.string.session_load_failed), Modifier.testTag("session_load_failed"))
-                TextButton(onClick = onRetry, modifier = Modifier.heightIn(min = 72.dp)) { Text(stringResource(R.string.retry)) }
+                TextButton(
+                    onClick = onRetry,
+                    modifier = Modifier.heightIn(min = HanGilDimensions.secondaryActionMinHeight),
+                ) { Text(stringResource(R.string.retry)) }
             }
             is SessionLoadState.Loaded -> {
                 val active = state.active
@@ -60,9 +63,17 @@ internal fun SessionPanel(
                         stringResource(R.string.session_started_at, displayTime(active.startedAtEpochMillis)),
                         Modifier.testTag("session_started_at"),
                     )
-                    Button(onClick = {
-                        onFinish(active.sessionId)
-                    }, enabled = state.canFinish, modifier = Modifier.fillMaxWidth().heightIn(min = 76.dp).testTag("session_finish")) {
+                    Button(
+                        onClick = {
+                            onFinish(active.sessionId)
+                        },
+                        enabled = state.canFinish,
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = HanGilDimensions.primaryActionMinHeight)
+                                .testTag("session_finish"),
+                    ) {
                         Text(stringResource(R.string.session_finish), style = MaterialTheme.typography.titleLarge)
                     }
                 } else {
@@ -72,7 +83,7 @@ internal fun SessionPanel(
                             Text(stringResource(R.string.load_failed))
                             TextButton(
                                 onClick = onRetry,
-                                modifier = Modifier.heightIn(min = 72.dp),
+                                modifier = Modifier.heightIn(min = HanGilDimensions.secondaryActionMinHeight),
                             ) { Text(stringResource(R.string.retry)) }
                         }
                         is PreparationLoadState.Loaded -> {
@@ -83,7 +94,11 @@ internal fun SessionPanel(
                                 Button(
                                     onClick = onStart,
                                     enabled = state.canStart,
-                                    modifier = Modifier.fillMaxWidth().heightIn(min = 76.dp).testTag("session_start"),
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .heightIn(min = HanGilDimensions.primaryActionMinHeight)
+                                            .testTag("session_start"),
                                 ) {
                                     Text(stringResource(R.string.session_start), style = MaterialTheme.typography.titleLarge)
                                 }
@@ -112,7 +127,10 @@ internal fun SessionPanel(
             is SessionOperationState.Feedback -> {
                 Text(stringResource(feedbackText(operation.value)), Modifier.testTag("session_feedback"))
                 if (operation.value == SessionFeedback.MISSING) {
-                    TextButton(onClick = onRetry, modifier = Modifier.heightIn(min = 72.dp)) { Text(stringResource(R.string.retry)) }
+                    TextButton(
+                        onClick = onRetry,
+                        modifier = Modifier.heightIn(min = HanGilDimensions.secondaryActionMinHeight),
+                    ) { Text(stringResource(R.string.retry)) }
                 }
             }
         }
