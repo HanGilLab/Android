@@ -7,6 +7,8 @@ enum class ConnectionState {
     CONNECTING,
     CONNECTED,
     UNAVAILABLE,
+    PERMISSION_DENIED,
+    ERROR,
 }
 
 enum class ParkingState {
@@ -30,7 +32,7 @@ data class DrivingRestrictions(
 }
 
 interface VehicleGateway {
-    val connection: StateFlow<ConnectionState>
+    val state: StateFlow<VehicleState>
 }
 
 /** SDK의 목적지 요청 API는 실제 연동 단계에서 추가한다. 현재는 연결 가능 여부만 제공한다. */

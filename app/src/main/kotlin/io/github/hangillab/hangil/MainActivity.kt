@@ -1,5 +1,6 @@
 package io.github.hangillab.hangil
 
+import android.content.pm.ApplicationInfo
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -13,6 +14,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        setContent { HanGilTheme { HomeRoute() } }
+        val showDiagnostics = applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+        setContent { HanGilTheme { HomeRoute(showDiagnostics = showDiagnostics) } }
     }
 }

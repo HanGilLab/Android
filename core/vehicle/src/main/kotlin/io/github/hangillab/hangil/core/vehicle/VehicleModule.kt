@@ -12,11 +12,11 @@ import io.github.hangillab.hangil.core.domain.VehicleGateway
 @InstallIn(SingletonComponent::class)
 abstract class VehicleModule {
     @Binds
-    abstract fun vehicleGateway(implementation: UnconnectedVehicleGateway): VehicleGateway
+    abstract fun vehicleGateway(implementation: PleosVehicleGateway): VehicleGateway
 
     @Binds
     abstract fun navigationGateway(implementation: UnconnectedNavigationGateway): NavigationGateway
 
     @Binds
-    abstract fun drivingRestrictions(implementation: UnknownDrivingRestrictionsProvider): DrivingRestrictionsProvider
+    abstract fun drivingRestrictions(implementation: AaosDrivingRestrictionsProvider): DrivingRestrictionsProvider
 }

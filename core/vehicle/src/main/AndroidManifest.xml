@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <uses-permission android:name="pleos.car.permission.CAR_DRIVE" />
+  <uses-permission android:name="pleos.car.permission.CAR_LIGHTS" />
+  <application>
+    <uses-library android:name="android.car" android:required="false" />
+  </application>
+</manifest>
