@@ -12,5 +12,19 @@
   <string name="restriction_unknown">차량 상태를 확인할 수 없어 상세 조작이 잠겨 있어요.</string>
   <string name="restriction_locked">주차 및 화면 조작 허용 상태를 확인한 후 상세 조작을 사용할 수 있어요.</string>
   <string name="restriction_allowed">주차 및 화면 조작 허용 상태가 확인되었어요.</string>
-  <string name="bootstrap_notice">개발 준비 단계 · 차량 SDK 연동과 연습 기능은 아직 제공하지 않아요.</string>
+  <string name="bootstrap_notice">개발 준비 단계 · 연습·복습 기능을 준비하고 있어요.</string>
+  <string name="connection_permission_denied">권한 없음</string>
+  <string name="connection_error">수신 오류</string>
+  <string name="vehicle_diagnostics">개발용 차량 상태 · SDK 수신값</string>
+  <string name="vehicle_gear">기어 · %1$s</string>
+  <string name="vehicle_turn_signal">방향지시등 · %1$s</string>
+  <string name="vehicle_brake">브레이크 페달 · %1$s</string>
+  <string name="gear_other">기타 기어</string>
+  <string name="turn_signal_off">꺼짐</string>
+  <string name="turn_signal_left">좌측</string>
+  <string name="turn_signal_right">우측</string>
+  <string name="brake_pressed">밟음</string>
+  <string name="brake_released">떼짐</string>
+  <string name="reading_unknown">미확인</string>
+  <string name="reading_unsupported">미지원</string>
 </resources>
