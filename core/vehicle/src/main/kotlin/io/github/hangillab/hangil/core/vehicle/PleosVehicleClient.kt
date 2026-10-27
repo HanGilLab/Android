@@ -221,10 +221,3 @@ internal class PleosVehicleClient(
         val READABLE_ACCESS = setOf(AccessType.READ, AccessType.READ_WRITE)
     }
 }
-
-internal fun Exception.toReadingFailure(): VehicleReading<Nothing> =
-    when {
-        this is SecurityException || cause is SecurityException -> VehicleReading.PermissionDenied
-        this is UnsupportedOperationException -> VehicleReading.Unsupported
-        else -> VehicleReading.Error
-    }

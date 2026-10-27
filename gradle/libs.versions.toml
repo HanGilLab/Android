@@ -13,6 +13,7 @@ junit = "4.13.2"
 spotless = "7.2.1"
 ktlint = "1.7.1"
 pleos-vehicle = "2.3.2"
+pleos-vehicleData = "1.1.11"
 navigation = "2.9.8"
 robolectric = "4.17"
 androidx-test = "1.7.0"
@@ -41,6 +42,7 @@ coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", ve
 coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
 junit = { module = "junit:junit", version.ref = "junit" }
 pleos-vehicle = { module = "ai.pleos.playground:Vehicle", version.ref = "pleos-vehicle" }
+pleos-vehicleData = { module = "ai.pleos.playground:vehicle-data", version.ref = "pleos-vehicleData" }
 
 navigation-compose = { module = "androidx.navigation:navigation-compose", version.ref = "navigation" }
 lifecycle-viewmodel-savedstate = { module = "androidx.lifecycle:lifecycle-viewmodel-savedstate", version.ref = "lifecycle" }
