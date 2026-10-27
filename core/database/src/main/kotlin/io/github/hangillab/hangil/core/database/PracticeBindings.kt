@@ -6,6 +6,7 @@ import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import io.github.hangillab.hangil.core.domain.PracticeCatalog
 import io.github.hangillab.hangil.core.domain.PracticeRepository
+import io.github.hangillab.hangil.core.domain.PracticeSessionRepository
 import javax.inject.Singleton
 
 @Module
@@ -16,4 +17,7 @@ internal abstract class PracticeBindings {
 
     @Binds @Singleton
     abstract fun repository(implementation: RoomPracticeRepository): PracticeRepository
+
+    @Binds @Singleton
+    abstract fun sessionRepository(implementation: RoomPracticeSessionRepository): PracticeSessionRepository
 }
