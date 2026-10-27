@@ -7,6 +7,7 @@ plugins {
 android {
     namespace = "io.github.hangillab.hangil.core.database"
     testOptions.unitTests.isIncludeAndroidResources = true
+    sourceSets.getByName("test").resources.srcDir("schemas")
 }
 
 room { schemaDirectory("$projectDir/schemas") }
