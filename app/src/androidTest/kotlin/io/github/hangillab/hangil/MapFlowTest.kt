@@ -2,6 +2,7 @@ package io.github.hangillab.hangil
 
 import android.graphics.Bitmap
 import android.os.Bundle
+import android.os.ParcelFileDescriptor
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
@@ -12,6 +13,9 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import java.net.Proxy
+import java.net.ProxySelector
+import java.net.URI
 
 /** Run on the dedicated Pleos emulator with P and unrestricted UX confirmed. */
 @RunWith(AndroidJUnit4::class)
@@ -40,6 +44,26 @@ class MapFlowTest {
         compose.onNodeWithTag("map_retry").assertExists()
         compose.onNodeWithTag("map_ready").assertDoesNotExist()
         capture("map-network-error")
+        val originalProxy = shell("settings get global http_proxy").trim()
+        try {
+            shell("settings put global http_proxy :0")
+            compose.waitUntil(20_000) {
+                val proxies = ProxySelector.getDefault()?.select(URI("https://tiles.openfreemap.org/styles/liberty"))
+                !proxies.isNullOrEmpty() && proxies.all { it.type() == Proxy.Type.DIRECT }
+            }
+            compose.onNodeWithTag("map_retry").performClick()
+            waitFor("map_ready")
+            capture("map-network-recovered")
+        } finally {
+            shell("settings put global http_proxy :0")
+            shell(
+                if (originalProxy == "null") {
+                    "settings delete global http_proxy"
+                } else {
+                    "settings put global http_proxy '" + originalProxy.replace("'", "'\\''") + "'"
+                },
+            )
+        }
     }
 
     /** Change P to D, then return to P with Virtual Console when each status marker appears. */
@@ -98,4 +122,10 @@ class MapFlowTest {
     private fun phase(name: String) {
         InstrumentationRegistry.getInstrumentation().sendStatus(2, Bundle().apply { putString("stream", "MAP_SCENARIO_$name\n") })
     }
+
+    private fun shell(command: String): String =
+        ParcelFileDescriptor
+            .AutoCloseInputStream(InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(command))
+            .bufferedReader()
+            .use { it.readText() }
 }
