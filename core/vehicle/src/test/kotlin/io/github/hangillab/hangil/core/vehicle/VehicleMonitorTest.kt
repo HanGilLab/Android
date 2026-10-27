@@ -1,10 +1,13 @@
 package io.github.hangillab.hangil.core.vehicle
 
+import ai.pleos.playground.vehicle.constant.ErrorCode
 import io.github.hangillab.hangil.core.domain.ConnectionState
 import io.github.hangillab.hangil.core.domain.GearPosition
 import io.github.hangillab.hangil.core.domain.TurnSignalState
+import io.github.hangillab.hangil.core.domain.UxRestrictionState
 import io.github.hangillab.hangil.core.domain.VehicleReading
 import io.github.hangillab.hangil.core.domain.VehicleState
+import io.github.hangillab.hangil.core.domain.toDrivingRestrictions
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
@@ -19,6 +22,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import ai.pleos.playground.vehicle.callback.exception.a as PleosSdkVehicleException
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class VehicleMonitorTest {
@@ -173,6 +177,62 @@ class VehicleMonitorTest {
             advanceTimeBy(1_000)
             runCurrent()
             assertEquals(ConnectionState.PERMISSION_DENIED, states.last().connection)
+        }
+
+    @Test
+    fun `SDK permission failure in turn signal clears park and rejects late callbacks`() =
+        assertSdkPermissionFailureInvalidatesPark { observer, failure -> observer.onTurnSignal(failure) }
+
+    @Test
+    fun `SDK permission failure in brake clears park and rejects late callbacks`() =
+        assertSdkPermissionFailureInvalidatesPark { observer, failure -> observer.onBrake(failure) }
+
+    @Test
+    fun `SDK unsupported gear invalidates park without continuous retries`() =
+        runTest {
+            val client = FakeClient()
+            val states = mutableListOf<VehicleState>()
+            var creations = 0
+            backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+                VehicleMonitor({
+                    creations++
+                    client
+                }).observe().collect { states += it }
+            }
+            runCurrent()
+            client.observer.onGear(PleosSdkVehicleException(ErrorCode.ERROR_NOT_SUPPORTED_PROPERTY.id.toString()).toReadingFailure())
+            client.observer.onGear(VehicleReading.Available(GearPosition.PARK))
+            advanceTimeBy(60_000)
+            runCurrent()
+            assertEquals(ConnectionState.UNAVAILABLE, states.last().connection)
+            assertEquals(VehicleReading.Unknown, states.last().gear)
+            assertFalse(states.last().toDrivingRestrictions(UxRestrictionState.UNRESTRICTED).allowsDetailedInteraction)
+            assertEquals(1, client.closes)
+            assertEquals(1, creations)
+        }
+
+    private fun assertSdkPermissionFailureInvalidatesPark(reportFailure: (VehicleClient.Observer, VehicleReading<Nothing>) -> Unit) =
+        runTest {
+            val client = FakeClient()
+            val states = mutableListOf<VehicleState>()
+            var creations = 0
+            backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+                VehicleMonitor({
+                    creations++
+                    client
+                }).observe().collect { states += it }
+            }
+            runCurrent()
+            assertTrue(states.last().toDrivingRestrictions(UxRestrictionState.UNRESTRICTED).allowsDetailedInteraction)
+            reportFailure(client.observer, PleosSdkVehicleException(ErrorCode.ERROR_SECURITY_PERMISSION.id.toString()).toReadingFailure())
+            client.observer.onGear(VehicleReading.Available(GearPosition.PARK))
+            advanceTimeBy(60_000)
+            runCurrent()
+            assertEquals(ConnectionState.PERMISSION_DENIED, states.last().connection)
+            assertEquals(VehicleReading.Unknown, states.last().gear)
+            assertFalse(states.last().toDrivingRestrictions(UxRestrictionState.UNRESTRICTED).allowsDetailedInteraction)
+            assertEquals(1, client.closes)
+            assertEquals(1, creations)
         }
 
     @Test
