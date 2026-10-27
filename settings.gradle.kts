@@ -22,4 +22,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "HanGil"
-include(":app", ":core:domain", ":core:designsystem", ":core:database", ":core:vehicle", ":feature:home")
+include(":app", ":core:domain", ":core:designsystem", ":core:database", ":core:vehicle", ":feature:home", ":feature:course")

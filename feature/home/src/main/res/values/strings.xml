@@ -27,4 +27,23 @@
   <string name="brake_released">떼짐</string>
   <string name="reading_unknown">미확인</string>
   <string name="reading_unsupported">미지원</string>
+    <string name="parked_badge">P · 주차 상태 확인됨</string>
+    <string name="preparation_heading">오늘도, 내 힘으로 한 걸음</string>
+    <string name="loading_preparation">준비 내용을 불러오고 있어요…</string>
+    <string name="load_failed">준비 내용을 불러오지 못했어요. 다시 불러온 뒤 이어서 준비해 주세요.</string>
+    <string name="retry">다시 불러오기</string>
+    <string name="first_preparation">첫 연습을 준비해 볼까요?</string>
+    <string name="saved_preparation">준비해 두었어요</string>
+    <string name="preparation_intro">목표와 코스를 고르고, 출발 전에 기억할 내용 하나를 정해요.</string>
+    <string name="preparation_flow">01 목표   →   02 코스   →   03 브리핑</string>
+    <string name="preparation_outdated">저장된 코스 내용이 달라졌어요. 코스와 과제를 다시 선택해 주세요.</string>
+    <string name="demo_course">시연용 코스 · 도로 검토 전</string>
+    <string name="prepare_start">첫 연습 준비하기</string>
+    <string name="prepare_change">목표·코스 바꾸기</string>
+    <string name="today_one">오늘의 과제 하나</string>
+    <string name="one_task_intro">한 번에 하나만 기억해요</string>
+    <string name="one_task_description">브리핑에서 내가 살펴보고 싶은 내용 하나를 고를 수 있어요.</string>
+    <string name="preparation_scope">지금은 준비 내용을 저장하는 단계예요. 실제 경로 안내와 주행 기록은 아직 제공하지 않아요.</string>
+    <string name="diagnostics_show">개발용 차량 상태 보기</string>
+    <string name="diagnostics_hide">개발용 차량 상태 접기</string>
 </resources>

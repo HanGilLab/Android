@@ -1,160 +1,140 @@
 package io.github.hangillab.hangil.feature.home
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Card
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import io.github.hangillab.hangil.core.designsystem.HanGilTheme
-import io.github.hangillab.hangil.core.domain.ConnectionState
-import io.github.hangillab.hangil.core.domain.GearPosition
-import io.github.hangillab.hangil.core.domain.ParkingState
-import io.github.hangillab.hangil.core.domain.TurnSignalState
-import io.github.hangillab.hangil.core.domain.UxRestrictionState
-import io.github.hangillab.hangil.core.domain.VehicleReading
+import io.github.hangillab.hangil.core.designsystem.PracticeBadge
+import io.github.hangillab.hangil.core.designsystem.PracticeColumns
+import io.github.hangillab.hangil.core.designsystem.PracticeLockedNotice
+import io.github.hangillab.hangil.core.designsystem.PracticePage
+import io.github.hangillab.hangil.core.designsystem.PracticePanel
+import io.github.hangillab.hangil.core.domain.Preparation
 
 @Composable
 fun HomeRoute(
+    onPrepare: () -> Unit,
     showDiagnostics: Boolean = false,
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    HomeScreen(state, showDiagnostics)
+    HomeScreen(state, showDiagnostics, { if (viewModel.canPrepare()) onPrepare() }, viewModel::retryLoading)
 }
 
 @Composable
 internal fun HomeScreen(
     state: HomeUiState,
-    showDiagnostics: Boolean = false,
+    showDiagnostics: Boolean,
+    onPrepare: () -> Unit,
+    onRetry: () -> Unit,
 ) {
-    Scaffold { padding ->
-        Column(
-            modifier =
-                Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .verticalScroll(rememberScrollState())
-                    .padding(32.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Text(stringResource(R.string.home_title), style = MaterialTheme.typography.displaySmall)
-            if (state.allowsDetailedInteraction) {
-                Text(stringResource(R.string.home_tagline), style = MaterialTheme.typography.headlineSmall)
-                Text(stringResource(R.string.home_intro), modifier = Modifier.widthIn(max = 720.dp))
-                Spacer(Modifier.height(8.dp))
-            }
-            Card(modifier = Modifier.widthIn(max = 720.dp)) {
-                Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("${stringResource(R.string.connection_vehicle)} · ${connectionLabel(state.vehicle.connection)}")
-                    Text("${stringResource(R.string.connection_navigation)} · ${connectionLabel(state.navigationConnection)}")
-                    val restrictionMessage =
-                        when {
-                            state.allowsDetailedInteraction -> R.string.restriction_allowed
-                            state.vehicle.connection != ConnectionState.CONNECTED -> R.string.restriction_unknown
-                            state.restrictions.parkingState == ParkingState.UNKNOWN ||
-                                state.restrictions.uxRestrictionState == UxRestrictionState.UNKNOWN -> R.string.restriction_unknown
-                            else -> R.string.restriction_locked
+    var diagnosticsExpanded by rememberSaveable { mutableStateOf(false) }
+    PracticePage {
+        Text(stringResource(R.string.home_title), style = MaterialTheme.typography.titleLarge)
+        if (!state.allowsDetailedInteraction) {
+            PracticeLockedNotice()
+        } else {
+            PracticeBadge(stringResource(R.string.parked_badge))
+            Text(stringResource(R.string.preparation_heading), style = MaterialTheme.typography.displaySmall)
+            Text(stringResource(R.string.home_tagline), style = MaterialTheme.typography.headlineSmall)
+            when (val load = state.preparation) {
+                PreparationLoadState.Loading ->
+                    Text(
+                        stringResource(R.string.loading_preparation),
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                PreparationLoadState.Failed ->
+                    PracticePanel {
+                        Text(stringResource(R.string.load_failed), style = MaterialTheme.typography.bodyLarge)
+                        TextButton(onClick = onRetry, modifier = Modifier.heightIn(min = 72.dp)) { Text(stringResource(R.string.retry)) }
+                    }
+                is PreparationLoadState.Loaded -> {
+                    val ready = (load.preparation as? Preparation.Ready)?.practice
+                    PracticeColumns(first = {
+                        PracticePanel {
+                            Text(
+                                stringResource(
+                                    if (ready ==
+                                        null
+                                    ) {
+                                        R.string.first_preparation
+                                    } else {
+                                        R.string.saved_preparation
+                                    },
+                                ),
+                                style = MaterialTheme.typography.headlineMedium,
+                            )
+                            if (ready == null) {
+                                Text(
+                                    stringResource(
+                                        if (load.preparation ==
+                                            Preparation.Outdated
+                                        ) {
+                                            R.string.preparation_outdated
+                                        } else {
+                                            R.string.preparation_intro
+                                        },
+                                    ),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                )
+                                Text(stringResource(R.string.preparation_flow), style = MaterialTheme.typography.titleLarge)
+                            } else {
+                                Text(ready.goal.title, style = MaterialTheme.typography.titleLarge)
+                                Text(ready.course.title, Modifier.testTag("saved_course"), style = MaterialTheme.typography.headlineSmall)
+                                PracticeBadge(stringResource(R.string.demo_course))
+                                Text(ready.course.summary, style = MaterialTheme.typography.bodyLarge)
+                            }
+                            Button(onClick = onPrepare, modifier = Modifier.fillMaxWidth().heightIn(min = 76.dp).testTag("home_prepare")) {
+                                Text(
+                                    stringResource(
+                                        if (ready ==
+                                            null
+                                        ) {
+                                            R.string.prepare_start
+                                        } else {
+                                            R.string.prepare_change
+                                        },
+                                    ),
+                                    style = MaterialTheme.typography.titleLarge,
+                                )
+                            }
                         }
-                    Text(stringResource(restrictionMessage))
+                    }, second = {
+                        PracticePanel {
+                            Text(stringResource(R.string.today_one), style = MaterialTheme.typography.headlineMedium)
+                            Text(
+                                ready?.task?.title ?: stringResource(R.string.one_task_intro),
+                                Modifier.testTag("saved_task"),
+                                style = MaterialTheme.typography.titleLarge,
+                            )
+                            Text(
+                                ready?.task?.description ?: stringResource(R.string.one_task_description),
+                                style = MaterialTheme.typography.bodyLarge,
+                            )
+                        }
+                        Text(stringResource(R.string.preparation_scope), style = MaterialTheme.typography.bodyLarge)
+                    })
                 }
             }
-            if (state.allowsDetailedInteraction) {
-                Text(stringResource(R.string.bootstrap_notice), style = MaterialTheme.typography.bodySmall)
-                if (showDiagnostics) VehicleDiagnostics(state)
+            if (showDiagnostics) {
+                TextButton(onClick = { diagnosticsExpanded = !diagnosticsExpanded }, modifier = Modifier.heightIn(min = 64.dp)) {
+                    Text(stringResource(if (diagnosticsExpanded) R.string.diagnostics_hide else R.string.diagnostics_show))
+                }
+                if (diagnosticsExpanded) VehicleDiagnostics(state)
             }
         }
     }
-}
-
-@Composable
-private fun connectionLabel(state: ConnectionState): String =
-    stringResource(
-        when (state) {
-            ConnectionState.DISCONNECTED -> R.string.connection_disconnected
-            ConnectionState.CONNECTING -> R.string.connection_connecting
-            ConnectionState.CONNECTED -> R.string.connection_connected
-            ConnectionState.UNAVAILABLE -> R.string.connection_unavailable
-            ConnectionState.PERMISSION_DENIED -> R.string.connection_permission_denied
-            ConnectionState.ERROR -> R.string.connection_error
-        },
-    )
-
-@Composable
-private fun VehicleDiagnostics(state: HomeUiState) {
-    Card(modifier = Modifier.widthIn(max = 720.dp)) {
-        Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(stringResource(R.string.vehicle_diagnostics), style = MaterialTheme.typography.titleMedium)
-            Text(
-                stringResource(
-                    R.string.vehicle_gear,
-                    readingLabel(state.vehicle.gear) {
-                        when (it) {
-                            GearPosition.PARK -> "P"
-                            GearPosition.REVERSE -> "R"
-                            GearPosition.NEUTRAL -> "N"
-                            GearPosition.DRIVE -> "D"
-                            GearPosition.OTHER -> stringResource(R.string.gear_other)
-                        }
-                    },
-                ),
-            )
-            Text(
-                stringResource(
-                    R.string.vehicle_turn_signal,
-                    readingLabel(state.vehicle.turnSignal) {
-                        stringResource(
-                            when (it) {
-                                TurnSignalState.OFF -> R.string.turn_signal_off
-                                TurnSignalState.LEFT -> R.string.turn_signal_left
-                                TurnSignalState.RIGHT -> R.string.turn_signal_right
-                            },
-                        )
-                    },
-                ),
-            )
-            Text(
-                stringResource(
-                    R.string.vehicle_brake,
-                    readingLabel(state.vehicle.brakePressed) {
-                        stringResource(if (it) R.string.brake_pressed else R.string.brake_released)
-                    },
-                ),
-            )
-        }
-    }
-}
-
-@Composable
-private fun <T : Any> readingLabel(
-    reading: VehicleReading<T>,
-    label: @Composable (T) -> String,
-): String =
-    when (reading) {
-        is VehicleReading.Available -> label(reading.value)
-        VehicleReading.Unknown -> stringResource(R.string.reading_unknown)
-        VehicleReading.Unsupported -> stringResource(R.string.reading_unsupported)
-        VehicleReading.PermissionDenied -> stringResource(R.string.connection_permission_denied)
-        VehicleReading.Error -> stringResource(R.string.connection_error)
-    }
-
-@Preview(widthDp = 1024, heightDp = 600, showBackground = true)
-@Composable
-private fun HomePreview() {
-    HanGilTheme { HomeScreen(HomeUiState()) }
 }
