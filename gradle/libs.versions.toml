@@ -18,6 +18,7 @@ navigation = "2.9.8"
 robolectric = "4.17"
 androidx-test = "1.7.0"
 androidx-test-junit = "1.3.0"
+maplibre = "13.5.0"
 
 [libraries]
 android-gradlePlugin = { module = "com.android.tools.build:gradle", version.ref = "agp" }
@@ -43,6 +44,7 @@ coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", ve
 junit = { module = "junit:junit", version.ref = "junit" }
 pleos-vehicle = { module = "ai.pleos.playground:Vehicle", version.ref = "pleos-vehicle" }
 pleos-vehicleData = { module = "ai.pleos.playground:vehicle-data", version.ref = "pleos-vehicleData" }
+maplibre-android = { module = "org.maplibre.gl:android-sdk-opengl", version.ref = "maplibre" }
 
 navigation-compose = { module = "androidx.navigation:navigation-compose", version.ref = "navigation" }
 lifecycle-viewmodel-savedstate = { module = "androidx.lifecycle:lifecycle-viewmodel-savedstate", version.ref = "lifecycle" }

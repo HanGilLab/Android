@@ -27,11 +27,18 @@ import io.github.hangillab.hangil.core.domain.Preparation
 @Composable
 fun HomeRoute(
     onPrepare: () -> Unit,
+    onMapPreview: () -> Unit,
     showDiagnostics: Boolean = false,
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    HomeScreen(state, showDiagnostics, { if (viewModel.canPrepare()) onPrepare() }, viewModel::retryLoading)
+    HomeScreen(
+        state,
+        showDiagnostics,
+        { if (viewModel.canPrepare()) onPrepare() },
+        viewModel::retryLoading,
+        { if (viewModel.canViewMap()) onMapPreview() },
+    )
 }
 
 @Composable
@@ -40,6 +47,7 @@ internal fun HomeScreen(
     showDiagnostics: Boolean,
     onPrepare: () -> Unit,
     onRetry: () -> Unit,
+    onMapPreview: () -> Unit,
 ) {
     var diagnosticsExpanded by rememberSaveable { mutableStateOf(false) }
     PracticePage {
@@ -128,6 +136,9 @@ internal fun HomeScreen(
                         Text(stringResource(R.string.preparation_scope), style = MaterialTheme.typography.bodyLarge)
                     })
                 }
+            }
+            TextButton(onClick = onMapPreview, modifier = Modifier.heightIn(min = 72.dp).testTag("home_map")) {
+                Text(stringResource(R.string.map_preview), style = MaterialTheme.typography.titleLarge)
             }
             if (showDiagnostics) {
                 TextButton(onClick = { diagnosticsExpanded = !diagnosticsExpanded }, modifier = Modifier.heightIn(min = 64.dp)) {

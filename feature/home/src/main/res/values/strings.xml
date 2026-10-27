@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="map_preview">시연 지역 지도 살펴보기</string>
   <string name="home_title">한길졸업</string>
   <string name="home_tagline">내가 매일 가야 하는 길 하나부터, 내 힘으로.</string>
   <string name="home_intro">출발 전 준비부터 주차 후 복습까지, 생활 경로 하나를 익히는 연습을 준비하고 있어요.</string>

@@ -52,4 +52,6 @@ class HomeViewModel
         fun retryLoading() {
             if (uiState.value.allowsDetailedInteraction) retry.value += 1
         }
+
+        fun canViewMap(): Boolean = allowsPracticeInteraction(vehicleGateway.state.value, restrictionsProvider.restrictions.value)
     }
