@@ -18,6 +18,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import io.github.hangillab.hangil.core.designsystem.HanGilBrand
 import io.github.hangillab.hangil.core.designsystem.PracticeBadge
 import io.github.hangillab.hangil.core.designsystem.PracticeColumns
 import io.github.hangillab.hangil.core.designsystem.PracticeLockedNotice
@@ -55,14 +56,15 @@ internal fun HomeScreen(
     var diagnosticsExpanded by rememberSaveable { mutableStateOf(false) }
     key(state.allowsDetailedInteraction) {
         PracticePage {
-            Text(
-                stringResource(R.string.home_title),
-                Modifier.testTag("home_locked_title"),
-                style = MaterialTheme.typography.titleLarge,
-            )
             if (!state.allowsDetailedInteraction) {
+                Text(
+                    stringResource(R.string.home_title),
+                    Modifier.testTag("home_locked_title"),
+                    style = MaterialTheme.typography.titleLarge,
+                )
                 PracticeLockedNotice()
             } else {
+                HanGilBrand()
                 PracticeBadge(stringResource(R.string.parked_badge))
                 Text(stringResource(R.string.preparation_heading), style = MaterialTheme.typography.displaySmall)
                 Text(stringResource(R.string.home_tagline), style = MaterialTheme.typography.headlineSmall)
