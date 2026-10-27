@@ -1,6 +1,6 @@
 # Vehicle SDK 오류 원인 구분
 
-- 상태: 진행 중
+- 상태: 완료
 - 요구사항: [공모전 체크리스트 ENV-06](https://app.notion.com/p/40586a7a8f8a800092c1caea490e8a09)
 
 ## 목표와 범위
@@ -21,7 +21,7 @@ Vehicle 2.3.2의 배포 AAR에서는 문서의 `VehicleException/errorCode`가 p
 - [x] 속성·영역 미지원은 Unsupported, 빈 결과는 Unknown이며 값 타입·서비스·기타 오류는 Error다.
 - [x] 표준 SecurityException·UnsupportedOperationException 처리와 기존 잠금 동작을 보존한다.
 - [x] SDK 권한 오류가 신호 콜백으로 전달된 경우 이전 P와 늦은 콜백으로 상세 조작이 다시 열리지 않는다.
-- [ ] 관련 회귀 테스트와 전체 검증·최신 PR CI·Codex 리뷰를 확인한다.
+- [x] 관련 회귀 테스트와 전체 검증·최신 PR CI·Codex 리뷰를 확인한다.
 
 ## 구현 단계
 
@@ -39,7 +39,7 @@ Vehicle 2.3.2의 배포 AAR에서는 문서의 `VehicleException/errorCode`가 p
 | 오류 분류·잠금 회귀 테스트 | 통과 | 실제 배포 SDK 예외를 사용하는 오류 매핑·차량 상태 검사 18개 |
 | SDK 데이터 compile/runtime 의존성 | 통과 | 두 클래스패스의 vehicle-data 해결 버전이 1.1.11로 일치 |
 | `./scripts/verify.sh` | 통과 | JDK 17, 품질·모듈 경계·Lint·테스트 48개·debug·unsigned release |
-| PR CI·Codex 리뷰 | 미확인 | 최신 커밋 결과 확인 |
+| PR CI·Codex 리뷰 | PR에서 추적 | [PR #8](https://github.com/HanGilLab/Android/pull/8)의 최신 검사·리뷰와 미해결 지적 확인 |
 | 실제 권한 거부·미지원·연결 단절 수동 재현 | 미실행 | 이번 수정의 자동 검사와 구분, ENV-06에 유지 |
 
 ## 남은 문제와 인계
