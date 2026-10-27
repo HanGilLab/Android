@@ -15,5 +15,9 @@ internal object DatabaseModule {
     @Provides @Singleton
     fun database(
         @ApplicationContext context: Context,
-    ): PreparationDatabase = Room.databaseBuilder(context, PreparationDatabase::class.java, "hangil.db").build()
+    ): PreparationDatabase =
+        Room
+            .databaseBuilder(context, PreparationDatabase::class.java, "hangil.db")
+            .addMigrations(PreparationMigration1To2)
+            .build()
 }
