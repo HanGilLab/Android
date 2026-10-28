@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="720" height="480" viewBox="0 0 360 240" role="img">
   <title>한길졸업 연습 마무리 장면</title>
-  <desc>민트 길잡이 옆에 덮은 빈 연습 노트와 작은 찻잔을 둔 주차 후 쉼 장식 그림. 졸업이나 운전 능력·안전을 인증하지 않는다.</desc>
+  <desc>민트 길잡이 옆에 덮은 빈 연습 노트와 작은 찻잔을 둔 주차 후 쉼 장식 그림. 졸업이나 운전 능력과 안전을 인증하지 않는다.</desc>
   <!-- Project-authored vector extension of design/brand/hangil-guide.svg. See repository LICENSE (Apache-2.0). No external images or fonts. -->
   <path d="M49,63 C84,35 137,43 171,51 C206,30 261,35 300,54 C328,68 336,109 328,148 C336,179 319,207 278,209 C228,216 185,204 149,207 C105,216 55,214 35,191 C24,170 27,144 29,126 C24,103 27,76 49,63 Z" fill="#FFF6E6" fill-opacity="0.80" stroke="none" />
   <path d="M40,207 C80,196 278,196 320,207 C329,214 284,218 182,218 C80,218 31,214 40,207 Z" fill="#126B59" fill-opacity="0.12" stroke="none" />

@@ -175,7 +175,7 @@ internal class PleosVehicleClient(
     private fun hasPermission(permission: String) = context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
 
     private fun deliver(block: () -> Unit) {
-        // 등록·해제와 초기 조회/콜백의 순서를 메인 스레드에서 직렬화한다.
+        // 등록과 해제, 초기 조회/콜백의 순서를 메인 스레드에서 직렬화한다.
         mainHandler.post {
             if (!closed) {
                 try {

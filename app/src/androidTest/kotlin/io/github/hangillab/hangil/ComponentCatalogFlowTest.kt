@@ -125,7 +125,7 @@ class ComponentCatalogFlowTest {
                 Column {
                     Column(Modifier.padding(horizontal = HanGilSpacing.pageInset, vertical = HanGilSpacing.sm)) {
                         Text("공통 UI 상태 점검", style = MaterialTheme.typography.titleLarge)
-                        Text("표시 예시 · 실제 SDK/저장소 상태 아님", style = MaterialTheme.typography.bodyMedium)
+                        Text("표시 예시, 실제 SDK/저장소 상태 아님", style = MaterialTheme.typography.bodyMedium)
                     }
                     Box(Modifier.weight(1f)) {
                         PracticePage {

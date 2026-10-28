@@ -35,8 +35,8 @@ internal fun VehicleDiagnostics(state: HomeUiState) {
     Card(modifier = Modifier.widthIn(max = HanGilDimensions.diagnosticsMaxWidth)) {
         Column(Modifier.padding(HanGilSpacing.xl), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.xs)) {
             Text(stringResource(R.string.vehicle_diagnostics), style = MaterialTheme.typography.titleMedium)
-            Text("${stringResource(R.string.connection_vehicle)} · ${connectionLabel(state.vehicle.connection)}")
-            Text("${stringResource(R.string.connection_navigation)} · ${connectionLabel(state.navigationConnection)}")
+            Text("${stringResource(R.string.connection_vehicle)}: ${connectionLabel(state.vehicle.connection)}")
+            Text("${stringResource(R.string.connection_navigation)}: ${connectionLabel(state.navigationConnection)}")
             Text(
                 stringResource(
                     R.string.vehicle_gear,
