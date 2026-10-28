@@ -1,7 +1,7 @@
 # Pleos 에뮬레이터와 앱 연결
 
-공식 문서 확인 기준: 2026-10-26 · Pleos Connect Emulator v2.1.0 / API 34.
-아래 터미널 예시는 macOS/Linux의 bash·zsh 기준이다.
+공식 문서 확인 기준: 2026-10-26, Pleos Connect Emulator v2.1.0 / API 34.
+아래 터미널 예시는 macOS/Linux의 bash, zsh 기준이다.
 
 ## 연결 구성과 현재 상태
 
@@ -9,13 +9,13 @@
 |---|---|
 | Pleos Connect Emulator | 차량용 시스템과 앱 실행 |
 | ADB | 대상 에뮬레이터 선택, APK 설치와 포트 연결 |
-| Virtual Console | 브라우저에서 차량 상태·이벤트 변경 |
+| Virtual Console | 브라우저에서 차량 상태, 이벤트 변경 |
 | Pleos SDK | 앱이 차량 상태를 수신하고 내비게이션 등과 연동 |
 
-Pleos 전용 환경에서 APK 실행과 Vehicle SDK 조회·이벤트 수신을 검증했다.
-`core:vehicle`은 기어·방향지시등·브레이크 페달 상태를 읽고, AAOS의 UX 제한을 별도로 확인한다.
+Pleos 전용 환경에서 APK 실행과 Vehicle SDK 조회, 이벤트 수신을 검증했다.
+`core:vehicle`은 기어, 방향지시등과 브레이크 페달 상태를 읽고, AAOS의 UX 제한을 별도로 확인한다.
 P 기어와 UX 제한 해제가 모두 확인된 경우에만 상세 내용을 표시한다.
-홈은 사용자가 직접 누른 연습 시작·종료 시각을 저장한다. 위치·차량 이벤트 수집과 내비게이션 연동은 후속 구현이므로 ‘내비게이션 사용 불가’는 유지된다.
+홈은 사용자가 직접 누른 연습 시작과 종료 시각을 저장한다. 위치, 차량 이벤트 수집과 내비게이션 연동은 후속 구현이므로 ‘내비게이션 사용 불가’는 유지된다.
 
 ## 1. 개발 도구 준비
 
@@ -25,7 +25,7 @@ Android Studio에서 다음 항목을 준비한다.
 - SDK Platforms: **Android API 36** — 이 프로젝트의 컴파일용
 - SDK Tools: **Android SDK Build-Tools 35.0.0**, **Android SDK Platform-Tools**, **Android Emulator**
 
-Gradle 명령은 [JDK 17 선택·검증 안내](jdk17.md)에 따라 실행한다. 기본 Java나 IDE 런타임을 Gradle의 실제 JDK로 추정하지 않는다.
+Gradle 명령은 [JDK 17 선택, 검증 안내](jdk17.md)에 따라 실행한다. 기본 Java나 IDE 런타임을 Gradle의 실제 JDK로 추정하지 않는다.
 
 SDK Manager의 **Android SDK Location**을 확인해 `ANDROID_HOME`에 지정하고
 `platform-tools`를 PATH에 추가한다. 아래 경로는 설치 위치에 맞게 바꾼다.
@@ -48,7 +48,7 @@ Android Studio → **Tools → SDK Manager → SDK Update Sites**에서
 
 | 공식 안내의 OS 구분 | SDK Update Site URL |
 |---|---|
-| macOS · ARM64 이미지 | `https://nexus-playground.pleos.ai/repository/raw-releases/connect-avd/2.x/crp-arm64-sys-img.xml` |
+| macOS, ARM64 이미지 | `https://nexus-playground.pleos.ai/repository/raw-releases/connect-avd/2.x/crp-arm64-sys-img.xml` |
 | Windows / Linux | `https://nexus-playground.pleos.ai/repository/raw-releases/connect-avd/2.x/crp-sys-img.xml` |
 
 **SDK Platforms → Show Package Details → API 34**에서 Pleos Connect 시스템 이미지를 선택해 설치한다.
@@ -105,13 +105,13 @@ adb -s "$PLEOS_SERIAL" shell monkey \
 
 - APK 설치 결과 `Success`
 - 정상 Pleos 앱 목록에서 선택한 한길졸업이 실제 중앙 영역에 표시됨
-- SDK 연결 시 ‘차량 연결됨’, 미지원·권한 누락·연결 실패 시 해당 상태 표시
+- SDK 연결 시 ‘차량 연결됨’, 미지원, 권한 누락, 연결 실패 시 해당 상태 표시
 - P 기어와 UX 제한 해제가 모두 확인되면 상세 내용 표시, 그 외에는 잠금 안내
-- debug APK에서만 주차·UX 허용 시 개발용 차량 상태 표시
+- debug APK에서만 주차와 UX 허용 시 개발용 차량 상태 표시
 
 LAUNCHER 실행은 [공식 Pleos ADB 안내](https://document.pleos.ai/en/docs/pleos-only/vehicle-app-developer-guide/adb-command-reference-guide)에 따른다.
-직접 `am start -n` 실행이 전체 배경에 앱 창을 만들거나 기본 내비·카메라가 전면에 남을 수 있으므로 실제 앱 목록에서 한길졸업을 선택해 중앙 창의 배치·가시성·그리기를 확인한다.
-빈 UI 계층·종료 코드·native 활성 패키지만으로 화면 성공/실패를 추정하지 않는다. 전환 중 캡처를 다시 확인하며 GNB를 반복해서 눌러 앱을 숨기지 않도록 한다.
+직접 `am start -n` 실행이 전체 배경에 앱 창을 만들거나 기본 내비, 카메라가 전면에 남을 수 있으므로 실제 앱 목록에서 한길졸업을 선택해 중앙 창의 배치, 가시성, 그리기를 확인한다.
+빈 UI 계층, 종료 코드, native 활성 패키지만으로 화면 성공/실패를 추정하지 않는다. 전환 중 캡처를 다시 확인하며 GNB를 반복해서 눌러 앱을 숨기지 않도록 한다.
 
 debug 패키지명은 `io.github.hangillab.hangil.debug`이고 Activity 클래스에는 `.debug`가 붙지 않는다.
 `install -r`은 기존 앱을 업데이트한다. [ADB 앱 설치 안내](https://developer.android.com/tools/adb#move)
@@ -145,28 +145,28 @@ adb -s "$PLEOS_SERIAL" forward --no-rebind tcp:18088 tcp:8088
 ## 7. 차량 상황 재현과 앱 확인
 
 Virtual Console → **Emulation Controls**에서 Domain과 카드를 골라 값을 변경한다.
-아래 항목은 콘솔 제공 기능이며, 앱에서의 수신 가능 여부는 SDK 지원·권한을 별도로 확인한다.
+아래 항목은 콘솔 제공 기능이며, 앱에서의 수신 가능 여부는 SDK 지원, 권한을 별도로 확인한다.
 [공식 콘솔 사용 안내](https://document.pleos.ai/docs/pleos-only/app-test-guide/virtual-console-guide)
 
 | Domain / 카드 | 재현할 상태 |
 |---|---|
-| Motion / Gear Selection | P·R·N·D |
+| Motion / Gear Selection | P, R, N, D |
 | Motion / Brake Pedal | 브레이크 페달 위치 |
 | Motion / Steering Angle | 핸들 각도 |
 | Convenience / Turn Signal State | 방향지시등 상태 |
 | Safety / Telltales | 지원되는 차량 경고등 |
 
-기어·방향지시등·브레이크는 앱까지 이어서 확인할 수 있다. 조향각 수신과 차량 이벤트의 세션 수집은 후속 작업이다.
+기어, 방향지시등과 브레이크는 앱까지 이어서 확인할 수 있다. 조향각 수신과 차량 이벤트의 세션 수집은 후속 작업이다.
 사용자의 버튼 조작 시각을 저장하는 기능은 [세션 안내](practice-sessions.md)와 구분한다.
 debug APK의 개발용 상태는 주차 및 UX 허용이 확인된 경우에만 표시된다.
 
 | 시나리오 | 앱의 기대 동작 |
 |---|---|
 | SDK 연결 성공 | 실제 연결 결과에 따라 차량 연결 상태 변경 |
-| 기어 D 또는 UX 제한 활성 | 상세 입력·복습 조작 잠금 |
+| 기어 D 또는 UX 제한 활성 | 상세 입력, 복습 조작 잠금 |
 | 주차 확인 + UX 제한 해제 확인 | 두 조건이 모두 확인된 경우에만 상세 조작 허용 |
-| 연결 끊김·상태 미확인 | 상세 조작 잠금 유지 |
-| 방향지시등·브레이크 변경 | SDK 콜백 값 표시, 누락·미지원·수신 오류 구분 |
+| 연결 끊김, 상태 미확인 | 상세 조작 잠금 유지 |
+| 방향지시등과 브레이크 변경 | SDK 콜백 값 표시, 누락, 미지원, 수신 오류 구분 |
 
 Vehicle SDK 2.3.2는 공개 연결 상태 콜백이 없어 현재 기어를 1초 간격으로 조회한다.
 호출 실패 또는 최대 3초의 응답 대기 초과를 감지하면 이전 값을 지우고 잠근 뒤 재연결한다.
@@ -174,7 +174,7 @@ Vehicle SDK 2.3.2는 공개 연결 상태 콜백이 없어 현재 기어를 1초
 
 구현 위치는 `core:vehicle`, 앱에 제공할 계약은 `core:domain`에서 관리한다.
 콘솔의 페달 위치가 앱에도 같은 단위로 제공된다고 가정하지 않는다.
-코스·위치·내비 연동과 SDK 입력의 세션 수집은 해당 API 확인 및 기능 구현이 별도로 필요하다.
+코스, 위치, 내비 연동과 SDK 입력의 세션 수집은 해당 API 확인 및 기능 구현이 별도로 필요하다.
 
 ## 8. 문제 해결과 연결 종료
 
@@ -183,9 +183,9 @@ Vehicle SDK 2.3.2는 공개 연결 상태 콜백이 없어 현재 기어를 1초
 | `adb`를 찾을 수 없음 | Platform-Tools 설치와 PATH 확인 |
 | 장치가 없거나 `offline` | Device Manager의 Pleos AVD 부팅 상태와 Cold boot 확인 후 목록 재조회 |
 | `more than one device/emulator` | SERIAL을 다시 선택하고 장치 명령에 `-s` 지정 |
-| 콘솔 접속 실패 | v2.1.0 이상 이미지 → 부팅 완료 → 포워딩의 SERIAL·포트 → 브라우저 주소 확인 |
+| 콘솔 접속 실패 | v2.1.0 이상 이미지 → 부팅 완료 → 포워딩의 SERIAL, 포트 → 브라우저 주소 확인 |
 | `cannot rebind` 또는 포트 사용 중 | 포워딩 목록 확인, 이미 맞는 연결을 사용하거나 대체 PC 포트 선택 |
-| 콘솔 값은 변하지만 앱은 미연결 | Pleos 시스템 이미지·차량 SDK 서비스·앱의 조회 권한과 재연결 상태 확인 |
+| 콘솔 값은 변하지만 앱은 미연결 | Pleos 시스템 이미지, 차량 SDK 서비스, 앱의 조회 권한과 재연결 상태 확인 |
 
 작업이 끝나면 자신이 만든 포워딩을 목록에서 확인한 뒤 해당 포트만 제거한다.
 
@@ -204,5 +204,5 @@ adb -s "$PLEOS_SERIAL" forward --remove tcp:8088
 - [ ] 해당 장치에 debug APK를 설치하고 초기 화면을 실행했다.
 - [ ] 선택한 장치의 8088 서비스로 포워딩하고 Virtual Console에 접속했다.
 - [ ] 콘솔에서 차량 상태 변경을 확인했다.
-- [ ] 실제 SDK 수신값과 미확인·미지원 상태를 구분했다.
+- [ ] 실제 SDK 수신값과 미확인, 미지원 상태를 구분했다.
 - [ ] 작업 후 생성한 포워딩과 AVD를 정리했다.
