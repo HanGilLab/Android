@@ -1,7 +1,7 @@
 # Pleos 마지막 위치 1회 조회 검증
 
 - 상태: 진행 중
-- 요구사항: [공모전 체크리스트 MAP-01](https://app.notion.com/p/40586a7a8f8a800092c1caea490e8a09)
+- 요구사항: 공모전 체크리스트 MAP-01 (비공개 작업 명세)
 
 ## 목표와 범위
 
@@ -57,3 +57,9 @@ SDK 내부 retry coroutine 자체 취소와 앱에서 실제 플랫폼 재바인
 - [권한](https://document.pleos.ai/docs/pleos-only/connect-sdk-pleos/FusedLocation/declaring-permissions)
 - [수명주기](https://document.pleos.ai/docs/pleos-only/connect-sdk-pleos/FusedLocation/initialization-and-release)
 - [마지막 위치 의미](https://document.pleos.ai/docs/pleos-only/connect-sdk-pleos/FusedLocation/location-data-access)
+
+## 동의 후 실제 SDK 검증 재개
+
+- 전용 에뮬레이터의 이번 debug 앱 검증에 한해 임시 위치 권한을 허용한다는 사용자 동의를 받았다. 검증 후 원래 상태로 회수한다.
+- 최신 main을 통합하고 실제 응답·빠른 이탈/재시도·재생성 검사를 보강한다. LastKnown/Empty 중 관찰한 실제 응답만 기록하며 지연 callback을 강제로 재현한 것으로 확대하지 않는다.
+- 캡처 전 네이티브 전면 패키지 근거와 실제 중앙 앱 화면을 확인하고 원본 좌표·사용자별 환경·원문 로그는 공개하지 않는다. 기존 준비/세션 데이터는 보존한다.
