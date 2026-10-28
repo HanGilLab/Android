@@ -34,7 +34,15 @@ bind가 false이거나 예외여도 생성된 dispatcher를 정리하며 이미 
 전용 AVD와 P+UX 허용 상태에서 아래 시나리오를 개별 실행한다. 권한을 자동 부여하는 테스트는 없다.
 현재 DB v2의 준비·세션 데이터를 보존하려면 main의 마이그레이션을 포함한 APK를 사용한다. v1 전용 과거 APK로 되돌리거나 데이터를 지우지 않는다.
 권한이 없는 상태에서 `missingPermissionIsExplicitAndRecreationClearsTheProbe`, 사용자가 권한을 허용한 뒤 `grantedPermissionIdentifiesTheActualSdkResponse`를 실행한다.
-위치 1건 수신과 Empty 응답은 각각 기록하며, 건너뛴 검사를 통과로 취급하지 않는다.
+이어 `grantedReadThenLeaveAndRetryUsesFreshUiState`로 읽기 직후 이탈·재진입·재시도를,
+`grantedResponseThenRecreationReturnsIdleWithoutAutomaticQuery`로 응답 후 재생성의 초기 상태를 확인한다.
+위치 1건 수신과 Empty 응답은 관찰한 결과만 각각 기록하며, 건너뛴 검사를 통과로 취급하지 않는다.
+이탈 직전 로딩 상태 관찰은 늦은 SDK 콜백을 강제로 재현했다는 뜻이 아니다.
+
+이번 검증만을 위해 외부에서 임시 권한을 부여했다면 시스템 권한 대화상자·결과 콜백의 실기 검증과 구분한다.
+검증 후 임시 권한을 회수하고 실제 권한 상태를 다시 읽은 뒤 미허용 시나리오를 다시 실행한다.
+DB 스키마·기존 준비/세션의 전체 행·원래 설정·다른 권한 상태도 전후 대조한다.
+전면 패키지 확인만으로 중앙 앱이 보인다고 판단하지 않고 실제 전체 캡처를 함께 확인한다.
 
 ```sh
 adb -s "$PLEOS_SERIAL" shell am instrument -w -e class \
