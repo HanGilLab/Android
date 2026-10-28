@@ -7,6 +7,7 @@ cd "$ROOT_DIR"
 GRADLE=("$ROOT_DIR/gradlew" --no-daemon --console=plain)
 
 quality() {
+  python3 "$ROOT_DIR/scripts/check-public-content.py"
   "${GRADLE[@]}" spotlessCheck checkModuleBoundaries lintDebug
 }
 

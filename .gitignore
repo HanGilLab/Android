@@ -62,3 +62,13 @@ dist/
 # Keep the Gradle Wrapper and reviewed database schema history
 !gradle/wrapper/gradle-wrapper.jar
 !**/schemas/*.json
+
+# Private local validation, personal data and crash diagnostics
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+hs_err_pid*
+replay_pid*
+private/

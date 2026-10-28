@@ -1,7 +1,7 @@
 # Vehicle SDK 오류 원인 구분
 
 - 상태: 완료
-- 요구사항: [공모전 체크리스트 ENV-06](PRIVATE_PLANNING_REFERENCE)
+- 요구사항: 공모전 체크리스트 ENV-06 (비공개 작업 명세)
 
 ## 목표와 범위
 
