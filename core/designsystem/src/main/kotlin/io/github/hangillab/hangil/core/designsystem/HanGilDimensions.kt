@@ -8,6 +8,8 @@ object HanGilDimensions {
     val primaryActionMinHeight = 76.dp
     val secondaryActionMinHeight = 72.dp
     val compactActionMinHeight = 64.dp
+    val actionMinWidth = 64.dp
+    val loadingIndicatorSize = 40.dp
     val choiceMinHeight = 120.dp
     val diagnosticsMaxWidth = 720.dp
     val brandMarkSize = 88.dp
