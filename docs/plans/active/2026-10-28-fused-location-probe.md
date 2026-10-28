@@ -1,0 +1,65 @@
+# Pleos 마지막 위치 1회 조회 검증
+
+- 상태: 진행 중
+- 요구사항: 공모전 체크리스트 MAP-01 (비공개 작업 명세)
+
+## 목표와 범위
+
+주차와 UX 허용 상태에서 사용자가 요청한 경우에만 Pleos FusedLocation의 마지막 위치를 한 번 조회한다.
+연속·백그라운드 위치 수집, 현재 위치 보장, 코스 좌표·실제 경로 안내는 이번 범위에 포함하지 않는다.
+마지막 위치·빈 결과·미지원·권한 거부·시간 초과·오류를 구분하고 원본 SDK 시각·신뢰도의 기준을 임의 추정하지 않는다.
+기존 고정 시연 지도와 SDK 입력을 분리하고 좌표 원문은 공개 로그·캡처에 노출하지 않는다.
+
+## 완료 조건
+
+- [x] 순수 domain 계약과 core:vehicle의 실제 FusedLocation 1.1.3 어댑터를 연결한다.
+- [x] null·권한 거부·미지원·오류·시간 초과를 0 좌표나 정상 상태로 대체하지 않는다.
+- [x] 취소·시간 초과·화면 이탈 뒤 늦은 SDK 재바인딩과 callback 전달을 차단하고 정리한다.
+- [ ] 주차·UX 동시 확인과 사용자 버튼·시스템 권한 결과에 따라 1회 조회하며 반복·늦은 결과를 차단한다.
+- [ ] 관련 자동 검사·전체 검증·실제 Pleos 시나리오와 최신 PR CI·리뷰를 확인한다.
+
+## 구현 단계
+
+1. 한국어 최신 가이드·공식 metadata·실제 AAR ABI와 설치된 서비스/권한을 확인한다.
+2. 마지막 위치 계약·단일 조회·SDK 수명주기 경계와 회귀 검사를 추가한다.
+3. 주차 화면의 개발 확인 UI와 사용자 권한 요청을 연결한다. 사용자 동의 없이 권한을 자동 부여하지 않는다.
+4. JDK 17 자동 검사 후 실제 장치의 권한 거부·정상/빈 결과·취소·빠른 재진입을 구분해 기록한다.
+
+## 검증 결과
+
+| 명령 또는 시나리오 | 결과 | 근거 |
+|---|---|---|
+| 공식 SDK 버전·AAR | 확인 | 한국어 가이드·metadata 1.1.3, 공식 SHA-256 일치·공개 ABI 확인. 영문 1.1.2 표기와 구분 |
+| Pleos 서비스·권한 정의 | 확인 | 실제 AVD 서비스 1.0.0 설치, FUSED_LOCATION dangerous. 설치만으로 연결·입력 성공을 선언하지 않음 |
+| SDK release 이후 내부 재연결 | 위험 경로 확인·실기 미재현 | 1.1.3 sources·bytecode에서 retry Job 미보관 및 release의 Job 취소 없음. 앱의 바인딩 경계로 대응 |
+| 전체 자동 검사 최초 실행 | 실패 후 수정 | 취소와 정리 중 실패가 겹치면 coroutine 복구 예외에만 근거가 붙고 원래 취소 원인에서 유실되는 회귀 1개 발견 |
+| 취소·정리 실패 보존 재검증 | 통과 | 원래 caller 취소 원인과 await 예외 인과관계에 정리 실패가 유지되는 검사 8개 |
+| 최초 위치 브랜치 `./scripts/verify.sh` | 통과 | JDK 17.0.9, 품질·모듈 경계·Lint·자동 검사 87개(실패·오류·건너뜀 0), debug·unsigned release |
+| UI 검증용 테스트 APK 빌드 | 통과 | 최종 source의 assembleDebugAndroidTest 성공 |
+| 실제 권한 미허용·화면 재생성 | 통과 | 실제 AVD에서 명시적 미허용 상태·권한 버튼·자동 권한 요청 없음, 재생성 후 Idle 복귀. UI 시나리오 1개와 캡처 확인 |
+| 권한 허용 이후 실제 SDK 수신·취소 | 미실행 | 사용자 동의 전 권한을 자동 부여하지 않음. 미실행을 SDK 미지원·정상 입력으로 대체하지 않음 |
+| 최초 위치 커밋 CI·Codex 리뷰 | 통과 | PR #10의 a232b11081 필수 CI 4개와 Codex 리뷰 지적 없음. 실제 SDK 수신 미실행으로 병합하지 않음 |
+| DB v2·세션·브랜드 main 통합 | 검증 통과·동의 대기 | PR #11·12가 병합된 main을 통합. JDK 17 전체 검사 115개(실패/오류/건너뜀 0)·debug/unsigned release·계측 빌드 통과. 실제 권한 미허용/자동 요청 없음/재생성 UI 1개 재실행 통과·건너뜀 없음. DB v2·기존 준비와 종료 세션 3개 동일. 권한 허용 이후 SDK 입력은 미실행 |
+
+## 남은 문제와 인계
+
+confidence의 단위·범위 및 timestampMillis의 시간 기준은 공식 문서·sources에서 정의되지 않았다.
+신뢰도를 m·%로 변환하거나 SDK 시각을 현재 epoch와 차감해 최신 위치로 표시하지 않는다.
+SDK 내부 retry coroutine 자체 취소와 앱에서 실제 플랫폼 재바인딩을 막는 것은 구분한다.
+20초 제한은 이미 시작된 동기 Binder 호출을 강제 중단한다는 보장이 아니다.
+지도 렌더링은 PR #9에서 검증·병합했으며 MAP-01 전체는 위치 입력의 실제 결과까지 확인한 뒤 판단한다.
+실제 AVD DB는 세션 기능 검증으로 v2가 되었다. v1 전용 과거 APK로 되돌리거나 DB를 삭제하지 않고 최신 main이 포함된 호환 후보로 검증한다.
+사용자에게 요청한 전용 AVD 임시 FusedLocation 권한 허용 질문은 답변 대기 상태다. 이번 main 통합은 권한 부여·SDK 실제 입력 성공·PR 병합을 뜻하지 않는다.
+
+## 공식 근거
+
+- [FusedLocation 설치](https://document.pleos.ai/docs/pleos-only/connect-sdk-pleos/FusedLocation/project-setup)
+- [권한](https://document.pleos.ai/docs/pleos-only/connect-sdk-pleos/FusedLocation/declaring-permissions)
+- [수명주기](https://document.pleos.ai/docs/pleos-only/connect-sdk-pleos/FusedLocation/initialization-and-release)
+- [마지막 위치 의미](https://document.pleos.ai/docs/pleos-only/connect-sdk-pleos/FusedLocation/location-data-access)
+
+## 동의 후 실제 SDK 검증 재개
+
+- 전용 에뮬레이터의 이번 debug 앱 검증에 한해 임시 위치 권한을 허용한다는 사용자 동의를 받았다. 검증 후 원래 상태로 회수한다.
+- 최신 main을 통합하고 실제 응답·빠른 이탈/재시도·재생성 검사를 보강한다. LastKnown/Empty 중 관찰한 실제 응답만 기록하며 지연 callback을 강제로 재현한 것으로 확대하지 않는다.
+- 캡처 전 네이티브 전면 패키지 근거와 실제 중앙 앱 화면을 확인하고 원본 좌표·사용자별 환경·원문 로그는 공개하지 않는다. 기존 준비/세션 데이터는 보존한다.
