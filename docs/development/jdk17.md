@@ -52,3 +52,10 @@ Android Studio의 **Gradle JDK**는 IDE에서 별도로 확인한다. 명령줄 
 - [Archive 설치·무결성](https://adoptium.net/installation/archives)
 - [GPG 검증](https://adoptium.net/installation/ci-scripts)
 - [AArch64 C1 수정 기록](https://bugs.openjdk.org/browse/JDK-8354685)
+
+## 프로젝트 Gradle daemon 기준
+
+`gradle/gradle-daemon-jvm.properties`는 Java 17을 요구한다. 이 기준은 Gradle daemon에서 `JAVA_HOME`보다 우선하므로 IDE가 생성한 Java 21 설정을 그대로 커밋하지 않는다.
+기존 로컬 JDK를 삭제하지 않으며 명령줄에서는 위의 JDK 17 선택과 버전 확인을 유지한다.
+설정 단계의 Foojay resolver 플러그인은 `settings.gradle.kts`에서 버전을 고정한다. Gradle settings 단계는 프로젝트 Version Catalog 생성보다 앞서므로 이 부트스트랩 플러그인은 settings에서 관리한다.
+호환 JDK 17을 먼저 설치해야 한다. 이 daemon 기준 파일에는 다운로드 URL이 없어 daemon 부트스트랩을 자동 설치하지 않는다. Foojay는 프로젝트 toolchain용 resolver이며 설치 경로·인증정보·사용자별 SDK/IDE 설정은 공유하지 않는다. 별도 `-p build-logic check`에도 명령별 `JAVA_HOME` 선택을 유지한다.

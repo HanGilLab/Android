@@ -1,7 +1,7 @@
 # JDK 17 런타임 안정화
 
 - 상태: 검증 대기
-- 요구사항: [공모전 체크리스트 ENV-09](https://app.notion.com/p/40586a7a8f8a800092c1caea490e8a09)
+- 요구사항: 비공개 공모전 체크리스트 ENV-09
 
 ## 목표와 범위
 
@@ -45,7 +45,7 @@ JDK 17.0.9 arm64의 C1 치명 오류로 전체 검증이 세 번 종료된 환�
 이번 실행의 통과를 모든 호스트·모든 JVM 경로의 안정성 보장으로 확대하지 않는다.
 Android Studio의 실제 Gradle JDK 선택은 IDE에서 확인하기 전까지 명령줄 검증과 구분한다.
 Pleos 실행 안내의 LAUNCHER/중앙 창 확인은 이전 PR #13의 실제 검증 근거를 반영한 문서 정합 수정이며 이번 JDK 작업의 신규 UI 검증이 아니다.
-위치 PR #10은 현재 커밋의 리뷰·CI 완료와 별개로 사용자 권한 동의/실제 SDK 검증을 계속 기다린다. 권한을 자동 부여하거나 병합하지 않는다.
+위치 PR #10은 전용 에뮬레이터의 이번 검증에 한해 사용자 동의를 받았다. 실제 SDK 검증과 검증 후 임시 권한 회수를 완료하기 전에는 검증 성공으로 기록하지 않는다.
 
 ## 공식 근거
 
@@ -53,3 +53,11 @@ Pleos 실행 안내의 LAUNCHER/중앙 창 확인은 이전 PR #13의 실제 검
 - [Archive 구조·무결성 안내](https://adoptium.net/installation/archives)
 - [GPG 검증 안내](https://adoptium.net/installation/ci-scripts)
 - [OpenJDK C1 backport](https://bugs.openjdk.org/browse/JDK-8354685)
+
+## 사용자 변경 보존·daemon Java 기준 정합
+
+- 사용자 요청으로 main의 미커밋 resolver 설정과 daemon 기준 파일을 이 JDK 작업 브랜치로 옮겼다. 원본은 비공개 로컬 백업에 보존했다.
+- 생성 파일의 Java 21 강제 기준을 프로젝트 요구인 Java 17로 수정했다. 사용자별 다운로드 URL·vendor 고정은 제거하고 기존 호환 JDK 탐색을 유지한다.
+- 최신 main을 통합했다. 전체 검사와 실제 daemon Java 버전 확인은 새 커밋에서 다시 수행하며 과거 성공으로 대체하지 않는다.
+
+- 갱신 검증: JDK 17에서 전체 공식 검사 4단계·단위 96개(실패/오류/건너뜀 0)·debug/unsigned release가 통과했다. 설치된 Java 17 daemon 기준을 확인했다. 독립 코드 검토에서 daemon 부트스트랩 자동 설치로 오인할 수 있던 문구를 수정했다. 새 커밋의 필수 CI·PR 리뷰는 별도로 확인한다.
