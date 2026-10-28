@@ -23,13 +23,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import io.github.hangillab.hangil.core.designsystem.HanGilBrand
+import io.github.hangillab.hangil.core.designsystem.HanGilDimensions
+import io.github.hangillab.hangil.core.designsystem.HanGilSpacing
 import io.github.hangillab.hangil.core.designsystem.PracticeBadge
 import io.github.hangillab.hangil.core.designsystem.PracticeChoice
 import io.github.hangillab.hangil.core.designsystem.PracticeColumns
@@ -81,7 +82,11 @@ internal fun CourseScreen(
             } else {
                 Text(stringResource(R.string.course_brand), Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
             }
-            TextButton(onClick = onBack, modifier = Modifier.heightIn(min = 64.dp), enabled = !state.saving) {
+            TextButton(
+                onClick = onBack,
+                modifier = Modifier.heightIn(min = HanGilDimensions.compactActionMinHeight),
+                enabled = !state.saving,
+            ) {
                 Text(stringResource(R.string.course_back), style = MaterialTheme.typography.titleMedium)
             }
         }
@@ -106,7 +111,7 @@ internal fun CourseScreen(
             when (state.step) {
                 PreparationStep.GOAL -> {
                     Text(stringResource(R.string.goal_intro), style = MaterialTheme.typography.bodyLarge)
-                    Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.md)) {
                         state.goals.forEach { goal ->
                             PracticeChoice(
                                 goal.title,
@@ -120,7 +125,7 @@ internal fun CourseScreen(
                 }
                 PreparationStep.COURSE -> {
                     DemoNotice()
-                    Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.md)) {
                         state.courses.forEach { course ->
                             PracticeChoice(course.title, course.summary, state.course?.id == course.id, {
                                 onCourse(course.id)
@@ -136,7 +141,10 @@ internal fun CourseScreen(
                                 Text(course.title, style = MaterialTheme.typography.headlineMedium)
                                 Text(course.summary, style = MaterialTheme.typography.bodyLarge)
                                 course.sections.forEachIndexed { index, section ->
-                                    Row(Modifier.padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                                    Row(
+                                        Modifier.padding(vertical = HanGilSpacing.xs),
+                                        horizontalArrangement = Arrangement.spacedBy(HanGilSpacing.lg),
+                                    ) {
                                         Text(
                                             "0${index + 1}",
                                             color = MaterialTheme.colorScheme.primary,
@@ -149,7 +157,7 @@ internal fun CourseScreen(
                         }, second = {
                             Text(stringResource(R.string.task_title), style = MaterialTheme.typography.headlineSmall)
                             Text(stringResource(R.string.task_intro), style = MaterialTheme.typography.bodyLarge)
-                            Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                            Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.md)) {
                                 course.tasks.forEach { task ->
                                     PracticeChoice(
                                         task.title,
@@ -174,7 +182,7 @@ internal fun CourseScreen(
             Button(
                 onClick = onNext,
                 enabled = state.canContinue,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 76.dp).testTag("preparation_next"),
+                modifier = Modifier.fillMaxWidth().heightIn(min = HanGilDimensions.primaryActionMinHeight).testTag("preparation_next"),
             ) {
                 Text(
                     stringResource(

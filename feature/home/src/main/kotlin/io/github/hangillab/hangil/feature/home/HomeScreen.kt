@@ -1,8 +1,6 @@
 package io.github.hangillab.hangil.feature.home
 
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -15,10 +13,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.hangillab.hangil.core.designsystem.HanGilBrand
+import io.github.hangillab.hangil.core.designsystem.HanGilDimensions
 import io.github.hangillab.hangil.core.designsystem.PracticeBadge
 import io.github.hangillab.hangil.core.designsystem.PracticeColumns
 import io.github.hangillab.hangil.core.designsystem.PracticeLockedNotice
@@ -37,10 +35,14 @@ fun HomeRoute(
     HomeScreen(
         state,
         showDiagnostics,
-        { if (viewModel.canPrepare()) onPrepare() },
         viewModel::retryLoading,
         { if (viewModel.canViewMap()) onMapPreview() },
-        { SessionRoute() },
+        {
+            SessionRoute(
+                onPrepare = { if (viewModel.canPrepare()) onPrepare() },
+                canPrepare = state.preparation is PreparationLoadState.Loaded,
+            )
+        },
     )
 }
 
@@ -48,7 +50,6 @@ fun HomeRoute(
 internal fun HomeScreen(
     state: HomeUiState,
     showDiagnostics: Boolean,
-    onPrepare: () -> Unit,
     onRetry: () -> Unit,
     onMapPreview: () -> Unit,
     sessionContent: @Composable () -> Unit,
@@ -68,6 +69,7 @@ internal fun HomeScreen(
                 PracticeBadge(stringResource(R.string.parked_badge))
                 Text(stringResource(R.string.preparation_heading), style = MaterialTheme.typography.displaySmall)
                 Text(stringResource(R.string.home_tagline), style = MaterialTheme.typography.headlineSmall)
+                sessionContent()
                 when (val load = state.preparation) {
                     PreparationLoadState.Loading ->
                         Text(
@@ -79,7 +81,7 @@ internal fun HomeScreen(
                             Text(stringResource(R.string.load_failed), style = MaterialTheme.typography.bodyLarge)
                             TextButton(
                                 onClick = onRetry,
-                                modifier = Modifier.heightIn(min = 72.dp),
+                                modifier = Modifier.heightIn(min = HanGilDimensions.secondaryActionMinHeight),
                             ) { Text(stringResource(R.string.retry)) }
                         }
                     is PreparationLoadState.Loaded -> {
@@ -122,23 +124,6 @@ internal fun HomeScreen(
                                     PracticeBadge(stringResource(R.string.demo_course))
                                     Text(ready.course.summary, style = MaterialTheme.typography.bodyLarge)
                                 }
-                                Button(
-                                    onClick = onPrepare,
-                                    modifier = Modifier.fillMaxWidth().heightIn(min = 76.dp).testTag("home_prepare"),
-                                ) {
-                                    Text(
-                                        stringResource(
-                                            if (ready ==
-                                                null
-                                            ) {
-                                                R.string.prepare_start
-                                            } else {
-                                                R.string.prepare_change
-                                            },
-                                        ),
-                                        style = MaterialTheme.typography.titleLarge,
-                                    )
-                                }
                             }
                         }, second = {
                             PracticePanel {
@@ -157,12 +142,17 @@ internal fun HomeScreen(
                         })
                     }
                 }
-                sessionContent()
-                TextButton(onClick = onMapPreview, modifier = Modifier.heightIn(min = 72.dp).testTag("home_map")) {
+                TextButton(
+                    onClick = onMapPreview,
+                    modifier = Modifier.heightIn(min = HanGilDimensions.secondaryActionMinHeight).testTag("home_map"),
+                ) {
                     Text(stringResource(R.string.map_preview), style = MaterialTheme.typography.titleLarge)
                 }
                 if (showDiagnostics) {
-                    TextButton(onClick = { diagnosticsExpanded = !diagnosticsExpanded }, modifier = Modifier.heightIn(min = 64.dp)) {
+                    TextButton(
+                        onClick = { diagnosticsExpanded = !diagnosticsExpanded },
+                        modifier = Modifier.heightIn(min = HanGilDimensions.compactActionMinHeight),
+                    ) {
                         Text(stringResource(if (diagnosticsExpanded) R.string.diagnostics_hide else R.string.diagnostics_show))
                     }
                     if (diagnosticsExpanded) VehicleDiagnostics(state)

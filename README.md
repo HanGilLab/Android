@@ -12,7 +12,7 @@
 - Kotlin · Jetpack Compose · Material 3
 - Hilt · Room · KSP
 - ViewModel · StateFlow
-- JDK 17 · Gradle 8.13 · AGP 8.11.1
+- JDK 17 · Gradle 8.13 · AGP 8.11.1 ([JDK 선택·검증](docs/development/jdk17.md))
 - Android SDK: min 28 / compile 36 / target 34
 
 ## 프로젝트 구조
@@ -30,11 +30,14 @@
 
 ## 실행과 검증
 
-Android Studio에서 JDK 17과 Android SDK Platform 36을 설정한 뒤 실행합니다.
+Android Studio에서 JDK 17과 Android SDK Platform 36을 설정합니다.
+터미널은 IDE 설정과 별도로 [JDK 17을 선택](docs/development/jdk17.md)해야 합니다. 아래는 macOS 예시이며, Linux에서는 설치한 JDK 17 홈을 `HANGIL_JDK17`에 지정합니다.
 
 ```bash
-./gradlew :app:assembleDebug
-./scripts/verify.sh
+HANGIL_JDK17="$(/usr/libexec/java_home -v 17 -F)" || exit 1
+JAVA_HOME="$HANGIL_JDK17" "$HANGIL_JDK17/bin/java" -version
+JAVA_HOME="$HANGIL_JDK17" ./gradlew :app:assembleDebug
+JAVA_HOME="$HANGIL_JDK17" ./scripts/verify.sh
 ```
 
 기능 단위 작업 계획 → 구현 → 검증 → PR → Codex 리뷰 → 수정 순서로 개발합니다.
