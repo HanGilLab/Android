@@ -33,7 +33,7 @@
     <string name="loading_preparation">준비 내용을 불러오고 있어요…</string>
     <string name="load_failed">준비 내용을 불러오지 못했어요. 다시 불러온 뒤 이어서 준비해 주세요.</string>
     <string name="retry">다시 불러오기</string>
-    <string name="first_preparation">첫 연습을 준비해 볼까요?</string>
+    <string name="first_preparation">연습할 목표·코스를 골라요</string>
     <string name="saved_preparation">준비해 두었어요</string>
     <string name="preparation_intro">목표와 코스를 고르고, 출발 전에 기억할 내용 하나를 정해요.</string>
     <string name="preparation_flow">01 목표   →   02 코스   →   03 브리핑</string>
@@ -71,4 +71,17 @@
     <string name="session_save_failed">저장을 확인하지 못했어요. 기기 저장 공간을 확인하고 같은 동작을 다시 시도해 주세요.</string>
     <string name="diagnostics_show">개발용 차량 상태 보기</string>
     <string name="diagnostics_hide">개발용 차량 상태 접기</string>
+    <string name="journey_first">첫 연습, 여기서 시작해요</string>
+    <string name="journey_prepare_after_history">다음 연습의 목표·코스를 골라요</string>
+    <string name="journey_outdated">준비한 코스를 다시 확인해요</string>
+    <string name="journey_ready">출발 전, 오늘의 과제를 확인해요</string>
+    <string name="journey_active">주차했다면 연습을 마무리해요</string>
+    <string name="journey_repeat">마무리한 기록을 살펴보고 다시 준비해요</string>
+    <string name="journey_loading">연습의 다음 걸음을 확인하고 있어요…</string>
+    <string name="journey_recover">다시 불러온 뒤 이어가요</string>
+    <string name="journey_flow">01 준비 → 02 주행 → 03 주차 후 복습 → 04 다음 연습</string>
+    <string name="journey_scope">지금은 시작·종료 버튼 시각을 확인할 수 있어요. 복습 메모와 다음 과제 연결은 준비 중이에요.</string>
+    <string name="journey_prepare_again">다음 연습 준비하기</string>
+    <string name="journey_prepare_update">코스·과제 다시 선택하기</string>
+    <string name="journey_repeat_hint">최근 마무리한 기록을 아래에서 확인해요. 목표·코스를 다시 고르거나 준비한 코스로 새 연습을 시작할 수 있어요.</string>
 </resources>
