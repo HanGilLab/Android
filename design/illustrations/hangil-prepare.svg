@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="480" viewBox="0 0 360 240" role="img">
+  <title>한길졸업 준비 장면</title>
+  <desc>민트 길잡이가 빈 안내 카드와 한 가지 과제 모티프 옆에 서 있는 주차 화면용 장식 그림. 지도나 실제 기록을 표시하지 않는다.</desc>
+  <!-- Project-authored vector extension of design/brand/hangil-guide.svg. See repository LICENSE (Apache-2.0). No external images or fonts. -->
+  <path d="M49,63 C84,35 137,43 171,51 C206,30 261,35 300,54 C328,68 336,109 328,148 C336,179 319,207 278,209 C228,216 185,204 149,207 C105,216 55,214 35,191 C24,170 27,144 29,126 C24,103 27,76 49,63 Z" fill="#FFF6E6" fill-opacity="0.80" stroke="none" />
+  <path d="M40,207 C80,196 278,196 320,207 C329,214 284,218 182,218 C80,218 31,214 40,207 Z" fill="#126B59" fill-opacity="0.12" stroke="none" />
+  <g id="scene">
+  <path d="M182,53 H303 C312,53 318,59 318,68 V183 C318,192 312,198 303,198 H182 C173,198 167,192 167,183 V68 C167,59 173,53 182,53 Z" fill="#FFF6E6" stroke="#073D31" stroke-width="3" stroke-linejoin="round" />
+  <path d="M187,71 H299 C302,71 304,73 304,76 V91 C304,94 302,96 299,96 H187 C184,96 182,94 182,91 V76 C182,73 184,71 187,71 Z" fill="#A7DAC4" stroke="none" />
+  <path d="M227,43 H258 C264,43 268,47 268,53 V64 H217 V53 C217,47 221,43 227,43 Z" fill="#126B59" stroke="#073D31" stroke-width="2.5" stroke-linejoin="round" />
+  <path d="M235,50 H250 C252,50 253,51 253,53 C253,55 252,56 250,56 H235 C233,56 232,55 232,53 C232,51 233,50 235,50 Z" fill="#FFF6E6" stroke="none" />
+  <path d="M184,119 C184,114.6 187.6,111 192,111 C196.4,111 200,114.6 200,119 C200,123.4 196.4,127 192,127 C187.6,127 184,123.4 184,119 Z" fill="#126B59" stroke="none" />
+  <path d="M214,116 H291" fill="none" stroke="#126B59" stroke-width="5" stroke-linecap="round" />
+  <path d="M214,129 H270" fill="none" stroke="#126B59" stroke-opacity="0.50" stroke-width="4" stroke-linecap="round" />
+  <path d="M188,151 H240 C244,151 247,154 247,158 V166 C247,170 244,173 240,173 H188 C184,173 181,170 181,166 V158 C181,154 184,151 188,151 Z" fill="#A7DAC4" stroke="none" />
+  <path d="M259,160 H292" fill="none" stroke="#073D31" stroke-opacity="0.45" stroke-width="3" stroke-linecap="round" />
+  <path d="M328,106 C328,103.8 329.8,102 332,102 C334.2,102 336,103.8 336,106 C336,108.2 334.2,110 332,110 C329.8,110 328,108.2 328,106 Z" fill="#E9B69F" stroke="none" />
+  </g>
+  <g id="guide" transform="translate(0 62) scale(1.7)">
+    <path d="M54,24 C70,24 82,35 82,49 C82,61 75,66 74,74 C72,83 62,86 54,82 C46,86 36,83 34,74 C33,66 26,61 26,49 C26,35 38,24 54,24 Z" fill="#A7DAC4" stroke="#073D31" stroke-width="2" stroke-linejoin="round" />
+    <path d="M37,39 C43,33 65,33 71,39 C78,47 72,60 54,60 C36,60 30,47 37,39 Z" fill="#FFF6E6" stroke="none" />
+    <path d="M35,52.5 a2.5,2.5 0,1 0,5 0 a2.5,2.5 0,1 0,-5 0 M68,52.5 a2.5,2.5 0,1 0,5 0 a2.5,2.5 0,1 0,-5 0" fill="#E9B69F" stroke="none" />
+    <path d="M41.5,46 a2.5,2.5 0,1 0,5 0 a2.5,2.5 0,1 0,-5 0 M61.5,46 a2.5,2.5 0,1 0,5 0 a2.5,2.5 0,1 0,-5 0" fill="#073D31" stroke="none" />
+    <path d="M48.5,51.5 C51,55.5 57,55.5 59.5,51.5" fill="none" stroke="#073D31" stroke-width="2.5" stroke-linecap="round" />
+    <path d="M53,64 C42,66 64,70 56,74 C54,75 50,75 48,77" fill="none" stroke="#073D31" stroke-width="7" stroke-linecap="round" />
+    <path d="M53,64 C50,64.8 48.5,65.5 49,66.3 M52,68.4 C54,69.1 57,70 57.5,71.2 M56.5,74 C55,74.8 52,75.3 50.5,75.7" fill="none" stroke="#FFF6E6" stroke-width="1.8" stroke-linecap="round" />
+  </g>
+</svg>
