@@ -2,7 +2,7 @@
 
 - 상태: 완료
 - PR: [공통 디자인 토큰과 민트 다크 테마 #13](https://github.com/HanGilLab/Android/pull/13)
-- 요구사항: [공모전 체크리스트 DES-04](https://app.notion.com/p/40586a7a8f8a800092c1caea490e8a09)
+- 요구사항: 공모전 체크리스트 DES-04 (비공개 작업 명세)
 
 ## 목표와 범위
 
