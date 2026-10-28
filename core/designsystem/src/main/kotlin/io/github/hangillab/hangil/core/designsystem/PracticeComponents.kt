@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -24,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 
 @Composable
 fun PracticePage(content: @Composable ColumnScope.() -> Unit) {
@@ -86,18 +88,30 @@ fun PracticeChoice(
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
 ) {
+    val disabledContentColor = ButtonDefaults.buttonColors().disabledContentColor
     Surface(
         modifier
             .fillMaxWidth()
             .heightIn(min = HanGilDimensions.choiceMinHeight)
-            .selectable(selected, role = Role.RadioButton, onClick = onClick),
+            .selectable(selected, enabled = enabled, role = Role.RadioButton, onClick = onClick),
         shape = MaterialTheme.shapes.large,
         color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+        contentColor =
+            when {
+                !enabled -> MaterialTheme.colorScheme.onSurfaceVariant
+                selected -> MaterialTheme.colorScheme.onPrimaryContainer
+                else -> MaterialTheme.colorScheme.onSurface
+            },
         border =
             BorderStroke(
                 if (selected) HanGilDimensions.choiceSelectedBorderWidth else HanGilDimensions.choiceBorderWidth,
-                if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                when {
+                    !enabled -> disabledContentColor
+                    selected -> MaterialTheme.colorScheme.primary
+                    else -> MaterialTheme.colorScheme.outlineVariant
+                },
             ),
     ) {
         Row(
@@ -105,7 +119,12 @@ fun PracticeChoice(
             horizontalArrangement = Arrangement.spacedBy(HanGilSpacing.lg),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(if (selected) "●" else "○", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.headlineSmall)
+            Text(
+                if (selected) "●" else "○",
+                Modifier.clearAndSetSemantics {},
+                color = if (enabled) MaterialTheme.colorScheme.primary else disabledContentColor,
+                style = MaterialTheme.typography.headlineSmall,
+            )
             Column(verticalArrangement = Arrangement.spacedBy(HanGilSpacing.xs)) {
                 Text(title, style = MaterialTheme.typography.titleLarge)
                 Text(description, style = MaterialTheme.typography.bodyLarge)

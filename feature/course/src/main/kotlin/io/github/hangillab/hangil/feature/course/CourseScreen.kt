@@ -5,13 +5,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -29,14 +26,15 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import io.github.hangillab.hangil.core.designsystem.HanGilBrand
-import io.github.hangillab.hangil.core.designsystem.HanGilDimensions
 import io.github.hangillab.hangil.core.designsystem.HanGilSpacing
 import io.github.hangillab.hangil.core.designsystem.PracticeBadge
+import io.github.hangillab.hangil.core.designsystem.PracticeButton
 import io.github.hangillab.hangil.core.designsystem.PracticeChoice
 import io.github.hangillab.hangil.core.designsystem.PracticeColumns
 import io.github.hangillab.hangil.core.designsystem.PracticeLockedNotice
 import io.github.hangillab.hangil.core.designsystem.PracticePage
 import io.github.hangillab.hangil.core.designsystem.PracticePanel
+import io.github.hangillab.hangil.core.designsystem.PracticeTextButton
 
 @Composable
 fun CourseRoute(
@@ -82,9 +80,8 @@ internal fun CourseScreen(
             } else {
                 Text(stringResource(R.string.course_brand), Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
             }
-            TextButton(
+            PracticeTextButton(
                 onClick = onBack,
-                modifier = Modifier.heightIn(min = HanGilDimensions.compactActionMinHeight),
                 enabled = !state.saving,
             ) {
                 Text(stringResource(R.string.course_back), style = MaterialTheme.typography.titleMedium)
@@ -179,10 +176,10 @@ internal fun CourseScreen(
                     style = MaterialTheme.typography.bodyLarge,
                 )
             }
-            Button(
+            PracticeButton(
                 onClick = onNext,
                 enabled = state.canContinue,
-                modifier = Modifier.fillMaxWidth().heightIn(min = HanGilDimensions.primaryActionMinHeight).testTag("preparation_next"),
+                modifier = Modifier.fillMaxWidth().testTag("preparation_next"),
             ) {
                 Text(
                     stringResource(
