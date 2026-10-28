@@ -60,6 +60,21 @@ class HomeJourneyFlowTest {
         back()
         waitFor("home_step_repeat")
         capture("next-preparation-return")
+        touch("home_prepare")
+        waitFor("goal_commute")
+        touch("goal_commute")
+        touch("preparation_next")
+        waitFor("course_neighborhood")
+        touch("course_neighborhood")
+        touch("preparation_next")
+        waitFor("task_sequence")
+        touch("task_sequence")
+        touch("preparation_next")
+        waitFor("home_step_ready")
+        compose.onNodeWithTag("saved_course").assertTextContains("생활권 한 바퀴")
+        compose.activityRule.scenario.recreate()
+        waitFor("home_step_ready")
+        capture("different-preparation-ready")
     }
 
     /** Existing preparation and completed records are read only; leave the draft without saving. */

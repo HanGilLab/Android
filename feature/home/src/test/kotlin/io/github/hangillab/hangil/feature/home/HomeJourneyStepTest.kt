@@ -10,6 +10,7 @@ import io.github.hangillab.hangil.core.domain.Preparation
 import io.github.hangillab.hangil.core.domain.PreparedPractice
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class HomeJourneyStepTest {
@@ -106,6 +107,27 @@ class HomeJourneyStepTest {
         assertEquals(HomeJourneyStep.REPEAT, state.nextStep)
         assertEquals(finished, state.latestFinished)
         assertEquals(records, state.records)
+    }
+
+    @Test fun `a different prepared selection is ready instead of requesting preparation again`() {
+        val nextGoal = goal.copy(id = "next-goal")
+        val nextTask = task.copy(id = "next-task")
+        val changes =
+            listOf(
+                "goal" to practice.copy(goal = nextGoal, course = course.copy(goalIds = setOf(nextGoal.id))),
+                "course" to practice.copy(course = course.copy(id = "next-course")),
+                "course version" to practice.copy(course = course.copy(version = 2)),
+                "briefing version" to practice.copy(course = course.copy(briefingVersion = 2)),
+                "task" to practice.copy(course = course.copy(tasks = listOf(nextTask)), task = nextTask),
+            )
+        val records = SessionLoadState.Loaded(listOf(finished))
+        for ((field, prepared) in changes) {
+            val state = SessionUiState(true, PreparationLoadState.Loaded(Preparation.Ready(prepared)), records)
+            assertEquals(field, HomeJourneyStep.READY, state.nextStep)
+            assertTrue(field, state.canStart)
+            assertEquals(field, records, state.records)
+            assertEquals(field, finished, state.latestFinished)
+        }
     }
 
     @Test fun `next step guidance does not enable a second action while saving`() {

@@ -1,5 +1,6 @@
 package io.github.hangillab.hangil.feature.home
 
+import io.github.hangillab.hangil.core.domain.PracticeSelection
 import io.github.hangillab.hangil.core.domain.Preparation
 
 data class SessionUiState(
@@ -14,6 +15,10 @@ data class SessionUiState(
     val nextStep: HomeJourneyStep
         get() {
             if (!allowsInteraction) return HomeJourneyStep.LOCKED
+            val selection =
+                ready?.let {
+                    PracticeSelection(it.goal.id, it.course.id, it.course.version, it.course.briefingVersion, it.task.id)
+                }
             return when (records) {
                 SessionLoadState.Loading -> HomeJourneyStep.LOADING
                 SessionLoadState.Failed -> HomeJourneyStep.RECOVER
@@ -22,8 +27,8 @@ data class SessionUiState(
                         active != null -> HomeJourneyStep.ACTIVE
                         preparation == PreparationLoadState.Loading -> HomeJourneyStep.LOADING
                         preparation == PreparationLoadState.Failed -> HomeJourneyStep.RECOVER
-                        ready == null -> HomeJourneyStep.PREPARE
-                        latestFinished != null -> HomeJourneyStep.REPEAT
+                        selection == null -> HomeJourneyStep.PREPARE
+                        latestFinished?.selection == selection -> HomeJourneyStep.REPEAT
                         else -> HomeJourneyStep.READY
                     }
             }
