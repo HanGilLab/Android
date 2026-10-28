@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="480" viewBox="0 0 360 240" role="img">
+  <title>한길졸업 연습 마무리 장면</title>
+  <desc>민트 길잡이 옆에 덮은 빈 연습 노트와 작은 찻잔을 둔 주차 후 쉼 장식 그림. 졸업이나 운전 능력·안전을 인증하지 않는다.</desc>
+  <!-- Project-authored vector extension of design/brand/hangil-guide.svg. See repository LICENSE (Apache-2.0). No external images or fonts. -->
+  <path d="M49,63 C84,35 137,43 171,51 C206,30 261,35 300,54 C328,68 336,109 328,148 C336,179 319,207 278,209 C228,216 185,204 149,207 C105,216 55,214 35,191 C24,170 27,144 29,126 C24,103 27,76 49,63 Z" fill="#FFF6E6" fill-opacity="0.80" stroke="none" />
+  <path d="M40,207 C80,196 278,196 320,207 C329,214 284,218 182,218 C80,218 31,214 40,207 Z" fill="#126B59" fill-opacity="0.12" stroke="none" />
+  <g id="scene">
+  <path d="M185,126 H307 C314,126 319,131 319,138 V194 C319,201 314,206 307,206 H185 C178,206 173,201 173,194 V138 C173,131 178,126 185,126 Z" fill="#FFF6E6" stroke="#073D31" stroke-width="3" stroke-linejoin="round" />
+  <path d="M188,194 H306" fill="none" stroke="#126B59" stroke-opacity="0.45" stroke-width="2.5" stroke-linecap="round" />
+  <path d="M185,116 H307 C314,116 319,121 319,128 V185 C319,192 314,197 307,197 H185 C178,197 173,192 173,185 V128 C173,121 178,116 185,116 Z" fill="#A7DAC4" stroke="#073D31" stroke-width="3" stroke-linejoin="round" />
+  <path d="M185,116 H194 V197 H185 C178,197 173,192 173,185 V128 C173,121 178,116 185,116 Z" fill="#126B59" stroke="#073D31" stroke-width="2.5" stroke-linejoin="round" />
+  <path d="M216,138 H265 C270,138 274,142 274,147 V158 C274,163 270,167 265,167 H216 C211,167 207,163 207,158 V147 C207,142 211,138 216,138 Z" fill="#FFF6E6" stroke="none" />
+  <path d="M291,119 V194" fill="none" stroke="#126B59" stroke-width="5" stroke-linecap="round" />
+  <path d="M259,69 H299 L296,98 C294,104 266,104 263,98 Z" fill="#FFF6E6" stroke="#073D31" stroke-width="3" stroke-linejoin="round" />
+  <path d="M299,75 C314,73 315,94 298,94" fill="none" stroke="#073D31" stroke-width="3" stroke-linecap="round" />
+  <path d="M264,76 H294 L292,92 C286,95 274,95 267,92 Z" fill="#A7DAC4" stroke="none" />
+  <path d="M252,106 C266,112 299,112 310,106" fill="none" stroke="#126B59" stroke-width="3" stroke-linecap="round" />
+  <path d="M274,60 C268,54 279,51 274,44 M290,59 C284,53 295,50 290,43" fill="none" stroke="#126B59" stroke-opacity="0.65" stroke-width="2.5" stroke-linecap="round" />
+  <path d="M156,89 C156,86.8 157.8,85 160,85 C162.2,85 164,86.8 164,89 C164,91.2 162.2,93 160,93 C157.8,93 156,91.2 156,89 Z" fill="#E9B69F" stroke="none" />
+  </g>
+  <g id="guide" transform="translate(0 62) scale(1.7)">
+    <path d="M54,24 C70,24 82,35 82,49 C82,61 75,66 74,74 C72,83 62,86 54,82 C46,86 36,83 34,74 C33,66 26,61 26,49 C26,35 38,24 54,24 Z" fill="#A7DAC4" stroke="#073D31" stroke-width="2" stroke-linejoin="round" />
+    <path d="M37,39 C43,33 65,33 71,39 C78,47 72,60 54,60 C36,60 30,47 37,39 Z" fill="#FFF6E6" stroke="none" />
+    <path d="M35,52.5 a2.5,2.5 0,1 0,5 0 a2.5,2.5 0,1 0,-5 0 M68,52.5 a2.5,2.5 0,1 0,5 0 a2.5,2.5 0,1 0,-5 0" fill="#E9B69F" stroke="none" />
+    <path d="M41.5,46 a2.5,2.5 0,1 0,5 0 a2.5,2.5 0,1 0,-5 0 M61.5,46 a2.5,2.5 0,1 0,5 0 a2.5,2.5 0,1 0,-5 0" fill="#073D31" stroke="none" />
+    <path d="M48.5,51.5 C51,55.5 57,55.5 59.5,51.5" fill="none" stroke="#073D31" stroke-width="2.5" stroke-linecap="round" />
+    <path d="M53,64 C42,66 64,70 56,74 C54,75 50,75 48,77" fill="none" stroke="#073D31" stroke-width="7" stroke-linecap="round" />
+    <path d="M53,64 C50,64.8 48.5,65.5 49,66.3 M52,68.4 C54,69.1 57,70 57.5,71.2 M56.5,74 C55,74.8 52,75.3 50.5,75.7" fill="none" stroke="#FFF6E6" stroke-width="1.8" stroke-linecap="round" />
+  </g>
+</svg>

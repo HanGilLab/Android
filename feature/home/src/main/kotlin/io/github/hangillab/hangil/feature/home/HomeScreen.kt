@@ -1,8 +1,6 @@
 package io.github.hangillab.hangil.feature.home
 
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -37,10 +35,14 @@ fun HomeRoute(
     HomeScreen(
         state,
         showDiagnostics,
-        { if (viewModel.canPrepare()) onPrepare() },
         viewModel::retryLoading,
         { if (viewModel.canViewMap()) onMapPreview() },
-        { SessionRoute() },
+        {
+            SessionRoute(
+                onPrepare = { if (viewModel.canPrepare()) onPrepare() },
+                canPrepare = state.preparation is PreparationLoadState.Loaded,
+            )
+        },
     )
 }
 
@@ -48,7 +50,6 @@ fun HomeRoute(
 internal fun HomeScreen(
     state: HomeUiState,
     showDiagnostics: Boolean,
-    onPrepare: () -> Unit,
     onRetry: () -> Unit,
     onMapPreview: () -> Unit,
     sessionContent: @Composable () -> Unit,
@@ -68,6 +69,7 @@ internal fun HomeScreen(
                 PracticeBadge(stringResource(R.string.parked_badge))
                 Text(stringResource(R.string.preparation_heading), style = MaterialTheme.typography.displaySmall)
                 Text(stringResource(R.string.home_tagline), style = MaterialTheme.typography.headlineSmall)
+                sessionContent()
                 when (val load = state.preparation) {
                     PreparationLoadState.Loading ->
                         Text(
@@ -122,27 +124,6 @@ internal fun HomeScreen(
                                     PracticeBadge(stringResource(R.string.demo_course))
                                     Text(ready.course.summary, style = MaterialTheme.typography.bodyLarge)
                                 }
-                                Button(
-                                    onClick = onPrepare,
-                                    modifier =
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .heightIn(min = HanGilDimensions.primaryActionMinHeight)
-                                            .testTag("home_prepare"),
-                                ) {
-                                    Text(
-                                        stringResource(
-                                            if (ready ==
-                                                null
-                                            ) {
-                                                R.string.prepare_start
-                                            } else {
-                                                R.string.prepare_change
-                                            },
-                                        ),
-                                        style = MaterialTheme.typography.titleLarge,
-                                    )
-                                }
                             }
                         }, second = {
                             PracticePanel {
@@ -161,7 +142,6 @@ internal fun HomeScreen(
                         })
                     }
                 }
-                sessionContent()
                 TextButton(
                     onClick = onMapPreview,
                     modifier = Modifier.heightIn(min = HanGilDimensions.secondaryActionMinHeight).testTag("home_map"),
