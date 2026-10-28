@@ -40,6 +40,44 @@ class LocationProbeFlowTest {
         compose.onNodeWithTag("location_permission").assertDoesNotExist()
     }
 
+    /** Exercises the real ActivityResult path without granting any permission. */
+    @Test fun deniedSystemRequestReturnsExplicitResultAndAllowsRetry() {
+        assertTrue("전용 검증은 위치 권한 미허용 상태에서 시작해야 합니다", !permissionGranted())
+        openProbe()
+        touch("location_read")
+        compose.waitUntil(20_000) { status().contains("위치 권한이 허용되지 않았어요") }
+        touch("location_permission")
+        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        var systemWindowObserved = false
+        val deadline = android.os.SystemClock.uptimeMillis() + 20_000
+        while (android.os.SystemClock.uptimeMillis() < deadline) {
+            val root = automation.rootInActiveWindow
+            if (root?.packageName?.toString()?.endsWith(".permissioncontroller") == true) {
+                systemWindowObserved = true
+                // Dismiss only. No grant action or permission shell mutation is used.
+                try {
+                    captureNativeWindow("location-system-permission-dialog")
+                } finally {
+                    automation.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK)
+                }
+            }
+            if (runCatching { status().contains("위치 권한이 허용되지 않았어요") }.getOrDefault(false)) break
+            android.os.SystemClock.sleep(100)
+        }
+        phase("SYSTEM_PERMISSION_WINDOW_OBSERVED=$systemWindowObserved")
+        assertTrue("시스템 요청 후에도 실제 권한은 미허용이어야 합니다", !permissionGranted())
+        compose.waitUntil(5_000) { status().contains("위치 권한이 허용되지 않았어요") }
+        compose.onNodeWithTag("location_permission").assertExists()
+        compose.onNodeWithTag("location_last_known").assertDoesNotExist()
+        capture("location-system-request-denied")
+        touch("location_read")
+        compose.waitUntil(20_000) { status().contains("위치 권한이 허용되지 않았어요") }
+        touch("map_close")
+        openProbe()
+        assertIdleProbe()
+        capture("location-system-request-reentered")
+    }
+
     /** Run only after a person has approved the dedicated AVD's custom location permission. */
     @Test fun grantedPermissionIdentifiesTheActualSdkResponse() {
         assumeTrue(permissionGranted())
@@ -163,8 +201,12 @@ class LocationProbeFlowTest {
 
     private fun capture(name: String) {
         compose.waitForIdle()
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
         assertNativeForegroundEvidence()
+        captureNativeWindow(name)
+    }
+
+    private fun captureNativeWindow(name: String) {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
         val directory = File(instrumentation.targetContext.cacheDir, "screenshots").apply { mkdirs() }
         val bitmap = checkNotNull(instrumentation.uiAutomation.takeScreenshot())
         File(directory, "$name.png").outputStream().use { check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) }
