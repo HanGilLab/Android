@@ -12,7 +12,6 @@ import dagger.hilt.android.AndroidEntryPoint
 import io.github.hangillab.hangil.core.designsystem.HanGilTheme
 import io.github.hangillab.hangil.feature.course.CourseRoute
 import io.github.hangillab.hangil.feature.home.HomeRoute
-import io.github.hangillab.hangil.feature.map.MapRoute
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -32,7 +31,7 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                     composable("preparation") { CourseRoute(onClose = { navigation.popBackStack() }) }
-                    composable("map") { MapRoute(onClose = { navigation.popBackStack() }) }
+                    composable("map") { MapDestination(onClose = { navigation.popBackStack() }, showDiagnostics = showDiagnostics) }
                 }
             }
         }

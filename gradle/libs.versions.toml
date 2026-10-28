@@ -14,6 +14,7 @@ spotless = "7.2.1"
 ktlint = "1.7.1"
 pleos-vehicle = "2.3.2"
 pleos-vehicleData = "1.1.11"
+pleos-fusedLocation = "1.1.3"
 navigation = "2.9.8"
 robolectric = "4.17"
 androidx-test = "1.7.0"
@@ -44,6 +45,7 @@ coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", ve
 junit = { module = "junit:junit", version.ref = "junit" }
 pleos-vehicle = { module = "ai.pleos.playground:Vehicle", version.ref = "pleos-vehicle" }
 pleos-vehicleData = { module = "ai.pleos.playground:vehicle-data", version.ref = "pleos-vehicleData" }
+pleos-fusedLocation = { module = "ai.pleos.playground:FusedLocation", version.ref = "pleos-fusedLocation" }
 maplibre-android = { module = "org.maplibre.gl:android-sdk-opengl", version.ref = "maplibre" }
 
 navigation-compose = { module = "androidx.navigation:navigation-compose", version.ref = "navigation" }

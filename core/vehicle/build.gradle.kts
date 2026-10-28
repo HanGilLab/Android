@@ -6,6 +6,7 @@ plugins {
 android {
     namespace = "io.github.hangillab.hangil.core.vehicle"
     useLibrary("android.car")
+    testOptions.unitTests.isIncludeAndroidResources = true
 }
 
 dependencies {
@@ -13,6 +14,8 @@ dependencies {
     implementation(libs.coroutines.core)
     implementation(libs.pleos.vehicle)
     implementation(libs.pleos.vehicleData)
+    implementation(libs.pleos.fusedLocation)
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test)
+    testImplementation(libs.robolectric)
 }

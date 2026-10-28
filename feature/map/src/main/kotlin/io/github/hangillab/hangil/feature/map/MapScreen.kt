@@ -33,6 +33,8 @@ import io.github.hangillab.hangil.core.designsystem.PracticePanel
 @Composable
 fun MapRoute(
     onClose: () -> Unit,
+    showDiagnostics: Boolean = false,
+    onRequestLocationPermission: ((LocationPermissionResult) -> Unit) -> Unit = { it(LocationPermissionResult.FAILED) },
     viewModel: MapViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -93,6 +95,7 @@ fun MapRoute(
                 }
             }
             Text(stringResource(R.string.map_sources), style = MaterialTheme.typography.bodyMedium)
+            if (showDiagnostics) LocationProbeRoute(onRequestLocationPermission)
         }
     }
 }
