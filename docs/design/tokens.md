@@ -11,6 +11,7 @@
 | `panelInset / pageInset / badgeHorizontal` | 28 / 32 / 14dp | 카드·페이지·배지 여백 |
 | `HanGilDimensions.primaryActionMinHeight` | 76dp | 준비·시작·종료의 주요 행동 |
 | `secondaryActionMinHeight / compactActionMinHeight` | 72 / 64dp | 지도·재시도 / 뒤로·개발용 접기 |
+| `actionMinWidth / loadingIndicatorSize` | 64 / 40dp | 공통 버튼 최소 너비 / 로딩 표시 |
 | `choiceMinHeight` | 120dp | 선택 카드. 내용이 길면 더 커짐 |
 | `pageMaxWidth / wideBreakpoint` | 1440 / 900dp | 페이지 최대 너비·2열 분기 |
 | `diagnosticsMaxWidth / brandMarkSize / mapPreviewHeight` | 720 / 88 / 420dp | 진단 패널·브랜드 마크·지도 프레임 |
@@ -54,4 +55,5 @@ Compose 조건과 native 활성 패키지 확인을 통과해도 실제 Pleos �
 단독 Activity 실행으로 만든 전체 배경 창과 정상 앱 목록 실행을 구분한다. 시험 단계의 같은 이름 캡처가 덮어써졌다면 최신 파일을 다시 확인하고, 부적격 캡처를 정상 근거로 재사용하지 않는다.
 지도 자체는 기존 Liberty 스타일이며 앱 다크 테마로 타일이 다크로 바뀐다고 표현하지 않는다. 로딩/실패/ready callback은 각각 실제 관찰 상태로 기록한다.
 실제 네트워크·저장소 오류를 새로 모두 주입한 것으로 주장하지 않으며, 상태별 표현은 기존 동작 검사와 새 색 대비 검사로 범위를 구분한다.
-장면 일러스트·새 상태 컴포넌트·전체 화면 재설계·최종 사용성 점검은 별도 체크 항목이다.
+장면 일러스트는 [일러스트 안내](illustrations.md), 버튼·상태 패널은 [공통 컴포넌트](components.md)에 기록한다.
+전체 화면 재설계·최종 사용성 점검은 별도 체크 항목이다.
