@@ -53,6 +53,16 @@ class ThemeFlowTest {
         // require scrolling in the stacked dashboard, but must never clip or hide the action.
         if (expectedLayout == "wide") compose.onNodeWithTag("home_prepare").assertIsDisplayed()
         capture("home-heading")
+        compose.onNodeWithTag("home_journey_flow").assertDoesNotExist()
+        touch("home_record_guide")
+        compose.onNodeWithTag("home_journey_flow").performScrollTo().assertIsDisplayed()
+        touch("home_record_guide")
+        compose.onNodeWithTag("home_journey_flow").assertDoesNotExist()
+        compose.onNodeWithTag("saved_goal").assertDoesNotExist()
+        touch("home_preparation_details")
+        compose.onNodeWithTag("saved_goal").performScrollTo().assertIsDisplayed()
+        touch("home_preparation_details")
+        compose.onNodeWithTag("saved_goal").assertDoesNotExist()
         compose
             .onNodeWithTag("home_prepare")
             .performScrollTo()
@@ -90,17 +100,29 @@ class ThemeFlowTest {
         capture("goal-selected")
         touch("preparation_next")
         waitFor("course_intersections")
-        assertPreparationLayout("course_context", "course_choices")
+        assertPreparationChoices("course_neighborhood", "course_intersections")
         compose.onNodeWithTag("preparation_demo_notice").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("preparation_demo_description").assertDoesNotExist()
+        touch("preparation_demo_details")
+        compose.onNodeWithTag("preparation_demo_description").performScrollTo().assertIsDisplayed()
         capture("course-context")
+        touch("preparation_demo_details")
+        compose.onNodeWithTag("preparation_demo_description").assertDoesNotExist()
         touch("course_intersections")
         compose.onNodeWithTag("course_intersections").assertIsSelected()
         capture("course-selected")
         touch("preparation_next")
         waitFor("task_scene")
-        assertPreparationLayout("briefing_summary", "briefing_tasks")
+        assertPreparationChoices("task_scene", "task_review")
         compose.onNodeWithTag("preparation_next").assertIsNotEnabled()
-        compose.onNodeWithText("출발 전에, 한 번 살펴봐요").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("preparation_title").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("briefing_section_0").assertDoesNotExist()
+        touch("briefing_course_details")
+        compose.onNodeWithTag("briefing_section_0").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("briefing_section_3").performScrollTo().assertIsDisplayed()
+        capture("briefing-expanded")
+        touch("briefing_course_details")
+        compose.onNodeWithTag("briefing_section_0").assertDoesNotExist()
         capture("briefing")
         touch("task_scene")
         compose.onNodeWithTag("task_scene").assertIsSelected()
@@ -132,6 +154,10 @@ class ThemeFlowTest {
         touch("task_scene")
         compose.onNodeWithTag("task_scene").assertIsSelected()
         compose.onNodeWithTag("preparation_next").assertIsEnabled()
+        touch("briefing_course_details")
+        touch("preparation_demo_details")
+        compose.onNodeWithTag("briefing_section_0").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("preparation_demo_description").performScrollTo().assertIsDisplayed()
         capture("preparation-before-driving")
         phase("PREPARATION_AWAIT_D")
         compose.waitUntil(90_000) { exists("preparation_locked_title") && !exists("preparation_next") }
@@ -139,10 +165,13 @@ class ThemeFlowTest {
         listOf(
             "hangil_brand",
             "preparation_title",
-            "preparation_columns_wide",
-            "preparation_columns_stacked",
+            "preparation_choices_wide",
+            "preparation_choices_stacked",
+            "briefing_course_details",
+            "preparation_demo_details",
+            "briefing_section_0",
+            "preparation_demo_description",
             "preparation_demo_notice",
-            "preparation_illustration",
             "briefing_summary",
             "briefing_tasks",
             "task_scene",
@@ -154,7 +183,9 @@ class ThemeFlowTest {
         compose.onNodeWithTag("preparation_title").assertIsDisplayed()
         compose.onNodeWithTag("task_scene").assertIsSelected()
         compose.onNodeWithTag("preparation_next").assertIsEnabled()
-        assertPreparationLayout("briefing_summary", "briefing_tasks")
+        assertPreparationChoices("task_scene", "task_review")
+        compose.onNodeWithTag("briefing_section_0").assertDoesNotExist()
+        compose.onNodeWithTag("preparation_demo_description").assertDoesNotExist()
         capture("preparation-parked-again")
         compose.onNodeWithTag("task_scene").performScrollTo().assertIsDisplayed()
         capture("preparation-restored-selection")
@@ -239,21 +270,19 @@ class ThemeFlowTest {
         assertEquals(scale, configuration.fontScale, 0.01f)
     }
 
-    private fun assertPreparationLayout(
+    private fun assertPreparationChoices(
         first: String,
         second: String,
     ) {
-        val expected =
-            InstrumentationRegistry.getArguments().getString("preparation_layout")
-                ?: if (exists("preparation_columns_wide")) "wide" else "stacked"
+        val expected = checkNotNull(InstrumentationRegistry.getArguments().getString("preparation_layout"))
         check(expected == "wide" || expected == "stacked")
-        compose.onNodeWithTag("preparation_columns_$expected").assertExists()
+        compose.onNodeWithTag("preparation_choices_$expected").assertExists()
         val firstBounds = compose.onNodeWithTag(first).getUnclippedBoundsInRoot()
         val secondBounds = compose.onNodeWithTag(second).getUnclippedBoundsInRoot()
         if (expected == "wide") {
-            assertTrue("Explanation and choices must use separate columns", secondBounds.left >= firstBounds.right)
+            assertTrue("Choices must occupy separate columns", secondBounds.left >= firstBounds.right)
         } else {
-            assertTrue("Choices must follow the explanation in one column", secondBounds.top >= firstBounds.bottom)
+            assertTrue("Choices must follow each other in one column", secondBounds.top >= firstBounds.bottom)
         }
     }
 

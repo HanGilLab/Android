@@ -7,6 +7,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -16,6 +17,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.hangillab.hangil.core.designsystem.HanGilDimensions
 import io.github.hangillab.hangil.core.designsystem.ParkedBadge
 import io.github.hangillab.hangil.core.designsystem.ParkedButton
+import io.github.hangillab.hangil.core.designsystem.ParkedDisclosure
 import io.github.hangillab.hangil.core.designsystem.ParkedPanel
 import io.github.hangillab.hangil.core.domain.CourseReviewStatus
 import io.github.hangillab.hangil.core.domain.Preparation
@@ -53,11 +55,16 @@ internal fun SessionPanel(
         emphasized = true,
     ) {
         HomeJourneyGuide(state)
+        Text(
+            stringResource(R.string.session_record_source),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         if (state.nextStep == HomeJourneyStep.PREPARE || state.nextStep == HomeJourneyStep.REPEAT) {
             ParkedButton(
                 onClick = onPrepare,
                 enabled = canPrepare && state.operation != SessionOperationState.Saving,
-                prominent = state.ready == null,
+                prominent = true,
                 modifier =
                     Modifier.fillMaxWidth().heightIn(min = HanGilDimensions.primaryActionMinHeight).testTag("home_prepare"),
             ) {
@@ -73,15 +80,6 @@ internal fun SessionPanel(
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.SemiBold,
                 )
-            }
-        } else if (canPrepare) {
-            ParkedButton(
-                onClick = onPrepare,
-                enabled = state.operation != SessionOperationState.Saving,
-                prominent = false,
-                modifier = Modifier.heightIn(min = HanGilDimensions.secondaryActionMinHeight).testTag("home_prepare"),
-            ) {
-                Text(stringResource(R.string.prepare_change), style = MaterialTheme.typography.titleLarge)
             }
         }
         when (state.records) {
@@ -102,12 +100,7 @@ internal fun SessionPanel(
                         style = MaterialTheme.typography.titleLarge,
                     )
                     Text(active.courseTitle, Modifier.testTag("session_course"), style = MaterialTheme.typography.headlineSmall)
-                    Text(stringResource(R.string.session_goal_task, active.goalTitle, active.taskTitle))
                     if (active.courseReviewStatus == CourseReviewStatus.DEMO) ParkedBadge(stringResource(R.string.demo_course))
-                    Text(
-                        stringResource(R.string.session_started_at, displayTime(active.startedAtEpochMillis)),
-                        Modifier.testTag("session_started_at"),
-                    )
                     ParkedButton(
                         onClick = {
                             onFinish(active.sessionId)
@@ -132,13 +125,11 @@ internal fun SessionPanel(
                             ) { Text(stringResource(R.string.retry)) }
                         }
                         is PreparationLoadState.Loaded -> {
-                            if (state.ready == null) {
-                                Text(stringResource(R.string.session_prepare_first))
-                            } else {
-                                Text(stringResource(R.string.session_ready, state.ready!!.course.title))
+                            if (state.ready != null) {
                                 ParkedButton(
                                     onClick = onStart,
                                     enabled = state.canStart,
+                                    prominent = state.nextStep == HomeJourneyStep.READY,
                                     modifier =
                                         Modifier
                                             .fillMaxWidth()
@@ -166,11 +157,36 @@ internal fun SessionPanel(
                 }
             }
         }
-        Text(
-            stringResource(R.string.session_scope),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        if (state.nextStep != HomeJourneyStep.PREPARE && state.nextStep != HomeJourneyStep.REPEAT && canPrepare) {
+            ParkedButton(
+                onClick = onPrepare,
+                enabled = state.operation != SessionOperationState.Saving,
+                prominent = false,
+                modifier = Modifier.testTag("home_prepare"),
+            ) {
+                Text(stringResource(R.string.prepare_change), style = MaterialTheme.typography.titleMedium)
+            }
+        }
+        key(state.nextStep, state.active?.sessionId) {
+            ParkedDisclosure(stringResource(R.string.record_guide), Modifier.testTag("home_record_guide")) {
+                Text(stringResource(R.string.preparation_scope), style = MaterialTheme.typography.bodyLarge)
+                Text(stringResource(R.string.session_scope), style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    stringResource(R.string.journey_flow),
+                    Modifier.testTag("home_journey_flow"),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                Text(stringResource(R.string.journey_scope), style = MaterialTheme.typography.bodyLarge)
+                state.active?.let { active ->
+                    Text(stringResource(R.string.session_goal_task, active.goalTitle, active.taskTitle))
+                    Text(
+                        stringResource(R.string.session_started_at, displayTime(active.startedAtEpochMillis)),
+                        Modifier.testTag("session_started_at"),
+                    )
+                }
+                if (state.nextStep == HomeJourneyStep.REPEAT) Text(stringResource(R.string.journey_repeat_hint))
+            }
+        }
     }
     LatestSessionPanel(state)
 }
@@ -183,11 +199,18 @@ private fun LatestSessionPanel(state: SessionUiState) {
         ParkedPanel(Modifier.testTag("home_recent_session")) {
             Text(stringResource(R.string.session_latest), style = MaterialTheme.typography.titleLarge)
             Text(latest.courseTitle, Modifier.testTag("session_latest_course"), style = MaterialTheme.typography.headlineSmall)
-            Text(stringResource(R.string.session_goal_task, latest.goalTitle, latest.taskTitle))
             if (latest.courseReviewStatus == CourseReviewStatus.DEMO) ParkedBadge(stringResource(R.string.demo_course))
-            Text(stringResource(R.string.session_started_at, displayTime(latest.startedAtEpochMillis)))
             latest.endedAtEpochMillis?.let {
                 Text(stringResource(R.string.session_finished_at, displayTime(it)), Modifier.testTag("session_latest_finished"))
+            }
+            key(latest.sessionId) {
+                ParkedDisclosure(stringResource(R.string.session_details), Modifier.testTag("home_recent_details")) {
+                    Text(stringResource(R.string.session_goal_task, latest.goalTitle, latest.taskTitle))
+                    Text(
+                        stringResource(R.string.session_started_at, displayTime(latest.startedAtEpochMillis)),
+                        Modifier.testTag("session_latest_started"),
+                    )
+                }
             }
         }
     } else if (records.sessions.isEmpty()) {

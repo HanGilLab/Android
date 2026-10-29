@@ -28,6 +28,7 @@ import io.github.hangillab.hangil.core.designsystem.HanGilDimensions
 import io.github.hangillab.hangil.core.designsystem.HanGilSpacing
 import io.github.hangillab.hangil.core.designsystem.ParkedBadge
 import io.github.hangillab.hangil.core.designsystem.ParkedButton
+import io.github.hangillab.hangil.core.designsystem.ParkedDisclosure
 import io.github.hangillab.hangil.core.designsystem.ParkedLockedNotice
 import io.github.hangillab.hangil.core.designsystem.ParkedPage
 import io.github.hangillab.hangil.core.designsystem.ParkedPanel
@@ -92,75 +93,55 @@ internal fun HomeScreen(
                             }
                         is PreparationLoadState.Loaded -> {
                             val ready = (load.preparation as? Preparation.Ready)?.practice
-                            Column(verticalArrangement = Arrangement.spacedBy(HanGilSpacing.md)) {
-                                ParkedPanel {
+                            ParkedPanel {
+                                Text(
+                                    stringResource(if (ready == null) R.string.first_preparation else R.string.saved_preparation),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                if (ready == null) {
                                     Text(
                                         stringResource(
-                                            if (ready ==
-                                                null
+                                            if (load.preparation ==
+                                                Preparation.Outdated
                                             ) {
-                                                R.string.first_preparation
+                                                R.string.preparation_outdated
                                             } else {
-                                                R.string.saved_preparation
+                                                R.string.preparation_intro
                                             },
                                         ),
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = MaterialTheme.colorScheme.primary,
+                                        style = MaterialTheme.typography.bodyLarge,
                                     )
-                                    if (ready == null) {
-                                        Text(
-                                            stringResource(
-                                                if (load.preparation ==
-                                                    Preparation.Outdated
-                                                ) {
-                                                    R.string.preparation_outdated
-                                                } else {
-                                                    R.string.preparation_intro
-                                                },
-                                            ),
-                                            style = MaterialTheme.typography.bodyLarge,
-                                        )
-                                        Text(stringResource(R.string.preparation_flow), style = MaterialTheme.typography.titleLarge)
-                                    } else {
-                                        Text(
-                                            ready.goal.title,
-                                            style = MaterialTheme.typography.bodyLarge,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                        Text(
-                                            ready.course.title,
-                                            Modifier.testTag("saved_course"),
-                                            style = MaterialTheme.typography.headlineSmall,
-                                            fontWeight = FontWeight.SemiBold,
-                                        )
-                                        ParkedBadge(stringResource(R.string.demo_course))
-                                        Text(ready.course.summary, style = MaterialTheme.typography.bodyLarge)
-                                    }
-                                }
-                                ParkedPanel {
+                                } else {
                                     Text(
-                                        stringResource(R.string.today_one),
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = MaterialTheme.colorScheme.primary,
-                                    )
-                                    Text(
-                                        ready?.task?.title ?: stringResource(R.string.one_task_intro),
-                                        Modifier.testTag("saved_task"),
+                                        ready.course.title,
+                                        Modifier.testTag("saved_course"),
                                         style = MaterialTheme.typography.headlineSmall,
                                         fontWeight = FontWeight.SemiBold,
                                     )
+                                    ParkedBadge(stringResource(R.string.demo_course))
                                     Text(
-                                        ready?.task?.description ?: stringResource(R.string.one_task_description),
-                                        style = MaterialTheme.typography.bodyLarge,
+                                        stringResource(R.string.today_one),
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
+                                    Text(ready.task.title, Modifier.testTag("saved_task"), style = MaterialTheme.typography.titleLarge)
+                                    key(ready.goal.id, ready.course.id, ready.task.id) {
+                                        ParkedDisclosure(
+                                            stringResource(R.string.preparation_details),
+                                            Modifier.testTag("home_preparation_details"),
+                                        ) {
+                                            Text(
+                                                ready.goal.title,
+                                                Modifier.testTag("saved_goal"),
+                                                style = MaterialTheme.typography.bodyLarge,
+                                            )
+                                            Text(ready.course.summary, style = MaterialTheme.typography.bodyLarge)
+                                            Text(ready.task.description, style = MaterialTheme.typography.bodyLarge)
+                                        }
+                                    }
                                 }
-                                Text(
-                                    stringResource(R.string.preparation_scope),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
                             }
                         }
                     }
@@ -206,18 +187,6 @@ private fun HomeHeader() {
                     ParkedBadge(stringResource(R.string.parked_badge), emphasized = true)
                 }
             }
-        }
-        Column(verticalArrangement = Arrangement.spacedBy(HanGilSpacing.xs)) {
-            Text(
-                stringResource(R.string.preparation_heading),
-                style = MaterialTheme.typography.headlineLarge,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                stringResource(R.string.home_tagline),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
         }
     }
 }

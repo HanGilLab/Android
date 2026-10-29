@@ -89,11 +89,12 @@ fun ParkedChoice(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    showDescription: Boolean = true,
 ) {
     Surface(
         modifier
             .fillMaxWidth()
-            .heightIn(min = HanGilDimensions.choiceMinHeight)
+            .heightIn(min = if (showDescription) HanGilDimensions.choiceMinHeight else HanGilDimensions.secondaryActionMinHeight)
             .selectable(selected, enabled = enabled, role = Role.RadioButton, onClick = onClick),
         shape = MaterialTheme.shapes.large,
         color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLowest,
@@ -112,7 +113,13 @@ fun ParkedChoice(
             RadioButton(selected, onClick = null, modifier = Modifier.clearAndSetSemantics {}, enabled = enabled)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.xs)) {
                 Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                Text(description, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (showDescription) {
+                    Text(
+                        description,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }

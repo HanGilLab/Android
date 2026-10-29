@@ -81,7 +81,11 @@ class HomeJourneyFlowTest {
     @Test fun existingRecordsGuideAfterProcessRelaunch() {
         assertPackage("io.github.hangillab.hangil.debug")
         waitFor("home_step_repeat")
+        compose.onNodeWithTag("home_journey_flow").assertDoesNotExist()
+        touch("home_record_guide")
         compose.onNodeWithTag("home_journey_flow").performScrollTo().assertIsDisplayed()
+        touch("home_record_guide")
+        compose.onNodeWithTag("home_journey_flow").assertDoesNotExist()
         capture("existing-restored")
         touch("home_prepare")
         waitFor("goal_commute")

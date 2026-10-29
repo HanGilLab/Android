@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-  <string name="location_probe_title">위치 입력 확인</string>
-  <string name="location_probe_scope">개발 확인용으로 차량 SDK의 마지막 위치를 한 번 조회해요. 현재 위치나 이동 경로를 표시하는 기능은 아니에요.</string>
+  <string name="location_probe_title">개발용 위치 확인</string>
+  <string name="location_probe_scope">차량 SDK의 마지막 위치 1회 조회예요. 현재 위치와 경로는 표시하지 않아요.</string>
   <string name="location_probe_idle">아직 위치를 조회하지 않았어요.</string>
   <string name="location_probe_loading">마지막 위치를 확인하고 있어요.</string>
   <string name="location_probe_permission_pending">시스템 권한 요청 결과를 기다리고 있어요.</string>
   <string name="location_probe_last_known">SDK에서 마지막 위치 1건을 받았어요.</string>
-  <string name="location_probe_uncertain">측정 시각 기준과 신뢰도 단위는 아직 확인되지 않았어요. 현재 위치로 사용하거나 시연 지도에 반영하지 않아요.</string>
+  <string name="location_probe_uncertain">측정 시각과 신뢰도 기준은 미확인이에요. 현재 위치로 쓰거나 지도에 반영하지 않아요.</string>
   <string name="location_probe_empty">SDK가 마지막 위치를 반환하지 않았어요.</string>
   <string name="location_probe_unsupported">이 환경에서는 위치 SDK를 지원하지 않아요.</string>
   <string name="location_probe_permission_denied">위치 권한이 허용되지 않았어요. 권한은 아래 버튼을 누를 때만 요청해요.</string>
@@ -15,11 +15,11 @@
   <string name="location_probe_read">마지막 위치 확인</string>
   <string name="location_probe_permission">위치 권한 요청</string>
   <string name="map_title">지도로 길 둘러보기</string>
-  <string name="map_demo_region">서울 시청 주변의 시연 지역이에요. 현재 위치나 선택한 연습 코스를 보여주는 지도는 아니에요.</string>
+  <string name="map_demo_region">서울 시청 주변이에요. 현재 위치와 연습 코스는 표시하지 않아요.</string>
   <string name="map_demo_badge">시연 지역 지도</string>
   <string name="map_content_description">서울 시청 주변의 시연 지도. 현재 위치와 연습 코스는 표시하지 않아요.</string>
   <string name="map_loading">지도를 불러오고 있어요.</string>
-  <string name="map_failed">지도를 표시하지 못했어요. 인터넷 연결을 확인하고 다시 시도해 주세요.</string>
+  <string name="map_failed">지도를 불러오지 못했어요. 연결을 확인해 주세요.</string>
   <string name="map_retry">다시 불러오기</string>
   <string name="map_close">닫기</string>
   <string name="map_sources">지도: OpenFreeMap, © OpenMapTiles, © OpenStreetMap 기여자</string>

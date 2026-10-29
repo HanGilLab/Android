@@ -1,4 +1,8 @@
 <resources>
+    <string name="parked_detail_show">보기</string>
+    <string name="parked_detail_hide">접기</string>
+    <string name="parked_detail_expanded">펼쳐짐</string>
+    <string name="parked_detail_collapsed">접힘</string>
     <string name="hangil_brand_name">한길졸업</string>
     <string name="practice_locked_title">주차 후 이어서 준비해요</string>
     <string name="practice_locked_description">차량의 주차 상태와 화면 사용 가능 여부가 확인되면 준비를 이어갈 수 있어요.</string>

@@ -65,25 +65,6 @@ internal fun HomeJourneyGuide(state: SessionUiState) {
             } else {
                 HomeJourneyTitle(title, step)
             }
-            Text(
-                stringResource(R.string.journey_flow),
-                Modifier.testTag("home_journey_flow"),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.Medium,
-            )
-            Text(
-                stringResource(R.string.journey_scope),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            if (step == HomeJourneyStep.REPEAT) {
-                Text(
-                    stringResource(R.string.journey_repeat_hint),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
         }
     }
 }

@@ -2,12 +2,14 @@ package io.github.hangillab.hangil.feature.map
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -51,8 +53,14 @@ fun MapRoute(
         if (!state.allowsDetailedInteraction) {
             PracticeLockedNotice()
         } else {
-            PracticeBadge(stringResource(R.string.map_demo_badge))
-            Text(stringResource(R.string.map_demo_region), style = MaterialTheme.typography.bodyLarge)
+            Column(verticalArrangement = Arrangement.spacedBy(HanGilSpacing.xs)) {
+                PracticeBadge(stringResource(R.string.map_demo_badge))
+                Text(
+                    stringResource(R.string.map_demo_region),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             Box(
                 Modifier
                     .fillMaxWidth()
@@ -86,8 +94,12 @@ fun MapRoute(
                             shape = MaterialTheme.shapes.medium,
                             color = MaterialTheme.colorScheme.surface,
                         ) {
-                            Row(Modifier.padding(HanGilSpacing.md), horizontalArrangement = Arrangement.spacedBy(HanGilSpacing.md)) {
-                                CircularProgressIndicator()
+                            Row(
+                                Modifier.padding(HanGilSpacing.md),
+                                horizontalArrangement = Arrangement.spacedBy(HanGilSpacing.md),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                CircularProgressIndicator(Modifier.size(HanGilDimensions.loadingIndicatorSize))
                                 Text(stringResource(R.string.map_loading), style = MaterialTheme.typography.bodyLarge)
                             }
                         }
