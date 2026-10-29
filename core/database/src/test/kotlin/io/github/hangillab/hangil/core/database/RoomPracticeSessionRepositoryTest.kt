@@ -39,7 +39,7 @@ class RoomPracticeSessionRepositoryTest {
     private fun open(name: String) =
         Room
             .databaseBuilder(RuntimeEnvironment.getApplication(), PreparationDatabase::class.java, name)
-            .addMigrations(PreparationMigration1To2)
+            .addMigrations(PreparationMigration1To2, PreparationMigration2To3)
             .build()
 
     @Test fun `version one migration preserves preparation and permits new sessions`() =
@@ -91,7 +91,7 @@ class RoomPracticeSessionRepositoryTest {
                 val repository = RoomPracticeSessionRepository(it, catalog)
                 assertTrue(repository.observeSessions().first().isEmpty())
                 assertTrue(repository.start(practice, 1_000) { true } is SessionStartResult.Started)
-                assertEquals(2, it.openHelper.writableDatabase.version)
+                assertEquals(3, it.openHelper.writableDatabase.version)
             }
         }
 

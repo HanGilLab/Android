@@ -6,6 +6,7 @@ plugins {
 
 android {
     namespace = "io.github.hangillab.hangil.core.database"
+    defaultConfig { testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner" }
     testOptions.unitTests.isIncludeAndroidResources = true
     sourceSets.getByName("test").resources.srcDir("schemas")
 }
@@ -20,4 +21,7 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)
     testImplementation(libs.coroutines.test)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.junit)
+    androidTestImplementation(libs.coroutines.core)
 }

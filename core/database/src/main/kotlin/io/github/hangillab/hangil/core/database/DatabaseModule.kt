@@ -18,6 +18,6 @@ internal object DatabaseModule {
     ): PreparationDatabase =
         Room
             .databaseBuilder(context, PreparationDatabase::class.java, "hangil.db")
-            .addMigrations(PreparationMigration1To2)
+            .addMigrations(PreparationMigration1To2, PreparationMigration2To3)
             .build()
 }
