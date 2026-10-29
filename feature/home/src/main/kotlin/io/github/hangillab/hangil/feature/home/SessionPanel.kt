@@ -47,7 +47,11 @@ internal fun SessionPanel(
 ) {
     if (!state.allowsInteraction) return
     val outdated = (state.preparation as? PreparationLoadState.Loaded)?.preparation == Preparation.Outdated
-    PracticePanel(Modifier.testTag("home_journey")) {
+    PracticePanel(
+        Modifier.testTag("home_journey"),
+        containerColor = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+    ) {
         HomeJourneyGuide(state)
         if (state.nextStep == HomeJourneyStep.PREPARE || state.nextStep == HomeJourneyStep.REPEAT) {
             Button(
@@ -77,8 +81,7 @@ internal fun SessionPanel(
                 Text(stringResource(R.string.prepare_change), style = MaterialTheme.typography.titleLarge)
             }
         }
-        Text(stringResource(R.string.session_scope), style = MaterialTheme.typography.bodyLarge)
-        when (val records = state.records) {
+        when (state.records) {
             SessionLoadState.Loading -> Text(stringResource(R.string.session_loading))
             SessionLoadState.Failed -> {
                 Text(stringResource(R.string.session_load_failed), Modifier.testTag("session_load_failed"))
@@ -145,19 +148,6 @@ internal fun SessionPanel(
                         }
                     }
                 }
-                val latest = state.latestFinished
-                if (latest != null) {
-                    Text(stringResource(R.string.session_latest), style = MaterialTheme.typography.titleLarge)
-                    Text(latest.courseTitle, Modifier.testTag("session_latest_course"))
-                    Text(stringResource(R.string.session_goal_task, latest.goalTitle, latest.taskTitle))
-                    if (latest.courseReviewStatus == CourseReviewStatus.DEMO) PracticeBadge(stringResource(R.string.demo_course))
-                    Text(stringResource(R.string.session_started_at, displayTime(latest.startedAtEpochMillis)))
-                    latest.endedAtEpochMillis?.let {
-                        Text(stringResource(R.string.session_finished_at, displayTime(it)), Modifier.testTag("session_latest_finished"))
-                    }
-                } else if (records.sessions.isEmpty()) {
-                    Text(stringResource(R.string.session_empty))
-                }
             }
         }
         when (val operation = state.operation) {
@@ -172,6 +162,30 @@ internal fun SessionPanel(
                     ) { Text(stringResource(R.string.retry)) }
                 }
             }
+        }
+        Text(stringResource(R.string.session_scope), style = MaterialTheme.typography.bodyMedium)
+    }
+    LatestSessionPanel(state)
+}
+
+@Composable
+private fun LatestSessionPanel(state: SessionUiState) {
+    val records = state.records as? SessionLoadState.Loaded ?: return
+    val latest = state.latestFinished
+    if (latest != null) {
+        PracticePanel(Modifier.testTag("home_recent_session")) {
+            Text(stringResource(R.string.session_latest), style = MaterialTheme.typography.titleLarge)
+            Text(latest.courseTitle, Modifier.testTag("session_latest_course"), style = MaterialTheme.typography.headlineSmall)
+            Text(stringResource(R.string.session_goal_task, latest.goalTitle, latest.taskTitle))
+            if (latest.courseReviewStatus == CourseReviewStatus.DEMO) PracticeBadge(stringResource(R.string.demo_course))
+            Text(stringResource(R.string.session_started_at, displayTime(latest.startedAtEpochMillis)))
+            latest.endedAtEpochMillis?.let {
+                Text(stringResource(R.string.session_finished_at, displayTime(it)), Modifier.testTag("session_latest_finished"))
+            }
+        }
+    } else if (records.sessions.isEmpty()) {
+        PracticePanel {
+            Text(stringResource(R.string.session_empty), style = MaterialTheme.typography.bodyLarge)
         }
     }
 }
