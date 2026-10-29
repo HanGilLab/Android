@@ -17,6 +17,20 @@ JAVA_HOME="$HANGIL_JDK17" ./gradlew :app:assembleDebugAndroidTest
 
 Linux에서는 설치한 JDK 17의 홈을 `HANGIL_JDK17`에 지정한 뒤 동일하게 명령별 `JAVA_HOME`을 전달한다. macOS 검색 명령을 사용하지 않는다.
 
+### Homebrew JDK 17이 검색되지 않을 때
+
+Homebrew로 설치한 JDK 17은 `java`로 실행되어도 `java_home`의 검색 결과에 없을 수 있다.
+이 경우 설치된 번들의 위치를 Homebrew에서 읽어 명령별로 선택한다.
+
+```bash
+HANGIL_JDK17_PREFIX="$(brew --prefix openjdk@17)" || exit 1
+HANGIL_JDK17="$HANGIL_JDK17_PREFIX/libexec/openjdk.jdk/Contents/Home"
+JAVA_HOME="$HANGIL_JDK17" "$HANGIL_JDK17/bin/java" -version
+JAVA_HOME="$HANGIL_JDK17" ./scripts/verify.sh
+```
+
+`brew --prefix`나 버전 확인이 실패하면 설치 상태부터 확인한다. 기존 JDK, 전역 셸 설정이나 시스템 검색 경로를 변경할 필요는 없다.
+
 ## 패치 런타임 준비
 
 ENV-09에서 확인하는 후보는 **Eclipse Temurin 17.0.21+9 / macOS arm64**다.
