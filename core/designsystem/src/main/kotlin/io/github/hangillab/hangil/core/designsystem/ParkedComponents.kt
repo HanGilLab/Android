@@ -21,14 +21,15 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 
 /** Visual variants for the parked home and preparation screens; callers retain all safety gates. */
 @Composable
 fun ParkedPage(content: @Composable ColumnScope.() -> Unit) {
     PracticePage(
         maxWidth = HanGilDimensions.parkedPageMaxWidth,
-        contentPadding = PaddingValues(HanGilSpacing.xl),
-        verticalSpacing = HanGilSpacing.lg,
+        contentPadding = PaddingValues(48.dp),
+        verticalSpacing = 32.dp,
         content = content,
     )
 }
@@ -46,8 +47,8 @@ fun ParkedPanel(
         contentColor = MaterialTheme.colorScheme.onSurface,
     ) {
         Column(
-            Modifier.padding(if (emphasized) HanGilSpacing.panelInset else HanGilSpacing.xl),
-            verticalArrangement = Arrangement.spacedBy(HanGilSpacing.md),
+            Modifier.padding(if (emphasized) 36.dp else 32.dp),
+            verticalArrangement = Arrangement.spacedBy(HanGilSpacing.lg),
             content = content,
         )
     }
@@ -59,13 +60,13 @@ fun ParkedBadge(
     emphasized: Boolean = false,
 ) {
     Surface(
-        color = if (emphasized) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer,
-        contentColor = if (emphasized) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer,
+        color = if (emphasized) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.tertiaryContainer,
+        contentColor = if (emphasized) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onTertiaryContainer,
         shape = MaterialTheme.shapes.small,
     ) {
         Text(
             text,
-            Modifier.padding(horizontal = HanGilSpacing.sm, vertical = HanGilSpacing.xs),
+            Modifier.padding(horizontal = HanGilSpacing.md, vertical = HanGilSpacing.sm),
             style = MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.SemiBold,
         )
@@ -101,12 +102,12 @@ fun ParkedChoice(
             },
     ) {
         Row(
-            Modifier.padding(HanGilSpacing.lg),
-            horizontalArrangement = Arrangement.spacedBy(HanGilSpacing.md),
+            Modifier.padding(32.dp),
+            horizontalArrangement = Arrangement.spacedBy(HanGilSpacing.lg),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             RadioButton(selected, onClick = null, modifier = Modifier.clearAndSetSemantics {}, enabled = enabled)
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.xs)) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.md)) {
                 Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                 if (showDescription) {
                     Text(

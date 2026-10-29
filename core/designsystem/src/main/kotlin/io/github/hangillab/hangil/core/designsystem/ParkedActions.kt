@@ -10,6 +10,7 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 
 /** Prominence changes appearance only; enablement and callbacks are always supplied by the screen. */
 @Composable
@@ -24,7 +25,7 @@ fun ParkedButton(
         modifier
             .heightIn(min = if (prominent) HanGilDimensions.primaryActionMinHeight else HanGilDimensions.secondaryActionMinHeight)
             .widthIn(min = HanGilDimensions.actionMinWidth)
-    val padding = PaddingValues(horizontal = HanGilSpacing.xl, vertical = HanGilSpacing.md)
+    val padding = PaddingValues(horizontal = 32.dp, vertical = HanGilSpacing.lg)
     if (prominent) {
         Button(
             onClick,

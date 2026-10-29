@@ -27,6 +27,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -253,11 +254,11 @@ private fun PreparationChoices(
         val wide = maxWidth >= HanGilDimensions.parkedColumnBreakpoint * fontScale
         Column(
             Modifier.fillMaxWidth().testTag(if (wide) "preparation_choices_wide" else "preparation_choices_stacked"),
-            verticalArrangement = Arrangement.spacedBy(HanGilSpacing.md),
+            verticalArrangement = Arrangement.spacedBy(28.dp),
         ) {
             if (wide) {
                 (0 until count).chunked(2).forEach { indices ->
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(HanGilSpacing.lg)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
                         indices.forEach { index -> choice(index, Modifier.weight(1f)) }
                     }
                 }

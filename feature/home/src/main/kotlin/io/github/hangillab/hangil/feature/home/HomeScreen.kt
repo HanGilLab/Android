@@ -21,6 +21,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.hangillab.hangil.core.designsystem.HanGilBrand
@@ -201,15 +202,15 @@ private fun HomeDashboard(
         if (maxWidth >= HanGilDimensions.parkedColumnBreakpoint * fontScale) {
             Row(
                 Modifier.fillMaxWidth().testTag("home_dashboard_wide"),
-                horizontalArrangement = Arrangement.spacedBy(HanGilSpacing.lg),
+                horizontalArrangement = Arrangement.spacedBy(32.dp),
             ) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.lg)) { first() }
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.lg)) { second() }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(32.dp)) { first() }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(32.dp)) { second() }
             }
         } else {
             Column(
                 Modifier.fillMaxWidth().testTag("home_dashboard_stacked"),
-                verticalArrangement = Arrangement.spacedBy(HanGilSpacing.xl),
+                verticalArrangement = Arrangement.spacedBy(32.dp),
             ) {
                 first()
                 second()

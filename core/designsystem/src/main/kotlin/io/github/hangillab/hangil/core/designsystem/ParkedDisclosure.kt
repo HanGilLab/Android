@@ -3,6 +3,7 @@ package io.github.hangillab.hangil.core.designsystem
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -29,9 +30,10 @@ fun ParkedDisclosure(
     var expanded by rememberSaveable { mutableStateOf(false) }
     val action = stringResource(if (expanded) R.string.parked_detail_hide else R.string.parked_detail_show)
     val state = stringResource(if (expanded) R.string.parked_detail_expanded else R.string.parked_detail_collapsed)
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.sm)) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.lg)) {
         TextButton(
             onClick = { expanded = !expanded },
+            contentPadding = PaddingValues(HanGilSpacing.md),
             modifier =
                 modifier
                     .fillMaxWidth()
@@ -44,6 +46,6 @@ fun ParkedDisclosure(
                 Text(action, style = MaterialTheme.typography.titleMedium)
             }
         }
-        if (expanded) Column(verticalArrangement = Arrangement.spacedBy(HanGilSpacing.sm), content = content)
+        if (expanded) Column(verticalArrangement = Arrangement.spacedBy(HanGilSpacing.lg), content = content)
     }
 }
