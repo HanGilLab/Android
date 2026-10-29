@@ -1,6 +1,6 @@
 # 현재 주차 UX와 디자인 기준 문서 정합
 
-- 상태: 진행 중
+- 상태: 완료
 - 요구사항: 최신 사용자 가독성 기준, PR #32의 구현과 DES-06 후속 문서 정합
 
 ## 목표와 범위
@@ -14,7 +14,7 @@
 - [x] 토큰 문서의 색 쌍, Typography와 Shapes가 현재 소스와 일치한다.
 - [x] Practice 기본 배치와 Parked 변형, 실제 적용 화면과 안전 조건을 구분한다.
 - [x] 문서 링크, 공개 정보 경계와 README의 네 사례를 확인하고 JDK17 전체 검사를 통과한다.
-- [ ] 최신 PR CI와 Codex 리뷰, 미해결 지적을 확인한다. 문서만 변경하므로 새 실기는 미실행으로 구분한다.
+- [x] 최신 PR CI와 Codex 리뷰, 미해결 지적을 확인한다. 문서만 변경하므로 새 실기는 미실행으로 구분한다.
 
 ## 구현 단계
 
@@ -27,11 +27,13 @@
 | 명령 또는 시나리오 | 결과 | 근거 |
 |---|---|---|
 | JDK17 `./scripts/verify.sh` | 통과 | Temurin17.0.21, 공개 콘텐츠/Spotless/모듈 경계/Lint, 단위143개(실패/오류/건너뜀0), debug/unsigned release. cache/up-to-date 포함 |
-| 소스/문서 대조와 링크 | 통과 | 현재 색 쌍/15개 Typography/5개 Shapes/Practice와 Parked 치수 및 적용 대조, 상대 링크11개 유효, diff 검사와 민감 정보 검사 통과 |
+| 소스/문서 대조와 링크 | 통과 | 현재 색 쌍/15개 Typography/5개 Shapes/Practice와 Parked 치수 및 적용 대조, 디자인 문서 상대 링크11개 유효, diff 검사와 민감 정보 검사 통과 |
 | 독립 문서 검토 | 수정 후 통과 | 비활성 테두리 설명을 PracticeChoice와 ParkedChoice로 구분했다. 실제 outline/RadioButton/비선택 무테두리 의미 보존 |
 | 새 Pleos 수동 시나리오 | 미실행 | 문서만 변경, 앱/테스트/DB/권한 변경 없음. PR #32의 과거 실기는 별도 계획 링크로 유지 |
 | 공식 안내/양식 재확인 | 변경 영향 없음 | 제출/규정/일정/공지3건과 DOCX 본문 확인. 기존 제출 경계와 준비 기한 유지. 실제 발송/서명 미실행 |
-| 최신 PR CI/Codex | 대기 | 실제 최신 head의 종료를 확인한 뒤 기록 |
+| [PR #33](https://github.com/HanGilLab/Android/pull/33)의 문서 커밋 CI/Codex | 통과 | `11d6460`의 [필수 CI4개](https://github.com/HanGilLab/Android/actions/runs/40899171230) 성공, [Codex 완료/지적 없음](https://github.com/HanGilLab/Android/pull/33#issuecomment-6500529112), 미해결 스레드/변경 요청0 |
+
+계획 정리 커밋도 PR의 실제 최신 필수 CI와 Codex 리뷰가 끝난 뒤에만 병합한다. 이번 문서 작업 완료를 DES-06 전체 완료로 계산하지 않는다.
 
 ## 남은 문제와 인계
 
