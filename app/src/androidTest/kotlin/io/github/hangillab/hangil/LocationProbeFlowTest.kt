@@ -3,6 +3,7 @@ package io.github.hangillab.hangil
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.os.Bundle
+import android.view.accessibility.AccessibilityNodeInfo
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -20,7 +21,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
 
-/** Dedicated Pleos AVD only. These tests inspect permission state and never grant it. */
+/** Dedicated Pleos AVD only. Granting requires an explicit opt-in and approved external cleanup. */
 @RunWith(AndroidJUnit4::class)
 class LocationProbeFlowTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
@@ -76,6 +77,88 @@ class LocationProbeFlowTest {
         openProbe()
         assertIdleProbe()
         capture("location-system-request-reentered")
+    }
+
+    /**
+     * Run only with approved temporary consent and an external runner that restores grants and flags,
+     * even if this test fails. Default instrumentation discovery must never grant this permission.
+     */
+    @Test fun approvedSystemGrantReadsActualSdkResponseAndAllowsFreshRetry() {
+        assumeTrue(
+            "임시 위치 권한 허용과 외부 복구를 승인한 개별 검증에서만 실행합니다",
+            InstrumentationRegistry.getArguments().getString("allowTemporaryFusedLocationGrant") == "true",
+        )
+        assertTrue("전용 검증은 위치 권한 미허용 상태에서 시작해야 합니다", !permissionGranted())
+        openProbe()
+        touch("location_read")
+        compose.waitUntil(20_000) { status().contains("위치 권한이 허용되지 않았어요") }
+        touch("location_permission")
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val automation = instrumentation.uiAutomation
+        val context = instrumentation.targetContext
+        val appLabel = context.applicationInfo.loadLabel(context.packageManager).toString()
+        var allowButton: AccessibilityNodeInfo? = null
+        val deadline = android.os.SystemClock.uptimeMillis() + 20_000
+        while (android.os.SystemClock.uptimeMillis() < deadline && allowButton == null) {
+            val root = automation.rootInActiveWindow
+            val controllerPackage = root?.packageName?.toString()
+            if (controllerPackage == "com.android.permissioncontroller" || controllerPackage == "com.google.android.permissioncontroller") {
+                allowButton = automotiveGrantButton(checkNotNull(root), controllerPackage, appLabel)
+            }
+            if (allowButton == null) android.os.SystemClock.sleep(100)
+        }
+        val approvedButton = checkNotNull(allowButton) { "시스템 권한창의 명시적인 허용 버튼을 확인하지 못했습니다" }
+        assertTrue("시스템 버튼 선택 전에는 실제 권한이 미허용이어야 합니다", !permissionGranted())
+        captureNativeWindow("location-system-grant-dialog")
+        assertTrue("시스템 권한 허용 버튼이 계속 유효해야 합니다", approvedButton.refresh())
+        assertTrue("시스템 권한 허용 버튼 선택에 실패했습니다", approvedButton.performAction(AccessibilityNodeInfo.ACTION_CLICK))
+        phase("SYSTEM_PERMISSION_GRANT_WINDOW_OBSERVED=true")
+        compose.waitUntil(20_000) { permissionGranted() }
+        awaitActualSdkResponse("location-system-grant-sdk-response")
+        touch("map_close")
+        openProbe()
+        assertIdleProbe()
+        capture("location-system-grant-reentered-idle")
+        touch("location_read")
+        awaitActualSdkResponse("location-system-grant-retry-sdk-response")
+    }
+
+    private fun automotiveGrantButton(
+        root: AccessibilityNodeInfo,
+        controllerPackage: String,
+        appLabel: String,
+    ): AccessibilityNodeInfo? {
+        val dialogTitles =
+            root.findAccessibilityNodeInfosByViewId("$controllerPackage:id/car_ui_alert_title").filter {
+                it.packageName?.toString() == controllerPackage && it.isVisibleToUser && it.text?.contains(appLabel) == true
+            }
+        if (dialogTitles.isEmpty()) return null
+        assertEquals("요청한 앱의 시스템 권한 제목은 하나여야 합니다", 1, dialogTitles.size)
+        val resources =
+            InstrumentationRegistry.getInstrumentation().targetContext.packageManager.getResourcesForApplication(
+                controllerPackage,
+            )
+        val allowLabelId = resources.getIdentifier("grant_dialog_button_allow", "string", controllerPackage)
+        check(allowLabelId != 0) { "설치된 권한 컨트롤러의 허용 문구를 확인하지 못했습니다" }
+        val allowLabel = resources.getString(allowLabelId)
+        val titleId = "$controllerPackage:id/car_ui_list_item_title"
+        val allowTitles =
+            root.findAccessibilityNodeInfosByViewId(titleId).filter {
+                it.packageName?.toString() == controllerPackage && it.isVisibleToUser && it.isEnabled && it.text?.toString() == allowLabel
+            }
+        if (allowTitles.isEmpty()) return null
+        assertEquals("명시적인 시스템 권한 허용 항목은 하나여야 합니다", 1, allowTitles.size)
+        val row = allowTitles.single().parent ?: return null
+        val rowTitles = row.findAccessibilityNodeInfosByViewId(titleId)
+        assertEquals("허용 문구와 조작 영역이 같은 단일 행에 있어야 합니다", 1, rowTitles.size)
+        assertEquals(allowLabel, rowTitles.single().text?.toString())
+        val buttons =
+            row.findAccessibilityNodeInfosByViewId("$controllerPackage:id/car_ui_list_item_touch_interceptor").filter {
+                it.packageName?.toString() == controllerPackage && it.isVisibleToUser && it.isEnabled && it.isClickable
+            }
+        if (buttons.isEmpty()) return null
+        assertEquals("허용 행의 조작 영역은 하나여야 합니다", 1, buttons.size)
+        return buttons.single()
     }
 
     /** Run only after a person has approved the dedicated AVD's custom location permission. */
