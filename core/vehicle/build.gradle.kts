@@ -5,6 +5,7 @@ plugins {
 
 android {
     namespace = "io.github.hangillab.hangil.core.vehicle"
+    defaultConfig { testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner" }
     useLibrary("android.car")
     testOptions.unitTests.isIncludeAndroidResources = true
 }
@@ -18,4 +19,7 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test)
     testImplementation(libs.robolectric)
+    androidTestImplementation(libs.pleos.naviHelper)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.junit)
 }
