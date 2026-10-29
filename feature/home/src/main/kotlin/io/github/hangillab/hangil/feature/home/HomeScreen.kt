@@ -20,15 +20,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.hangillab.hangil.core.designsystem.HanGilBrand
 import io.github.hangillab.hangil.core.designsystem.HanGilDimensions
 import io.github.hangillab.hangil.core.designsystem.HanGilSpacing
-import io.github.hangillab.hangil.core.designsystem.PracticeBadge
-import io.github.hangillab.hangil.core.designsystem.PracticeLockedNotice
-import io.github.hangillab.hangil.core.designsystem.PracticePage
-import io.github.hangillab.hangil.core.designsystem.PracticePanel
+import io.github.hangillab.hangil.core.designsystem.ParkedBadge
+import io.github.hangillab.hangil.core.designsystem.ParkedButton
+import io.github.hangillab.hangil.core.designsystem.ParkedDisclosure
+import io.github.hangillab.hangil.core.designsystem.ParkedLockedNotice
+import io.github.hangillab.hangil.core.designsystem.ParkedPage
+import io.github.hangillab.hangil.core.designsystem.ParkedPanel
 import io.github.hangillab.hangil.core.domain.Preparation
 
 @Composable
@@ -63,14 +67,14 @@ internal fun HomeScreen(
 ) {
     var diagnosticsExpanded by rememberSaveable { mutableStateOf(false) }
     key(state.allowsDetailedInteraction) {
-        PracticePage {
+        ParkedPage {
             if (!state.allowsDetailedInteraction) {
                 Text(
                     stringResource(R.string.home_title),
                     Modifier.testTag("home_locked_title"),
                     style = MaterialTheme.typography.titleLarge,
                 )
-                PracticeLockedNotice()
+                ParkedLockedNotice()
             } else {
                 HomeHeader()
                 HomeDashboard(first = sessionContent, second = {
@@ -81,7 +85,7 @@ internal fun HomeScreen(
                                 style = MaterialTheme.typography.bodyLarge,
                             )
                         PreparationLoadState.Failed ->
-                            PracticePanel {
+                            ParkedPanel {
                                 Text(stringResource(R.string.load_failed), style = MaterialTheme.typography.bodyLarge)
                                 TextButton(
                                     onClick = onRetry,
@@ -90,63 +94,61 @@ internal fun HomeScreen(
                             }
                         is PreparationLoadState.Loaded -> {
                             val ready = (load.preparation as? Preparation.Ready)?.practice
-                            Column(verticalArrangement = Arrangement.spacedBy(HanGilSpacing.lg)) {
-                                PracticePanel {
+                            ParkedPanel {
+                                Text(
+                                    stringResource(if (ready == null) R.string.first_preparation else R.string.saved_preparation),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                if (ready == null) {
                                     Text(
                                         stringResource(
-                                            if (ready ==
-                                                null
+                                            if (load.preparation ==
+                                                Preparation.Outdated
                                             ) {
-                                                R.string.first_preparation
+                                                R.string.preparation_outdated
                                             } else {
-                                                R.string.saved_preparation
+                                                R.string.preparation_intro
                                             },
                                         ),
-                                        style = MaterialTheme.typography.headlineMedium,
-                                    )
-                                    if (ready == null) {
-                                        Text(
-                                            stringResource(
-                                                if (load.preparation ==
-                                                    Preparation.Outdated
-                                                ) {
-                                                    R.string.preparation_outdated
-                                                } else {
-                                                    R.string.preparation_intro
-                                                },
-                                            ),
-                                            style = MaterialTheme.typography.bodyLarge,
-                                        )
-                                        Text(stringResource(R.string.preparation_flow), style = MaterialTheme.typography.titleLarge)
-                                    } else {
-                                        Text(ready.goal.title, style = MaterialTheme.typography.titleLarge)
-                                        Text(
-                                            ready.course.title,
-                                            Modifier.testTag("saved_course"),
-                                            style = MaterialTheme.typography.headlineSmall,
-                                        )
-                                        PracticeBadge(stringResource(R.string.demo_course))
-                                        Text(ready.course.summary, style = MaterialTheme.typography.bodyLarge)
-                                    }
-                                }
-                                PracticePanel {
-                                    Text(stringResource(R.string.today_one), style = MaterialTheme.typography.headlineMedium)
-                                    Text(
-                                        ready?.task?.title ?: stringResource(R.string.one_task_intro),
-                                        Modifier.testTag("saved_task"),
-                                        style = MaterialTheme.typography.titleLarge,
-                                    )
-                                    Text(
-                                        ready?.task?.description ?: stringResource(R.string.one_task_description),
                                         style = MaterialTheme.typography.bodyLarge,
                                     )
+                                } else {
+                                    Text(
+                                        ready.course.title,
+                                        Modifier.testTag("saved_course"),
+                                        style = MaterialTheme.typography.headlineSmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                    ParkedBadge(stringResource(R.string.demo_course))
+                                    Text(
+                                        stringResource(R.string.today_one),
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    Text(ready.task.title, Modifier.testTag("saved_task"), style = MaterialTheme.typography.titleLarge)
+                                    key(ready.goal.id, ready.course.id, ready.task.id) {
+                                        ParkedDisclosure(
+                                            stringResource(R.string.preparation_details),
+                                            Modifier.testTag("home_preparation_details"),
+                                        ) {
+                                            Text(
+                                                ready.goal.title,
+                                                Modifier.testTag("saved_goal"),
+                                                style = MaterialTheme.typography.bodyLarge,
+                                            )
+                                            Text(ready.course.summary, style = MaterialTheme.typography.bodyLarge)
+                                            Text(ready.task.description, style = MaterialTheme.typography.bodyLarge)
+                                        }
+                                    }
                                 }
-                                Text(stringResource(R.string.preparation_scope), style = MaterialTheme.typography.bodyLarge)
                             }
                         }
                     }
-                    TextButton(
+                    ParkedButton(
                         onClick = onMapPreview,
+                        prominent = false,
                         modifier = Modifier.heightIn(min = HanGilDimensions.secondaryActionMinHeight).testTag("home_map"),
                     ) {
                         Text(stringResource(R.string.map_preview), style = MaterialTheme.typography.titleLarge)
@@ -169,7 +171,7 @@ internal fun HomeScreen(
 @Composable
 private fun HomeHeader() {
     val fontScale = LocalDensity.current.fontScale
-    Column(verticalArrangement = Arrangement.spacedBy(HanGilSpacing.md)) {
+    Column(verticalArrangement = Arrangement.spacedBy(HanGilSpacing.sm)) {
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             if (maxWidth >= HanGilDimensions.wideBreakpoint / 2 * fontScale) {
                 Row(
@@ -177,23 +179,15 @@ private fun HomeHeader() {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    HanGilBrand()
-                    PracticeBadge(stringResource(R.string.parked_badge))
+                    HanGilBrand(markSize = HanGilDimensions.parkedBrandMarkSize)
+                    ParkedBadge(stringResource(R.string.parked_badge), emphasized = true)
                 }
             } else {
                 Column(verticalArrangement = Arrangement.spacedBy(HanGilSpacing.sm)) {
-                    HanGilBrand()
-                    PracticeBadge(stringResource(R.string.parked_badge))
+                    HanGilBrand(markSize = HanGilDimensions.parkedBrandMarkSize)
+                    ParkedBadge(stringResource(R.string.parked_badge), emphasized = true)
                 }
             }
-        }
-        Column(verticalArrangement = Arrangement.spacedBy(HanGilSpacing.xs)) {
-            Text(stringResource(R.string.preparation_heading), style = MaterialTheme.typography.headlineLarge)
-            Text(
-                stringResource(R.string.home_tagline),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
         }
     }
 }
@@ -205,18 +199,18 @@ private fun HomeDashboard(
 ) {
     val fontScale = LocalDensity.current.fontScale
     BoxWithConstraints(Modifier.fillMaxWidth().testTag("home_dashboard")) {
-        if (maxWidth >= HanGilDimensions.wideBreakpoint * fontScale) {
+        if (maxWidth >= HanGilDimensions.parkedColumnBreakpoint * fontScale) {
             Row(
                 Modifier.fillMaxWidth().testTag("home_dashboard_wide"),
-                horizontalArrangement = Arrangement.spacedBy(HanGilSpacing.xl),
+                horizontalArrangement = Arrangement.spacedBy(32.dp),
             ) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.lg)) { first() }
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.lg)) { second() }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(32.dp)) { first() }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(32.dp)) { second() }
             }
         } else {
             Column(
                 Modifier.fillMaxWidth().testTag("home_dashboard_stacked"),
-                verticalArrangement = Arrangement.spacedBy(HanGilSpacing.xl),
+                verticalArrangement = Arrangement.spacedBy(32.dp),
             ) {
                 first()
                 second()

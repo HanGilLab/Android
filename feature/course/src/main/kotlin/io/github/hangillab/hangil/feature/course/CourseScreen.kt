@@ -1,17 +1,17 @@
 package io.github.hangillab.hangil.feature.course
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -25,8 +25,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -35,14 +36,12 @@ import androidx.lifecycle.repeatOnLifecycle
 import io.github.hangillab.hangil.core.designsystem.HanGilBrand
 import io.github.hangillab.hangil.core.designsystem.HanGilDimensions
 import io.github.hangillab.hangil.core.designsystem.HanGilSpacing
-import io.github.hangillab.hangil.core.designsystem.PracticeBadge
-import io.github.hangillab.hangil.core.designsystem.PracticeButton
-import io.github.hangillab.hangil.core.designsystem.PracticeChoice
-import io.github.hangillab.hangil.core.designsystem.PracticeLockedNotice
-import io.github.hangillab.hangil.core.designsystem.PracticePage
-import io.github.hangillab.hangil.core.designsystem.PracticePanel
-import io.github.hangillab.hangil.core.designsystem.PracticeTextButton
-import io.github.hangillab.hangil.core.designsystem.R as DesignR
+import io.github.hangillab.hangil.core.designsystem.ParkedBadge
+import io.github.hangillab.hangil.core.designsystem.ParkedButton
+import io.github.hangillab.hangil.core.designsystem.ParkedChoice
+import io.github.hangillab.hangil.core.designsystem.ParkedDisclosure
+import io.github.hangillab.hangil.core.designsystem.ParkedLockedNotice
+import io.github.hangillab.hangil.core.designsystem.ParkedPage
 
 @Composable
 fun CourseRoute(
@@ -78,91 +77,89 @@ internal fun CourseScreen(
     onBack: () -> Unit,
 ) {
     key(state.allowsInteraction, state.step) {
-        PracticePage {
+        ParkedPage {
             PreparationHeader(state, onBack)
             if (!state.allowsInteraction) {
-                PracticeLockedNotice()
+                ParkedLockedNotice()
             } else {
                 when (state.step) {
                     PreparationStep.GOAL -> {
-                        Text(stringResource(R.string.goal_intro), style = MaterialTheme.typography.bodyLarge)
-                        Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.md)) {
-                            state.goals.forEach { goal ->
-                                PracticeChoice(
-                                    goal.title,
-                                    goal.description,
-                                    state.goal?.id == goal.id,
-                                    { onGoal(goal.id) },
-                                    Modifier.testTag("goal_${goal.id}"),
-                                )
-                            }
+                        PreparationChoices(state.goals.size, Modifier.testTag("goal_choices")) { index, modifier ->
+                            val goal = state.goals[index]
+                            val selected = state.goal?.id == goal.id
+                            ParkedChoice(
+                                goal.title,
+                                goal.description,
+                                selected,
+                                { onGoal(goal.id) },
+                                modifier.testTag("goal_${goal.id}"),
+                                showDescription = selected,
+                            )
                         }
                     }
                     PreparationStep.COURSE -> {
-                        PreparationColumns(first = {
-                            PracticePanel(
-                                Modifier.testTag("course_context"),
-                                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                            ) {
-                                DemoNotice()
-                                PreparationIllustration()
-                            }
-                        }, second = {
-                            Column(
-                                Modifier.fillMaxWidth().testTag("course_choices").selectableGroup(),
-                                verticalArrangement = Arrangement.spacedBy(HanGilSpacing.md),
-                            ) {
-                                state.courses.forEach { course ->
-                                    PracticeChoice(course.title, course.summary, state.course?.id == course.id, {
-                                        onCourse(course.id)
-                                    }, Modifier.testTag("course_${course.id}"))
-                                }
-                            }
-                        })
+                        Column(Modifier.testTag("course_context")) { DemoNotice() }
+                        PreparationChoices(state.courses.size, Modifier.testTag("course_choices")) { index, modifier ->
+                            val course = state.courses[index]
+                            val selected = state.course?.id == course.id
+                            ParkedChoice(course.title, course.summary, selected, {
+                                onCourse(course.id)
+                            }, modifier.testTag("course_${course.id}"), showDescription = selected)
+                        }
+                        DemoDetails()
                     }
                     PreparationStep.BRIEFING -> {
                         DemoNotice()
                         state.course?.let { course ->
-                            PreparationColumns(first = {
-                                PracticePanel(
-                                    Modifier.testTag("briefing_summary"),
-                                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            PreparationChoices(course.tasks.size, Modifier.testTag("briefing_tasks")) { index, modifier ->
+                                val task = course.tasks[index]
+                                val selected = state.taskId == task.id
+                                ParkedChoice(
+                                    task.title,
+                                    task.description,
+                                    selected,
+                                    { onTask(task.id) },
+                                    modifier.testTag("task_${task.id}"),
+                                    showDescription = selected,
+                                )
+                            }
+                            Column(Modifier.fillMaxWidth().testTag("briefing_summary")) {
+                                ParkedDisclosure(
+                                    stringResource(R.string.course_details, course.title),
+                                    Modifier.testTag("briefing_course_details"),
                                 ) {
-                                    Text(course.title, style = MaterialTheme.typography.headlineMedium)
-                                    Text(course.summary, style = MaterialTheme.typography.bodyLarge)
+                                    Text(
+                                        course.summary,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
                                     course.sections.forEachIndexed { index, section ->
                                         Row(
                                             Modifier.padding(vertical = HanGilSpacing.xs),
-                                            horizontalArrangement = Arrangement.spacedBy(HanGilSpacing.lg),
+                                            horizontalArrangement = Arrangement.spacedBy(HanGilSpacing.md),
                                         ) {
+                                            Surface(
+                                                color = MaterialTheme.colorScheme.primaryContainer,
+                                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                shape = MaterialTheme.shapes.small,
+                                            ) {
+                                                Text(
+                                                    "0${index + 1}",
+                                                    Modifier.padding(horizontal = HanGilSpacing.sm, vertical = HanGilSpacing.xs),
+                                                    style = MaterialTheme.typography.titleMedium,
+                                                    fontWeight = FontWeight.Bold,
+                                                )
+                                            }
                                             Text(
-                                                "0${index + 1}",
-                                                color = MaterialTheme.colorScheme.primary,
+                                                section,
+                                                Modifier.testTag("briefing_section_$index"),
                                                 style = MaterialTheme.typography.titleLarge,
                                             )
-                                            Text(section, style = MaterialTheme.typography.titleLarge)
                                         }
                                     }
                                 }
-                            }, second = {
-                                PracticePanel(Modifier.testTag("briefing_tasks")) {
-                                    Text(stringResource(R.string.task_title), style = MaterialTheme.typography.headlineSmall)
-                                    Text(stringResource(R.string.task_intro), style = MaterialTheme.typography.bodyLarge)
-                                    Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.md)) {
-                                        course.tasks.forEach { task ->
-                                            PracticeChoice(
-                                                task.title,
-                                                task.description,
-                                                state.taskId == task.id,
-                                                { onTask(task.id) },
-                                                Modifier.testTag("task_${task.id}"),
-                                            )
-                                        }
-                                    }
-                                }
-                            })
+                            }
+                            DemoDetails()
                         }
                     }
                 }
@@ -173,21 +170,25 @@ internal fun CourseScreen(
                         style = MaterialTheme.typography.bodyLarge,
                     )
                 }
-                PracticeButton(
-                    onClick = onNext,
-                    enabled = state.canContinue,
-                    modifier = Modifier.fillMaxWidth().testTag("preparation_next"),
-                ) {
-                    Text(
-                        stringResource(
-                            when {
-                                state.saving -> R.string.saving
-                                state.step == PreparationStep.BRIEFING -> R.string.save_preparation
-                                else -> R.string.next
-                            },
-                        ),
-                        style = MaterialTheme.typography.titleLarge,
-                    )
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+                    ParkedButton(
+                        onClick = onNext,
+                        enabled = state.canContinue,
+                        modifier =
+                            Modifier.widthIn(max = HanGilDimensions.parkedActionMaxWidth).fillMaxWidth().testTag("preparation_next"),
+                    ) {
+                        Text(
+                            stringResource(
+                                when {
+                                    state.saving -> R.string.saving
+                                    state.step == PreparationStep.BRIEFING -> R.string.save_preparation
+                                    else -> R.string.next
+                                },
+                            ),
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
                 }
             }
         }
@@ -199,14 +200,14 @@ private fun PreparationHeader(
     state: CourseUiState,
     onBack: () -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(HanGilSpacing.md)) {
+    Column(verticalArrangement = Arrangement.spacedBy(HanGilSpacing.sm)) {
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (state.allowsInteraction) {
-                HanGilBrand(Modifier.weight(1f))
+                HanGilBrand(Modifier.weight(1f), markSize = HanGilDimensions.parkedBrandMarkSize)
             } else {
                 Text(
                     stringResource(R.string.course_brand),
@@ -214,7 +215,7 @@ private fun PreparationHeader(
                     style = MaterialTheme.typography.titleLarge,
                 )
             }
-            PracticeTextButton(onClick = onBack, enabled = !state.saving) {
+            ParkedButton(onClick = onBack, enabled = !state.saving, prominent = false) {
                 Text(stringResource(R.string.course_back), style = MaterialTheme.typography.titleMedium)
             }
         }
@@ -235,6 +236,7 @@ private fun PreparationHeader(
                     ),
                     Modifier.testTag("preparation_title"),
                     style = MaterialTheme.typography.headlineLarge,
+                    fontWeight = FontWeight.SemiBold,
                 )
             }
         }
@@ -242,50 +244,46 @@ private fun PreparationHeader(
 }
 
 @Composable
-private fun PreparationColumns(
-    first: @Composable () -> Unit,
-    second: @Composable () -> Unit,
+private fun PreparationChoices(
+    count: Int,
+    modifier: Modifier = Modifier,
+    choice: @Composable (Int, Modifier) -> Unit,
 ) {
     val fontScale = LocalDensity.current.fontScale
-    BoxWithConstraints(Modifier.fillMaxWidth()) {
-        if (maxWidth >= HanGilDimensions.wideBreakpoint * fontScale) {
-            Row(
-                Modifier.fillMaxWidth().testTag("preparation_columns_wide"),
-                horizontalArrangement = Arrangement.spacedBy(HanGilSpacing.xl),
-            ) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.lg)) { first() }
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.lg)) { second() }
+    BoxWithConstraints(modifier.fillMaxWidth().selectableGroup()) {
+        val wide = maxWidth >= HanGilDimensions.parkedColumnBreakpoint * fontScale
+        Column(
+            Modifier.fillMaxWidth().testTag(if (wide) "preparation_choices_wide" else "preparation_choices_stacked"),
+            verticalArrangement = Arrangement.spacedBy(28.dp),
+        ) {
+            if (wide) {
+                (0 until count).chunked(2).forEach { indices ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
+                        indices.forEach { index -> choice(index, Modifier.weight(1f)) }
+                    }
+                }
+            } else {
+                repeat(count) { index -> choice(index, Modifier.fillMaxWidth()) }
             }
-        } else {
-            Column(
-                Modifier.fillMaxWidth().testTag("preparation_columns_stacked"),
-                verticalArrangement = Arrangement.spacedBy(HanGilSpacing.xl),
-            ) {
-                first()
-                second()
-            }
-        }
-    }
-}
-
-@Composable
-private fun PreparationIllustration() {
-    val fontScale = LocalDensity.current.fontScale
-    BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-        if (maxWidth >= HanGilDimensions.wideBreakpoint / 2 * fontScale) {
-            Image(
-                painterResource(DesignR.drawable.il_hangil_prepare),
-                contentDescription = null,
-                modifier = Modifier.width(HanGilDimensions.homeIllustrationMaxWidth).aspectRatio(1.5f).testTag("preparation_illustration"),
-            )
         }
     }
 }
 
 @Composable
 private fun DemoNotice() {
-    Column(Modifier.fillMaxWidth().testTag("preparation_demo_notice"), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.md)) {
-        PracticeBadge(stringResource(R.string.demo_badge))
-        Text(stringResource(R.string.demo_notice), style = MaterialTheme.typography.bodyLarge)
+    Column(Modifier.fillMaxWidth().testTag("preparation_demo_notice")) {
+        ParkedBadge(stringResource(R.string.demo_badge))
+    }
+}
+
+@Composable
+private fun DemoDetails() {
+    ParkedDisclosure(stringResource(R.string.demo_details), Modifier.testTag("preparation_demo_details")) {
+        Text(
+            stringResource(R.string.demo_notice),
+            Modifier.testTag("preparation_demo_description"),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }

@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -28,14 +29,20 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.unit.Dp
 
 @Composable
-fun PracticePage(content: @Composable ColumnScope.() -> Unit) {
+fun PracticePage(
+    maxWidth: Dp = HanGilDimensions.pageMaxWidth,
+    contentPadding: PaddingValues = PaddingValues(HanGilSpacing.pageInset),
+    verticalSpacing: Dp = HanGilSpacing.xl,
+    content: @Composable ColumnScope.() -> Unit,
+) {
     Scaffold { inset ->
         Box(Modifier.fillMaxSize().padding(inset).verticalScroll(rememberScrollState()), contentAlignment = Alignment.TopCenter) {
             Column(
-                Modifier.widthIn(max = HanGilDimensions.pageMaxWidth).fillMaxWidth().padding(HanGilSpacing.pageInset),
-                verticalArrangement = Arrangement.spacedBy(HanGilSpacing.xl),
+                Modifier.widthIn(max = maxWidth).fillMaxWidth().padding(contentPadding),
+                verticalArrangement = Arrangement.spacedBy(verticalSpacing),
                 content = content,
             )
         }

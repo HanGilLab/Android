@@ -27,11 +27,13 @@ class SessionFlowTest {
         compose.onNodeWithTag("session_start").performScrollTo().performClick()
         waitFor("session_finish")
         compose.onNodeWithTag("session_course").assertTextContains(course)
+        ensureRecordGuideExpanded()
         val startedAt = text("session_started_at")
         capture("session-started")
         compose.activityRule.scenario.recreate()
         waitFor("session_finish")
         compose.onNodeWithTag("session_course").assertTextContains(course)
+        ensureRecordGuideExpanded()
         compose.onNodeWithTag("session_started_at").assertTextContains(startedAt)
         compose.onNodeWithTag("session_finish").performScrollTo()
         capture("session-recreated")
@@ -39,6 +41,7 @@ class SessionFlowTest {
 
     @Test fun activeSessionLocksWhileDrivingAndReturnsAfterPark() {
         waitFor("session_finish")
+        ensureRecordGuideExpanded()
         val startedAt = text("session_started_at")
         compose.onNodeWithTag("session_finish").performScrollTo()
         phase("AWAIT_D")
@@ -63,6 +66,7 @@ class SessionFlowTest {
         capture("session-driving-locked")
         phase("AWAIT_P")
         waitFor("session_finish")
+        ensureRecordGuideExpanded()
         compose.onNodeWithTag("session_started_at").assertTextContains(startedAt)
         compose.onNodeWithTag("session_finish").performScrollTo()
         capture("session-parked-again")
@@ -83,6 +87,23 @@ class SessionFlowTest {
         compose.onNodeWithTag("session_latest_course").assertTextContains(course)
         compose.onNodeWithTag("session_latest_finished").performScrollTo()
         capture("session-finished-restored")
+    }
+
+    private fun ensureRecordGuideExpanded() {
+        if (compose
+                .onAllNodes(
+                    androidx.compose.ui.test
+                        .hasTestTag("session_started_at"),
+                ).fetchSemanticsNodes()
+                .isEmpty()
+        ) {
+            compose
+                .onNodeWithTag("home_record_guide")
+                .performScrollTo()
+                .assertIsDisplayed()
+                .performClick()
+        }
+        compose.onNodeWithTag("session_started_at").performScrollTo().assertIsDisplayed()
     }
 
     private fun text(tag: String): String =
