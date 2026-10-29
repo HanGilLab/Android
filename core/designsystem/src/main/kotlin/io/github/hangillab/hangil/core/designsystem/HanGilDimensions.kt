@@ -14,6 +14,7 @@ object HanGilDimensions {
     val diagnosticsMaxWidth = 720.dp
     val brandMarkSize = 88.dp
     val mapPreviewHeight = 420.dp
+    val homeIllustrationMaxWidth = 200.dp
     val choiceBorderWidth = 1.dp
     val choiceSelectedBorderWidth = 2.dp
 }

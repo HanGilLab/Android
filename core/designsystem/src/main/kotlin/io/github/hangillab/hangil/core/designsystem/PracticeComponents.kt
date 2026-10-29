@@ -20,9 +20,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.contentColorFor
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -63,9 +65,11 @@ fun PracticeColumns(
 @Composable
 fun PracticePanel(
     modifier: Modifier = Modifier,
+    containerColor: Color = MaterialTheme.colorScheme.surfaceContainerLow,
+    contentColor: Color = contentColorFor(containerColor),
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Surface(modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerLow) {
+    Surface(modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large, color = containerColor, contentColor = contentColor) {
         Column(Modifier.padding(HanGilSpacing.panelInset), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.md), content = content)
     }
 }

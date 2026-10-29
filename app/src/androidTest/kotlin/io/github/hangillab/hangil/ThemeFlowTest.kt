@@ -8,6 +8,7 @@ import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -18,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -27,6 +29,51 @@ import java.io.File
 @RunWith(AndroidJUnit4::class)
 class ThemeFlowTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
+
+    @Test fun parkedHomeKeepsActionAndPreparationReachable() {
+        assertEnvironment()
+        waitFor("home_prepare")
+        waitFor("saved_course")
+        val expectedLayout = checkNotNull(InstrumentationRegistry.getArguments().getString("home_layout"))
+        check(expectedLayout == "wide" || expectedLayout == "stacked")
+        compose.onNodeWithTag("home_dashboard_$expectedLayout").assertExists()
+        compose.onNodeWithTag("home_illustration").assertExists()
+        val savedCourse = text("saved_course")
+        val savedTask = text("saved_task")
+        val actionBounds = compose.onNodeWithTag("home_prepare").getUnclippedBoundsInRoot()
+        val courseBounds = compose.onNodeWithTag("saved_course").getUnclippedBoundsInRoot()
+        if (expectedLayout == "wide") {
+            assertTrue("Preparation must occupy the other column", courseBounds.left >= actionBounds.right)
+        } else {
+            assertTrue("Preparation must follow the primary action", courseBounds.top >= actionBounds.bottom)
+        }
+        // The primary action is immediately visible in the wide dashboard. Expanded text may
+        // require scrolling in the stacked dashboard, but must never clip or hide the action.
+        if (expectedLayout == "wide") compose.onNodeWithTag("home_prepare").assertIsDisplayed()
+        capture("home-heading")
+        compose
+            .onNodeWithTag("home_prepare")
+            .performScrollTo()
+            .assertIsDisplayed()
+            .assertHeightIsAtLeast(64.dp)
+        capture("home-dashboard")
+        compose
+            .onNodeWithTag("saved_course")
+            .performScrollTo()
+            .assertIsDisplayed()
+            .assertTextContains(savedCourse)
+        compose
+            .onNodeWithTag("saved_task")
+            .performScrollTo()
+            .assertIsDisplayed()
+            .assertTextContains(savedTask)
+        compose
+            .onNodeWithTag("home_map")
+            .performScrollTo()
+            .assertIsDisplayed()
+            .assertHeightIsAtLeast(64.dp)
+        capture("home-preparation")
+    }
 
     @Test fun parkedTypographySelectionAndUnsavedBriefing() {
         assertEnvironment()
@@ -106,6 +153,8 @@ class ThemeFlowTest {
         compose.waitUntil(90_000) { exists("home_locked_title") && !exists("home_prepare") }
         compose.onNodeWithTag("home_locked_title").assertIsDisplayed()
         compose.onNodeWithTag("hangil_brand").assertDoesNotExist()
+        compose.onNodeWithTag("home_dashboard").assertDoesNotExist()
+        compose.onNodeWithTag("home_illustration").assertDoesNotExist()
         compose.onNodeWithTag("session_start").assertDoesNotExist()
         compose.onNodeWithTag("session_finish").assertDoesNotExist()
         capture("driving-locked")
