@@ -6,6 +6,8 @@ import android.os.Bundle
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
@@ -88,17 +90,74 @@ class ThemeFlowTest {
         capture("goal-selected")
         touch("preparation_next")
         waitFor("course_intersections")
+        assertPreparationLayout("course_context", "course_choices")
+        compose.onNodeWithTag("preparation_demo_notice").performScrollTo().assertIsDisplayed()
+        capture("course-context")
         touch("course_intersections")
         compose.onNodeWithTag("course_intersections").assertIsSelected()
         capture("course-selected")
         touch("preparation_next")
         waitFor("task_scene")
+        assertPreparationLayout("briefing_summary", "briefing_tasks")
+        compose.onNodeWithTag("preparation_next").assertIsNotEnabled()
         compose.onNodeWithText("출발 전에, 한 번 살펴봐요").performScrollTo().assertIsDisplayed()
         capture("briefing")
         touch("task_scene")
         compose.onNodeWithTag("task_scene").assertIsSelected()
+        compose.onNodeWithTag("preparation_next").assertIsEnabled()
         capture("briefing-task")
         // Leave the draft without saving; the user's existing preparation must remain unchanged.
+        back()
+        waitFor("course_intersections")
+        back()
+        waitFor("goal_commute")
+        back()
+        waitFor("saved_course")
+        compose.onNodeWithTag("saved_course").assertTextContains(savedCourse)
+    }
+
+    @Test fun preparationDraftLocksAndRestoresAfterDrive() {
+        assertEnvironment()
+        waitFor("home_prepare")
+        waitFor("saved_course")
+        val savedCourse = text("saved_course")
+        touch("home_prepare")
+        waitFor("goal_commute")
+        touch("goal_commute")
+        touch("preparation_next")
+        waitFor("course_intersections")
+        touch("course_intersections")
+        touch("preparation_next")
+        waitFor("task_scene")
+        touch("task_scene")
+        compose.onNodeWithTag("task_scene").assertIsSelected()
+        compose.onNodeWithTag("preparation_next").assertIsEnabled()
+        capture("preparation-before-driving")
+        phase("PREPARATION_AWAIT_D")
+        compose.waitUntil(90_000) { exists("preparation_locked_title") && !exists("preparation_next") }
+        compose.onNodeWithTag("preparation_locked_title").assertIsDisplayed()
+        listOf(
+            "hangil_brand",
+            "preparation_title",
+            "preparation_columns_wide",
+            "preparation_columns_stacked",
+            "preparation_demo_notice",
+            "preparation_illustration",
+            "briefing_summary",
+            "briefing_tasks",
+            "task_scene",
+        ).forEach { compose.onNodeWithTag(it).assertDoesNotExist() }
+        capture("preparation-driving-locked")
+        phase("PREPARATION_AWAIT_P")
+        // Both phase waits include the operator's external DDS control, rather than an app timer.
+        compose.waitUntil(90_000) { exists("task_scene") && exists("preparation_next") }
+        compose.onNodeWithTag("preparation_title").assertIsDisplayed()
+        compose.onNodeWithTag("task_scene").assertIsSelected()
+        compose.onNodeWithTag("preparation_next").assertIsEnabled()
+        assertPreparationLayout("briefing_summary", "briefing_tasks")
+        capture("preparation-parked-again")
+        compose.onNodeWithTag("task_scene").performScrollTo().assertIsDisplayed()
+        capture("preparation-restored-selection")
         back()
         waitFor("course_intersections")
         back()
@@ -178,6 +237,24 @@ class ThemeFlowTest {
             }
         assertEquals(expectedMode, configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK)
         assertEquals(scale, configuration.fontScale, 0.01f)
+    }
+
+    private fun assertPreparationLayout(
+        first: String,
+        second: String,
+    ) {
+        val expected =
+            InstrumentationRegistry.getArguments().getString("preparation_layout")
+                ?: if (exists("preparation_columns_wide")) "wide" else "stacked"
+        check(expected == "wide" || expected == "stacked")
+        compose.onNodeWithTag("preparation_columns_$expected").assertExists()
+        val firstBounds = compose.onNodeWithTag(first).getUnclippedBoundsInRoot()
+        val secondBounds = compose.onNodeWithTag(second).getUnclippedBoundsInRoot()
+        if (expected == "wide") {
+            assertTrue("Explanation and choices must use separate columns", secondBounds.left >= firstBounds.right)
+        } else {
+            assertTrue("Choices must follow the explanation in one column", secondBounds.top >= firstBounds.bottom)
+        }
     }
 
     private fun touch(tag: String) {
