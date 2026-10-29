@@ -14,6 +14,7 @@ quality() {
 tests() {
   "${GRADLE[@]}" -p build-logic check
   "${GRADLE[@]}" :core:domain:test testDebugUnitTest
+  python3 "$ROOT_DIR/scripts/summarize-case-evidence.py"
 }
 
 builds() {

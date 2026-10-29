@@ -2,7 +2,6 @@ package io.github.hangillab.hangil.feature.home
 
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -11,11 +10,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.hangillab.hangil.core.designsystem.HanGilDimensions
-import io.github.hangillab.hangil.core.designsystem.PracticeBadge
-import io.github.hangillab.hangil.core.designsystem.PracticePanel
+import io.github.hangillab.hangil.core.designsystem.ParkedBadge
+import io.github.hangillab.hangil.core.designsystem.ParkedButton
+import io.github.hangillab.hangil.core.designsystem.ParkedPanel
 import io.github.hangillab.hangil.core.domain.CourseReviewStatus
 import io.github.hangillab.hangil.core.domain.Preparation
 import java.time.Instant
@@ -47,16 +48,16 @@ internal fun SessionPanel(
 ) {
     if (!state.allowsInteraction) return
     val outdated = (state.preparation as? PreparationLoadState.Loaded)?.preparation == Preparation.Outdated
-    PracticePanel(
+    ParkedPanel(
         Modifier.testTag("home_journey"),
-        containerColor = MaterialTheme.colorScheme.primaryContainer,
-        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        emphasized = true,
     ) {
         HomeJourneyGuide(state)
         if (state.nextStep == HomeJourneyStep.PREPARE || state.nextStep == HomeJourneyStep.REPEAT) {
-            Button(
+            ParkedButton(
                 onClick = onPrepare,
                 enabled = canPrepare && state.operation != SessionOperationState.Saving,
+                prominent = state.ready == null,
                 modifier =
                     Modifier.fillMaxWidth().heightIn(min = HanGilDimensions.primaryActionMinHeight).testTag("home_prepare"),
             ) {
@@ -70,12 +71,14 @@ internal fun SessionPanel(
                         },
                     ),
                     style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
                 )
             }
         } else if (canPrepare) {
-            TextButton(
+            ParkedButton(
                 onClick = onPrepare,
                 enabled = state.operation != SessionOperationState.Saving,
+                prominent = false,
                 modifier = Modifier.heightIn(min = HanGilDimensions.secondaryActionMinHeight).testTag("home_prepare"),
             ) {
                 Text(stringResource(R.string.prepare_change), style = MaterialTheme.typography.titleLarge)
@@ -100,12 +103,12 @@ internal fun SessionPanel(
                     )
                     Text(active.courseTitle, Modifier.testTag("session_course"), style = MaterialTheme.typography.headlineSmall)
                     Text(stringResource(R.string.session_goal_task, active.goalTitle, active.taskTitle))
-                    if (active.courseReviewStatus == CourseReviewStatus.DEMO) PracticeBadge(stringResource(R.string.demo_course))
+                    if (active.courseReviewStatus == CourseReviewStatus.DEMO) ParkedBadge(stringResource(R.string.demo_course))
                     Text(
                         stringResource(R.string.session_started_at, displayTime(active.startedAtEpochMillis)),
                         Modifier.testTag("session_started_at"),
                     )
-                    Button(
+                    ParkedButton(
                         onClick = {
                             onFinish(active.sessionId)
                         },
@@ -133,7 +136,7 @@ internal fun SessionPanel(
                                 Text(stringResource(R.string.session_prepare_first))
                             } else {
                                 Text(stringResource(R.string.session_ready, state.ready!!.course.title))
-                                Button(
+                                ParkedButton(
                                     onClick = onStart,
                                     enabled = state.canStart,
                                     modifier =
@@ -163,7 +166,11 @@ internal fun SessionPanel(
                 }
             }
         }
-        Text(stringResource(R.string.session_scope), style = MaterialTheme.typography.bodyMedium)
+        Text(
+            stringResource(R.string.session_scope),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
     LatestSessionPanel(state)
 }
@@ -173,18 +180,18 @@ private fun LatestSessionPanel(state: SessionUiState) {
     val records = state.records as? SessionLoadState.Loaded ?: return
     val latest = state.latestFinished
     if (latest != null) {
-        PracticePanel(Modifier.testTag("home_recent_session")) {
+        ParkedPanel(Modifier.testTag("home_recent_session")) {
             Text(stringResource(R.string.session_latest), style = MaterialTheme.typography.titleLarge)
             Text(latest.courseTitle, Modifier.testTag("session_latest_course"), style = MaterialTheme.typography.headlineSmall)
             Text(stringResource(R.string.session_goal_task, latest.goalTitle, latest.taskTitle))
-            if (latest.courseReviewStatus == CourseReviewStatus.DEMO) PracticeBadge(stringResource(R.string.demo_course))
+            if (latest.courseReviewStatus == CourseReviewStatus.DEMO) ParkedBadge(stringResource(R.string.demo_course))
             Text(stringResource(R.string.session_started_at, displayTime(latest.startedAtEpochMillis)))
             latest.endedAtEpochMillis?.let {
                 Text(stringResource(R.string.session_finished_at, displayTime(it)), Modifier.testTag("session_latest_finished"))
             }
         }
     } else if (records.sessions.isEmpty()) {
-        PracticePanel {
+        ParkedPanel {
             Text(stringResource(R.string.session_empty), style = MaterialTheme.typography.bodyLarge)
         }
     }

@@ -3,6 +3,7 @@ package io.github.hangillab.hangil.feature.course
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,8 +11,10 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -27,6 +30,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -35,13 +39,12 @@ import androidx.lifecycle.repeatOnLifecycle
 import io.github.hangillab.hangil.core.designsystem.HanGilBrand
 import io.github.hangillab.hangil.core.designsystem.HanGilDimensions
 import io.github.hangillab.hangil.core.designsystem.HanGilSpacing
-import io.github.hangillab.hangil.core.designsystem.PracticeBadge
-import io.github.hangillab.hangil.core.designsystem.PracticeButton
-import io.github.hangillab.hangil.core.designsystem.PracticeChoice
-import io.github.hangillab.hangil.core.designsystem.PracticeLockedNotice
-import io.github.hangillab.hangil.core.designsystem.PracticePage
-import io.github.hangillab.hangil.core.designsystem.PracticePanel
-import io.github.hangillab.hangil.core.designsystem.PracticeTextButton
+import io.github.hangillab.hangil.core.designsystem.ParkedBadge
+import io.github.hangillab.hangil.core.designsystem.ParkedButton
+import io.github.hangillab.hangil.core.designsystem.ParkedChoice
+import io.github.hangillab.hangil.core.designsystem.ParkedLockedNotice
+import io.github.hangillab.hangil.core.designsystem.ParkedPage
+import io.github.hangillab.hangil.core.designsystem.ParkedPanel
 import io.github.hangillab.hangil.core.designsystem.R as DesignR
 
 @Composable
@@ -78,17 +81,17 @@ internal fun CourseScreen(
     onBack: () -> Unit,
 ) {
     key(state.allowsInteraction, state.step) {
-        PracticePage {
+        ParkedPage {
             PreparationHeader(state, onBack)
             if (!state.allowsInteraction) {
-                PracticeLockedNotice()
+                ParkedLockedNotice()
             } else {
                 when (state.step) {
                     PreparationStep.GOAL -> {
                         Text(stringResource(R.string.goal_intro), style = MaterialTheme.typography.bodyLarge)
                         Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.md)) {
                             state.goals.forEach { goal ->
-                                PracticeChoice(
+                                ParkedChoice(
                                     goal.title,
                                     goal.description,
                                     state.goal?.id == goal.id,
@@ -100,13 +103,10 @@ internal fun CourseScreen(
                     }
                     PreparationStep.COURSE -> {
                         PreparationColumns(first = {
-                            PracticePanel(
+                            ParkedPanel(
                                 Modifier.testTag("course_context"),
-                                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                             ) {
-                                DemoNotice()
-                                PreparationIllustration()
+                                PreparationCourseContext()
                             }
                         }, second = {
                             Column(
@@ -114,7 +114,7 @@ internal fun CourseScreen(
                                 verticalArrangement = Arrangement.spacedBy(HanGilSpacing.md),
                             ) {
                                 state.courses.forEach { course ->
-                                    PracticeChoice(course.title, course.summary, state.course?.id == course.id, {
+                                    ParkedChoice(course.title, course.summary, state.course?.id == course.id, {
                                         onCourse(course.id)
                                     }, Modifier.testTag("course_${course.id}"))
                                 }
@@ -125,34 +125,58 @@ internal fun CourseScreen(
                         DemoNotice()
                         state.course?.let { course ->
                             PreparationColumns(first = {
-                                PracticePanel(
+                                ParkedPanel(
                                     Modifier.testTag("briefing_summary"),
-                                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                                 ) {
-                                    Text(course.title, style = MaterialTheme.typography.headlineMedium)
-                                    Text(course.summary, style = MaterialTheme.typography.bodyLarge)
+                                    Text(
+                                        course.title,
+                                        style = MaterialTheme.typography.headlineMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                    Text(
+                                        course.summary,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
                                     course.sections.forEachIndexed { index, section ->
                                         Row(
                                             Modifier.padding(vertical = HanGilSpacing.xs),
                                             horizontalArrangement = Arrangement.spacedBy(HanGilSpacing.lg),
                                         ) {
-                                            Text(
-                                                "0${index + 1}",
-                                                color = MaterialTheme.colorScheme.primary,
-                                                style = MaterialTheme.typography.titleLarge,
-                                            )
+                                            Surface(
+                                                color = MaterialTheme.colorScheme.primaryContainer,
+                                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                shape = MaterialTheme.shapes.small,
+                                            ) {
+                                                Text(
+                                                    "0${index + 1}",
+                                                    Modifier.padding(horizontal = HanGilSpacing.sm, vertical = HanGilSpacing.xs),
+                                                    style = MaterialTheme.typography.titleMedium,
+                                                    fontWeight = FontWeight.Bold,
+                                                )
+                                            }
                                             Text(section, style = MaterialTheme.typography.titleLarge)
                                         }
                                     }
                                 }
                             }, second = {
-                                PracticePanel(Modifier.testTag("briefing_tasks")) {
-                                    Text(stringResource(R.string.task_title), style = MaterialTheme.typography.headlineSmall)
-                                    Text(stringResource(R.string.task_intro), style = MaterialTheme.typography.bodyLarge)
+                                Column(
+                                    Modifier.fillMaxWidth().testTag("briefing_tasks"),
+                                    verticalArrangement = Arrangement.spacedBy(HanGilSpacing.md),
+                                ) {
+                                    Text(
+                                        stringResource(R.string.task_title),
+                                        style = MaterialTheme.typography.headlineSmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                    Text(
+                                        stringResource(R.string.task_intro),
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
                                     Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.md)) {
                                         course.tasks.forEach { task ->
-                                            PracticeChoice(
+                                            ParkedChoice(
                                                 task.title,
                                                 task.description,
                                                 state.taskId == task.id,
@@ -173,21 +197,25 @@ internal fun CourseScreen(
                         style = MaterialTheme.typography.bodyLarge,
                     )
                 }
-                PracticeButton(
-                    onClick = onNext,
-                    enabled = state.canContinue,
-                    modifier = Modifier.fillMaxWidth().testTag("preparation_next"),
-                ) {
-                    Text(
-                        stringResource(
-                            when {
-                                state.saving -> R.string.saving
-                                state.step == PreparationStep.BRIEFING -> R.string.save_preparation
-                                else -> R.string.next
-                            },
-                        ),
-                        style = MaterialTheme.typography.titleLarge,
-                    )
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+                    ParkedButton(
+                        onClick = onNext,
+                        enabled = state.canContinue,
+                        modifier =
+                            Modifier.widthIn(max = HanGilDimensions.parkedActionMaxWidth).fillMaxWidth().testTag("preparation_next"),
+                    ) {
+                        Text(
+                            stringResource(
+                                when {
+                                    state.saving -> R.string.saving
+                                    state.step == PreparationStep.BRIEFING -> R.string.save_preparation
+                                    else -> R.string.next
+                                },
+                            ),
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
                 }
             }
         }
@@ -199,14 +227,14 @@ private fun PreparationHeader(
     state: CourseUiState,
     onBack: () -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(HanGilSpacing.md)) {
+    Column(verticalArrangement = Arrangement.spacedBy(HanGilSpacing.sm)) {
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (state.allowsInteraction) {
-                HanGilBrand(Modifier.weight(1f))
+                HanGilBrand(Modifier.weight(1f), markSize = HanGilDimensions.parkedBrandMarkSize)
             } else {
                 Text(
                     stringResource(R.string.course_brand),
@@ -214,7 +242,7 @@ private fun PreparationHeader(
                     style = MaterialTheme.typography.titleLarge,
                 )
             }
-            PracticeTextButton(onClick = onBack, enabled = !state.saving) {
+            ParkedButton(onClick = onBack, enabled = !state.saving, prominent = false) {
                 Text(stringResource(R.string.course_back), style = MaterialTheme.typography.titleMedium)
             }
         }
@@ -235,6 +263,7 @@ private fun PreparationHeader(
                     ),
                     Modifier.testTag("preparation_title"),
                     style = MaterialTheme.typography.headlineLarge,
+                    fontWeight = FontWeight.SemiBold,
                 )
             }
         }
@@ -248,10 +277,10 @@ private fun PreparationColumns(
 ) {
     val fontScale = LocalDensity.current.fontScale
     BoxWithConstraints(Modifier.fillMaxWidth()) {
-        if (maxWidth >= HanGilDimensions.wideBreakpoint * fontScale) {
+        if (maxWidth >= HanGilDimensions.parkedColumnBreakpoint * fontScale) {
             Row(
                 Modifier.fillMaxWidth().testTag("preparation_columns_wide"),
-                horizontalArrangement = Arrangement.spacedBy(HanGilSpacing.xl),
+                horizontalArrangement = Arrangement.spacedBy(HanGilSpacing.lg),
             ) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.lg)) { first() }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.lg)) { second() }
@@ -269,23 +298,37 @@ private fun PreparationColumns(
 }
 
 @Composable
-private fun PreparationIllustration() {
+private fun PreparationCourseContext() {
     val fontScale = LocalDensity.current.fontScale
-    BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
         if (maxWidth >= HanGilDimensions.wideBreakpoint / 2 * fontScale) {
-            Image(
-                painterResource(DesignR.drawable.il_hangil_prepare),
-                contentDescription = null,
-                modifier = Modifier.width(HanGilDimensions.homeIllustrationMaxWidth).aspectRatio(1.5f).testTag("preparation_illustration"),
-            )
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(HanGilSpacing.md),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) { DemoNotice() }
+                Image(
+                    painterResource(DesignR.drawable.il_hangil_prepare),
+                    contentDescription = null,
+                    modifier =
+                        Modifier.width(HanGilDimensions.parkedIllustrationWidth).aspectRatio(1.5f).testTag("preparation_illustration"),
+                )
+            }
+        } else {
+            DemoNotice()
         }
     }
 }
 
 @Composable
 private fun DemoNotice() {
-    Column(Modifier.fillMaxWidth().testTag("preparation_demo_notice"), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.md)) {
-        PracticeBadge(stringResource(R.string.demo_badge))
-        Text(stringResource(R.string.demo_notice), style = MaterialTheme.typography.bodyLarge)
+    Column(Modifier.fillMaxWidth().testTag("preparation_demo_notice"), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.sm)) {
+        ParkedBadge(stringResource(R.string.demo_badge))
+        Text(
+            stringResource(R.string.demo_notice),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
