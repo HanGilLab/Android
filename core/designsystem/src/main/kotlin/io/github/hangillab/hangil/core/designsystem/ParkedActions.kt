@@ -1,16 +1,15 @@
 package io.github.hangillab.hangil.core.designsystem
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 
 /** Prominence changes appearance only; enablement and callbacks are always supplied by the screen. */
 @Composable
@@ -36,12 +35,16 @@ fun ParkedButton(
             content = content,
         )
     } else {
-        OutlinedButton(
+        FilledTonalButton(
             onClick,
             sized,
             enabled,
             shape = MaterialTheme.shapes.medium,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            colors =
+                ButtonDefaults.filledTonalButtonColors(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                ),
             contentPadding = padding,
             content = content,
         )

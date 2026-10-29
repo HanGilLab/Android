@@ -1,15 +1,12 @@
 package io.github.hangillab.hangil.core.designsystem
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.selection.selectable
@@ -24,7 +21,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 
 /** Visual variants for the parked home and preparation screens; callers retain all safety gates. */
 @Composable
@@ -48,17 +44,12 @@ fun ParkedPanel(
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainerLowest,
         contentColor = MaterialTheme.colorScheme.onSurface,
-        border = BorderStroke(1.dp, if (emphasized) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant),
-        shadowElevation = if (emphasized) 2.dp else 0.dp,
     ) {
-        Column {
-            if (emphasized) Box(Modifier.fillMaxWidth().height(4.dp).background(MaterialTheme.colorScheme.primary))
-            Column(
-                Modifier.padding(HanGilSpacing.xl),
-                verticalArrangement = Arrangement.spacedBy(HanGilSpacing.md),
-                content = content,
-            )
-        }
+        Column(
+            Modifier.padding(if (emphasized) HanGilSpacing.panelInset else HanGilSpacing.xl),
+            verticalArrangement = Arrangement.spacedBy(HanGilSpacing.md),
+            content = content,
+        )
     }
 }
 
@@ -68,8 +59,8 @@ fun ParkedBadge(
     emphasized: Boolean = false,
 ) {
     Surface(
-        color = if (emphasized) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.tertiaryContainer,
-        contentColor = if (emphasized) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onTertiaryContainer,
+        color = if (emphasized) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = if (emphasized) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer,
         shape = MaterialTheme.shapes.small,
     ) {
         Text(
@@ -100,10 +91,14 @@ fun ParkedChoice(
         color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLowest,
         contentColor = MaterialTheme.colorScheme.onSurface,
         border =
-            BorderStroke(
-                if (selected) HanGilDimensions.choiceSelectedBorderWidth else HanGilDimensions.choiceBorderWidth,
-                if (selected && enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
-            ),
+            if (selected) {
+                BorderStroke(
+                    HanGilDimensions.choiceSelectedBorderWidth,
+                    if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                )
+            } else {
+                null
+            },
     ) {
         Row(
             Modifier.padding(HanGilSpacing.lg),
