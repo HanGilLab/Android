@@ -40,6 +40,8 @@ fun HomeRoute(
     onPrepare: () -> Unit,
     onMapPreview: () -> Unit,
     showDiagnostics: Boolean = false,
+    recordingState: VehicleRecordingState = VehicleRecordingState.Idle,
+    onRetryRecording: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -52,6 +54,8 @@ fun HomeRoute(
             SessionRoute(
                 onPrepare = { if (viewModel.canPrepare()) onPrepare() },
                 canPrepare = state.preparation is PreparationLoadState.Loaded,
+                recordingState = recordingState,
+                onRetryRecording = onRetryRecording,
             )
         },
     )
