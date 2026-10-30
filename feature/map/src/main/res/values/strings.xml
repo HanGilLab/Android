@@ -15,12 +15,19 @@
   <string name="location_probe_read">마지막 위치 확인</string>
   <string name="location_probe_permission">위치 권한 요청</string>
   <string name="map_title">지도로 길 둘러보기</string>
-  <string name="map_demo_region">서울 시청 주변이에요. 현재 위치와 연습 코스는 표시하지 않아요.</string>
-  <string name="map_demo_badge">시연 지역 지도</string>
-  <string name="map_content_description">서울 시청 주변의 시연 지도. 현재 위치와 연습 코스는 표시하지 않아요.</string>
+  <string name="map_demo_region">장소의 대표점이에요. 이동 경로와 현재 위치는 표시하지 않아요.</string>
+  <string name="map_demo_badge">고정 시연 지점</string>
+  <string name="map_content_description">%1$s 고정 시연 지점. 이동 경로와 현재 위치는 표시하지 않아요.</string>
   <string name="map_loading">지도를 불러오고 있어요.</string>
   <string name="map_failed">지도를 불러오지 못했어요. 연결을 확인해 주세요.</string>
   <string name="map_retry">다시 불러오기</string>
   <string name="map_close">닫기</string>
   <string name="map_sources">지도: OpenFreeMap, © OpenMapTiles, © OpenStreetMap 기여자</string>
+  <string name="map_preparation_loading">준비한 코스를 읽고 있어요.</string>
+  <string name="map_preparation_empty">먼저 연습을 준비해 주세요.</string>
+  <string name="map_preparation_outdated">준비 내용이 바뀌었어요. 홈에서 다시 준비해 주세요.</string>
+  <string name="map_preparation_unavailable">이 코스의 지도 시연은 준비 중이에요.</string>
+  <string name="map_preparation_failed">준비 내용을 불러오지 못했어요.</string>
+  <string name="map_preparation_retry">준비 다시 읽기</string>
+  <string name="map_return_home">홈으로 돌아가기</string>
 </resources>

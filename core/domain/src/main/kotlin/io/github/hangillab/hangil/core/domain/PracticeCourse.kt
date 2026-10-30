@@ -10,4 +10,5 @@ data class PracticeCourse(
     val tasks: List<PracticeTask>,
     val goalIds: Set<String>,
     val reviewStatus: CourseReviewStatus = CourseReviewStatus.DEMO,
+    val mapPreview: CourseMapPreview? = null,
 )

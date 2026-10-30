@@ -50,6 +50,12 @@
 |:---:|:---:|
 | [<img src="docs/images/screenshots/hangil-course.png" alt="고정 시연 코스 두 가지 중 선택하는 실제 한길 화면" width="400" />](docs/images/screenshots/hangil-course.png) | [<img src="docs/images/screenshots/hangil-task.png" alt="오늘의 과제를 고르고 준비 내용을 저장하는 실제 한길 화면" width="400" />](docs/images/screenshots/hangil-task.png) |
 
+| 생활권 코스의 시연 지점 | 교차로 코스의 시연 지점 |
+|:---:|:---:|
+| [<img src="docs/images/screenshots/hangil-map-neighborhood.png" alt="생활권 코스에 연결된 공개 장소 세 곳과 번호를 보여 주는 실제 한길 지도" width="400" />](docs/images/screenshots/hangil-map-neighborhood.png) | [<img src="docs/images/screenshots/hangil-map-intersections.png" alt="교차로 코스로 바뀐 공개 장소 세 곳과 지도 범위를 보여 주는 실제 한길 화면" width="400" />](docs/images/screenshots/hangil-map-intersections.png) |
+
+지도 번호는 공개 장소의 고정 대표점입니다. 실제 이동 경로, 방문 순서나 차량 목적지를 뜻하지 않습니다.
+
 | SDK 차량 상태 기록 | 주행 중 상세 조작 잠금 |
 |:---:|:---:|
 | [<img src="docs/images/screenshots/hangil-recording.png" alt="시연 코스와 구분해 SDK 차량 상태 관찰을 안내하는 실제 활성 연습 화면" width="400" />](docs/images/screenshots/hangil-recording.png) | [<img src="docs/images/screenshots/hangil-driving-locked.png" alt="실제 DDS의 D 상태에서 상세 화면을 잠그고 주차 후 조작을 안내하는 한길 화면" width="400" />](docs/images/screenshots/hangil-driving-locked.png) |
@@ -73,7 +79,7 @@
 | **활성 연습의 차량 상태 관찰** | 앱 화면이 켜진 동안 SDK가 전달한 기어, 방향지시등과 브레이크 상태를 세션에 기록합니다. 미확인, 미지원, 거부와 오류를 보존하고, 화면 이탈과 종료 뒤에는 수집하지 않습니다. |
 | **주차 후 차량 기록 확인** | 최근 종료 세션의 저장된 SDK 관찰을 한 번에 하나씩 확인합니다. 당시 기어, 방향지시등과 브레이크, 연결과 앱 관찰 시각을 보고 이전/다음으로 저장 순서를 따라갑니다. |
 | **주차 후 사용자 메모** | 최근 마무리한 연습에 짧은 메모를 직접 입력하고 저장, 수정, 명시적으로 지웁니다. 저장 내용은 앱을 다시 열어도 복원하며 미저장 초안과 구분합니다. |
-| **시연 지역 지도** | 서울 시청 주변의 고정 시연 지역을 지도에서 확인하고 시연 표시와 지도 출처를 제공합니다. |
+| **코스별 시연 지도** | 준비한 코스에 맞춰 서울 시청 또는 광화문 주변의 공개 장소 세 곳을 번호로 표시합니다. 시연 출처와 지도 출처를 구분하고 실제 이동 경로나 현재 위치로 표현하지 않습니다. |
 | **주행 중 상세 조작 잠금** | 주차와 UX 허용을 모두 확인해야 상세 조작을 허용합니다. 주행이나 상태 미확인에서는 준비 화면과 지도 조작을 잠급니다. |
 
 <br />
@@ -180,11 +186,13 @@ fun allowsPracticeInteraction(
         vehicle.toDrivingRestrictions(restrictions.uxRestrictionState).allowsDetailedInteraction
 ```
 
-[지도 재시도 처리 직전의 실제 판정 호출](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/MapViewModel.kt#L56-L61)
+[지도 처리 직전의 reader, 조회 세대와 최신 차량 상태 재확인](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/MapViewModel.kt#L136-L143)
 
 ```kotlin
-fun retry() {
-    if (allowsInteraction()) render.update { MapRenderAttempt(it.id + 1) }
+private fun canRender(attempt: MapRenderAttempt): Boolean {
+    val owner = reader.get() ?: return false
+    return owner.job.isActive && owner.id == attempt.reader && attempt.queryEpoch == queryEpoch.get() &&
+        attempt.preparation is MapPreparationState.Ready && allowsInteraction()
 }
 
 private fun allowsInteraction(): Boolean =
@@ -282,60 +290,84 @@ private class WriteBlocked : RuntimeException()
 )
 ```
 
-### 3. 재생성된 지도에 이전 View의 완료 콜백이 섞이는 문제 해결
+### 3. 선택이 바뀐 지도에 이전 조회와 View의 완료가 섞이는 문제 해결
 
 **문제**
 
-지도 재시도나 화면 재생성 뒤 이전 MapView의 완료 콜백이 도착하면 현재 지도를 잘못 READY로 표시할 수 있습니다. 오류 뒤 늦은 완료 콜백이 오류 상태를 덮는 문제도 있습니다.
+코스 선택이 바뀌거나 준비 조회를 재시도한 뒤 이전 결과가 도착하면 새 지도 대신 지난 코스를 정상으로 표시할 수 있습니다. 같은 시도의 MapView가 재생성되거나 오류 뒤 완료 콜백이 늦게 도착하는 경우도 구분해야 합니다.
 
 **원인**
 
-재시도 번호만 비교하면 같은 시도 안에서 다시 생성된 서로 다른 MapView를 구분할 수 없습니다. 스타일 로딩 완료 역시 실제 화면 렌더 완료와 다릅니다.
+조회 취소와 화면 재조합은 준비 결과의 전달, MapView의 렌더 콜백과 동시에 끝나지 않습니다. 재시도 번호만으로는 현재 조회를 소유한 화면과 같은 시도에서 새로 만든 View를 식별할 수 없고, 버퍼 앞에서만 세대를 검사하면 이미 전달 중인 결과가 재시도의 로딩 상태를 덮을 수 있습니다.
 
 **해결**
 
-재시도 번호와 View별 토큰을 함께 비교합니다. 최신 조작 허용 조건, 현재 시도와 토큰, LOADING 상태가 모두 맞을 때만 READY로 전환합니다. 실패한 지도는 명시적 재시도에서 새 시도를 만들며, 오래된 View의 성공과 오류 콜백을 무시합니다.
+다른 선택을 수신하면 카탈로그 해석 전에 기존 지도를 LOADING으로 무효화합니다. 준비 상태와 렌더 식별자를 함께 원자적으로 갱신하고, 반영 시점에 살아 있는 reader와 조회 세대를 다시 검사합니다. 렌더 완료는 최신 주차/UX 허용, 현재 시도와 View 토큰, LOADING 상태가 모두 맞을 때만 받아들입니다.
 
 **결과**
 
-현재 시도의 현재 View가 실제 렌더를 마쳤을 때만 READY로 전환합니다. 이전 View의 완료와 재시도 전의 성공/오류가 현재 지도나 실패 상태를 덮어쓰지 못하게 했습니다.
+수신한 선택 변경과 명시적 재조회 이후 이전 조회나 View의 결과가 현재 지도를 정상으로 만들지 못하게 했습니다. 오류 뒤 늦은 완료도 실패 상태를 덮지 않습니다. 이 경계는 앱이 수신한 준비 결과에 적용하며 Room이 아직 방출하지 않은 변경까지 즉시 감지한다고 보장하지 않습니다.
 
 **대체안/회고**
 
-재시도 번호만으로는 View 재생성 경계를 표현할 수 없어 View 토큰을 추가했습니다. 스타일 수신 시점을 성공으로 처리하는 대안은 타일과 글꼴 오류를 놓칠 수 있어 실제 렌더 완료를 기준으로 삼았습니다. 현재 지도는 고정 시연 지역 표시이며 위치 추적이나 자체 내비 완성으로 표현하지 않습니다.
+flatMapLatest의 취소만 믿으면 이미 전달 중인 결과가 남을 수 있어 조회 세대와 반영 직전 검사를 함께 사용했습니다. 준비와 렌더를 별도로 갱신하는 대신 하나의 상태에 묶어 새 시도에 지난 코스가 섞이지 않게 했습니다. 스타일 수신은 화면 완성이 아니므로 실제 렌더 완료를 구분하며, 고정 시연 지점을 실제 주행 경로나 길안내로 해석하지 않습니다.
 
 **코드**
 
-[MapView 토큰 발급, 완료/실패 반영과 재시도](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/MapViewModel.kt#L31-L58)
+[수신 선택을 먼저 무효화한 뒤 해석하는 준비 스트림 발췌](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/MapViewModel.kt#L215-L219)
 
 ```kotlin
-fun onMapLoading(attempt: Int): Long? {
-    if (!allowsInteraction() || render.value.id != attempt) return null
-    val token = tokens.incrementAndGet()
-    render.update { if (it.id == attempt) it.copy(token = token, load = MapLoadState.LOADING) else it }
-    return token
-}
+flow { emitAll(repository.observeSelection()) }
+    .map { selection ->
+        invalidateReceivedSelection(owner, epoch, selection)
+        resolve(selection)
+    }.onStart { emit(MapPreparationState.Loading) }
+```
 
+[준비와 렌더 식별자를 함께 갱신하는 반영 함수](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/MapViewModel.kt#L145-L168)
+
+```kotlin
+private fun publishPreparation(
+    owner: Reader,
+    state: MapPreparationState,
+    epoch: Long,
+) {
+    if (reader.get() !== owner || !owner.job.isActive || queryEpoch.get() != epoch) return
+    render.update {
+        if (reader.get() !== owner || !owner.job.isActive || queryEpoch.get() != epoch) {
+            it
+        } else {
+            val permitted =
+                if (state is MapPreparationState.Ready && !allowsInteraction()) {
+                    MapPreparationState.Locked
+                } else {
+                    state
+                }
+            if (it.reader == owner.id && it.queryEpoch == epoch && it.preparation == permitted) {
+                it
+            } else {
+                MapRenderAttempt(it.id + 1, reader = owner.id, preparation = permitted, queryEpoch = epoch)
+            }
+        }
+    }
+}
+```
+
+[현재 View의 실제 완료만 받아들이는 렌더 처리](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/MapViewModel.kt#L96-L108)
+
+```kotlin
 fun onMapRendered(
     attempt: Int,
     token: Long,
 ) {
-    if (!allowsInteraction()) return
+    if (token <= 0) return
     render.update {
-        if (it.id == attempt && it.token == token && it.load == MapLoadState.LOADING) it.copy(load = MapLoadState.READY) else it
+        if (canRender(it) && it.id == attempt && it.token == token && it.load == MapLoadState.LOADING) {
+            it.copy(load = MapLoadState.READY)
+        } else {
+            it
+        }
     }
-}
-
-fun onMapFailed(
-    attempt: Int,
-    token: Long,
-) {
-    if (!allowsInteraction()) return
-    render.update { if (it.id == attempt && it.token == token) it.copy(load = MapLoadState.FAILED) else it }
-}
-
-fun retry() {
-    if (allowsInteraction()) render.update { MapRenderAttempt(it.id + 1) }
 }
 ```
 

@@ -45,6 +45,9 @@ class MapFlowTest {
         compose.onNodeWithTag("map_ready").assertDoesNotExist()
         capture("map-network-error")
         val originalProxy = shell("settings get global http_proxy").trim()
+        require(originalProxy == "null" || originalProxy.matches(Regex("""[A-Za-z0-9._:\[\]-]+"""))) {
+            "원래 프록시를 단일 인자로 안전하게 복구할 수 있어야 합니다"
+        }
         try {
             shell("settings put global http_proxy :0")
             compose.waitUntil(20_000) {
@@ -60,7 +63,7 @@ class MapFlowTest {
                 if (originalProxy == "null") {
                     "settings delete global http_proxy"
                 } else {
-                    "settings put global http_proxy '" + originalProxy.replace("'", "'\\''") + "'"
+                    "settings put global http_proxy " + originalProxy
                 },
             )
         }
