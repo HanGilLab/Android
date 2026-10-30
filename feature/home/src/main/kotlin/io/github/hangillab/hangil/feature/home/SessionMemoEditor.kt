@@ -19,11 +19,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -54,9 +57,11 @@ internal fun SessionMemoEditorRoute(
     val displayedMemoVersion = state.memo?.version
     val editorIntoView = remember(sessionId) { BringIntoViewRequester() }
     var editorFocused by remember(sessionId) { mutableStateOf(false) }
+    var editorHeight by remember(sessionId) { mutableIntStateOf(0) }
     val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
-    LaunchedEffect(imeBottom, editorFocused, state.load, state.editing) {
+    LaunchedEffect(imeBottom, editorFocused, editorHeight, allowed, state.load, state.editing) {
         if (imeBottom > 0 && editorFocused && allowed && state.load == SessionMemoUiState.Load.Ready && state.editing) {
+            withFrameNanos { }
             editorIntoView.bringIntoView()
         }
     }
@@ -105,6 +110,7 @@ internal fun SessionMemoEditorRoute(
                                 .fillMaxWidth()
                                 .bringIntoViewRequester(editorIntoView)
                                 .onFocusChanged { editorFocused = it.hasFocus }
+                                .onSizeChanged { editorHeight = it.height }
                                 .testTag("memo_textfield"),
                         enabled = state.canEdit,
                         textStyle = MaterialTheme.typography.bodyLarge,

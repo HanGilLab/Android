@@ -10,7 +10,7 @@
 
 편집기는 펼친 주차 상세의 수명주기에 맞춰 읽고 같은 세션의 초안을 VM에서 유지한다. reader Job, action nonce와 revision이 IO의 commit callback에서도 유효해야 하며 닫힘/STOP/D 뒤 같은 세션에 재진입해도 이전 callback을 다시 허용하지 않는다. 저장 중 Room 자체 emit을 외부 충돌로 오인하거나 새 세션에 이전 결과를 섞지 않는다. 저장 성공은 실제 저장 결과 이후에만 표시한다.
 
-키보드가 열린 동안 스크롤 viewport가 IME inset을 피하도록 구성하고 기존 Scaffold inset 소비를 반영한다. IME 높이와 포커스 변화에 맞춰 실제 편집기를 `BringIntoViewRequester`로 다시 보이게 한다. 잠금/편집 종료/화면 이탈에서는 포커스와 IME를 숨긴다. 기본 글자와 확대/다크에서 입력창과 저장 버튼에 실제 도달할 수 있는지 검증한다. [Compose inset 기준](https://developer.android.com/develop/ui/compose/system/insets-ui)을 참고하되 실제 Pleos 지원 여부는 실행으로 확인한다.
+키보드가 열린 동안 스크롤 viewport가 IME inset을 피하도록 구성하고 기존 Scaffold inset 소비를 반영한다. IME 높이, 포커스와 입력창 크기 변화 뒤 레이아웃 프레임에 맞춰 실제 편집기를 `BringIntoViewRequester`로 다시 보이게 한다. 잠금/편집 종료/화면 이탈에서는 포커스와 IME를 숨긴다. 기본 글자와 확대/다크에서 입력창과 저장 버튼에 실제 도달할 수 있는지 검증한다. [Compose inset 기준](https://developer.android.com/develop/ui/compose/system/insets-ui)을 참고하되 실제 Pleos 지원 여부는 실행으로 확인한다.
 
 ## 원본을 전진하기 전의 검증 순서
 
@@ -28,6 +28,8 @@
 `MEMO_AWAIT_D`에서 DDS를 D로 전환해 상세/IME 숨김과 DB 미저장을 확인하고 `MEMO_AWAIT_P`에서 P로 복원해 초안/저장본 구분을 확인한다. 명시적 저장/편집 취소/수정과 실제 토큰 변경, 재생성을 검사한 후 `MEMO_AWAIT_PROCESS_RESTART`와 소유 상태를 남긴다.
 
 외부 실행자는 해당 앱 프로세스를 실제 종료한 뒤 두 번째 메서드 `restoreAndDeleteMemoAfterProcessRestart`를 별도로 실행한다. 소유 PID가 달라야 하며 같은 메모/토큰과 기존 자료를 다시 읽어야 한다. 삭제 취소와 명시적 확정은 검사 소유 메모에만 적용한다. 새 저장본 수신 후 옛 확인 콜백을 제어해 재생하는 경우에는 실제 SDK나 사람의 조작으로 표현하지 않고 동시성 경계 주입으로 분리한다. 원래 자료는 바꾸지 않으며 성공 때만 본인이 만든 소유 cache를 정리한다.
+
+미저장 종료 단계의 가시성 실패는 `resumeUnstoredMemoAfterVisibilityFix`를 `manualMemo=true`, `resumeUnstoredMemo=true`로 명시 선택해 같은 검사 소유 세션에서 이어갈 수 있다. schema/producer/nonce/종료 단계와 최신 소유 세션/관찰/메모 없음 및 원래 자료의 전 필드 일치가 선행 조건이며 새 연습이나 메모로 덮어쓰지 않는다. 재시작 대기 직전에 현재 실행 PID를 기록해 후속 복원이 다른 프로세스여야 한다.
 
 실패 시 cache/원본 증거를 보존하고 현재 기어/설정 및 검사 소유 세션을 확인해 안전하게 인계한다. 소유 ID가 확인되지 않은 사용자 연습이나 메모를 정리하지 않는다. 검사가 만든 종료 세션과 SDK 관찰은 남기고, 원래 모든 행/메모/권한/설정이 보존됐는지 readback으로 확인한 뒤 소유 AVD/포워딩/임시 콘솔만 종료한다.
 

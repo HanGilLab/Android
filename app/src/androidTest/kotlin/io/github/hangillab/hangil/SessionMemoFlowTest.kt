@@ -132,83 +132,40 @@ class SessionMemoFlowTest {
                     .put("owned_session_value", finished.toString())
                     .put("owned_observations_value", ownedRows.toString())
                 writeOwner(file, owner)
-                assertTrue("새 검사 세션에 사용자 메모가 미리 있으면 덮어쓰지 않습니다", graph.memos().observe(owned.sessionId).first() == null)
-                openMemo()
-                waitFor("memo_textfield")
-                assertField("")
-                assertNodeText("memo_source", text(HomeR.string.memo_source))
-                focusEditorAndAssertIme()
-                compose.onNodeWithTag("memo_textfield").performTextInput(DRAFT)
-                assertField(DRAFT)
-                waitFor("memo_unsaved")
-                capture("memo-input", "memo_textfield", scroll = false, requireFocus = true)
-                phase("MEMO_AWAIT_D")
-                awaitGear(graph, GearPosition.DRIVE)
-                waitFor("home_locked_title")
-                assertAbsent("memo_textfield")
-                assertAbsent("memo_save")
-                assertIme(false)
-                assertTrue("주행 잠금 중 초안을 자동 저장하면 안 됩니다", graph.memos().observe(owned.sessionId).first() == null)
-                capture("memo-driving", "home_locked_title")
-                phase("MEMO_AWAIT_P")
-                awaitGear(graph, GearPosition.PARK)
-                waitFor("home_recent_memo")
-                assertAbsent("memo_textfield")
-                openMemo()
-                waitFor("memo_textfield")
-                assertField(DRAFT)
-                waitFor("memo_unsaved")
-                assertTrue("P 복귀로 초안이 저장되면 안 됩니다", graph.memos().observe(owned.sessionId).first() == null)
-                // A second real IME check ensures save remains reachable with the keyboard open.
-                focusEditorAndAssertIme()
-                touch("memo_save")
-                val firstSaved = awaitMemo(graph, owned.sessionId, DRAFT)
-                assertTrue("저장 응답의 버전 토큰이 있어야 합니다", firstSaved.version.isNotBlank())
-                waitFor("memo_saved_text")
-                assertNodeText("memo_saved_text", DRAFT)
-                assertIme(false)
-                touch("memo_edit")
-                waitFor("memo_textfield")
-                focusEditorAndAssertIme()
-                compose.onNodeWithTag("memo_textfield").performTextReplacement(CANCELLED_DRAFT)
-                assertField(CANCELLED_DRAFT)
-                touch("memo_cancel_edit")
-                waitFor("memo_saved_text")
-                assertNodeText("memo_saved_text", DRAFT)
-                assertTrue("편집 취소는 저장 원문과 토큰을 바꾸면 안 됩니다", graph.memos().observe(owned.sessionId).first() == firstSaved)
-                touch("memo_edit")
-                waitFor("memo_textfield")
-                focusEditorAndAssertIme()
-                compose.onNodeWithTag("memo_textfield").performTextReplacement(FINAL_MEMO)
-                assertField(FINAL_MEMO)
-                touch("memo_save")
-                val finalSaved = awaitMemo(graph, owned.sessionId, FINAL_MEMO)
-                assertTrue("새 저장은 읽었던 버전과 다른 토큰을 돌려줘야 합니다", finalSaved.version.isNotBlank() && finalSaved.version != firstSaved.version)
-                waitFor("memo_saved_text")
-                assertNodeText("memo_saved_text", FINAL_MEMO)
-                assertIme(false)
-                capture(
-                    "memo-saved",
-                    "memo_saved_text",
-                    scrollTarget = "memo_delete",
-                    companionTags = listOf("memo_source", "memo_edit", "memo_delete"),
-                )
-                compose.activityRule.scenario.recreate()
-                waitFor("home_recent_memo")
-                if (!exists("memo_saved_text")) openMemo()
-                waitFor("memo_saved_text")
-                assertNodeText("memo_saved_text", FINAL_MEMO)
-                assertTrue("재생성 뒤 메모의 원문과 토큰을 유지해야 합니다", graph.memos().observe(owned.sessionId).first() == finalSaved)
-                owner
-                    .put("owned_memo_value", finalSaved.toString())
-                    .put("owned_memo_text", finalSaved.text)
-                    .put("owned_memo_version", finalSaved.version)
-                    .put("phase", "await_process_restart")
-                writeOwner(file, owner)
-                assertOwnedAndOriginalPreserved(graph, owner, requireMemo = true)
-                phase("MEMO_AWAIT_PROCESS_RESTART")
+                editOwnedMemo(graph, file, owner)
             } finally {
                 sdkObserver.cancelAndJoin()
+                assertOriginalPreserved(snapshot(graph), owner)
+            }
+        }
+    }
+
+    /** Explicitly resume only this test's finished, still-unwritten owned session after a failed visibility check. */
+    @Test fun resumeUnstoredMemoAfterVisibilityFix() {
+        preconditions()
+        assumeTrue(
+            "미저장 검사 소유 세션의 명시적 복구 실행에서만 이어갑니다",
+            InstrumentationRegistry.getArguments().getString("resumeUnstoredMemo") == "true",
+        )
+        val file = ownerFile()
+        assertTrue("기존 실패의 비공개 소유 기록이 있어야 합니다", file.exists())
+        val owner = readOwner(file)
+        val ownedId = owner.optString("owned_session_id")
+        assertTrue(
+            "본인 검사가 만든 미저장 종료 단계만 복구해야 합니다",
+            owner.optInt("schema") == 1 && owner.optString("producer") == "SessionMemoFlowTest" &&
+                owner.optString("run_nonce").isNotBlank() && owner.optString("phase") == "finished" &&
+                ownedId.isNotBlank() && !owner.getJSONObject("baseline").getJSONObject("sessions").has(ownedId),
+        )
+        val graph = graph()
+        runBlocking {
+            try {
+                assertOwnedAndOriginalPreserved(graph, owner, requireMemo = false)
+                assertTrue("이미 저장된 메모는 복구 실행에서 덮어쓰지 않습니다", graph.memos().observe(ownedId).first() == null)
+                awaitGear(graph, GearPosition.PARK)
+                waitFor("home_recent_memo")
+                editOwnedMemo(graph, file, owner)
+            } finally {
                 assertOriginalPreserved(snapshot(graph), owner)
             }
         }
@@ -324,6 +281,91 @@ class SessionMemoFlowTest {
                 assertOriginalPreserved(snapshot(graph), owner)
             }
         }
+    }
+
+    /** Shared editor scenario. Neither initial creation nor explicit recovery creates another session here. */
+    private suspend fun editOwnedMemo(
+        graph: RecordingTestEntryPoint,
+        file: File,
+        owner: JSONObject,
+    ) {
+        val ownedId = owner.getString("owned_session_id")
+        assertTrue("새 검사 세션에 사용자 메모가 미리 있으면 덮어쓰지 않습니다", graph.memos().observe(ownedId).first() == null)
+        openMemo()
+        waitFor("memo_textfield")
+        assertField("")
+        assertNodeText("memo_source", text(HomeR.string.memo_source))
+        focusEditorAndAssertIme()
+        compose.onNodeWithTag("memo_textfield").performTextInput(DRAFT)
+        assertField(DRAFT)
+        waitFor("memo_unsaved")
+        capture("memo-input", "memo_textfield", scroll = false, requireFocus = true)
+        phase("MEMO_AWAIT_D")
+        awaitGear(graph, GearPosition.DRIVE)
+        waitFor("home_locked_title")
+        assertAbsent("memo_textfield")
+        assertAbsent("memo_save")
+        assertIme(false)
+        assertTrue("주행 잠금 중 초안을 자동 저장하면 안 됩니다", graph.memos().observe(ownedId).first() == null)
+        capture("memo-driving", "home_locked_title")
+        phase("MEMO_AWAIT_P")
+        awaitGear(graph, GearPosition.PARK)
+        waitFor("home_recent_memo")
+        assertAbsent("memo_textfield")
+        openMemo()
+        waitFor("memo_textfield")
+        assertField(DRAFT)
+        waitFor("memo_unsaved")
+        assertTrue("P 복귀로 초안이 저장되면 안 됩니다", graph.memos().observe(ownedId).first() == null)
+        // A second real IME check ensures save remains reachable with the keyboard open.
+        focusEditorAndAssertIme()
+        touch("memo_save")
+        val firstSaved = awaitMemo(graph, ownedId, DRAFT)
+        assertTrue("저장 응답의 버전 토큰이 있어야 합니다", firstSaved.version.isNotBlank())
+        waitFor("memo_saved_text")
+        assertNodeText("memo_saved_text", DRAFT)
+        assertIme(false)
+        touch("memo_edit")
+        waitFor("memo_textfield")
+        focusEditorAndAssertIme()
+        compose.onNodeWithTag("memo_textfield").performTextReplacement(CANCELLED_DRAFT)
+        assertField(CANCELLED_DRAFT)
+        touch("memo_cancel_edit")
+        waitFor("memo_saved_text")
+        assertNodeText("memo_saved_text", DRAFT)
+        assertTrue("편집 취소는 저장 원문과 토큰을 바꾸면 안 됩니다", graph.memos().observe(ownedId).first() == firstSaved)
+        touch("memo_edit")
+        waitFor("memo_textfield")
+        focusEditorAndAssertIme()
+        compose.onNodeWithTag("memo_textfield").performTextReplacement(FINAL_MEMO)
+        assertField(FINAL_MEMO)
+        touch("memo_save")
+        val finalSaved = awaitMemo(graph, ownedId, FINAL_MEMO)
+        assertTrue("새 저장은 읽었던 버전과 다른 토큰을 돌려줘야 합니다", finalSaved.version.isNotBlank() && finalSaved.version != firstSaved.version)
+        waitFor("memo_saved_text")
+        assertNodeText("memo_saved_text", FINAL_MEMO)
+        assertIme(false)
+        capture(
+            "memo-saved",
+            "memo_saved_text",
+            scrollTarget = "memo_delete",
+            companionTags = listOf("memo_source", "memo_edit", "memo_delete"),
+        )
+        compose.activityRule.scenario.recreate()
+        waitFor("home_recent_memo")
+        if (!exists("memo_saved_text")) openMemo()
+        waitFor("memo_saved_text")
+        assertNodeText("memo_saved_text", FINAL_MEMO)
+        assertTrue("재생성 뒤 메모의 원문과 토큰을 유지해야 합니다", graph.memos().observe(ownedId).first() == finalSaved)
+        owner
+            .put("owned_memo_value", finalSaved.toString())
+            .put("owned_memo_text", finalSaved.text)
+            .put("owned_memo_version", finalSaved.version)
+            .put("owner_pid", Process.myPid())
+            .put("phase", "await_process_restart")
+        writeOwner(file, owner)
+        assertOwnedAndOriginalPreserved(graph, owner, requireMemo = true)
+        phase("MEMO_AWAIT_PROCESS_RESTART")
     }
 
     private fun preconditions() {
@@ -491,15 +533,39 @@ class SessionMemoFlowTest {
         tags: List<String>,
         requireFocus: Boolean = false,
     ) {
-        compose.waitUntil(15_000) {
+        try {
+            compose.waitUntil(15_000) {
+                val viewport = appViewport()
+                viewport != null && tags.all { fullyVisible(it, viewport, requireFocus) }
+            }
             val viewport = appViewport()
-            viewport != null && tags.all { fullyVisible(it, viewport, requireFocus) }
+            assertTrue(
+                "입력창 또는 캡처 대상 전체가 실제 앱 가용 영역에 보여야 합니다",
+                viewport != null && tags.all { fullyVisible(it, viewport, requireFocus) },
+            )
+        } catch (failure: Throwable) {
+            preserveVisibilityFailure()
+            throw failure
         }
-        val viewport = appViewport()
-        assertTrue(
-            "입력창 또는 캡처 대상 전체가 실제 앱 가용 영역에 보여야 합니다",
-            viewport != null && tags.all { fullyVisible(it, viewport, requireFocus) },
-        )
+    }
+
+    /** Capture is optional evidence only; failure remains failure and older captures are retained. */
+    private fun preserveVisibilityFailure() {
+        var bitmap: Bitmap? = null
+        try {
+            val instrumentation = InstrumentationRegistry.getInstrumentation()
+            val automation = instrumentation.uiAutomation
+            if (automation.rootInActiveWindow?.packageName?.toString() != instrumentation.targetContext.packageName) return
+            val captured = automation.takeScreenshot() ?: return
+            bitmap = captured
+            val directory = File(instrumentation.targetContext.cacheDir, "screenshots").apply { mkdirs() }
+            val file = File(directory, "memo-visibility-failure-${UUID.randomUUID()}.png")
+            file.outputStream().use { captured.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        } catch (_: Exception) {
+            // Evidence collection must not replace the original visibility assertion failure.
+        } finally {
+            bitmap?.recycle()
+        }
     }
 
     private fun fullyVisible(
