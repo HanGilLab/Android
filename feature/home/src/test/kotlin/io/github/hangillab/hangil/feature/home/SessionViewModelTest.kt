@@ -25,10 +25,13 @@ import io.github.hangillab.hangil.core.domain.VehicleState
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -71,12 +74,13 @@ class SessionViewModelTest {
         }
     private val selected = MutableStateFlow<PracticeSelection?>(selection)
     private var preparationReadFails = false
+    private var preparationSource: Flow<PracticeSelection?> = selected
     private val preparationRepository =
         object : PracticeRepository {
             override fun observeSelection(): Flow<PracticeSelection?> =
                 flow {
                     if (preparationReadFails) error("preparation read failure")
-                    emitAll(selected)
+                    emitAll(preparationSource)
                 }
 
             override suspend fun saveSelection(
@@ -86,6 +90,7 @@ class SessionViewModelTest {
         }
     private val records = MutableStateFlow<List<PracticeSession>>(emptyList())
     private var sessionReadFails = false
+    private var recordsSource: Flow<List<PracticeSession>> = records
     private var sessionReads = 0
     private var startCalls = 0
     private var finishCalls = 0
@@ -101,7 +106,7 @@ class SessionViewModelTest {
                 flow {
                     sessionReads += 1
                     if (sessionReadFails) error("session read failure")
-                    emitAll(records)
+                    emitAll(recordsSource)
                 }
 
             override suspend fun start(
@@ -490,6 +495,304 @@ class SessionViewModelTest {
             assertTrue(model.canPrepareNext(recent.sessionId))
         }
 
+    @Test fun `recent and guide expansion recheck live gear connection and UX before UI recombination`() =
+        runTest {
+            val recent = session("recent").copy(endedAtEpochMillis = 1_500L)
+            records.value = listOf(recent)
+            val model = model()
+            observe(model)
+            val displayedStep = model.uiState.value.nextStep
+            assertTrue(model.canExpandGuide(displayedStep, null))
+            assertTrue(model.canExpandRecent(recent))
+            vehicle.state.value = VehicleState(ConnectionState.CONNECTED, VehicleReading.Available(GearPosition.DRIVE))
+            assertTrue(model.uiState.value.allowsInteraction)
+            assertFalse(model.canExpandGuide(displayedStep, null))
+            assertFalse(model.canExpandRecent(recent))
+            vehicle.state.value = parked
+            restrictions.restrictions.value = DrivingRestrictions(ParkingState.PARKED, UxRestrictionState.RESTRICTED)
+            assertFalse(model.canExpandGuide(displayedStep, null))
+            assertFalse(model.canExpandRecent(recent))
+            restrictions.restrictions.value = DrivingRestrictions()
+            assertFalse(model.canExpandGuide(displayedStep, null))
+            assertFalse(model.canExpandRecent(recent))
+            restrictions.restrictions.value = unrestricted
+            vehicle.state.value = VehicleState()
+            assertFalse(model.canExpandGuide(displayedStep, null))
+            assertFalse(model.canExpandRecent(recent))
+            assertEquals(1, sessionReads)
+            assertEquals(0, startCalls)
+            assertEquals(0, finishCalls)
+        }
+
+    @Test fun `a separate active session and pending write do not hide a valid parked recent record`() =
+        runTest {
+            val active = session("active")
+            val recent = session("recent").copy(endedAtEpochMillis = 1_500L)
+            records.value = listOf(active, recent)
+            val resume = CompletableDeferred<Unit>()
+            finishAction = { _, _, _ ->
+                resume.await()
+                SessionFinishResult.Blocked
+            }
+            val model = model()
+            observe(model)
+            assertTrue(model.canExpandGuide(HomeJourneyStep.ACTIVE, active))
+            assertTrue(model.canExpandRecent(recent))
+            assertFalse(model.canPrepareNext(recent.sessionId))
+            model.finish(active.sessionId)
+            runCurrent()
+            assertEquals(SessionOperationState.Saving, model.uiState.value.operation)
+            repeat(10) {
+                assertTrue(model.canExpandGuide(HomeJourneyStep.ACTIVE, active))
+                assertTrue(model.canExpandRecent(recent))
+            }
+            assertEquals(1, sessionReads)
+            assertEquals(0, startCalls)
+            assertEquals(1, finishCalls)
+            resume.complete(Unit)
+            runCurrent()
+            assertEquals(listOf(active, recent), records.value)
+        }
+
+    @Test fun `received full active and recent snapshots reject old callbacks before UI publication`() =
+        runTest {
+            val active = session("active")
+            val recent = session("recent").copy(endedAtEpochMillis = 1_500L)
+            val replacementActive = active.copy(taskTitle = "수정된 활성 과제")
+            val replacementRecent = recent.copy(goalTitle = "수정된 종료 목표")
+            val advance = CompletableDeferred<Unit>()
+            val checked = CompletableDeferred<Unit>()
+            lateinit var model: SessionViewModel
+            recordsSource =
+                flow {
+                    emit(listOf(active, recent))
+                    advance.await()
+                    backgroundScope.launch {
+                        assertEquals(active, model.uiState.value.active)
+                        assertEquals(recent, model.uiState.value.latestFinished)
+                        assertFalse(model.canExpandGuide(HomeJourneyStep.ACTIVE, active))
+                        assertTrue(model.canExpandGuide(HomeJourneyStep.ACTIVE, replacementActive))
+                        assertFalse(model.canExpandRecent(recent))
+                        assertTrue(model.canExpandRecent(replacementRecent))
+                        checked.complete(Unit)
+                    }
+                    emit(listOf(replacementActive, replacementRecent))
+                    awaitCancellation()
+                }
+            model = model()
+            observe(model)
+            assertTrue(model.canExpandGuide(HomeJourneyStep.ACTIVE, active))
+            assertTrue(model.canExpandRecent(recent))
+            advance.complete(Unit)
+            runCurrent()
+            assertTrue(checked.isCompleted)
+            assertEquals(replacementActive, model.uiState.value.active)
+            assertEquals(replacementRecent, model.uiState.value.latestFinished)
+            assertEquals(1, sessionReads)
+            assertEquals(0, startCalls)
+            assertEquals(0, finishCalls)
+        }
+
+    @Test fun `guide uses the received preparation step instead of a delayed repeat display`() =
+        runTest {
+            val recent = session("recent").copy(endedAtEpochMillis = 1_500L)
+            records.value = listOf(recent)
+            val advance = CompletableDeferred<Unit>()
+            val checked = CompletableDeferred<Unit>()
+            lateinit var model: SessionViewModel
+            preparationSource =
+                flow {
+                    emit(selection)
+                    advance.await()
+                    backgroundScope.launch {
+                        assertEquals(HomeJourneyStep.REPEAT, model.uiState.value.nextStep)
+                        assertFalse(model.canExpandGuide(HomeJourneyStep.REPEAT, null))
+                        assertTrue(model.canExpandGuide(HomeJourneyStep.PREPARE, null))
+                        assertTrue(model.canExpandRecent(recent))
+                        checked.complete(Unit)
+                    }
+                    emit(null)
+                    awaitCancellation()
+                }
+            model = model()
+            observe(model)
+            assertTrue(model.canExpandGuide(HomeJourneyStep.REPEAT, null))
+            advance.complete(Unit)
+            runCurrent()
+            assertTrue(checked.isCompleted)
+            assertEquals(HomeJourneyStep.PREPARE, model.uiState.value.nextStep)
+            assertEquals(1, sessionReads)
+            assertEquals(0, startCalls)
+            assertEquals(0, finishCalls)
+        }
+
+    @Test fun `static loading guide stays available while the visible sources have no values`() =
+        runTest {
+            preparationSource = flow { awaitCancellation() }
+            recordsSource = flow { awaitCancellation() }
+            val model = model()
+            observe(model)
+            assertEquals(HomeJourneyStep.LOADING, model.uiState.value.nextStep)
+            assertTrue(model.canExpandGuide(HomeJourneyStep.LOADING, null))
+            assertFalse(model.canExpandGuide(HomeJourneyStep.READY, null))
+            assertFalse(model.canExpandRecent(session().copy(endedAtEpochMillis = 1_500L)))
+            assertEquals(1, sessionReads)
+            assertEquals(0, startCalls)
+            assertEquals(0, finishCalls)
+        }
+
+    @Test fun `read failure revokes old record callbacks but preserves the static recovery guide`() =
+        runTest {
+            val recent = session("recent").copy(endedAtEpochMillis = 1_500L)
+            val failRead = CompletableDeferred<Unit>()
+            val checked = CompletableDeferred<Unit>()
+            lateinit var model: SessionViewModel
+            recordsSource =
+                flow {
+                    emit(listOf(recent))
+                    failRead.await()
+                    backgroundScope.launch {
+                        assertEquals(recent, model.uiState.value.latestFinished)
+                        assertFalse(model.canExpandRecent(recent))
+                        assertFalse(model.canExpandGuide(HomeJourneyStep.REPEAT, null))
+                        assertTrue(model.canExpandGuide(HomeJourneyStep.RECOVER, null))
+                        checked.complete(Unit)
+                    }
+                    error("fixture read failure")
+                }
+            model = model()
+            observe(model)
+            assertTrue(model.canExpandRecent(recent))
+            failRead.complete(Unit)
+            runCurrent()
+            assertTrue(checked.isCompleted)
+            assertEquals(SessionLoadState.Failed, model.uiState.value.records)
+            assertTrue(model.canExpandGuide(HomeJourneyStep.RECOVER, null))
+            assertFalse(model.canExpandRecent(recent))
+            assertEquals(1, sessionReads)
+            assertEquals(0, startCalls)
+            assertEquals(0, finishCalls)
+        }
+
+    @Test fun `normally completed record streams publish failure instead of retaining session details`() =
+        runTest {
+            val recent = session("recent").copy(endedAtEpochMillis = 1_500L)
+            recordsSource = flowOf(listOf(recent))
+            val model = model()
+            observe(model)
+            assertEquals(SessionLoadState.Failed, model.uiState.value.records)
+            assertEquals(null, model.uiState.value.latestFinished)
+            assertFalse(model.canExpandRecent(recent))
+            assertFalse(model.canExpandGuide(HomeJourneyStep.REPEAT, null))
+            assertTrue(model.canExpandGuide(HomeJourneyStep.RECOVER, null))
+            assertEquals(1, sessionReads)
+            assertEquals(0, startCalls)
+            assertEquals(0, finishCalls)
+        }
+
+    @Test fun `stopping the visible reader revokes guide and recent expansions until a fresh subscription`() =
+        runTest {
+            val recent = session("recent").copy(endedAtEpochMillis = 1_500L)
+            records.value = listOf(recent)
+            val model = model()
+            assertFalse(model.canExpandGuide(HomeJourneyStep.LOADING, null))
+            assertFalse(model.canExpandRecent(recent))
+            val observation = observe(model)
+            assertTrue(model.canExpandGuide(HomeJourneyStep.REPEAT, null))
+            assertTrue(model.canExpandRecent(recent))
+            observation.cancel()
+            runCurrent()
+            assertFalse(model.canExpandGuide(HomeJourneyStep.REPEAT, null))
+            assertFalse(model.canExpandRecent(recent))
+            observe(model)
+            assertTrue(model.canExpandGuide(HomeJourneyStep.REPEAT, null))
+            assertTrue(model.canExpandRecent(recent))
+            assertEquals(2, sessionReads)
+            assertEquals(0, startCalls)
+            assertEquals(0, finishCalls)
+        }
+
+    @Test fun normalPreparationCompletionPublishesFailureButPreservesLiveRecentReading() =
+        runTest {
+            val recent = session("recent").copy(endedAtEpochMillis = 1_500L)
+            records.value = listOf(recent)
+            val complete = CompletableDeferred<Unit>()
+            preparationSource =
+                flow {
+                    emit(selection)
+                    complete.await()
+                }
+            val model = model()
+            observe(model)
+            assertEquals(PreparationLoadState.Loaded(Preparation.Ready(practice)), model.uiState.value.preparation)
+            assertTrue(model.canExpandGuide(HomeJourneyStep.REPEAT, null))
+            assertTrue(model.canExpandRecent(recent))
+            complete.complete(Unit)
+            runCurrent()
+            assertEquals(PreparationLoadState.Failed, model.uiState.value.preparation)
+            assertEquals(HomeJourneyStep.RECOVER, model.uiState.value.nextStep)
+            assertFalse(model.canExpandGuide(HomeJourneyStep.REPEAT, null))
+            assertTrue(model.canExpandGuide(HomeJourneyStep.RECOVER, null))
+            assertEquals(SessionLoadState.Loaded(listOf(recent)), model.uiState.value.records)
+            assertTrue(model.canExpandRecent(recent))
+            val active = session("active")
+            records.value = listOf(active, recent)
+            runCurrent()
+            assertTrue(model.canExpandGuide(HomeJourneyStep.ACTIVE, active))
+            assertTrue(model.canExpandRecent(recent))
+            assertEquals(1, sessionReads)
+            assertEquals(0, startCalls)
+            assertEquals(0, finishCalls)
+        }
+
+    @Test fun normalRecordsCompletionPublishesFailureAfterVisibleRecentDetails() =
+        runTest {
+            val recent = session("recent").copy(endedAtEpochMillis = 1_500L)
+            val complete = CompletableDeferred<Unit>()
+            recordsSource =
+                flow {
+                    emit(listOf(recent))
+                    complete.await()
+                }
+            val model = model()
+            observe(model)
+            assertEquals(SessionLoadState.Loaded(listOf(recent)), model.uiState.value.records)
+            assertEquals(recent, model.uiState.value.latestFinished)
+            assertTrue(model.canExpandRecent(recent))
+            assertTrue(model.canExpandGuide(HomeJourneyStep.REPEAT, null))
+            complete.complete(Unit)
+            runCurrent()
+            assertEquals(SessionLoadState.Failed, model.uiState.value.records)
+            assertEquals(HomeJourneyStep.RECOVER, model.uiState.value.nextStep)
+            assertFalse(model.canExpandRecent(recent))
+            assertFalse(model.canExpandGuide(HomeJourneyStep.REPEAT, null))
+            assertTrue(model.canExpandGuide(HomeJourneyStep.RECOVER, null))
+            assertEquals(1, sessionReads)
+            assertEquals(0, startCalls)
+            assertEquals(0, finishCalls)
+        }
+
+    @Test fun `retry cancellation restarts sources without publishing a false read failure`() =
+        runTest {
+            val recent = session("recent").copy(endedAtEpochMillis = 1_500L)
+            records.value = listOf(recent)
+            val model = model()
+            val seen = mutableListOf<SessionUiState>()
+            backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { model.uiState.collect { seen += it } }
+            runCurrent()
+            assertTrue(model.canExpandRecent(recent))
+            model.retryLoading()
+            runCurrent()
+            assertEquals(PreparationLoadState.Loaded(Preparation.Ready(practice)), model.uiState.value.preparation)
+            assertEquals(SessionLoadState.Loaded(listOf(recent)), model.uiState.value.records)
+            assertTrue(model.canExpandRecent(recent))
+            assertTrue(model.canExpandGuide(HomeJourneyStep.REPEAT, null))
+            assertTrue(seen.none { it.preparation == PreparationLoadState.Failed || it.records == SessionLoadState.Failed })
+            assertEquals(2, sessionReads)
+            assertEquals(0, startCalls)
+            assertEquals(0, finishCalls)
+        }
+
     private fun model(time: Long = 2_000L) =
         SessionViewModel(
             vehicle,
@@ -500,9 +803,10 @@ class SessionViewModelTest {
             Clock.fixed(Instant.ofEpochMilli(time), ZoneOffset.UTC),
         )
 
-    private fun TestScope.observe(model: SessionViewModel) {
-        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { model.uiState.collect {} }
+    private fun TestScope.observe(model: SessionViewModel): Job {
+        val observation = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { model.uiState.collect {} }
         runCurrent()
+        return observation
     }
 
     private fun assertFeedback(

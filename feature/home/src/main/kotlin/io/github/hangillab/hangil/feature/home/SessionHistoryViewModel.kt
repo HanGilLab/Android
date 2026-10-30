@@ -84,6 +84,22 @@ class SessionHistoryViewModel
 
         fun canRead(): Boolean = allowsPracticeInteraction(vehicle.state.value, restrictions.restrictions.value)
 
+        /** Rechecks the exact displayed summary at the detail action and composition boundaries. */
+        fun canRevealSummary(
+            expectedSessionId: String,
+            expectedGeneration: Long,
+        ): Boolean =
+            synchronized(lock) {
+                val owner = reader ?: return@synchronized false
+                val query = owner.query ?: return@synchronized false
+                if (!currentQuery(owner, query) || !canRead()) return@synchronized false
+                val current = published.value as? SessionHistoryUiState.Ready ?: return@synchronized false
+                val records = ended ?: return@synchronized false
+                !selectionLost && selectedId == expectedSessionId &&
+                    current.session.sessionId == expectedSessionId && current.generation == expectedGeneration &&
+                    records.getOrNull(current.index) == current.session && current.summary.source == current.session
+            }
+
         fun retry(): Boolean =
             synchronized(lock) {
                 val owner = reader?.takeIf { it.job.isActive } ?: return@synchronized false

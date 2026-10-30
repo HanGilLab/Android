@@ -80,6 +80,7 @@ fun SessionHistoryRoute(
                             current,
                             onNewer = { viewModel.newer(current.session.sessionId, current.generation) },
                             onOlder = { viewModel.older(current.session.sessionId, current.generation) },
+                            canRevealSummary = { viewModel.canRevealSummary(current.session.sessionId, current.generation) },
                         )
                 }
             }
@@ -102,6 +103,7 @@ private fun HistoryRecord(
     state: SessionHistoryUiState.Ready,
     onNewer: () -> Unit,
     onOlder: () -> Unit,
+    canRevealSummary: () -> Boolean,
 ) {
     val session = state.session
     val finished = checkNotNull(session.endedAtEpochMillis)
@@ -154,7 +156,7 @@ private fun HistoryRecord(
             )
             Text(session.taskTitle, Modifier.testTag("history_task"), style = MaterialTheme.typography.titleLarge)
         }
-        HistoryCourseSummary(state)
+        HistoryCourseSummary(state, canRevealSummary)
         ParkedPanel {
             Text(
                 stringResource(R.string.session_started_at, displayTime(session.startedAtEpochMillis)),
@@ -171,7 +173,10 @@ private fun HistoryRecord(
 }
 
 @Composable
-private fun HistoryCourseSummary(state: SessionHistoryUiState.Ready) {
+private fun HistoryCourseSummary(
+    state: SessionHistoryUiState.Ready,
+    canRevealSummary: () -> Boolean,
+) {
     val summary = state.summary
     ParkedPanel(Modifier.testTag("history_course_summary")) {
         Text(
@@ -186,7 +191,11 @@ private fun HistoryCourseSummary(state: SessionHistoryUiState.Ready) {
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.SemiBold,
         )
-        ParkedDisclosure(stringResource(R.string.history_summary_tasks), Modifier.testTag("history_summary_tasks")) {
+        ParkedDisclosure(
+            title = stringResource(R.string.history_summary_tasks),
+            canExpand = canRevealSummary,
+            modifier = Modifier.testTag("history_summary_tasks"),
+        ) {
             Text(
                 stringResource(R.string.history_summary_scope),
                 Modifier.testTag("history_summary_scope"),

@@ -107,6 +107,17 @@ class SessionHistoryFlowTest {
             var primaryFailure: Throwable? = null
             try {
                 awaitAllowed(graph)
+                // The real debug diagnostics share the live/owner guard and remain read-only.
+                assertAbsent("home_diagnostics_content")
+                touch("home_diagnostics_details")
+                waitFor("home_diagnostics_content")
+                assertTrue(
+                    "실제 진단 상세는 SDK 수신값 출처를 유지해야 합니다",
+                    nodeTexts(nodes("home_diagnostics_content").single()).contains(text(HomeR.string.vehicle_diagnostics)),
+                )
+                touch("home_diagnostics_details")
+                assertAbsent("home_diagnostics_content")
+                assertPreserved(graph, before)
                 touch("home_history")
                 assertRecord(ended[0], 0, ended)
                 captureSummaryPanel(expectedSummary(ended[0], ended).count)

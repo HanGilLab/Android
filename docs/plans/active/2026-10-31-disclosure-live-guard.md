@@ -1,6 +1,6 @@
 # 상세 펼침 처리의 최신 허용 조건과 선택 소유권
 
-- 상태: 제어된 native 재현과 변경 전 계측 준비
+- 상태: native RED와 실제 기준값 수집 완료, 제품 수정 중
 - 요구사항: P와 UX 동시 확인, 상태 수신/처리 경계의 오래된 상세 조작 차단
 - 기준 커밋: ad0c1d7acb9ba79e323ef1f2329c11b4f0be364a (제품eac86f6과 동일)
 
@@ -12,7 +12,7 @@ PR47 후 자체 검토에서 ParkedDisclosure가 local expanded만 갱신하며,
 
 ## 완료 조건
 
-- [ ] 제품 수정 전 제어된 실제 Route/Disclosure native 검사에서 오래된 P 표시로 D 상태의 상세 펼침이 발생함을 RED로 재현한다. 실제 SDK 검증/성능 근거와 구분한다.
+- [x] 제품 수정 전 제어된 실제 Route/Disclosure native 검사에서 오래된 P 표시로 D 상태의 상세 펼침이 발생함을 RED로 재현한다. 실제 SDK 검증/성능 근거와 구분한다.
 - [ ] 동적 처리 gate가 최신 P/UX와 현재 선택/read 소유권을 확인한다. denied 요청은 확장 의도로 남지 않고 접기는 항상 가능하다. content 반영 직전에도 확인한다.
 - [ ] 단위/제어된 native GREEN, JDK17 전체 verify와 실제 Pleos 기본/확대 다크 P-D-P 및 관련 기존 흐름을 확인한다.
 - [ ] 변경 전후 고정 P/UX의 실제 상세 펼침 처리 비용을 같은 조건/계측으로 수집한다. 정확성 검증을 성능 개선으로 쓰지 않는다.
@@ -34,11 +34,26 @@ PR47 후 자체 검토에서 ParkedDisclosure가 local expanded만 갱신하며,
 | 항목 | 결과 | 근거 |
 |---|---|---|
 | 소스/Compose 범위 검토 | 누락 확인, native 미실행 | local expanded 변경에 live/context gate가 없고 부모가 다시 실행된다는 보장이 없다. 단순 true/false의 UI enabled 복사로는 해결하지 않는다. |
-| 제어된 native RED | 미실행 | 실제 Route/컴포넌트, 비관찰 제어 StateFlow/합성 데이터로 확인한다. 실제 DDS나 성능 자료가 아니다. |
-| 실제 펼침 기준값 | 미실행 | 코드 수정 전에 수집한다. |
+| 제어된 native RED | 예상한 정확성 실패 재현 | 제품ad0c1d7/계측82677d3317f85c81fe1490f0b2c197a442b8ef29. 실제 Route/컴포넌트와 비관찰 제어 StateFlow/합성 세션에서 D로 바뀐 뒤 옛 P 콜백이 상세를 표시하는 assertion1개가 실패했다. 실제 DDS 재현이나 성능 자료가 아니다. fixture 구독 종료/저장 호출0 확인과 실제 원본 전체 보존을 별도로 확인했다. |
+| 실제 펼침 기준값 | 완료,5회 워밍업/30표본 | 실제 SDK P+UX, 기존 자료와 글꼴1.0/라이트. 워밍업5/5, 본 표본30/30 성공, 실패/누락/미실행/제외0. 중앙값169.4662705ms, Q1 166.827375ms, Q3 171.027208ms, IQR4.199833ms, min158.237792ms/max189.139917ms. 클릭→scope 실제 viewport/idle 계측 overhead 포함이며 성능 향상을 뜻하지 않는다. |
 | 계측 APK 준비 | JDK17 성공 | 최초 Spotless 줄 길이 실패 뒤 조건식 줄바꿈만 수정했고 같은 debug/native APK 빌드가 성공했다. 제품과 기존 진입 계측은 변경하지 않았다. |
-| 수정/전체/GREEN/실기/비교 | 미실행 | |
+| 수정/전체 | JDK17 성공 | 최종 전체 verify와 native APK 빌드 성공. 저장JUnit38개 suite/460개 검사 집계, 실패/오류/건너뜀0. 이번 변경 모듈 검사가 실행됐고 변경 없는 Gradle task의 기존 유효 결과 재사용은 성능 표본으로 계산하지 않았다. 정상완료 RED3개도 GREEN이며 취소를 실패로 바꾸지 않는 검사와 live 진단 gate를 포함한다. |
+| 제어 native GREEN/실기/비교 | 미실행 | 설치할 제품 revision을 기록한 뒤 실제 실행한다. |
 
 ## 남은 문제와 인계
 
 PR48은 기존62dd2d0의 CI4개/Codex 완료를 과거 근거로 보존한 draft다. 제품 수정 후 최신 main을 정상 통합해 두 계획의 종료를 갱신하고 최신 head 검사/리뷰를 다시 받는다. PR47 원래 리뷰를 임의 변경하거나 해당 리뷰가 이 결함을 지적한 것으로 기록하지 않는다. 기존 최초 확대 외부 DDS 전환 누락과 옛 history_finished timeout 미확정은 이 source 경합과 별도로 유지한다.
+
+## 실제 기준값 보존과 구현 범위 확정
+
+제품ad0c1d7, 계측82677d3317f85c81fe1490f0b2c197a442b8ef29를 실제 설치 APK SHA256와 대조했다. 기준 원본 SHA256은 ab65d7c9e787535cf7ed47f75f5faf05ec7382b840177a9d42aa828416186923이며 완료 파일은 덮어쓰지 않는다. 기존 진입 계측은 b98f31a와 바이트 동일하게 보존했다. 별도 시작한 AVD는 전체 원래 자료/권한/설정을 정확히 복원한 뒤 종료해 무거운 Gradle과 겹치지 않게 했다.
+
+공유 Disclosure는5개 파일의8개 제품 호출부에 사용된다. 기본 true 우회를 허용하지 않는 필수 동적 callback을 적용하고 각 호출부에서 실제 현재 P/UX와 표시한 source/draft를 확인한다. History/Next의 기존 reader/query/세대 계약을 재사용하며 Next의 동일 seed 재수신 시 generation 보존은 변경하지 않는다. Home/Session은 기존 source 수신 지점의 작은 읽기 상태만 추적하고 새 DB 구독을 추가하지 않는다. 최근 종료 기록은 별도의 활성 세션이나 저장 작업이 있어도 주차 조건에서 읽을 수 있다. 정적 LOADING/RECOVER 안내도 보존한다. 공유 컴포넌트의 STARTED owner는 STOP/dispose에서 영구 무효화하고 옛 콜백이 새 owner나 source guard를 채택하지 않도록 한다.
+
+README는 기존1번이 이미 다루는 최신 차량 수신과 처리 경계의 직접적인 후속 근거다. 실제 자식 재조합/로컬 펼침의 빈틈을 native RED로 좁히고 소유권 판정까지 보강하므로1번의 설명/실제 코드만 보완할 후보로 둔다. 새 다섯 번째 사례를 추가하거나 다른3개의 내용/순서를 바꿀 이유는 없다. 성능 개선은 주장하지 않으며 정확성 검증을 README의 수치로 대체하지 않는다. 실제 GREEN/비교/리뷰 전에는 해결 완료로 기록하지 않는다.
+
+## 추가 처리 경계 재현
+
+첫 전체 verify와 native APK 빌드는 성공했고 저장JUnit38개 suite/454개 검사 집계의 실패/오류/건너뜀은0이었다. 이후 추가 검토에서 debug 앱의 진단 토글도 별도 local expanded만 바꾸는 경계를 확인해 동일한 필수 live/STARTED guard의 Disclosure로 통일한다. 기존8개 호출부와 별도의 debug 진단1개가 대상이다. 진단은 선택한 저장 기록이 아닌 현재 차량 상태를 읽으므로 기존 live read 판정을 재사용한다. 새 저장/권한이나 성능 향상은 추가하지 않는다.
+
+정상 종료한 Home 준비/Session 준비/Session 기록 source의 owner만 비관찰 필드에서 지우면 이미 열린 상세가 새 UI 발행 없이 남을 수 있었다. 완료 gate 이전 Loaded+허용을 관찰한 뒤 gate를 완료하는3개 JVM 검사를 실제 실행했고 모두 `Failed` 대신 `Loaded`가 남는 assertion으로 실패했다. 이 값과 검사는 합성 입력의 정확성 재현이며 앱/SDK 성능이 아니다. 정상완료만 Failed를 발행하고 취소는 Failed로 바꾸지 않으며 실제 오류는 기존 catch를 거친다. Session 준비 실패만으로 살아 있는 최근 종료 기록 읽기까지 차단하지 않는다. 수정 뒤 전체를 다시 실행해 필터 실행으로 부분 교체된 보고서를 전체 결과로 오인하지 않는다.
