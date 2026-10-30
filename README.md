@@ -50,6 +50,12 @@
 |:---:|:---:|
 | [<img src="docs/images/screenshots/hangil-course.png" alt="고정 시연 코스 두 가지 중 선택하는 실제 한길 화면" width="400" />](docs/images/screenshots/hangil-course.png) | [<img src="docs/images/screenshots/hangil-task.png" alt="오늘의 과제를 고르고 준비 내용을 저장하는 실제 한길 화면" width="400" />](docs/images/screenshots/hangil-task.png) |
 
+| 생활권 코스의 시연 지점 | 교차로 코스의 시연 지점 |
+|:---:|:---:|
+| [<img src="docs/images/screenshots/hangil-map-neighborhood.png" alt="생활권 코스에 연결된 공개 장소 세 곳과 번호를 보여 주는 실제 한길 지도" width="400" />](docs/images/screenshots/hangil-map-neighborhood.png) | [<img src="docs/images/screenshots/hangil-map-intersections.png" alt="교차로 코스로 바뀐 공개 장소 세 곳과 지도 범위를 보여 주는 실제 한길 화면" width="400" />](docs/images/screenshots/hangil-map-intersections.png) |
+
+지도 번호는 공개 장소의 고정 대표점입니다. 실제 이동 경로, 방문 순서나 차량 목적지를 뜻하지 않습니다.
+
 | SDK 차량 상태 기록 | 주행 중 상세 조작 잠금 |
 |:---:|:---:|
 | [<img src="docs/images/screenshots/hangil-recording.png" alt="시연 코스와 구분해 SDK 차량 상태 관찰을 안내하는 실제 활성 연습 화면" width="400" />](docs/images/screenshots/hangil-recording.png) | [<img src="docs/images/screenshots/hangil-driving-locked.png" alt="실제 DDS의 D 상태에서 상세 화면을 잠그고 주차 후 조작을 안내하는 한길 화면" width="400" />](docs/images/screenshots/hangil-driving-locked.png) |
@@ -73,7 +79,7 @@
 | **활성 연습의 차량 상태 관찰** | 앱 화면이 켜진 동안 SDK가 전달한 기어, 방향지시등과 브레이크 상태를 세션에 기록합니다. 미확인, 미지원, 거부와 오류를 보존하고, 화면 이탈과 종료 뒤에는 수집하지 않습니다. |
 | **주차 후 차량 기록 확인** | 최근 종료 세션의 저장된 SDK 관찰을 한 번에 하나씩 확인합니다. 당시 기어, 방향지시등과 브레이크, 연결과 앱 관찰 시각을 보고 이전/다음으로 저장 순서를 따라갑니다. |
 | **주차 후 사용자 메모** | 최근 마무리한 연습에 짧은 메모를 직접 입력하고 저장, 수정, 명시적으로 지웁니다. 저장 내용은 앱을 다시 열어도 복원하며 미저장 초안과 구분합니다. |
-| **시연 지역 지도** | 서울 시청 주변의 고정 시연 지역을 지도에서 확인하고 시연 표시와 지도 출처를 제공합니다. |
+| **코스별 시연 지도** | 준비한 코스에 맞춰 서울 시청 또는 광화문 주변의 공개 장소 세 곳을 번호로 표시합니다. 시연 출처와 지도 출처를 구분하고 실제 이동 경로나 현재 위치로 표현하지 않습니다. |
 | **주행 중 상세 조작 잠금** | 주차와 UX 허용을 모두 확인해야 상세 조작을 허용합니다. 주행이나 상태 미확인에서는 준비 화면과 지도 조작을 잠급니다. |
 
 <br />

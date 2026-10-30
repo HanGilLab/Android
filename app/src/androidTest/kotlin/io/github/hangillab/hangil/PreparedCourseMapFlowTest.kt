@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.Rect
 import android.os.Bundle
 import android.os.Looper
+import android.os.ParcelFileDescriptor
 import android.os.Process
 import android.util.AtomicFile
 import android.view.View
@@ -24,6 +25,7 @@ import io.github.hangillab.hangil.core.domain.CourseMapPreview
 import io.github.hangillab.hangil.core.domain.GearPosition
 import io.github.hangillab.hangil.core.domain.PracticeCourse
 import io.github.hangillab.hangil.core.domain.PracticeSelection
+import io.github.hangillab.hangil.core.domain.Preparation
 import io.github.hangillab.hangil.core.domain.VehicleReading
 import io.github.hangillab.hangil.core.domain.allowsPracticeInteraction
 import kotlinx.coroutines.CompletableDeferred
@@ -42,16 +44,27 @@ import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.style.layers.CircleLayer
 import org.maplibre.android.style.layers.SymbolLayer
 import org.maplibre.android.style.sources.GeoJsonSource
+import org.maplibre.android.tile.TileOperation
 import org.maplibre.geojson.Point
 import java.io.File
 import java.io.FileOutputStream
+import java.net.Proxy
+import java.net.ProxySelector
+import java.net.URI
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
+import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.floor
+import kotlin.math.ln
+import kotlin.math.tan
 
 /**
  * Explicit -e manualPreparedCourseMap true on the dedicated debug app, with external DDS P/D/P.
@@ -189,6 +202,179 @@ class PreparedCourseMapFlowTest {
             phase("PREPARED_MAP_COMPLETED")
         }
     }
+
+    /**
+     * Explicit network fault injection, never a performance measurement or GPS observation.
+     * The external runner preflights the public tile endpoint and preserves device settings.
+     * A synthetic camera offset must produce an actual remote tile request and tile error;
+     * a cached ready frame alone cannot satisfy this test. No caches or stored data are cleared.
+     */
+    @Test fun injectedRemoteTileFailureRetriesPreparedPreviewWithoutDataChanges() {
+        assumeTrue(
+            "명시적인 실제 지도 네트워크 오류 주입에서만 검사합니다",
+            InstrumentationRegistry.getArguments().getString("manualPreparedMapNetwork") == "true",
+        )
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        assertTrue("전용 debug 앱에서만 오류를 주입합니다", context.packageName == "io.github.hangillab.hangil.debug")
+        assertTrue("미완료 지도 소유 기록과 다른 검사를 겹치면 안 됩니다", !ownerEvidenceExists(ownerFile()))
+        val graph = EntryPointAccessors.fromApplication(context.applicationContext, RecordingTestEntryPoint::class.java)
+        runBlocking {
+            val original = graph.preparation().observeSelection().first()
+            val preparation = graph.catalog().resolve(original) as? Preparation.Ready
+            assertTrue("현재 준비와 유효한 지도가 있어야 합니다", original != null && preparation?.practice?.course?.mapPreview != null)
+            val course = checkNotNull(preparation).practice.course
+            val preview = checkNotNull(course.mapPreview)
+            val before = snapshotData(graph)
+            assertTrue("활성 연습 중에는 네트워크 검사를 시작하지 않습니다", before.noActiveSessions)
+            val originalProxy = shell("settings get global http_proxy").trimEnd('\n', '\r')
+            assertTrue("원래 프록시를 단일 인자로 안전하게 복구할 수 있어야 합니다", restorableProxy(originalProxy))
+            val originalRoute = proxyRoute()
+            assertTrue("원래 프록시 경로를 확인할 수 있어야 합니다", originalRoute.isNotEmpty())
+            val sdkObserver = launch { graph.vehicle().state.collect {} }
+            var primaryFailure: Throwable? = null
+            try {
+                awaitAllowed(graph)
+                touch("home_map")
+                assertMapText(course, preview)
+                awaitNativePreview(preview)
+                phase("PREPARED_MAP_NETWORK_READY")
+                shell("settings put global http_proxy 127.0.0.1:9")
+                assertTrue("오류 주입 프록시가 실제 적용되어야 합니다", shell("settings get global http_proxy").trim() == "127.0.0.1:9")
+                compose.waitUntil(20_000) { proxyRoute().any { it.type() != Proxy.Type.DIRECT } }
+                assertTrue("합성 카메라 조작 직전에도 P와 UX가 허용되어야 합니다", liveAllowed(graph))
+                requestSyntheticRemoteTile(preview)
+                waitFor("map_error")
+                waitFor("map_retry")
+                assertAbsent("map_ready")
+                phase("PREPARED_MAP_NETWORK_INJECTED_ERROR_CONFIRMED")
+                // Recover connectivity for retry, then restore the exact previous setting in finally.
+                shell("settings put global http_proxy :0")
+                compose.waitUntil(20_000) {
+                    val route = proxyRoute()
+                    route.isNotEmpty() && route.all { it.type() == Proxy.Type.DIRECT }
+                }
+                touch("map_retry")
+                assertMapText(course, preview)
+                awaitNativePreview(preview)
+                assertAbsent("map_error")
+                phase("PREPARED_MAP_NETWORK_RETRY_CONFIRMED")
+            } catch (failure: Throwable) {
+                primaryFailure = failure
+                throw failure
+            } finally {
+                try {
+                    restoreProxy(originalProxy)
+                    assertTrue("원래 프록시 설정을 정확하게 복구해야 합니다", shell("settings get global http_proxy").trimEnd('\n', '\r') == originalProxy)
+                    compose.waitUntil(20_000) { proxyRoute() == originalRoute }
+                    assertTrue("네트워크 검사가 준비 선택을 변경하면 안 됩니다", graph.preparation().observeSelection().first() == original)
+                    assertTrue("세션과 관찰, 메모를 모두 보존해야 합니다", snapshotData(graph) == before)
+                } catch (restorationFailure: Throwable) {
+                    if (primaryFailure != null) {
+                        primaryFailure.addSuppressed(AssertionError("프록시 또는 자료의 최종 보존 확인을 완료하지 못했습니다"))
+                    } else {
+                        throw restorationFailure
+                    }
+                } finally {
+                    sdkObserver.cancelAndJoin()
+                }
+            }
+            phase("PREPARED_MAP_NETWORK_COMPLETED")
+        }
+    }
+
+    private suspend fun requestSyntheticRemoteTile(preview: CourseMapPreview) {
+        val original = preview.points.first()
+        val latitude = original.latitude + 1.0
+        val longitude = original.longitude + 1.0
+        val moved = CompletableDeferred<Unit>()
+        val requested = CompletableDeferred<Unit>()
+        val failed = CompletableDeferred<Unit>()
+        val remoteTiles = ConcurrentHashMap.newKeySet<String>()
+        compose.runOnIdle {
+            val view = mapViews(compose.activity.window.decorView).singleOrNull { it.isAttachedToWindow && it.visibility == View.VISIBLE }
+            if (view == null) {
+                moved.completeExceptionally(AssertionError("연결된 실제 지도에서만 합성 카메라 검사를 시작합니다"))
+            } else {
+                view.getMapAsync { map ->
+                    if (Looper.myLooper() != Looper.getMainLooper() || !view.isAttachedToWindow || view.visibility != View.VISIBLE) {
+                        moved.completeExceptionally(AssertionError("UI 스레드의 연결된 지도에서만 카메라를 변경합니다"))
+                    } else {
+                        try {
+                            view.addOnTileActionListener { operation, x, y, z, _, _, source ->
+                                if (source != SOURCE_ID && z in 8..22) {
+                                    val probe = tileFor(latitude, longitude, z)
+                                    val previous = tileFor(original.latitude, original.longitude, z)
+                                    val nearProbe = abs(x - probe.first) <= 2 && abs(y - probe.second) <= 2
+                                    val distinct = abs(probe.first - previous.first) > 4 || abs(probe.second - previous.second) > 4
+                                    if (nearProbe && distinct) {
+                                        val tile = "$source:$z:$x:$y"
+                                        if (operation == TileOperation.RequestedFromNetwork) {
+                                            remoteTiles += tile
+                                            requested.complete(Unit)
+                                        }
+                                        if (operation == TileOperation.Error && tile in remoteTiles) failed.complete(Unit)
+                                    }
+                                }
+                            }
+                            map.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(latitude, longitude), 17.0))
+                            val target = map.cameraPosition.target
+                            assertTrue(
+                                "합성 카메라는 공개 시연 지점과 다른 지역이어야 합니다",
+                                target != null && abs(target.latitude - latitude) < 0.000001 &&
+                                    abs(target.longitude - longitude) < 0.000001,
+                            )
+                            moved.complete(Unit)
+                        } catch (_: Throwable) {
+                            moved.completeExceptionally(AssertionError("실제 지도에서 합성 카메라 요청을 완료하지 못했습니다"))
+                        }
+                    }
+                }
+            }
+        }
+        withTimeout(5_000) { moved.await() }
+        phase("PREPARED_MAP_NETWORK_SYNTHETIC_CAMERA_REQUESTED")
+        withTimeout(90_000) {
+            requested.await()
+            failed.await()
+        }
+        phase("PREPARED_MAP_NETWORK_REMOTE_TILE_ERROR_OBSERVED")
+    }
+
+    private fun tileFor(
+        latitude: Double,
+        longitude: Double,
+        zoom: Int,
+    ): Pair<Int, Int> {
+        val scale = (1 shl zoom).toDouble()
+        val radians = latitude * PI / 180.0
+        val x = floor((longitude + 180.0) / 360.0 * scale).toInt()
+        val y = floor((1.0 - ln(tan(radians) + 1.0 / cos(radians)) / PI) / 2.0 * scale).toInt()
+        return x to y
+    }
+
+    private fun proxyRoute(): List<Proxy> =
+        ProxySelector.getDefault()?.select(URI("https://tiles.openfreemap.org/styles/liberty")).orEmpty()
+
+    private fun restorableProxy(value: String): Boolean = value == "null" || value.matches(Regex("""[A-Za-z0-9._:\[\]-]+"""))
+
+    private fun restoreProxy(original: String) {
+        require(restorableProxy(original))
+        shell("settings put global http_proxy :0")
+        shell(
+            if (original == "null") {
+                "settings delete global http_proxy"
+            } else {
+                "settings put global http_proxy " + original
+            },
+        )
+    }
+
+    private fun shell(command: String): String =
+        ParcelFileDescriptor
+            .AutoCloseInputStream(
+                InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(command),
+            ).bufferedReader()
+            .use { it.readText() }
 
     /**
      * Recovery/acknowledgement is separate evidence, never a pass for the interrupted map run.
