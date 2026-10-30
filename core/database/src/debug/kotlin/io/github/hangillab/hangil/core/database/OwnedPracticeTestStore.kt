@@ -6,6 +6,7 @@ import androidx.room.Room
 import io.github.hangillab.hangil.core.domain.PracticeCatalog
 import io.github.hangillab.hangil.core.domain.PracticeRepository
 import io.github.hangillab.hangil.core.domain.PracticeSessionRepository
+import io.github.hangillab.hangil.core.domain.SessionDeletionRepository
 import io.github.hangillab.hangil.core.domain.SessionMemoRepository
 import io.github.hangillab.hangil.core.domain.VehicleObservationRepository
 import java.io.Closeable
@@ -26,8 +27,53 @@ class OwnedPracticeTestStore private constructor(
     val sessions: PracticeSessionRepository = RoomPracticeSessionRepository(database, catalog)
     val observations: VehicleObservationRepository = RoomVehicleObservationRepository(database)
     val memos: SessionMemoRepository = RoomSessionMemoRepository(database)
+    val deletions: SessionDeletionRepository = RoomSessionDeletionRepository(database)
 
     private var closed = false
+
+    /** These diagnostics read only this unique store. They accept no SQL, name or path inputs. */
+    @Synchronized
+    fun schemaVersion(): Int {
+        check(!closed) { "닫힌 격리 저장소는 조회할 수 없습니다" }
+        return database.openHelper.readableDatabase.version
+    }
+
+    @Synchronized
+    fun sequenceSnapshot(): Map<String, Long> {
+        check(!closed) { "닫힌 격리 저장소는 조회할 수 없습니다" }
+        return database.openHelper.readableDatabase.query("SELECT name, seq FROM sqlite_sequence ORDER BY name").use { cursor ->
+            buildMap {
+                while (cursor.moveToNext()) put(cursor.getString(0), cursor.getLong(1))
+            }
+        }
+    }
+
+    /** On the repository transaction thread this also observes that transaction's uncommitted rows. */
+    @Synchronized
+    fun deletionRowCounts(sessionId: String): Triple<Long, Long, Long> {
+        check(!closed) { "닫힌 격리 저장소는 조회할 수 없습니다" }
+        require(sessionId.isNotBlank()) { "격리 세션 ID가 필요합니다" }
+        val sqlite = database.openHelper.readableDatabase
+
+        fun count(query: String): Long =
+            sqlite.query(query, arrayOf(sessionId)).use { cursor ->
+                check(cursor.moveToFirst()) { "격리 행 수를 읽지 못했습니다" }
+                cursor.getLong(0)
+            }
+        return Triple(
+            count("SELECT COUNT(*) FROM practice_session WHERE sessionId = ?"),
+            count("SELECT COUNT(*) FROM vehicle_observation WHERE sessionId = ?"),
+            count("SELECT COUNT(*) FROM session_memo WHERE sessionId = ?"),
+        )
+    }
+
+    @Synchronized
+    fun foreignKeyViolationCount(): Int {
+        check(!closed) { "닫힌 격리 저장소는 조회할 수 없습니다" }
+        return database.openHelper.readableDatabase
+            .query("PRAGMA foreign_key_check")
+            .use { it.count }
+    }
 
     /** Closes only this handle and removes only its nonce-owned file and explicitly named SQLite sidecars. */
     @Synchronized

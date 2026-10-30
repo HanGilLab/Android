@@ -14,8 +14,8 @@
 
 ## 완료 조건
 
-- [ ] 제품 삭제 코드 전에 측정 계획/고정 계측과 기준 이력 진입 원값을 실제 실행한다.
-- [ ] 선택한 종료 source/확인 target/연결 자료 version을 트랜잭션에서 재확인하고 삭제/실패/잠금/취소를 구분한다. 스키마와 다른 자료를 보존한다.
+- [x] 제품 삭제 코드 전에 측정 계획/고정 계측과 기준 이력 진입 원값을 실제 실행했다.
+- [x] 선택한 종료 source/확인 target/연결 자료 version을 트랜잭션에서 재확인하고 삭제/실패/잠금/취소를 구분한다. 실제 SQLite 단위 검사에서 스키마 버전과 다른 자료를 보존했다. native 검증은 별도 대기한다.
 - [ ] 이력의 명시 삭제 확인과 최신 P+UX/source/STARTED/nonce를 연결하고 중복/늦은 확인과 잘못된 재활성화를 차단한다.
 - [ ] 실제 Room/SQLite와 실제 Route의 검사 소유 별도 DB에서만 삭제를 실행한다. 원래 DB에는 검사 세션을 만들거나 삭제하지 않고 sequence를 낮추지 않는다.
 - [ ] 관련 단위/격리 native/실제 SDK P-D-P/기본/확대 다크와 전체 JDK17 verify, 동일 비교 계측, 원본/권한/설정 보존을 확인한다.
@@ -34,7 +34,7 @@
 
 - 관찰/가설: 현재 이력은 종료 기록 조회/선택과 summary를 표시한다. 새 삭제 확인 경계는 기존 진입에 불필요한 새 DB query/상태 작업을 추가할 수 있으므로 이를 동작 진입 전에 지연해 기존 비용의 회귀를 살핀다.
 - 지표(ms): 실제 MainActivity의 home_history 클릭 직전→원래 종료 source의 이력 제목/내용/summary/버튼과 Compose idle 확인까지. 기존 SessionHistoryOpeningMeasureTest의 endpoint/타이머/원본 검사를 그대로 사용하고 새 session-deletion-entry-v1 namespace로만 분리한다. 입력 전달/semantics/검사 비용을 포함하며 순수 GPU/SDK/DB 시간이나 운전자 속도가 아니다.
-- 기준 제품3903bc6, 고정 계측 revision은 준비 commit 뒤 기록한다. 같은 파일/메서드/namespace/조건으로 비교한다.
+- 기준 제품3903bc6, 고정 계측 revision659df9c457672c672a898d690cb9980c7676d126을 사용한다. 같은 파일/메서드/namespace/조건으로 비교한다.
 - 조건: 기존 Android14/API34 Pleos/JDK17.0.21 debug, 실제 SDK P/UX 해제, font1.0/라이트, 동일 원래 준비/종료9/관찰15/메모0와 고정 카탈로그. 새 Activity 하나에서 Home→이력→close→Home,5회 워밍업 뒤30회 웜 진입. 매 표본 새 Activity/콜드 앱 시작이 아니다. 캐시를 지우지 않고 무거운 Gradle/AVD는 순차 실행한다.
 - 전후 순서: 기준→제품 변경→비교. SDK/DB/OS/캐시/발열의 순차 편차는 제거되지 않아 분포 겹침 시 개선을 확정하지 않는다. 원본 확인/JSON/닫기/복원은 기존 계측의 타이밍 밖 경계를 유지한다.
 - 실패/제외: 기존20초 endpoint와 전체 원본/선택/환경/P+UX/source 불일치, 예외/복원 실패는 실패 보존 후 중단. 실패/누락/미실행/제외 분리, 느린 표본 제외/0 대체/완료 파일 덮어쓰기 금지. 이전 이력 실측 파일은 그대로 보존한다.
@@ -45,7 +45,14 @@
 | 명령 또는 시나리오 | 결과 | 근거 |
 |---|---|---|
 | fresh 상태/체크리스트/PR/공식 | 확인 | main3903bc6 clean, 같은 checkout/AVD의 다른 활성 소유자0. Notion필수19/54, 선택3제외. openPR0,51개 모두ois0886. PR50/51exacthead완료/필수CI4성공, 원래8/10미확인 상태와 공식 안내/양식 변경 없음은 별도 ignored 감사에 보존. |
-| 기준 계측/제품 변경/전체 검사 | 미실행 | 계획/기준 실제 측정 후 제품을 구현한다. |
+| 계측/격리 지원 준비 빌드 | 성공 | JDK17.0.21 debug/AndroidTest APK 성공. 기준 제품에는 삭제/VM/UI/주 저장소 계약 변경이 없고 명시적 test namespace와 미사용 debug 격리 팩토리만 준비했다. |
+| 새 계열 실제 SDK 이력 진입 기준 | 성공 | 5회 워밍업/30표본, 실패/누락/미실행/제외/0시간0. 중앙값263.033292ms, Q1 252.634542/Q3 286.492916/IQR33.858374/min229.221167/max468.313792ms. 실제 source/환경/카탈로그/원본과 설치/빌드 APK hash를 대조했다. 별도 새 계열의 완료 raw를 비공개 불변 보존, 과거 실측 파일은 수정하지 않았다. |
+| 기준 전후 전체 원본 보존 | 성공 | fresh schema4/준비1/종료9/관찰15/메모0, 전체 값/자료형/순서/sequence/grants/runtime/font/night/IME/proxy가 동일했다. 소유 AVD/forward/탭을 정리한 뒤 제품 구현 GO. |
+| 제품 변경/독립 검토 | 구현/검토 완료 | 기준 실행 뒤 삭제 계약/Room transaction/화면 nonce 구현을 작성하고 있다. 독립 검토에서 Room 숫자 강제 변환이 손상된 REAL 시각/버전과 범위 밖 INTEGER 버전을 옛 snapshot과 같게 만들 수 있음을 찾아 삭제 endpoint의 raw 저장형/범위를 재검사한다. 일반 이력 observe/schema는 바꾸지 않는다. 확인창의 코스/과제 원문 대조도 강화한다. 단위/전체 검사와 native 실행 상태는 아래 행에서 따로 기록한다. |
+
+| 첫 전체 `./scripts/verify.sh` | 실패/이후 단계 미실행 | Spotless의 파일 탐색이 병렬 Lint의 생성 파일 변경과 겹쳐 읽기에 실패했다. 제품 동작 성공으로 해석하지 않는다. 동일 검사를 단일 worker로 다시 실행한다. 별도 검토의 silent D에서 거부한 기존 삭제 버튼 intent가 P 복귀 후 확인을 되살리는 경계도 수정 후 재검사한다. |
+
+| 단일 worker JDK17 전체 `./scripts/verify.sh` | 성공 | 품질/모듈 경계/Lint, build-logic, domain/Android 단위, debug와 unsigned release가 통과했다. 기존 보고서 합계41 suites/539개/실패/오류/건너뜀0이며 변경 없는 검사는 캐시/UP-TO-DATE를 포함한다. 이번 새 실제 SQLite27개와 controller fake31개는 새로 실행해 각각0실패/오류/건너뜀을 확인했다. 이 수와 빌드 시간은 성능 성과가 아니다. native/실제 SDK/비교 계측/리뷰는 아직 미실행이다. |
 
 ## 남은 문제와 인계
 
