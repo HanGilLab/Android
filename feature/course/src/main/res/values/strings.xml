@@ -16,4 +16,21 @@
     <string name="save_failed">저장하지 못했어요. 선택은 유지되니 다시 시도해 주세요.</string>
     <string name="demo_details">시연 안내</string>
     <string name="course_details">코스 내용: %1$s</string>
+    <string name="next_practice_title">다음 과제 고르기</string>
+    <string name="next_practice_scope">같은 코스에서 연습할 과제를 직접 골라요.</string>
+    <string name="next_practice_source_label">기준이 되는 지난 연습</string>
+    <string name="next_practice_source_details">지난 준비 보기</string>
+    <string name="next_practice_source_goal">목표: %1$s</string>
+    <string name="next_practice_previous_task">지난 과제: %1$s</string>
+    <string name="next_practice_loading">지난 연습을 확인하고 있어요.</string>
+    <string name="next_practice_changed">기준 연습이 바뀌었어요.</string>
+    <string name="next_practice_unavailable">이 코스로 준비를 이어갈 수 없어요.</string>
+    <string name="next_practice_failed">지난 연습을 확인하지 못했어요.</string>
+    <string name="next_practice_retry">다시 확인하기</string>
+    <string name="next_practice_normal">목표부터 다시 고르기</string>
+    <string name="next_practice_save">다음 연습 준비 저장</string>
+    <string name="next_practice_saving">준비를 저장하고 있어요.</string>
+    <string name="next_practice_save_failed">준비를 저장하지 못했어요. 다시 저장해 주세요.</string>
+    <string name="next_practice_choose_first">과제 하나를 골라 주세요.</string>
+    <string name="next_practice_close">닫기</string>
 </resources>

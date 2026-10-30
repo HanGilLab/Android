@@ -40,6 +40,7 @@ fun HomeRoute(
     onPrepare: () -> Unit,
     onMapPreview: () -> Unit,
     onHistory: () -> Unit,
+    onPrepareNext: (String) -> Unit,
     showDiagnostics: Boolean = false,
     recordingState: VehicleRecordingState = VehicleRecordingState.Idle,
     onRetryRecording: () -> Unit = {},
@@ -54,6 +55,7 @@ fun HomeRoute(
         {
             SessionRoute(
                 onPrepare = { if (viewModel.canPrepare()) onPrepare() },
+                onPrepareNext = onPrepareNext,
                 canPrepare = state.preparation is PreparationLoadState.Loaded,
                 recordingState = recordingState,
                 onRetryRecording = onRetryRecording,

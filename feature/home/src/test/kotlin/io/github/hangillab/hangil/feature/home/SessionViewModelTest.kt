@@ -442,6 +442,54 @@ class SessionViewModelTest {
             assertEquals(ended, model.uiState.value.latestFinished)
         }
 
+    @Test fun `next practice entry follows received latest source and rejects live locks before UI recombination`() =
+        runTest {
+            val older = session("older").copy(endedAtEpochMillis = 1_400L)
+            val recent = session("recent").copy(endedAtEpochMillis = 1_500L)
+            records.value = listOf(recent, older)
+            preparationReadFails = true
+            val model = model()
+            observe(model)
+            assertTrue(model.canPrepareNext(recent.sessionId))
+            assertFalse(model.canPrepareNext(older.sessionId))
+            vehicle.state.value = VehicleState()
+            assertFalse(model.canPrepareNext(recent.sessionId))
+            vehicle.state.value = parked
+            restrictions.restrictions.value = DrivingRestrictions(ParkingState.PARKED, UxRestrictionState.RESTRICTED)
+            assertFalse(model.canPrepareNext(recent.sessionId))
+            restrictions.restrictions.value = unrestricted
+            runCurrent()
+            assertTrue(model.canPrepareNext(recent.sessionId))
+            records.value = listOf(session("active"), recent, older)
+            runCurrent()
+            assertFalse(model.canPrepareNext(recent.sessionId))
+            records.value = listOf(older)
+            runCurrent()
+            assertFalse(model.canPrepareNext(recent.sessionId))
+            assertTrue(model.canPrepareNext(older.sessionId))
+        }
+
+    @Test fun `a pending session mutation prevents an old next practice button from opening a new draft`() =
+        runTest {
+            val recent = session("recent").copy(endedAtEpochMillis = 1_500L)
+            records.value = listOf(recent)
+            val resume = CompletableDeferred<Unit>()
+            startAction = { _, _, _ ->
+                resume.await()
+                SessionStartResult.Blocked
+            }
+            val model = model()
+            observe(model)
+            assertTrue(model.canPrepareNext(recent.sessionId))
+            model.start()
+            assertFalse(model.canPrepareNext(recent.sessionId))
+            runCurrent()
+            assertFalse(model.canPrepareNext(recent.sessionId))
+            resume.complete(Unit)
+            runCurrent()
+            assertTrue(model.canPrepareNext(recent.sessionId))
+        }
+
     private fun model(time: Long = 2_000L) =
         SessionViewModel(
             vehicle,

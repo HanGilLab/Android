@@ -146,4 +146,5 @@
     <string name="history_retry">다시 읽기</string>
     <string name="history_selection_changed">보고 있던 기록이 바뀌었어요.</string>
     <string name="history_reset">최근 기록부터 보기</string>
+    <string name="next_practice_open">같은 코스로 다음 과제 고르기</string>
 </resources>

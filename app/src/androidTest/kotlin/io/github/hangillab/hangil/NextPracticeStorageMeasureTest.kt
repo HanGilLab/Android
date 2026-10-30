@@ -8,6 +8,10 @@ import android.util.AtomicFile
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import dagger.hilt.android.EntryPointAccessors
+import io.github.hangillab.hangil.core.domain.NextPracticeRepository
+import io.github.hangillab.hangil.core.domain.NextPracticeSaveResult
+import io.github.hangillab.hangil.core.domain.NextPracticeSeed
+import io.github.hangillab.hangil.core.domain.PracticeRepository
 import io.github.hangillab.hangil.core.domain.PracticeSelection
 import io.github.hangillab.hangil.core.domain.PracticeSession
 import io.github.hangillab.hangil.core.domain.Preparation
@@ -32,16 +36,18 @@ import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import java.math.BigDecimal
 import java.security.MessageDigest
 import java.util.Locale
 import java.util.UUID
 
 /**
- * Opt-in baseline of the existing real Room API, before the next-practice product implementation.
- * No Activity is opened. The external runner owns the dedicated idle Pleos device, actual P/UX,
- * fresh app process, JDK17/debug APK provenance and original settings/data preservation evidence.
- * Raw inputs and timings are private cache evidence only. Restoration and validation are outside
- * the timed API call. No new API, fake repository/clock, permission grant or setting change is used.
+ * Opt-in real Room baseline and paired old/new cost measurements; select one method explicitly.
+ * The baseline predates the product change. The paired method validates that immutable evidence
+ * before measuring the old API and the new source-validated API with the same fixed input.
+ * No Activity is opened. The external runner owns actual P/UX, fresh process, JDK17/debug APK
+ * provenance and original settings/data preservation. Raw inputs and timings stay private.
+ * Restoration and validation are outside the timed call; no fake clock/repository or setting change.
  */
 @RunWith(AndroidJUnit4::class)
 class NextPracticeStorageMeasureTest {
@@ -261,6 +267,508 @@ class NextPracticeStorageMeasureTest {
             }
             instrumentation.sendStatus(2, Bundle().apply { putString("stream", "NEXT_PRACTICE_BASELINE_SUCCESS warmups=5 samples=30\n") })
         }
+    }
+
+    @Test fun measurePairedPreparationSaveCostsAndRestoreOriginalData() {
+        val arguments = InstrumentationRegistry.getArguments()
+        assumeTrue(
+            "기준 원문과 실제 두 저장 API 비교를 준비한 명시적 실행에서만 실행합니다",
+            arguments.getString("manualNextPracticeMeasure") == "true",
+        )
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        assertTrue("전용 debug 앱에서만 같은 저장 입력을 비교합니다", context.packageName == "io.github.hangillab.hangil.debug")
+        val productCommit = checkNotNull(arguments.getString("pairedProductCommit")) { "비교 제품 커밋 선언이 필요합니다" }
+        assertTrue("비교 제품 커밋은 완전한 SHA여야 합니다", productCommit.matches(Regex("[0-9a-fA-F]{40}")))
+        val harnessRevision = checkNotNull(arguments.getString("pairedHarnessRevision")) { "비교 계측 원본 식별 선언이 필요합니다" }
+        assertTrue("비교 계측 원본 식별 선언이 비어 있으면 안 됩니다", harnessRevision.isNotBlank())
+        val baselineFile = File(context.cacheDir, "measurements/next-practice-baseline.json")
+        assertTrue(
+            "완료된 기준 원문과 원자 저장의 미완료 sidecar를 구분해야 합니다",
+            baselineFile.isFile && !File(baselineFile.path + ".bak").exists() && !File(baselineFile.path + ".new").exists(),
+        )
+        val baselineHash = sha256(baselineFile)
+        val baseline = readPrivateBaseline(baselineFile)
+        validateBaselineReport(baseline)
+        val graph = EntryPointAccessors.fromApplication(context.applicationContext, RecordingTestEntryPoint::class.java)
+        val oldRepository = graph.preparation()
+        val nextRepository = graph.nextPractice()
+        val vehicle = graph.vehicle()
+        val restrictions = graph.restrictions()
+        val liveGuard = { allowsPracticeInteraction(vehicle.state.value, restrictions.restrictions.value) }
+        runBlocking {
+            val before = snapshot(graph)
+            val original = checkNotNull(before.preparation) { "기준과 같은 원래 준비가 필요합니다" }
+            val source = checkNotNull(before.sessions.firstOrNull { !it.isActive }) { "기준과 같은 최근 종료 연습이 필요합니다" }
+            assertTrue("활성 연습이 생기면 같은 조건 비교를 시작하지 않습니다", before.sessions.none { it.isActive })
+            val target = selectionFromJson(baseline.getJSONObject("fixedTarget"))
+            val preparedSource = validatedSource(graph, source)
+            val preparedOriginal = resolve(graph, original)
+            val preparedTarget = resolve(graph, target)
+            val seed = checkNotNull(NextPracticeSeed.resolve(graph.catalog(), source)) { "새 저장 API의 실제 source seed가 필요합니다" }
+            assertTrue("고정 target은 같은 목표와 코스 버전을 유지해야 합니다", target.copy(taskId = source.selection.taskId) == source.selection)
+            assertTrue("고정 target은 기준처럼 원래 준비와 달라야 합니다", target != original)
+            requireSameJson(baseline.getJSONObject("fixedOriginal"), selectionJson(original), "fixedOriginal")
+            requireSameJson(baseline.getJSONObject("fixedTarget"), selectionJson(target), "fixedTarget")
+            requireSameJson(baseline.getJSONObject("fixedSource"), sessionJson(source), "fixedSource")
+            requireSameJson(baseline.getJSONObject("resolvedOriginal"), preparedJson(preparedOriginal), "resolvedOriginal")
+            requireSameJson(baseline.getJSONObject("resolvedSource"), preparedJson(preparedSource), "resolvedSource")
+            requireSameJson(baseline.getJSONObject("resolvedSource"), preparedJson(seed.practice), "seedCatalog")
+            requireSameJson(baseline.getJSONObject("resolvedTarget"), preparedJson(preparedTarget), "resolvedTarget")
+            requireSameJson(baseline.getJSONObject("originalData"), dataJson(before), "originalData")
+            val environment = environmentJson()
+            val sqlite = sqliteReadOnlyProbe()
+            requireSameJson(baseline.getJSONObject("environment"), environment, "environment")
+            requireSameJson(baseline.getJSONObject("sqliteReadOnlyProbe"), sqlite, "sqliteReadOnlyProbe")
+            val output = File(context.cacheDir, "measurements/next-practice-paired.json")
+            reserve(output)
+            val oldWarmups = JSONArray()
+            val newWarmups = JSONArray()
+            val oldSamples = JSONArray()
+            val newSamples = JSONArray()
+            val pairs = JSONArray()
+            val report =
+                JSONObject()
+                    .put("schema", 1)
+                    .put("runNonce", UUID.randomUUID().toString())
+                    .put("kind", "existing_and_atomic_next_preparation_paired")
+                    .put("status", "started")
+                    .put("declaredProductCommit", productCommit.lowercase(Locale.ROOT))
+                    .put("declaredHarnessRevision", harnessRevision)
+                    .put("revisionDeclarationSource", "external_runner_not_inferred_on_device")
+                    .put("productApkSha256", sha256(File(context.applicationInfo.sourceDir)))
+                    .put("instrumentationApkSha256", sha256(File(instrumentation.context.applicationInfo.sourceDir)))
+                    .put("baselineSha256", baselineHash)
+                    .put("baselineProductCommit", baseline.getString("declaredProductCommit"))
+                    .put("baselineHarnessRevision", baseline.getString("declaredHarnessRevision"))
+                    .put("baselineProductApkSha256", baseline.getString("productApkSha256"))
+                    .put("baselineInstrumentationApkSha256", baseline.getString("instrumentationApkSha256"))
+                    .put("fixedSource", sessionJson(source))
+                    .put("fixedOriginal", selectionJson(original))
+                    .put("fixedTarget", selectionJson(target))
+                    .put("resolvedOriginal", preparedJson(preparedOriginal))
+                    .put("resolvedSource", preparedJson(preparedSource))
+                    .put("resolvedTarget", preparedJson(preparedTarget))
+                    .put("originalData", dataJson(before))
+                    .put("environment", environment)
+                    .put("sqliteReadOnlyProbe", sqlite)
+                    .put("plannedWarmupsPerApi", WARMUPS)
+                    .put("plannedPairs", SAMPLES)
+                    .put("order", "odd pairs old then new; even pairs new then old")
+                    .put("timing", "System.nanoTime directly around each real repository saveSelection call")
+                    .put("timingUnit", "ms")
+                    .put("deltaDirection", "new minus old; positive is additional latency")
+                    .put("resetPolicy", baseline.getString("resetPolicy"))
+                    .put("excludedFromTiming", baseline.getJSONArray("excludedFromTiming"))
+                    .put("cacheCondition", "fresh externally started process; warm DB after five warmups per API; no cache clearing")
+                    .put("checkpointPolicy", "before first write, after both warmup sets and in final cleanup; outside timed calls")
+                    .put("oldWarmups", oldWarmups)
+                    .put("newWarmups", newWarmups)
+                    .put("oldSamples", oldSamples)
+                    .put("newSamples", newSamples)
+                    .put("pairs", pairs)
+                    .put("restoredOriginal", false)
+                    .put("preservedOtherData", false)
+                    .put("baselineUnchanged", false)
+                    .put("causalPerformanceClaim", false)
+            write(output, report)
+            val sdkObserver =
+                launch {
+                    combine(vehicle.state, restrictions.restrictions) { currentVehicle, currentRestrictions ->
+                        currentVehicle to currentRestrictions
+                    }.collect {}
+                }
+            var primaryFailure: Throwable? = null
+            var cleanupFailure: Throwable? = null
+            var measurementComplete = false
+            var attemptedTargetWrite = false
+
+            suspend fun call(
+                api: String,
+                index: Int,
+                phase: String,
+                destination: JSONArray,
+            ): JSONObject {
+                requireStableSource(graph, source, preparedSource, before.sessions)
+                assertTrue("두 API 호출 전 실제 P와 UX 허용이 필요합니다", liveGuard())
+                restoreOriginal(
+                    graph,
+                    original,
+                    target,
+                    source,
+                    before.sessions,
+                    attemptedTargetWrite,
+                    liveGuard,
+                    alwaysWrite = true,
+                )
+                assertTrue("각 호출 전 같은 원래 준비를 확인해야 합니다", oldRepository.observeSelection().first() == original)
+                requireStableSource(graph, source, preparedSource, before.sessions)
+                assertTrue("각 호출 직전 실제 P와 UX 허용이 필요합니다", liveGuard())
+                val sample =
+                    JSONObject()
+                        .put("api", api)
+                        .put("index", index)
+                        .put("phase", phase)
+                        .put("status", "started")
+                        .put("elapsedNs", JSONObject.NULL)
+                        .put("elapsedMs", JSONObject.NULL)
+                        .put("returned", JSONObject.NULL)
+                        .put("targetMatched", JSONObject.NULL)
+                destination.put(sample)
+                attemptedTargetWrite = true
+                try {
+                    withTimeout(30_000) {
+                        val (result, elapsed) =
+                            when (api) {
+                                "old" -> timedExistingSave(oldRepository, target, liveGuard, sample)
+                                "new" -> timedNextSave(nextRepository, seed, target, liveGuard, sample)
+                                else -> throw AssertionError("정의하지 않은 API를 비교할 수 없습니다")
+                            }
+                        sample.put("elapsedNs", elapsed).put("elapsedMs", elapsed / NANOS_PER_MS)
+                        val accepted = if (api == "old") result == true else result == NextPracticeSaveResult.Saved
+                        sample.put("returned", if (api == "old") result else result.javaClass.simpleName)
+                        assertTrue("각 호출의 단조 시각 구간이 유효해야 합니다", elapsed >= 0)
+                        if (!accepted) {
+                            sample.put("status", "failed").put("failureClass", "save_rejected")
+                            throw AssertionError("실제 비교 저장 호출이 거부되었습니다")
+                        }
+                        val matched = oldRepository.observeSelection().first() == target
+                        sample.put("targetMatched", matched)
+                        if (!matched) {
+                            sample.put("status", "failed").put("failureClass", "target_mismatch")
+                            throw AssertionError("비교 저장값이 고정 target과 일치하지 않습니다")
+                        }
+                        assertTrue("반환 뒤에도 동일한 실제 P와 UX 조건이어야 합니다", liveGuard())
+                        sample.put("status", "success")
+                    }
+                } catch (failure: Throwable) {
+                    if (sample.optString("status") != "failed") {
+                        sample.put("status", "failed").put("failureClass", failure.javaClass.simpleName)
+                    }
+                    throw failure
+                }
+                return sample
+            }
+            try {
+                awaitAllowed(graph)
+                report.put(
+                    "initialLiveGate",
+                    JSONObject()
+                        .put("vehicleConnection", vehicle.state.value.connection.name)
+                        .put("gear", readingJson(vehicle.state.value.gear))
+                        .put("parkingState", restrictions.restrictions.value.parkingState.name)
+                        .put("uxRestrictionState", restrictions.restrictions.value.uxRestrictionState.name)
+                        .put("allowed", liveGuard()),
+                )
+                for (index in 1..WARMUPS) {
+                    val order = if (index % 2 == 1) listOf("old", "new") else listOf("new", "old")
+                    for (api in order) call(api, index, "warmup", if (api == "old") oldWarmups else newWarmups)
+                }
+                assertTrue(
+                    "두 API의 실제 워밍업을 모두 완료해야 합니다",
+                    successful(oldWarmups) == WARMUPS && successful(newWarmups) == WARMUPS,
+                )
+                report.put("status", "warmups_completed")
+                write(output, report)
+                for (index in 1..SAMPLES) {
+                    val order = if (index % 2 == 1) listOf("old", "new") else listOf("new", "old")
+                    val pair =
+                        JSONObject()
+                            .put("index", index)
+                            .put("order", JSONArray(order))
+                            .put("status", "started")
+                            .put("deltaNs", JSONObject.NULL)
+                            .put("deltaMs", JSONObject.NULL)
+                            .put("relativeDeltaPercent", JSONObject.NULL)
+                    pairs.put(pair)
+                    try {
+                        for (api in order) call(api, index, "measurement", if (api == "old") oldSamples else newSamples)
+                        val oldNs = oldSamples.getJSONObject(index - 1).getLong("elapsedNs")
+                        val newNs = newSamples.getJSONObject(index - 1).getLong("elapsedNs")
+                        val delta = newNs - oldNs
+                        pair
+                            .put("oldNs", oldNs)
+                            .put("newNs", newNs)
+                            .put("deltaNs", delta)
+                            .put("deltaMs", delta / NANOS_PER_MS)
+                            .put("relativeDeltaPercent", if (oldNs == 0L) JSONObject.NULL else delta.toDouble() / oldNs * 100.0)
+                            .put("status", "success")
+                    } catch (failure: Throwable) {
+                        pair.put("status", "failed").put("failureClass", failure.javaClass.simpleName)
+                        throw failure
+                    }
+                }
+                assertTrue(
+                    "두 API의 모든 원값과 교차 쌍을 수집해야 합니다",
+                    successful(oldSamples) == SAMPLES &&
+                        successful(newSamples) == SAMPLES && successful(pairs) == SAMPLES,
+                )
+                val oldStatistics = statistics(oldSamples)
+                val newStatistics = statistics(newSamples)
+                report
+                    .put("oldStatistics", oldStatistics)
+                    .put("newStatistics", newStatistics)
+                    .put("oldInterquartileRangeMs", oldStatistics.getDouble("q3") - oldStatistics.getDouble("q1"))
+                    .put("newInterquartileRangeMs", newStatistics.getDouble("q3") - newStatistics.getDouble("q1"))
+                report.put("pairedDeltaStatistics", pairedDeltaStatistics(pairs))
+                report.put(
+                    "baselineOldReference",
+                    JSONObject()
+                        .put("beforeStatistics", baseline.getJSONObject("statistics"))
+                        .put("afterOldStatistics", oldStatistics)
+                        .put("baselineRawSamples", baseline.getJSONArray("samples"))
+                        .put("medianShiftMs", oldStatistics.getDouble("median") - baseline.getJSONObject("statistics").getDouble("median"))
+                        .put(
+                            "relativeMedianShiftPercent",
+                            relativeChange(
+                                baseline.getJSONObject("statistics").getDouble("median"),
+                                oldStatistics.getDouble("median"),
+                            ),
+                        ).put("causalPerformanceClaim", false)
+                        .put(
+                            "interpretation",
+                            "Reference only; examine before versus after-old drift before interpreting paired latency costs",
+                        ),
+                )
+                measurementComplete = true
+            } catch (failure: Throwable) {
+                primaryFailure = failure
+                report.put("failureClass", failure.javaClass.simpleName)
+                throw failure
+            } finally {
+                withContext(NonCancellable) {
+                    try {
+                        restoreOriginal(graph, original, target, source, before.sessions, attemptedTargetWrite, liveGuard)
+                        assertTrue("비교 뒤 원래 준비의 전체 값이 같아야 합니다", oldRepository.observeSelection().first() == original)
+                        report.put("restoredOriginal", true)
+                        assertPreserved(graph, before)
+                        report.put("preservedOtherData", true)
+                        assertTrue("원래 기준 측정 파일을 변경하면 안 됩니다", sha256(baselineFile) == baselineHash)
+                        report.put("baselineUnchanged", true)
+                    } catch (failure: Throwable) {
+                        cleanupFailure = failure
+                        report.put("cleanupFailureClass", failure.javaClass.simpleName)
+                        primaryFailure?.addSuppressed(failure)
+                    } finally {
+                        sdkObserver.cancelAndJoin()
+                        report
+                            .put("oldWarmupCounts", counts(oldWarmups, WARMUPS))
+                            .put("newWarmupCounts", counts(newWarmups, WARMUPS))
+                            .put("oldSampleCounts", counts(oldSamples, SAMPLES))
+                            .put("newSampleCounts", counts(newSamples, SAMPLES))
+                            .put("pairCounts", pairCounts(pairs))
+                            .put("excludedSamples", 0)
+                        val complete = measurementComplete && primaryFailure == null && cleanupFailure == null
+                        report.put("status", if (complete) "completed" else "failed")
+                        try {
+                            write(output, report)
+                        } catch (failure: Throwable) {
+                            val primary = primaryFailure
+                            val cleanup = cleanupFailure
+                            if (primary != null) {
+                                if (primary !== failure) primary.addSuppressed(failure)
+                            } else if (cleanup != null) {
+                                if (cleanup !== failure) cleanup.addSuppressed(failure)
+                            } else {
+                                throw failure
+                            }
+                        }
+                    }
+                }
+                if (primaryFailure == null && cleanupFailure != null) throw checkNotNull(cleanupFailure)
+            }
+            instrumentation.sendStatus(
+                2,
+                Bundle().apply {
+                    putString("stream", "NEXT_PRACTICE_PAIRED_SUCCESS warmupsPerApi=5 pairs=30\n")
+                },
+            )
+        }
+    }
+
+    private suspend fun timedExistingSave(
+        repository: PracticeRepository,
+        target: PracticeSelection,
+        liveGuard: () -> Boolean,
+        sample: JSONObject,
+    ): Pair<Any, Long> {
+        val started = System.nanoTime()
+        try {
+            val result = repository.saveSelection(target, liveGuard)
+            val elapsed = System.nanoTime() - started
+            return result to elapsed
+        } catch (failure: Throwable) {
+            val elapsed = System.nanoTime() - started
+            sample
+                .put("elapsedNs", elapsed)
+                .put("elapsedMs", elapsed / NANOS_PER_MS)
+                .put("status", "failed")
+                .put("failureClass", failure.javaClass.simpleName)
+            throw failure
+        }
+    }
+
+    private suspend fun timedNextSave(
+        repository: NextPracticeRepository,
+        seed: NextPracticeSeed,
+        target: PracticeSelection,
+        liveGuard: () -> Boolean,
+        sample: JSONObject,
+    ): Pair<Any, Long> {
+        val started = System.nanoTime()
+        try {
+            val result = repository.saveSelection(seed, target, liveGuard)
+            val elapsed = System.nanoTime() - started
+            return result to elapsed
+        } catch (failure: Throwable) {
+            val elapsed = System.nanoTime() - started
+            sample
+                .put("elapsedNs", elapsed)
+                .put("elapsedMs", elapsed / NANOS_PER_MS)
+                .put("status", "failed")
+                .put("failureClass", failure.javaClass.simpleName)
+            throw failure
+        }
+    }
+
+    private fun readPrivateBaseline(file: File): JSONObject =
+        try {
+            JSONObject(file.readText())
+        } catch (_: Exception) {
+            throw AssertionError("비공개 기준 측정 원문을 읽지 못했습니다")
+        }
+
+    private fun validateBaselineReport(baseline: JSONObject) {
+        assertTrue(
+            "완료된 기존 API 기준 원문이어야 합니다",
+            baseline.getString("kind") == "existing_preparation_save_baseline" && baseline.getString("status") == "completed" &&
+                baseline.getBoolean("restoredOriginal") && baseline.getBoolean("preservedOtherData"),
+        )
+        assertTrue(
+            "같은 기준 타이머와 복구 절차를 사용해야 합니다",
+            baseline.getString("timingUnit") == "ms" &&
+                baseline.getString("resetPolicy") ==
+                "one real original-selection save before every warmup and sample; excluded from timing",
+        )
+        assertTrue(
+            "기준의 반복 조건을 그대로 사용해야 합니다",
+            baseline.getInt("plannedWarmups") == WARMUPS &&
+                baseline.getInt("plannedSamples") == SAMPLES && baseline.getInt("excludedSamples") == 0,
+        )
+        for ((name, size) in listOf("warmups" to WARMUPS, "samples" to SAMPLES)) {
+            val values = baseline.getJSONArray(name)
+            assertTrue("기준의 완전한 실제 표본을 확인해야 합니다", values.length() == size && successful(values) == size)
+            for (index in 0 until size) {
+                val sample = values.getJSONObject(index)
+                assertTrue(
+                    "기준은 빠진 시각이나 실패/target 불일치가 없어야 합니다",
+                    !sample.isNull("elapsedNs") &&
+                        sample.getLong("elapsedNs") >= 0 && sample.getBoolean("returned") && sample.getBoolean("targetMatched"),
+                )
+                assertTrue(
+                    "기준 원값의 순서와 단위가 일치해야 합니다",
+                    sample.getInt("index") == index + 1 &&
+                        sample.getDouble("elapsedMs") == sample.getLong("elapsedNs") / NANOS_PER_MS,
+                )
+            }
+            requireSameJson(baseline.getJSONObject(if (name == "warmups") "warmupCounts" else "sampleCounts"), counts(values, size), name)
+        }
+        requireSameJson(baseline.getJSONObject("statistics"), statistics(baseline.getJSONArray("samples")), "baselineStatistics")
+    }
+
+    private fun selectionFromJson(value: JSONObject): PracticeSelection =
+        PracticeSelection(
+            value.getString("goalId"),
+            value.getString("courseId"),
+            value.getInt("courseVersion"),
+            value.getInt("briefingVersion"),
+            value.getString("taskId"),
+        )
+
+    private fun requireSameJson(
+        expected: Any?,
+        actual: Any?,
+        field: String,
+    ) {
+        assertTrue("기준과 비교의 고정 조건이 일치해야 합니다 ($field)", sameJson(expected, actual))
+    }
+
+    private fun sameJson(
+        expected: Any?,
+        actual: Any?,
+    ): Boolean {
+        if (expected == null || expected === JSONObject.NULL) return actual == null || actual === JSONObject.NULL
+        if (actual == null || actual === JSONObject.NULL) return false
+        if (expected is JSONObject && actual is JSONObject) {
+            val expectedKeys = expected.keys().asSequence().toSet()
+            val actualKeys = actual.keys().asSequence().toSet()
+            return expectedKeys == actualKeys && expectedKeys.all { sameJson(expected.get(it), actual.get(it)) }
+        }
+        if (expected is JSONArray && actual is JSONArray) {
+            return expected.length() == actual.length() && (0 until expected.length()).all { sameJson(expected.get(it), actual.get(it)) }
+        }
+        if (expected is Number && actual is Number) {
+            return try {
+                BigDecimal(expected.toString()).compareTo(BigDecimal(actual.toString())) == 0
+            } catch (_: NumberFormatException) {
+                false
+            }
+        }
+        return expected == actual
+    }
+
+    private fun pairCounts(pairs: JSONArray): JSONObject =
+        JSONObject()
+            .put("successful", successful(pairs))
+            .put("failed", (0 until pairs.length()).count { pairs.getJSONObject(it).optString("status") == "failed" })
+            .put("missingDelta", (0 until pairs.length()).count { pairs.getJSONObject(it).isNull("deltaNs") })
+            .put("notRun", SAMPLES - pairs.length())
+
+    private fun relativeChange(
+        before: Double,
+        after: Double,
+    ): Any = if (before == 0.0) JSONObject.NULL else (after - before) / before * 100.0
+
+    private fun pairedDeltaStatistics(pairs: JSONArray): JSONObject {
+        val deltas = (0 until pairs.length()).map { pairs.getJSONObject(it).getDouble("deltaMs") }
+        val relative =
+            (0 until pairs.length()).mapNotNull {
+                pairs.getJSONObject(it).takeUnless { value -> value.isNull("relativeDeltaPercent") }?.getDouble("relativeDeltaPercent")
+            }
+        return JSONObject()
+            .put("absolute", signedDistribution(deltas, "ms"))
+            .put("relative", signedDistribution(relative, "percent_of_the_same_pair_old"))
+            .put("zeroOldDenominatorPairs", pairs.length() - relative.size)
+            .put("direction", "new minus old; no forced improvement interpretation")
+    }
+
+    private fun signedDistribution(
+        values: List<Double>,
+        unit: String,
+    ): JSONObject {
+        val sorted = values.sorted()
+        if (sorted.isEmpty()) return JSONObject().put("status", "unavailable").put("sampleCount", 0).put("unit", unit)
+
+        fun median(part: List<Double>): Double =
+            if (part.size % 2 == 0) {
+                (part[part.size / 2 - 1] + part[part.size / 2]) / 2.0
+            } else {
+                part[part.size / 2]
+            }
+        val result =
+            JSONObject()
+                .put("status", "calculated")
+                .put("unit", unit)
+                .put("sampleCount", sorted.size)
+                .put("median", median(sorted))
+                .put("min", sorted.first())
+                .put("max", sorted.last())
+        if (sorted.size > 1) {
+            val q1 = median(sorted.take(sorted.size / 2))
+            val q3 = median(sorted.drop((sorted.size + 1) / 2))
+            result.put("q1", q1).put("q3", q3).put("interquartileRange", q3 - q1)
+        }
+        return result.put("quartileMethod", "median_of_sorted_halves_excluding_middle_when_odd")
     }
 
     private suspend fun awaitAllowed(graph: RecordingTestEntryPoint) =
