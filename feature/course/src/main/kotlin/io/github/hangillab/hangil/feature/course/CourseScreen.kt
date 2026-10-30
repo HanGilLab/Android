@@ -64,7 +64,9 @@ fun CourseRoute(
     }
     val back = { if (!viewModel.back()) close() }
     BackHandler(onBack = back)
-    CourseScreen(state, viewModel::selectGoal, viewModel::selectCourse, viewModel::selectTask, viewModel::next, back)
+    CourseScreen(state, viewModel::selectGoal, viewModel::selectCourse, viewModel::selectTask, viewModel::next, back) {
+        viewModel.canRevealDetails(state)
+    }
 }
 
 @Composable
@@ -75,6 +77,7 @@ internal fun CourseScreen(
     onTask: (String) -> Unit,
     onNext: () -> Unit,
     onBack: () -> Unit,
+    canExpandDetails: () -> Boolean,
 ) {
     key(state.allowsInteraction, state.step) {
         ParkedPage {
@@ -106,7 +109,7 @@ internal fun CourseScreen(
                                 onCourse(course.id)
                             }, modifier.testTag("course_${course.id}"), showDescription = selected)
                         }
-                        DemoDetails()
+                        DemoDetails(canExpandDetails)
                     }
                     PreparationStep.BRIEFING -> {
                         DemoNotice()
@@ -126,6 +129,7 @@ internal fun CourseScreen(
                             Column(Modifier.fillMaxWidth().testTag("briefing_summary")) {
                                 ParkedDisclosure(
                                     stringResource(R.string.course_details, course.title),
+                                    canExpandDetails,
                                     Modifier.testTag("briefing_course_details"),
                                 ) {
                                     Text(
@@ -159,7 +163,7 @@ internal fun CourseScreen(
                                     }
                                 }
                             }
-                            DemoDetails()
+                            DemoDetails(canExpandDetails)
                         }
                     }
                 }
@@ -277,8 +281,8 @@ private fun DemoNotice() {
 }
 
 @Composable
-private fun DemoDetails() {
-    ParkedDisclosure(stringResource(R.string.demo_details), Modifier.testTag("preparation_demo_details")) {
+private fun DemoDetails(canExpandDetails: () -> Boolean) {
+    ParkedDisclosure(stringResource(R.string.demo_details), canExpandDetails, Modifier.testTag("preparation_demo_details")) {
         Text(
             stringResource(R.string.demo_notice),
             Modifier.testTag("preparation_demo_description"),

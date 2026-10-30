@@ -89,6 +89,72 @@ class CourseViewModelTest {
         Dispatchers.resetMain()
     }
 
+    @Test fun `details use live P and UX before combined state catches up`() =
+        runTest {
+            val model = model()
+            observe(model)
+            prepare(model)
+            runCurrent()
+            val displayed = model.uiState.value
+            assertTrue(model.canRevealDetails(displayed))
+            vehicle.state.value = vehicle.state.value.copy(gear = VehicleReading.Available(GearPosition.DRIVE))
+            assertEquals(displayed, model.uiState.value)
+            assertFalse(model.canRevealDetails(displayed))
+            vehicle.state.value = vehicle.state.value.copy(gear = VehicleReading.Available(GearPosition.PARK))
+            for (ux in UxRestrictionState.entries.filter { it != UxRestrictionState.UNRESTRICTED }) {
+                restrictions.restrictions.value = DrivingRestrictions(ParkingState.PARKED, ux)
+                assertFalse(model.canRevealDetails(displayed))
+            }
+            restrictions.restrictions.value = DrivingRestrictions(ParkingState.PARKED, UxRestrictionState.UNRESTRICTED)
+            assertTrue(model.canRevealDetails(displayed))
+            vehicle.state.value = VehicleState()
+            assertFalse(model.canRevealDetails(displayed))
+            assertEquals(0, repository.calls)
+        }
+
+    @Test fun `details reject a changed draft before publication while current briefing and demo remain readable`() =
+        runTest {
+            val model = model()
+            observe(model)
+            prepare(model)
+            runCurrent()
+            val old = model.uiState.value
+            model.selectTask("u")
+            assertEquals(old, model.uiState.value)
+            assertFalse(model.canRevealDetails(old))
+            runCurrent()
+            assertTrue(model.canRevealDetails(model.uiState.value))
+            assertFalse(model.canRevealDetails(old.copy(course = old.course?.copy(title = "다른 원문"))))
+            model.back()
+            assertFalse(model.canRevealDetails(old))
+            runCurrent()
+            assertEquals(PreparationStep.COURSE, model.uiState.value.step)
+            assertTrue(model.canRevealDetails(model.uiState.value))
+            model.back()
+            runCurrent()
+            assertFalse(model.canRevealDetails(model.uiState.value))
+            assertEquals(0, repository.calls)
+        }
+
+    @Test fun `details reject a stopped or closed reader without starting a save`() =
+        runTest {
+            val model = model()
+            val observer = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { model.uiState.collect {} }
+            runCurrent()
+            prepare(model)
+            runCurrent()
+            val old = model.uiState.value
+            assertTrue(model.canRevealDetails(old))
+            observer.cancel()
+            runCurrent()
+            assertFalse(model.canRevealDetails(old))
+            observe(model)
+            assertTrue(model.canRevealDetails(model.uiState.value))
+            model.leave()
+            assertFalse(model.canRevealDetails(model.uiState.value))
+            assertEquals(0, repository.calls)
+        }
+
     @Test fun `complete flow saves one task and emits completion once`() =
         runTest {
             val model = model()
