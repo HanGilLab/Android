@@ -6,6 +6,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import io.github.hangillab.hangil.core.domain.DrivingRestrictionsProvider
 import io.github.hangillab.hangil.core.domain.PracticeSession
 import io.github.hangillab.hangil.core.domain.PracticeSessionRepository
+import io.github.hangillab.hangil.core.domain.SessionCourseSummary
 import io.github.hangillab.hangil.core.domain.VehicleGateway
 import io.github.hangillab.hangil.core.domain.allowsPracticeInteraction
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -300,7 +301,11 @@ class SessionHistoryViewModel
                     selectionLost -> SessionHistoryUiState.SelectionChanged(nextGeneration)
                     records.isEmpty() -> SessionHistoryUiState.Empty
                     index < 0 -> SessionHistoryUiState.SelectionChanged(nextGeneration)
-                    else -> SessionHistoryUiState.Ready(records[index], index, records.size, nextGeneration)
+                    else -> {
+                        val session = records[index]
+                        val summary = SessionCourseSummary.from(session, records) ?: throw InvalidSessions()
+                        SessionHistoryUiState.Ready(session, index, records.size, nextGeneration, summary)
+                    }
                 }
         }
 

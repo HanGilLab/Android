@@ -23,6 +23,7 @@ import io.github.hangillab.hangil.core.designsystem.HanGilDimensions
 import io.github.hangillab.hangil.core.designsystem.HanGilSpacing
 import io.github.hangillab.hangil.core.designsystem.ParkedBadge
 import io.github.hangillab.hangil.core.designsystem.ParkedButton
+import io.github.hangillab.hangil.core.designsystem.ParkedDisclosure
 import io.github.hangillab.hangil.core.designsystem.ParkedLockedNotice
 import io.github.hangillab.hangil.core.designsystem.ParkedPage
 import io.github.hangillab.hangil.core.designsystem.ParkedPanel
@@ -153,6 +154,7 @@ private fun HistoryRecord(
             )
             Text(session.taskTitle, Modifier.testTag("history_task"), style = MaterialTheme.typography.titleLarge)
         }
+        HistoryCourseSummary(state)
         ParkedPanel {
             Text(
                 stringResource(R.string.session_started_at, displayTime(session.startedAtEpochMillis)),
@@ -164,6 +166,48 @@ private fun HistoryRecord(
                 Modifier.testTag("history_finished"),
                 style = MaterialTheme.typography.bodyLarge,
             )
+        }
+    }
+}
+
+@Composable
+private fun HistoryCourseSummary(state: SessionHistoryUiState.Ready) {
+    val summary = state.summary
+    ParkedPanel(Modifier.testTag("history_course_summary")) {
+        Text(
+            stringResource(R.string.history_summary_title),
+            Modifier.testTag("history_summary_heading"),
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        Text(
+            stringResource(R.string.history_summary_count, summary.sessionCount),
+            Modifier.testTag("history_summary_count"),
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.SemiBold,
+        )
+        ParkedDisclosure(stringResource(R.string.history_summary_tasks), Modifier.testTag("history_summary_tasks")) {
+            Text(
+                stringResource(R.string.history_summary_scope),
+                Modifier.testTag("history_summary_scope"),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            summary.tasks.forEachIndexed { index, task ->
+                Column(verticalArrangement = Arrangement.spacedBy(HanGilSpacing.sm)) {
+                    Text(
+                        task.taskTitle,
+                        Modifier.testTag("history_summary_task_$index"),
+                        style = MaterialTheme.typography.titleLarge,
+                    )
+                    Text(
+                        stringResource(R.string.history_summary_count, task.sessionCount),
+                        Modifier.testTag("history_summary_task_count_$index"),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
         }
     }
 }

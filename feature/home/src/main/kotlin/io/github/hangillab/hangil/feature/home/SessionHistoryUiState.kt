@@ -1,6 +1,7 @@
 package io.github.hangillab.hangil.feature.home
 
 import io.github.hangillab.hangil.core.domain.PracticeSession
+import io.github.hangillab.hangil.core.domain.SessionCourseSummary
 
 /** One ended session snapshot in repository-created order; index zero is the newest created. */
 sealed interface SessionHistoryUiState {
@@ -23,6 +24,7 @@ sealed interface SessionHistoryUiState {
         val index: Int,
         val total: Int,
         val generation: Long,
+        val summary: SessionCourseSummary,
     ) : SessionHistoryUiState {
         val canOlder: Boolean get() = index + 1 < total
         val canNewer: Boolean get() = index > 0
