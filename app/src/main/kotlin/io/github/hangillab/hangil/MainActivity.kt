@@ -18,6 +18,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import io.github.hangillab.hangil.core.designsystem.HanGilTheme
 import io.github.hangillab.hangil.feature.course.CourseRoute
 import io.github.hangillab.hangil.feature.home.HomeRoute
+import io.github.hangillab.hangil.feature.home.SessionHistoryRoute
 import io.github.hangillab.hangil.feature.home.SessionRecordingViewModel
 import kotlinx.coroutines.launch
 
@@ -41,11 +42,13 @@ class MainActivity : ComponentActivity() {
                         HomeRoute(
                             onPrepare = { navigation.navigate("preparation") { launchSingleTop = true } },
                             onMapPreview = { navigation.navigate("map") { launchSingleTop = true } },
+                            onHistory = { navigation.navigate("history") { launchSingleTop = true } },
                             showDiagnostics = showDiagnostics,
                             recordingState = recordingState,
                             onRetryRecording = { recording.retry() },
                         )
                     }
+                    composable("history") { SessionHistoryRoute(onClose = { navigation.popBackStack() }) }
                     composable("preparation") { CourseRoute(onClose = { navigation.popBackStack() }) }
                     composable("map") { MapDestination(onClose = { navigation.popBackStack() }, showDiagnostics = showDiagnostics) }
                 }

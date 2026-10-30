@@ -54,4 +54,6 @@ class HomeViewModel
         }
 
         fun canViewMap(): Boolean = allowsPracticeInteraction(vehicleGateway.state.value, restrictionsProvider.restrictions.value)
+
+        fun canViewHistory(): Boolean = allowsPracticeInteraction(vehicleGateway.state.value, restrictionsProvider.restrictions.value)
     }

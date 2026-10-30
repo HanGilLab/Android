@@ -39,6 +39,7 @@ import io.github.hangillab.hangil.core.domain.Preparation
 fun HomeRoute(
     onPrepare: () -> Unit,
     onMapPreview: () -> Unit,
+    onHistory: () -> Unit,
     showDiagnostics: Boolean = false,
     recordingState: VehicleRecordingState = VehicleRecordingState.Idle,
     onRetryRecording: () -> Unit = {},
@@ -57,6 +58,13 @@ fun HomeRoute(
                 recordingState = recordingState,
                 onRetryRecording = onRetryRecording,
             )
+            ParkedButton(
+                onClick = { if (viewModel.canViewHistory()) onHistory() },
+                prominent = false,
+                modifier = Modifier.fillMaxWidth().heightIn(min = HanGilDimensions.secondaryActionMinHeight).testTag("home_history"),
+            ) {
+                Text(stringResource(R.string.history_open), style = MaterialTheme.typography.titleLarge)
+            }
         },
     )
 }
