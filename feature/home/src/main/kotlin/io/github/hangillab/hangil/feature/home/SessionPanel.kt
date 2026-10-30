@@ -252,6 +252,7 @@ private fun LatestSessionPanel(state: SessionUiState) {
                         stringResource(R.string.session_started_at, displayTime(latest.startedAtEpochMillis)),
                         Modifier.testTag("session_latest_started"),
                     )
+                    RecentVehicleObservationRoute(latest.sessionId)
                 }
             }
         }
@@ -262,7 +263,7 @@ private fun LatestSessionPanel(state: SessionUiState) {
     }
 }
 
-private fun displayTime(epochMillis: Long): String =
+internal fun displayTime(epochMillis: Long): String =
     DateTimeFormatter
         .ofLocalizedDateTime(
             FormatStyle.MEDIUM,

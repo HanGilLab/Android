@@ -18,7 +18,7 @@ import io.github.hangillab.hangil.core.domain.TurnSignalState
 import io.github.hangillab.hangil.core.domain.VehicleReading
 
 @Composable
-private fun connectionLabel(state: ConnectionState): String =
+internal fun connectionLabel(state: ConnectionState): String =
     stringResource(
         when (state) {
             ConnectionState.DISCONNECTED -> R.string.connection_disconnected
@@ -78,7 +78,7 @@ internal fun VehicleDiagnostics(state: HomeUiState) {
 }
 
 @Composable
-private fun <T : Any> readingLabel(
+internal fun <T : Any> readingLabel(
     reading: VehicleReading<T>,
     label: @Composable (T) -> String,
 ): String =
