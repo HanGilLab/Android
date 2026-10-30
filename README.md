@@ -159,23 +159,23 @@ flowchart TB
 
 **문제**
 
-주차 중 표시한 버튼이 화면에 남아 있는 순간 D 상태가 도착하면, UI 갱신 전에 눌린 상세 조작이 실행될 수 있습니다. UX 제한 해제만으로 주차를 추정해도 같은 문제가 생깁니다.
+주차 중 표시한 버튼이 화면에 남아 있는 순간 D 상태가 도착하면, UI 갱신 전에 눌린 상세 조작이 실행될 수 있습니다. 접힌 이력 상세를 펼치거나 화면에 다시 들어왔을 때 옛 버튼이 새 기록을 여는 경계도 함께 다뤘습니다. UX 제한 해제만으로 주차를 추정하지 않습니다.
 
 **원인**
 
-차량 기어와 UX 제한은 서로 다른 상태 스트림입니다. 화면이 마지막으로 조합한 P 상태와 실제 차량 스트림의 최신 D 상태가 잠시 다를 수 있어 버튼의 활성 상태만으로 실행을 허용할 수 없었습니다.
+차량 기어와 UX 제한은 서로 다른 상태 스트림이라 화면이 마지막으로 조합한 P와 최신 D 값이 잠시 다를 수 있었습니다. 펼침 콜백에서 로컬 expanded만 바꾸는 흐름을 추적하니 자식의 재구성이 부모 Route의 주차 판정을 다시 실행한다는 보장도 없었습니다. 정상 종료한 자료 스트림이 UI에 새 실패 상태를 발행하지 않으면 열린 상세가 남는 문제도 확인했습니다.
 
 **해결**
 
-주차 확인과 UX 제한 해제를 모두 요구하는 판정을 domain에 두었습니다. 화면 표시뿐 아니라 실제 처리 직전에도 차량과 제한 스트림의 현재 값을 함께 읽어 같은 판정을 적용합니다. 연결 끊김, 권한 거부와 미확인 상태는 잠금을 유지합니다.
+주차 확인과 UX 제한 해제를 모두 요구하는 판정을 domain에 두었습니다. 상세를 여는 순간과 내용을 구성하기 직전에 최신 차량 값, 표시한 원본과 조회 세대를 확인합니다. 화면의 STARTED 수명마다 새 소유권을 발급하고 STOP/폐기 뒤 옛 콜백은 다시 허용하지 않습니다. 거부한 펼침 의도는 버리고 접기는 항상 허용합니다. 자료 스트림의 정상 종료도 실패 상태로 발행하되 화면 이탈에 따른 취소는 오류로 바꾸지 않습니다.
 
 **결과**
 
-화면이 이전 주차 상태를 표시하더라도 처리 시점의 최신 차량 상태가 주행이면 로딩 시작, 재시도와 렌더 완료를 차단합니다. 주차와 UX 허용을 모두 확인해야 상세 조작을 진행합니다.
+화면이 이전 주차 상태를 표시해도 최신 D, 미확인, 연결 끊김이나 UX 제한에서는 상세를 새로 펼치지 않습니다. 다른 기록 선택과 화면 재진입 뒤에도 옛 버튼이 새 상세를 열지 않으며, P와 UX 허용으로 돌아와도 거부했던 요청이 자동 실행되지 않습니다. 현재 유효한 기록은 사용자가 다시 선택해 읽을 수 있습니다.
 
 **대체안/회고**
 
-버튼 비활성화만으로 해결하면 화면 갱신과 처리 사이의 틈이 남습니다. 두 스트림을 한 번 조합한 결과만 읽는 방법도 최신 기어를 놓칠 수 있어 처리 경계에서 다시 확인했습니다. 앱의 상세 조작을 제한하는 로직이며 차량 조향이나 제동을 제어하지 않습니다.
+버튼 비활성화나 부모 화면의 재구성에만 의존하면 처리 사이의 틈이 남습니다. rememberUpdatedState로 콜백을 최신 것으로 교체하는 방법은 옛 동작이 새 원본의 허용 조건을 빌릴 수 있어 사용하지 않았습니다. 열 때의 원본/수명과 현재 허용 조건을 함께 확인하는 방식을 택했습니다. 이미 수신한 상태를 기준으로 제한하며 아직 전달되지 않은 상태 전환을 예측하거나 차량을 제어하지는 않습니다.
 
 **코드**
 
@@ -202,17 +202,55 @@ fun allowsPracticeInteraction(
         vehicle.toDrivingRestrictions(restrictions.uxRestrictionState).allowsDetailedInteraction
 ```
 
-[지도 처리 직전의 reader, 조회 세대와 최신 차량 상태 재확인](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/MapViewModel.kt#L136-L143)
+[표시한 원본과 조회 세대를 최신 reader에서 재확인](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L88)
 
 ```kotlin
-private fun canRender(attempt: MapRenderAttempt): Boolean {
-    val owner = reader.get() ?: return false
-    return owner.job.isActive && owner.id == attempt.reader && attempt.queryEpoch == queryEpoch.get() &&
-        attempt.preparation is MapPreparationState.Ready && allowsInteraction()
-}
+fun canRevealSummary(
+    expectedSessionId: String,
+    expectedGeneration: Long,
+): Boolean =
+    synchronized(lock) {
+        val owner = reader ?: return@synchronized false
+        val query = owner.query ?: return@synchronized false
+        if (!currentQuery(owner, query) || !canRead()) return@synchronized false
+        val current = published.value as? SessionHistoryUiState.Ready ?: return@synchronized false
+        val records = ended ?: return@synchronized false
+        !selectionLost && selectedId == expectedSessionId &&
+            current.session.sessionId == expectedSessionId && current.generation == expectedGeneration &&
+            records.getOrNull(current.index) == current.session && current.summary.source == current.session
+    }
+```
 
-private fun allowsInteraction(): Boolean =
-    allowsPracticeInteraction(vehicleGateway.state.value, restrictionsProvider.restrictions.value)
+[열 때의 수명과 허용 조건을 직접 캡처한 펼침 처리](core/designsystem/src/main/kotlin/io/github/hangillab/hangil/core/designsystem/ParkedDisclosure.kt#L76)
+
+```kotlin
+val clickOwner = startedOwner
+
+fun ownsStartedContext(): Boolean = clickOwner.get() && lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+
+fun mayRender(): Boolean = ownsStartedContext() && openingGuard?.invoke() == true && canExpand()
+val toggle: () -> Unit = {
+    if (expanded) {
+        // Closing is always permitted, including after a live denial or STOP.
+        collapse()
+    } else if (ownsStartedContext() && canExpand()) {
+        openingGuard = canExpand
+        expanded = true
+    } else {
+        collapse()
+    }
+}
+```
+
+[내용 구성 직전 재검사와 거부한 의도 폐기](core/designsystem/src/main/kotlin/io/github/hangillab/hangil/core/designsystem/ParkedDisclosure.kt#L119)
+
+```kotlin
+val renderExpanded = visibleExpanded && mayRender()
+if (renderExpanded) Column(verticalArrangement = Arrangement.spacedBy(HanGilSpacing.lg), content = content)
+SideEffect {
+    // A read-only guard failure must discard intent, not resurrect it after P returns.
+    if (expanded && !renderExpanded) collapse()
+}
 ```
 
 ### 2. 저장 도중 잠금 전환과 중복 시작을 트랜잭션으로 처리
