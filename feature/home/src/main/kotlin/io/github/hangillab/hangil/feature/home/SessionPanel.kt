@@ -31,11 +31,22 @@ import java.util.Locale
 internal fun SessionRoute(
     onPrepare: () -> Unit,
     canPrepare: Boolean,
+    recordingState: VehicleRecordingState,
+    onRetryRecording: () -> Unit,
     viewModel: SessionViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     if (state.allowsInteraction) {
-        SessionPanel(state, viewModel::start, viewModel::finish, viewModel::retryLoading, onPrepare, canPrepare)
+        SessionPanel(
+            state,
+            viewModel::start,
+            viewModel::finish,
+            viewModel::retryLoading,
+            onPrepare,
+            canPrepare,
+            recordingState,
+            onRetryRecording,
+        )
     }
 }
 
@@ -47,6 +58,8 @@ internal fun SessionPanel(
     onRetry: () -> Unit,
     onPrepare: () -> Unit,
     canPrepare: Boolean,
+    recordingState: VehicleRecordingState,
+    onRetryRecording: () -> Unit,
 ) {
     if (!state.allowsInteraction) return
     val outdated = (state.preparation as? PreparationLoadState.Loaded)?.preparation == Preparation.Outdated
@@ -55,11 +68,13 @@ internal fun SessionPanel(
         emphasized = true,
     ) {
         HomeJourneyGuide(state)
-        Text(
-            stringResource(R.string.session_record_source),
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        if (state.active == null) {
+            Text(
+                stringResource(R.string.session_record_source),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         if (state.nextStep == HomeJourneyStep.PREPARE || state.nextStep == HomeJourneyStep.REPEAT) {
             ParkedButton(
                 onClick = onPrepare,
@@ -101,6 +116,7 @@ internal fun SessionPanel(
                     )
                     Text(active.courseTitle, Modifier.testTag("session_course"), style = MaterialTheme.typography.headlineSmall)
                     if (active.courseReviewStatus == CourseReviewStatus.DEMO) ParkedBadge(stringResource(R.string.demo_course))
+                    VehicleRecordingStatus(recordingState, onRetryRecording)
                     ParkedButton(
                         onClick = {
                             onFinish(active.sessionId)
@@ -189,6 +205,32 @@ internal fun SessionPanel(
         }
     }
     LatestSessionPanel(state)
+}
+
+@Composable
+private fun VehicleRecordingStatus(
+    state: VehicleRecordingState,
+    onRetry: () -> Unit,
+) {
+    Text(
+        stringResource(
+            when (state) {
+                VehicleRecordingState.Idle, VehicleRecordingState.Paused -> R.string.recording_paused
+                VehicleRecordingState.Loading -> R.string.recording_loading
+                VehicleRecordingState.Recording -> R.string.recording_active
+                is VehicleRecordingState.Failed -> R.string.recording_failed
+            },
+        ),
+        Modifier.testTag("vehicle_recording_status"),
+        style = MaterialTheme.typography.bodyLarge,
+        color = if (state is VehicleRecordingState.Failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    if (state is VehicleRecordingState.Failed) {
+        TextButton(
+            onClick = onRetry,
+            modifier = Modifier.heightIn(min = HanGilDimensions.secondaryActionMinHeight).testTag("vehicle_recording_retry"),
+        ) { Text(stringResource(R.string.recording_retry)) }
+    }
 }
 
 @Composable
