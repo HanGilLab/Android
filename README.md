@@ -115,18 +115,6 @@ flowchart TB
 ## 🔎 문제 해결
 
 상태 경합과 데이터 보존 문제를 해결한 실제 구현 사례 4개입니다.
-현재 같은 조건의 변경 전후 성능 측정은 없어 속도, 메모리나 성능 개선율을 주장하지 않습니다.
-테스트 개수와 저장 행 수는 각 사례의 보조 회귀 근거로 구분했습니다.
-
-<details>
-<summary>검증 기준과 근거 확인</summary>
-
-공개 검증 기준은 [구현 커밋 bfbc7df](https://github.com/HanGilLab/Android/commit/bfbc7dfd9f3bec2e841e1e76df080e720da71548)의 [CI 테스트 결과](https://github.com/HanGilLab/Android/actions/runs/40872083521)와 각 사례에 연결한 테스트 입력입니다.
-JDK 17의 JVM/Robolectric 테스트에서 제어한 입력과 저장 결과이며 실차 운행 성과를 의미하지 않습니다.
-[사례별 근거 집계 도구](scripts/summarize-case-evidence.py)는 기존 JUnit 보고서의 테스트 수, 실패, 오류, 건너뜀과 보고 시각을 집계합니다.
-새 실행 여부는 보고 시각과 해당 커밋의 CI를 함께 확인해야 합니다.
-
-</details>
 
 ### 1. 화면 갱신보다 먼저 도착한 주행 상태로 상세 조작 차단
 
@@ -146,23 +134,25 @@ JDK 17의 JVM/Robolectric 테스트에서 제어한 입력과 저장 결과이�
 
 화면이 이전 주차 상태를 표시하더라도 처리 시점의 최신 차량 상태가 주행이면 로딩 시작, 재시도와 렌더 완료를 차단합니다. 주차와 UX 허용을 모두 확인해야 상세 조작을 진행합니다.
 
-<details>
-<summary>회귀 검증 근거</summary>
-
-[상태 조합 테스트](core/domain/src/test/kotlin/io/github/hangillab/hangil/core/domain/DrivingRestrictionsTest.kt)는 주차 3종 × UX 3종의 9개 조합 중 P 확인과 UX 해제인 1개만 허용하고 나머지 8개를 차단합니다. [최신 D 경합 회귀](feature/map/src/test/kotlin/io/github/hangillab/hangil/feature/map/MapViewModelTest.kt)는 UI 조합을 진행하기 전에 D를 넣어 로딩 시작, 재시도와 렌더 완료가 허용되지 않는지 확인합니다. 상태 판정 테스트 2개와 지도 경계 테스트 5개가 통과했고 실패, 오류, 건너뜀은 각각 0개입니다.
-
-</details>
-
 **대체안/회고**
 
 버튼 비활성화만으로 해결하면 화면 갱신과 처리 사이의 틈이 남습니다. 두 스트림을 한 번 조합한 결과만 읽는 방법도 최신 기어를 놓칠 수 있어 처리 경계에서 다시 확인했습니다. 앱의 상세 조작을 제한하는 로직이며 차량 조향이나 제동을 제어하지 않습니다.
 
 **코드**
 
-<details>
-<summary>핵심 구현 보기</summary>
+[주차와 UX 조건을 함께 판단하는 상태](core/domain/src/main/kotlin/io/github/hangillab/hangil/core/domain/DrivingRestrictions.kt#L3-L9)
 
-[실제 판정 함수](core/domain/src/main/kotlin/io/github/hangillab/hangil/core/domain/PracticeInteraction.kt):
+```kotlin
+data class DrivingRestrictions(
+    val parkingState: ParkingState = ParkingState.UNKNOWN,
+    val uxRestrictionState: UxRestrictionState = UxRestrictionState.UNKNOWN,
+) {
+    val allowsDetailedInteraction: Boolean
+        get() = parkingState == ParkingState.PARKED && uxRestrictionState == UxRestrictionState.UNRESTRICTED
+}
+```
+
+[최신 차량 상태와 제한 상태 재확인](core/domain/src/main/kotlin/io/github/hangillab/hangil/core/domain/PracticeInteraction.kt#L4-L9)
 
 ```kotlin
 fun allowsPracticeInteraction(
@@ -173,7 +163,16 @@ fun allowsPracticeInteraction(
         vehicle.toDrivingRestrictions(restrictions.uxRestrictionState).allowsDetailedInteraction
 ```
 
-</details>
+[지도 재시도 처리 직전의 실제 판정 호출](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/MapViewModel.kt#L56-L61)
+
+```kotlin
+fun retry() {
+    if (allowsInteraction()) render.update { MapRenderAttempt(it.id + 1) }
+}
+
+private fun allowsInteraction(): Boolean =
+    allowsPracticeInteraction(vehicleGateway.state.value, restrictionsProvider.restrictions.value)
+```
 
 ### 2. 저장 도중 잠금 전환과 중복 시작을 트랜잭션으로 처리
 
@@ -193,34 +192,78 @@ Room 트랜잭션 안에서 허용 조건을 쓰기 전후로 검사하고, 두 
 
 겹친 시작 요청에도 활성 연습은 하나만 남습니다. 저장 중 잠금으로 바뀐 요청은 롤백하고, 시작 당시의 코스와 과제는 이후 준비 내용 변경이나 DB 재열기에도 보존합니다.
 
-<details>
-<summary>회귀 검증 근거</summary>
-
-[저장소 회귀 테스트 11개](core/database/src/test/kotlin/io/github/hangillab/hangil/core/database/RoomPracticeSessionRepositoryTest.kt)가 통과했고 실패, 오류, 건너뜀은 각각 0개입니다. 이 중 동시 시작 4개 요청은 시작 1개, 이미 활성 상태 3개로 끝나며 활성 행은 1개입니다. 시작의 두 번째 조건 검사에서 잠기면 새 세션은 0행, 종료 중 잠기면 기존 활성 세션 1행이 그대로 남습니다. 준비 변경과 DB 재열기 후에도 당시 스냅샷이 동일한지 비교합니다.
-
-</details>
-
 **대체안/회고**
 
 UI의 버튼 잠금이나 프로세스 내부 Mutex만으로는 DB에 직접 들어오는 중복 쓰기를 막지 못합니다. 트랜잭션과 유일 인덱스를 함께 사용했습니다. 비정상 시각과 저장 오류를 0초나 성공으로 보정하지 않고 명시적으로 구분해 원래 데이터를 보존했습니다.
 
 **코드**
 
-<details>
-<summary>핵심 구현 보기</summary>
-
-[실제 종료 처리의 트랜잭션 경계](core/database/src/main/kotlin/io/github/hangillab/hangil/core/database/RoomPracticeSessionRepository.kt)에서 발췌했습니다. 생략한 부분은 세션 조회와 결과별 쓰기입니다.
+[시작 요청의 트랜잭션과 당시 준비 내용 저장](core/database/src/main/kotlin/io/github/hangillab/hangil/core/database/RoomPracticeSessionRepository.kt#L22-L64)
 
 ```kotlin
-database.withTransaction {
-    requirePermission(canCommit)
-    // 세션 조회와 결과별 쓰기
-    requirePermission(canCommit)
-    result
+override suspend fun start(
+    practice: PreparedPractice,
+    startedAtEpochMillis: Long,
+    canCommit: () -> Boolean,
+): SessionStartResult {
+    if (startedAtEpochMillis <= 0) return SessionStartResult.InvalidTime
+    return try {
+        database.withTransaction {
+            requirePermission(canCommit)
+            val active = database.practiceSessionDao().active()
+            val prepared = catalog.resolve(database.preparationDao().current()?.selection()) as? Preparation.Ready
+            val result =
+                when {
+                    active != null -> SessionStartResult.AlreadyActive(active.session())
+                    prepared?.practice != practice -> SessionStartResult.PreparationChanged
+                    else -> {
+                        val entity =
+                            PracticeSessionEntity(
+                                sessionId = UUID.randomUUID().toString(),
+                                goalId = practice.goal.id,
+                                courseId = practice.course.id,
+                                courseVersion = practice.course.version,
+                                briefingVersion = practice.course.briefingVersion,
+                                taskId = practice.task.id,
+                                goalTitle = practice.goal.title,
+                                courseTitle = practice.course.title,
+                                taskTitle = practice.task.title,
+                                courseReviewStatus = practice.course.reviewStatus.name,
+                                startedAtEpochMillis = startedAtEpochMillis,
+                                endedAtEpochMillis = null,
+                                activeSlot = 1,
+                            )
+                        database.practiceSessionDao().insert(entity)
+                        SessionStartResult.Started(entity.session())
+                    }
+                }
+            requirePermission(canCommit)
+            result
+        }
+    } catch (_: WriteBlocked) {
+        SessionStartResult.Blocked
+    }
 }
 ```
 
-</details>
+[쓰기 전후 호출하는 허용 조건 검사](core/database/src/main/kotlin/io/github/hangillab/hangil/core/database/RoomPracticeSessionRepository.kt#L96-L100)
+
+```kotlin
+private fun requirePermission(canCommit: () -> Boolean) {
+    if (!canCommit()) throw WriteBlocked()
+}
+
+private class WriteBlocked : RuntimeException()
+```
+
+[활성 연습 중복을 막는 유일 인덱스 선언 발췌](core/database/src/main/kotlin/io/github/hangillab/hangil/core/database/PracticeSessionEntity.kt#L10-L13)
+
+```kotlin
+@Entity(
+    tableName = "practice_session",
+    indices = [Index(value = ["sessionId"], unique = true), Index(value = ["activeSlot"], unique = true)],
+)
+```
 
 ### 3. 재생성된 지도에 이전 View의 완료 콜백이 섞이는 문제 해결
 
@@ -240,25 +283,22 @@ database.withTransaction {
 
 현재 시도의 현재 View가 실제 렌더를 마쳤을 때만 READY로 전환합니다. 이전 View의 완료와 재시도 전의 성공/오류가 현재 지도나 실패 상태를 덮어쓰지 못하게 했습니다.
 
-<details>
-<summary>회귀 검증 근거</summary>
-
-[MapViewModel 회귀 테스트 5개](feature/map/src/test/kotlin/io/github/hangillab/hangil/feature/map/MapViewModelTest.kt)가 통과했고 실패, 오류, 건너뜀은 각각 0개입니다. 같은 시도의 View를 2번 생성한 뒤 이전 토큰의 완료를 넣어도 LOADING이 유지되고, 현재 토큰의 완료에만 READY가 됩니다. 실패 후 같은 시도의 늦은 완료는 FAILED를 유지하고, 재시도 후 이전 시도의 성공과 오류도 상태를 바꾸지 않습니다.
-
-</details>
-
 **대체안/회고**
 
 재시도 번호만으로는 View 재생성 경계를 표현할 수 없어 View 토큰을 추가했습니다. 스타일 수신 시점을 성공으로 처리하는 대안은 타일과 글꼴 오류를 놓칠 수 있어 실제 렌더 완료를 기준으로 삼았습니다. 현재 지도는 고정 시연 지역 표시이며 위치 추적이나 자체 내비 완성으로 표현하지 않습니다.
 
 **코드**
 
-<details>
-<summary>핵심 구현 보기</summary>
-
-[실제 렌더 완료 처리](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/MapViewModel.kt):
+[MapView 토큰 발급, 완료/실패 반영과 재시도](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/MapViewModel.kt#L31-L58)
 
 ```kotlin
+fun onMapLoading(attempt: Int): Long? {
+    if (!allowsInteraction() || render.value.id != attempt) return null
+    val token = tokens.incrementAndGet()
+    render.update { if (it.id == attempt) it.copy(token = token, load = MapLoadState.LOADING) else it }
+    return token
+}
+
 fun onMapRendered(
     attempt: Int,
     token: Long,
@@ -268,9 +308,19 @@ fun onMapRendered(
         if (it.id == attempt && it.token == token && it.load == MapLoadState.LOADING) it.copy(load = MapLoadState.READY) else it
     }
 }
-```
 
-</details>
+fun onMapFailed(
+    attempt: Int,
+    token: Long,
+) {
+    if (!allowsInteraction()) return
+    render.update { if (it.id == attempt && it.token == token) it.copy(load = MapLoadState.FAILED) else it }
+}
+
+fun retry() {
+    if (allowsInteraction()) render.update { MapRenderAttempt(it.id + 1) }
+}
+```
 
 ### 4. SQLite의 묵시적 변환이 손상된 차량 관찰 값을 정상 값으로 만드는 문제 차단
 
@@ -290,33 +340,44 @@ SQLite의 선언 자료형과 실제 저장 자료형은 같다고 보장되지 
 
 묵시적 변환으로 정상 값처럼 보일 수 있는 손상 자료를 복원 오류로 구분합니다. 이전 스키마의 기록은 보존하면서 새 관찰 저장 경계를 추가했습니다.
 
-<details>
-<summary>회귀 검증 근거</summary>
-
-[관찰 저장소 11개](core/database/src/test/kotlin/io/github/hangillab/hangil/core/database/RoomVehicleObservationRepositoryTest.kt)와 [마이그레이션 2개](core/database/src/test/kotlin/io/github/hangillab/hangil/core/database/VehicleObservationMigrationTest.kt)가 통과했고 실패, 오류, 건너뜀은 각각 0개입니다. 논리 손상 변형 16개와 실제 SQL로 넣은 자료형 손상 4개는 모두 복원 오류가 됩니다. 자료형 입력은 브레이크 REAL 2개/TEXT 1개와 관찰 시각 REAL 1개입니다. v2→v3와 v1→v2→v3의 기존 필드 보존 및 새 관찰 0행도 확인합니다. 검증 데이터로 확인한 저장 기반이며 제품의 실제 SDK 관찰 수집기는 아직 연결하지 않았습니다.
-
-</details>
-
 **대체안/회고**
 
 Long을 읽은 뒤 0/1만 검사하는 방법은 이미 일어난 묵시적 변환을 감지할 수 없어 물리 자료형 검사를 선택했습니다. 잘못된 행을 건너뛰거나 미확인을 0으로 바꾸는 대안은 기록 누락을 숨깁니다. 손상은 명시적인 오류로 전달하며 정상 기록과 구분합니다. 수집기 연결과 실제 SDK 기록 검증은 별도 완료 조건으로 남습니다.
 
 **코드**
 
-<details>
-<summary>핵심 구현 보기</summary>
-
-[실제 행 복원 검사](core/database/src/main/kotlin/io/github/hangillab/hangil/core/database/VehicleObservationRow.kt)와 [물리 자료형 조회](core/database/src/main/kotlin/io/github/hangillab/hangil/core/database/VehicleObservationDao.kt):
+[값과 원래 SQLite 자료형을 함께 조회](core/database/src/main/kotlin/io/github/hangillab/hangil/core/database/VehicleObservationDao.kt#L8-L19)
 
 ```kotlin
-fun observation(): SessionVehicleObservation {
-    check(observedTimeStorageType == "integer") { "Invalid observation time storage type" }
-    check(brakeStorageType == if (entity.brakeValue == null) "null" else "integer") { "Invalid brake value storage type" }
-    return entity.observation()
+@Dao
+internal interface VehicleObservationDao {
+    @Query(
+        "SELECT vehicle_observation.*, typeof(brakeValue) AS brakeStorageType, " +
+            "typeof(observedAtEpochMillis) AS observedTimeStorageType " +
+            "FROM vehicle_observation WHERE sessionId = :sessionId ORDER BY id ASC",
+    )
+    fun observe(sessionId: String): Flow<List<VehicleObservationRow>>
+
+    @Insert
+    suspend fun insert(entity: VehicleObservationEntity): Long
 }
 ```
 
-</details>
+[실제 자료형 확인 뒤 관찰값 복원](core/database/src/main/kotlin/io/github/hangillab/hangil/core/database/VehicleObservationRow.kt#L7-L17)
+
+```kotlin
+internal data class VehicleObservationRow(
+    @Embedded val entity: VehicleObservationEntity,
+    val brakeStorageType: String,
+    val observedTimeStorageType: String,
+) {
+    fun observation(): SessionVehicleObservation {
+        check(observedTimeStorageType == "integer") { "Invalid observation time storage type" }
+        check(brakeStorageType == if (entity.brakeValue == null) "null" else "integer") { "Invalid brake value storage type" }
+        return entity.observation()
+    }
+}
+```
 
 <br />
 
