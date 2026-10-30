@@ -14,6 +14,9 @@ internal interface VehicleObservationDao {
     )
     fun observe(sessionId: String): Flow<List<VehicleObservationRow>>
 
+    @Query("SELECT COUNT(*) FROM vehicle_observation WHERE sessionId = :sessionId")
+    suspend fun count(sessionId: String): Long
+
     @Insert
     suspend fun insert(entity: VehicleObservationEntity): Long
 }

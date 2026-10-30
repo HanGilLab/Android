@@ -7,8 +7,14 @@ import io.github.hangillab.hangil.core.domain.DrivingRestrictionsProvider
 import io.github.hangillab.hangil.core.domain.PracticeSession
 import io.github.hangillab.hangil.core.domain.PracticeSessionRepository
 import io.github.hangillab.hangil.core.domain.SessionCourseSummary
+import io.github.hangillab.hangil.core.domain.SessionDeletionPreparation
+import io.github.hangillab.hangil.core.domain.SessionDeletionRepository
+import io.github.hangillab.hangil.core.domain.SessionDeletionResult
+import io.github.hangillab.hangil.core.domain.SessionDeletionTarget
 import io.github.hangillab.hangil.core.domain.VehicleGateway
 import io.github.hangillab.hangil.core.domain.allowsPracticeInteraction
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
@@ -17,6 +23,8 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collect
@@ -31,6 +39,7 @@ import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.yield
 import javax.inject.Inject
 
 /** Queries exist only while visible. Actions use the received source state, never a delayed UI copy. */
@@ -42,6 +51,7 @@ class SessionHistoryViewModel
         private val vehicle: VehicleGateway,
         private val restrictions: DrivingRestrictionsProvider,
         private val sessions: PracticeSessionRepository,
+        private val deletions: SessionDeletionRepository,
     ) : ViewModel() {
         private val lock = Any()
         private val published = MutableStateFlow<SessionHistoryUiState>(SessionHistoryUiState.Loading)
@@ -52,12 +62,17 @@ class SessionHistoryViewModel
         private var selectedId: String? = null
         private var selectionLost = false
         private var ended: List<PracticeSession>? = null
+        private val deletionPublished = MutableStateFlow<SessionDeletionUiState>(SessionDeletionUiState.Idle)
+        val deletionState: StateFlow<SessionDeletionUiState> = deletionPublished.asStateFlow()
+        private var deletionNonce = 0L
+        private var deletion: DeletionAction? = null
 
         val uiState =
             flow {
                 coroutineScope {
                     val owner = Reader(checkNotNull(currentCoroutineContext()[Job]))
                     synchronized(lock) {
+                        invalidateDeletionLocked()
                         reader = owner
                         ended = null
                         publishLocked(SessionHistoryUiState.Loading)
@@ -71,6 +86,7 @@ class SessionHistoryViewModel
                     } finally {
                         synchronized(lock) {
                             if (reader === owner) {
+                                invalidateDeletionLocked()
                                 owner.query = null
                                 reader = null
                                 ended = null
@@ -100,10 +116,278 @@ class SessionHistoryViewModel
                     records.getOrNull(current.index) == current.session && current.summary.source == current.session
             }
 
+        /** No additional database read exists until a visible, source-bound request is accepted. */
+        fun requestDeletion(
+            expectedSessionId: String,
+            expectedGeneration: Long,
+            canKeepOpen: () -> Boolean,
+        ): Boolean {
+            val work =
+                synchronized(lock) {
+                    val previous = deletion
+                    if (previous != null) {
+                        val existingContext =
+                            when {
+                                previous.phase == DeletionPhase.DELETED ||
+                                    (previous.phase == DeletionPhase.DELETING && previous.sourceAbsent) ->
+                                    currentDeletionOwnerLocked(previous)
+                                else -> currentDeletionContextLocked(previous)
+                            }
+                        if (!existingContext) {
+                            // Observing a denial must revoke old consent, even if D/P later conflate.
+                            invalidateDeletionLocked()
+                            return@synchronized null
+                        }
+                    }
+                    val current = currentSelectionLocked(expectedSessionId, expectedGeneration) ?: return@synchronized null
+                    if (!canKeepOpen()) return@synchronized null
+                    if (deletion?.phase in listOf(DeletionPhase.PREPARING, DeletionPhase.CONFIRMING, DeletionPhase.DELETING)) {
+                        return@synchronized null
+                    }
+                    invalidateDeletionLocked()
+                    val owner = checkNotNull(reader)
+                    val query = checkNotNull(owner.query)
+                    val action = DeletionAction(++deletionNonce, owner, query, current.session, current.generation, canKeepOpen)
+                    val job =
+                        viewModelScope.launch(start = CoroutineStart.LAZY) {
+                            yield()
+                            prepareDeletion(action)
+                        }
+                    action.job = job
+                    deletion = action
+                    deletionPublished.value = SessionDeletionUiState.Preparing(action.nonce, action.session)
+                    job
+                } ?: return false
+            work.start()
+            return true
+        }
+
+        fun confirmDeletion(nonce: Long): Boolean {
+            val work =
+                synchronized(lock) {
+                    val action = deletion?.takeIf { it.nonce == nonce } ?: return@synchronized null
+                    if (action.phase != DeletionPhase.CONFIRMING) return@synchronized null
+                    if (!currentDeletionContextLocked(action)) {
+                        invalidateDeletionLocked()
+                        return@synchronized null
+                    }
+                    val target = action.target ?: return@synchronized null
+                    val job = viewModelScope.launch(start = CoroutineStart.LAZY) { deleteSession(action, target) }
+                    action.phase = DeletionPhase.DELETING
+                    action.job = job
+                    deletionPublished.value = SessionDeletionUiState.Deleting(nonce, target)
+                    job
+                } ?: return false
+            work.start()
+            return true
+        }
+
+        fun dismissDeletion(nonce: Long): Boolean =
+            synchronized(lock) {
+                if (deletion?.nonce != nonce) return@synchronized false
+                invalidateDeletionLocked()
+                true
+            }
+
+        /** Read-only composition guard, separate from the transaction's stricter precommit guard. */
+        fun canPresentDeletion(nonce: Long): Boolean =
+            synchronized(lock) {
+                val action = deletion?.takeIf { it.nonce == nonce } ?: return@synchronized false
+                if (!currentDeletionOwnerLocked(action)) return@synchronized false
+                when (action.phase) {
+                    DeletionPhase.DELETED -> true
+                    DeletionPhase.DELETING ->
+                        action.job?.isActive == true &&
+                            (action.sourceAbsent || currentDeletionContextLocked(action))
+                    DeletionPhase.PREPARING -> action.job?.isActive == true && currentDeletionContextLocked(action)
+                    DeletionPhase.CONFIRMING, DeletionPhase.FAILED -> currentDeletionContextLocked(action)
+                }
+            }
+
+        private suspend fun prepareDeletion(action: DeletionAction) {
+            val job = checkNotNull(currentCoroutineContext()[Job])
+            try {
+                val result = deletions.prepare(action.session) { canPrepareDeletion(action, job) }
+                currentCoroutineContext().ensureActive()
+                synchronized(lock) {
+                    if (!canPrepareDeletionLocked(action, job)) return@synchronized
+                    when (result) {
+                        is SessionDeletionPreparation.Ready -> {
+                            if (result.target.session != action.session || result.target.observationCount < 0) {
+                                failDeletionLocked(action, SessionDeletionUiState.FailureReason.CHANGED)
+                            } else {
+                                action.target = result.target
+                                action.phase = DeletionPhase.CONFIRMING
+                                action.job = null
+                                deletionPublished.value = SessionDeletionUiState.Confirming(action.nonce, result.target)
+                            }
+                        }
+                        SessionDeletionPreparation.Missing -> failDeletionLocked(action, SessionDeletionUiState.FailureReason.MISSING)
+                        SessionDeletionPreparation.Active -> failDeletionLocked(action, SessionDeletionUiState.FailureReason.ACTIVE)
+                        SessionDeletionPreparation.Changed -> failDeletionLocked(action, SessionDeletionUiState.FailureReason.CHANGED)
+                        SessionDeletionPreparation.Blocked -> failDeletionLocked(action, SessionDeletionUiState.FailureReason.BLOCKED)
+                    }
+                }
+            } catch (cancelled: CancellationException) {
+                synchronized(lock) {
+                    if (deletion === action && action.job === job) {
+                        action.job = null
+                        invalidateDeletionLocked()
+                    }
+                }
+                throw cancelled
+            } catch (_: Exception) {
+                synchronized(lock) {
+                    if (canPrepareDeletionLocked(action, job)) {
+                        failDeletionLocked(action, SessionDeletionUiState.FailureReason.PREPARE_FAILED)
+                    }
+                }
+            } finally {
+                synchronized(lock) {
+                    if (deletion === action && action.job === job) {
+                        action.job = null
+                        if (action.phase == DeletionPhase.PREPARING || action.phase == DeletionPhase.DELETING) {
+                            invalidateDeletionLocked()
+                        }
+                    }
+                }
+            }
+        }
+
+        private suspend fun deleteSession(
+            action: DeletionAction,
+            target: SessionDeletionTarget,
+        ) {
+            val job = checkNotNull(currentCoroutineContext()[Job])
+            try {
+                val result = deletions.delete(target) { canCommitDeletion(action, job) }
+                currentCoroutineContext().ensureActive()
+                synchronized(lock) {
+                    if (!currentDeletionOwnerLocked(action) || action.phase != DeletionPhase.DELETING || action.job !== job) {
+                        return@synchronized
+                    }
+                    when (result) {
+                        SessionDeletionResult.Deleted -> {
+                            action.phase = DeletionPhase.DELETED
+                            action.job = null
+                            selectionLost = true
+                            // Preserve the deleted cursor until the user explicitly accepts another record.
+                            selectedId = action.session.sessionId
+                            published.value = SessionHistoryUiState.SelectionChanged(nextGenerationLocked())
+                            deletionPublished.value = SessionDeletionUiState.Deleted(action.nonce, action.session)
+                        }
+                        SessionDeletionResult.Missing -> failDeletionLocked(action, SessionDeletionUiState.FailureReason.MISSING)
+                        SessionDeletionResult.Active -> failDeletionLocked(action, SessionDeletionUiState.FailureReason.ACTIVE)
+                        SessionDeletionResult.Changed -> failDeletionLocked(action, SessionDeletionUiState.FailureReason.CHANGED)
+                        SessionDeletionResult.Blocked -> failDeletionLocked(action, SessionDeletionUiState.FailureReason.BLOCKED)
+                    }
+                }
+            } catch (cancelled: CancellationException) {
+                synchronized(lock) {
+                    if (deletion === action && action.job === job) {
+                        action.job = null
+                        invalidateDeletionLocked()
+                    }
+                }
+                throw cancelled
+            } catch (_: Exception) {
+                synchronized(lock) {
+                    if (currentDeletionOwnerLocked(action) && action.phase == DeletionPhase.DELETING && action.job === job) {
+                        failDeletionLocked(action, SessionDeletionUiState.FailureReason.DELETE_FAILED)
+                    }
+                }
+            } finally {
+                synchronized(lock) {
+                    if (deletion === action && action.job === job) {
+                        action.job = null
+                        if (action.phase == DeletionPhase.PREPARING || action.phase == DeletionPhase.DELETING) {
+                            invalidateDeletionLocked()
+                        }
+                    }
+                }
+            }
+        }
+
+        private fun canPrepareDeletion(
+            action: DeletionAction,
+            job: Job,
+        ): Boolean = synchronized(lock) { canPrepareDeletionLocked(action, job) }
+
+        private fun canPrepareDeletionLocked(
+            action: DeletionAction,
+            job: Job,
+        ): Boolean = action.phase == DeletionPhase.PREPARING && action.job === job && job.isActive && currentDeletionContextLocked(action)
+
+        private fun canCommitDeletion(
+            action: DeletionAction,
+            job: Job,
+        ): Boolean =
+            synchronized(lock) {
+                action.phase == DeletionPhase.DELETING && action.job === job && job.isActive && currentDeletionContextLocked(action)
+            }
+
+        private fun currentDeletionOwnerLocked(action: DeletionAction): Boolean =
+            deletion === action && currentQuery(action.owner, action.query) &&
+                selectedId == action.session.sessionId && canRead() && action.canKeepOpen()
+
+        private fun currentDeletionContextLocked(action: DeletionAction): Boolean =
+            currentDeletionOwnerLocked(action) && !selectionLost &&
+                currentSelectionLocked(action.session.sessionId, action.generation)?.session == action.session
+
+        private fun currentSelectionLocked(
+            expectedSessionId: String,
+            expectedGeneration: Long,
+        ): SessionHistoryUiState.Ready? {
+            val owner = reader ?: return null
+            val query = owner.query ?: return null
+            if (!currentQuery(owner, query) || !canRead() || selectionLost || selectedId != expectedSessionId) return null
+            val current = published.value as? SessionHistoryUiState.Ready ?: return null
+            val records = ended ?: return null
+            return current.takeIf {
+                it.session.sessionId == expectedSessionId && it.generation == expectedGeneration &&
+                    records.getOrNull(it.index) == it.session && it.summary.source == it.session
+            }
+        }
+
+        private fun failDeletionLocked(
+            action: DeletionAction,
+            reason: SessionDeletionUiState.FailureReason,
+        ) {
+            action.phase = DeletionPhase.FAILED
+            action.job = null
+            deletionPublished.value = SessionDeletionUiState.Failed(action.nonce, action.session, reason)
+        }
+
+        private fun invalidateDeletionLocked() {
+            val previous = deletion
+            deletion = null
+            deletionPublished.value = SessionDeletionUiState.Idle
+            previous?.job?.cancel()
+        }
+
+        private fun preserveDeletionReceiptLocked(
+            owner: Reader,
+            query: Query,
+            records: List<PracticeSession>,
+        ): Boolean {
+            val action = deletion ?: return false
+            if (action.owner !== owner || action.query !== query || !currentDeletionOwnerLocked(action)) return false
+            val source = records.singleOrNull { it.sessionId == action.session.sessionId }
+            return when {
+                action.phase == DeletionPhase.DELETING && source == null -> {
+                    action.sourceAbsent = true
+                    true
+                }
+                action.phase == DeletionPhase.DELETED && (source == null || source == action.session) -> true
+                else -> false
+            }
+        }
+
         fun retry(): Boolean =
             synchronized(lock) {
                 val owner = reader?.takeIf { it.job.isActive } ?: return@synchronized false
                 if (!canRead()) return@synchronized false
+                invalidateDeletionLocked()
                 epoch++
                 owner.query = null
                 ended = null
@@ -121,6 +405,7 @@ class SessionHistoryViewModel
                 val changed = published.value as? SessionHistoryUiState.SelectionChanged ?: return@synchronized false
                 if (changed.generation != expectedGeneration) return@synchronized false
                 val records = ended ?: return@synchronized false
+                invalidateDeletionLocked()
                 selectionLost = false
                 selectedId = records.firstOrNull()?.sessionId
                 publishSelectionLocked(records)
@@ -157,6 +442,7 @@ class SessionHistoryViewModel
                 val records = ended ?: return@synchronized false
                 val index = current.index + offset
                 if (index !in records.indices) return@synchronized false
+                invalidateDeletionLocked()
                 selectedId = records[index].sessionId
                 publishSelectionLocked(records)
                 true
@@ -227,6 +513,7 @@ class SessionHistoryViewModel
             access: Access,
         ) = synchronized(lock) {
             if (!currentReader(owner, requestEpoch)) return@synchronized
+            invalidateDeletionLocked()
             owner.query = null
             ended = null
             val state =
@@ -248,6 +535,7 @@ class SessionHistoryViewModel
                     restartDeniedQueryLocked(owner, query)
                     return@synchronized false
                 }
+                invalidateDeletionLocked()
                 owner.query = query
                 ended = null
                 publishLocked(SessionHistoryUiState.Loading)
@@ -268,6 +556,7 @@ class SessionHistoryViewModel
             publishLocked(SessionHistoryUiState.Loading)
             val snapshot = records.toList()
             validate(snapshot)
+            if (!preserveDeletionReceiptLocked(owner, query, snapshot)) invalidateDeletionLocked()
             val finished = snapshot.filterNot { it.isActive }
             ended = finished
             if (selectedId != null && finished.none { it.sessionId == selectedId }) selectionLost = true
@@ -285,6 +574,7 @@ class SessionHistoryViewModel
             ) {
                 return
             }
+            invalidateDeletionLocked()
             owner.query = null
             ended = null
             publishLocked(SessionHistoryUiState.Locked)
@@ -305,6 +595,7 @@ class SessionHistoryViewModel
                 restartDeniedQueryLocked(owner, query)
                 return@synchronized
             }
+            invalidateDeletionLocked()
             ended = null
             publishLocked(SessionHistoryUiState.Failed(reason))
         }
@@ -357,6 +648,22 @@ class SessionHistoryViewModel
                 }
             }
         }
+
+        private class DeletionAction(
+            val nonce: Long,
+            val owner: Reader,
+            val query: Query,
+            val session: PracticeSession,
+            val generation: Long,
+            val canKeepOpen: () -> Boolean,
+        ) {
+            var phase = DeletionPhase.PREPARING
+            var target: SessionDeletionTarget? = null
+            var job: Job? = null
+            var sourceAbsent = false
+        }
+
+        private enum class DeletionPhase { PREPARING, CONFIRMING, DELETING, FAILED, DELETED }
 
         private class Reader(
             val job: Job,

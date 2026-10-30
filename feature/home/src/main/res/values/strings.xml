@@ -151,4 +151,23 @@
     <string name="history_summary_count">마무리 기록 %1$d개</string>
     <string name="history_summary_tasks">과제별 기록</string>
     <string name="history_summary_scope">저장 당시 목표와 코스 정보가 같은 기록이에요.</string>
+
+    <string name="history_delete">이 기록 삭제</string>
+    <string name="history_delete_title">기록을 삭제할까요?</string>
+    <string name="history_delete_warning">이 연습과 연결된 차량 관찰, 메모를\n이 기기에서 영구 삭제해요. 복구할 수 없어요.</string>
+    <string name="history_delete_observation_count">저장된 차량 관찰 %1$d개</string>
+    <string name="history_delete_memo_present">내가 쓴 메모 있음</string>
+    <string name="history_delete_memo_absent">내가 쓴 메모 없음</string>
+    <string name="history_delete_preparing">연결 자료를 확인하고 있어요.</string>
+    <string name="history_deleting">기록을 삭제하고 있어요.</string>
+    <string name="history_delete_confirm">영구 삭제</string>
+    <string name="history_delete_cancel">취소</string>
+    <string name="history_delete_done">확인</string>
+    <string name="history_delete_success">선택한 기록을 삭제했어요.</string>
+    <string name="history_delete_missing">이미 없는 기록이에요. 삭제하지 않았어요.</string>
+    <string name="history_delete_active">진행 중인 연습은 삭제할 수 없어요.</string>
+    <string name="history_delete_changed">기록이나 연결 자료가 바뀌었어요. 다시 확인해 주세요.</string>
+    <string name="history_delete_blocked">주차와 화면 사용 조건을 다시 확인해 주세요.</string>
+    <string name="history_delete_prepare_failed">연결 자료를 확인하지 못했어요. 다시 시도해 주세요.</string>
+    <string name="history_delete_failed">삭제하지 못했어요. 기록을 다시 확인해 주세요.</string>
 </resources>

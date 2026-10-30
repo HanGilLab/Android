@@ -10,7 +10,7 @@ from pathlib import Path
 
 CASES = (
     ("parking", "core/domain/build/test-results/test", "DrivingRestrictionsTest"),
-    ("session", "core/database/build/test-results/testDebugUnitTest", "RoomPracticeSessionRepositoryTest"),
+    ("session", "core/database/build/test-results/testDebugUnitTest", "RoomSessionDeletionRepositoryTest"),
     ("map", "feature/map/build/test-results/testDebugUnitTest", "MapViewModelTest"),
     ("observation", "core/database/build/test-results/testDebugUnitTest", "RoomVehicleObservationRepositoryTest"),
 )
@@ -55,14 +55,15 @@ def main():
     args = parser.parse_args()
     root = args.root.resolve()
     cases = {key: read_suite(root, directory, name) for key, directory, name in CASES}
+    session_intents = read_suite(root, "feature/home/build/test-results/testDebugUnitTest", "SessionHistoryDeletionViewModelTest")
     # The map case now includes native input ownership; this pure suite covers its epoch policy.
     # Opt-in real native Route/MapLibre tests remain separate from these JVM report receipts.
     map_input = read_suite(root, "feature/map/build/test-results/testDebugUnitTest", "MapInputEpochTest")
     # Migration is separate from the observation repository's regression suite.
     migration = read_suite(root, "core/database/build/test-results/testDebugUnitTest", "VehicleObservationMigrationTest")
-    output = {"cases": cases, "case_supporting_suites": {"map": [map_input]}, "observation_migration": migration, "scope": "Existing JUnit results only; timestamps may precede this invocation. MapInputBoundaryTest and MapInputLifecycleTest native runs are tracked separately. Not SDK collection or performance evidence."}
+    output = {"cases": cases, "case_supporting_suites": {"session": [session_intents], "map": [map_input]}, "observation_migration": migration, "scope": "Existing JUnit results only; timestamps may precede this invocation. SessionDeletionFlowTest, SessionDeletionSdkFlowTest, MapInputBoundaryTest and MapInputLifecycleTest native runs are tracked separately. Not SDK collection or performance evidence."}
     print(json.dumps(output, ensure_ascii=False, indent=2))
-    return 0 if all(row["status"] == "PASSED" for row in [*cases.values(), map_input, migration]) else 1
+    return 0 if all(row["status"] == "PASSED" for row in [*cases.values(), session_intents, map_input, migration]) else 1
 
 
 if __name__ == "__main__":

@@ -10,6 +10,10 @@ import io.github.hangillab.hangil.core.domain.PracticeSelection
 import io.github.hangillab.hangil.core.domain.PracticeSession
 import io.github.hangillab.hangil.core.domain.PracticeSessionRepository
 import io.github.hangillab.hangil.core.domain.PreparedPractice
+import io.github.hangillab.hangil.core.domain.SessionDeletionPreparation
+import io.github.hangillab.hangil.core.domain.SessionDeletionRepository
+import io.github.hangillab.hangil.core.domain.SessionDeletionResult
+import io.github.hangillab.hangil.core.domain.SessionDeletionTarget
 import io.github.hangillab.hangil.core.domain.SessionFinishResult
 import io.github.hangillab.hangil.core.domain.SessionStartResult
 import io.github.hangillab.hangil.core.domain.SessionTaskCount
@@ -1428,7 +1432,19 @@ class SessionHistoryViewModelTest {
                 override val restrictions = restrictionState
             }
         val repository = FakeRepository(records)
-        val model = SessionHistoryViewModel(vehicle, restrictions, repository)
+        val deletions =
+            object : SessionDeletionRepository {
+                override suspend fun prepare(
+                    expected: PracticeSession,
+                    canRead: () -> Boolean,
+                ): SessionDeletionPreparation = error("Deletion is outside this read-only fixture")
+
+                override suspend fun delete(
+                    target: SessionDeletionTarget,
+                    canCommit: () -> Boolean,
+                ): SessionDeletionResult = error("Deletion is outside this read-only fixture")
+            }
+        val model = SessionHistoryViewModel(vehicle, restrictions, repository, deletions)
     }
 
     private class FakeRepository(

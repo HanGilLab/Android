@@ -27,6 +27,10 @@ import io.github.hangillab.hangil.core.domain.PracticeSelection
 import io.github.hangillab.hangil.core.domain.PracticeSession
 import io.github.hangillab.hangil.core.domain.PracticeSessionRepository
 import io.github.hangillab.hangil.core.domain.PreparedPractice
+import io.github.hangillab.hangil.core.domain.SessionDeletionPreparation
+import io.github.hangillab.hangil.core.domain.SessionDeletionRepository
+import io.github.hangillab.hangil.core.domain.SessionDeletionResult
+import io.github.hangillab.hangil.core.domain.SessionDeletionTarget
 import io.github.hangillab.hangil.core.domain.SessionFinishResult
 import io.github.hangillab.hangil.core.domain.SessionStartResult
 import io.github.hangillab.hangil.core.domain.UxRestrictionState
@@ -77,6 +81,18 @@ class SessionHistoryDisclosureBoundaryTest {
             object : DrivingRestrictionsProvider {
                 override val restrictions: StateFlow<DrivingRestrictions> = restrictionState
             }
+        val deletions =
+            object : SessionDeletionRepository {
+                override suspend fun prepare(
+                    expected: PracticeSession,
+                    canRead: () -> Boolean,
+                ): SessionDeletionPreparation = error("Deletion is outside this read-only fixture")
+
+                override suspend fun delete(
+                    target: SessionDeletionTarget,
+                    canCommit: () -> Boolean,
+                ): SessionDeletionResult = error("Deletion is outside this read-only fixture")
+            }
         lateinit var model: SessionHistoryViewModel
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
             val factory =
@@ -84,7 +100,7 @@ class SessionHistoryDisclosureBoundaryTest {
                     override fun <T : ViewModel> create(modelClass: Class<T>): T {
                         assertTrue("실제 History ViewModel만 직접 생성해야 합니다", modelClass == SessionHistoryViewModel::class.java)
                         @Suppress("UNCHECKED_CAST")
-                        return SessionHistoryViewModel(vehicle, restrictions, repository) as T
+                        return SessionHistoryViewModel(vehicle, restrictions, repository, deletions) as T
                     }
                 }
             model = ViewModelProvider(compose.activity, factory)[SessionHistoryViewModel::class.java]

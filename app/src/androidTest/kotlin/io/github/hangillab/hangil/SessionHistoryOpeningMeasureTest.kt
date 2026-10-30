@@ -72,6 +72,13 @@ class SessionHistoryOpeningMeasureTest {
         )
         val stage = checkNotNull(arguments.getString("measurementStage")) { "기준 또는 비교 단계를 명시해야 합니다" }
         assertTrue("정의한 기준/비교 단계만 실행해야 합니다", stage == "baseline" || stage == "comparison")
+        val measurementSeries = arguments.getString("measurementSeries")
+        val measurementPrefix =
+            when (measurementSeries) {
+                null -> "history-opening"
+                "session-deletion-entry-v1" -> "history-opening-session-deletion-entry-v1"
+                else -> throw AssertionError("정의한 실험 계열만 실행해야 합니다")
+            }
         val productCommit = checkNotNull(arguments.getString("declaredProductCommit")) { "제품 원본 선언이 필요합니다" }
         val harnessRevision = checkNotNull(arguments.getString("declaredHarnessRevision")) { "계측 원본 선언이 필요합니다" }
         assertTrue("제품 원본은 완전한 SHA여야 합니다", productCommit.matches(Regex("[0-9a-fA-F]{40}")))
@@ -88,9 +95,24 @@ class SessionHistoryOpeningMeasureTest {
             configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_NO,
         )
         val graph = EntryPointAccessors.fromApplication(context.applicationContext, RecordingTestEntryPoint::class.java)
-        val baselineFile = File(context.cacheDir, "measurements/history-opening-baseline.json")
+        val baselineFile = File(context.cacheDir, "measurements/$measurementPrefix-baseline.json")
         val baselineHash = if (stage == "comparison") completedBaselineHash(baselineFile) else null
-        val baseline = if (stage == "comparison") readBaseline(baselineFile).also(::validateBaseline) else null
+        val baseline =
+            if (stage == "comparison") {
+                readBaseline(baselineFile).also {
+                    validateBaseline(it)
+                    assertTrue(
+                        "기준과 비교는 같은 실험 계열이어야 합니다",
+                        if (measurementSeries == null) {
+                            !it.has("measurementSeries")
+                        } else {
+                            it.optString("measurementSeries") == measurementSeries
+                        },
+                    )
+                }
+            } else {
+                null
+            }
         runBlocking {
             val before = snapshot(graph)
             assertTrue("기존 활성 연습이 있으면 계측을 시작하지 않습니다", before.sessions.none { it.isActive })
@@ -115,7 +137,7 @@ class SessionHistoryOpeningMeasureTest {
                 requireSameJson(baseline.getJSONObject("environment"), environment, "environment")
                 requireSameJson(baseline.getJSONObject("measurementContract"), contract, "measurementContract")
             }
-            val output = File(context.cacheDir, "measurements/history-opening-$stage.json")
+            val output = File(context.cacheDir, "measurements/$measurementPrefix-$stage.json")
             reserve(output)
             val warmups = JSONArray()
             val samples = JSONArray()
@@ -144,6 +166,7 @@ class SessionHistoryOpeningMeasureTest {
                     .put("returnedHome", false)
                     .put("excludedSamples", 0)
                     .put("causalPerformanceClaim", false)
+            if (measurementSeries != null) report.put("measurementSeries", measurementSeries)
             if (baseline != null) {
                 report
                     .put("baselineSha256", baselineHash)
