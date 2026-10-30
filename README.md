@@ -344,83 +344,131 @@ private class WriteBlocked : RuntimeException()
 )
 ```
 
-### 3. 선택이 바뀐 지도에 이전 조회와 View의 완료가 섞이는 문제 해결
+### 3. 지도 조회, 렌더 완료와 실제 입력의 소유권 연결
 
 **문제**
 
-코스 선택이 바뀌거나 준비 조회를 재시도한 뒤 이전 결과가 도착하면 새 지도 대신 지난 코스를 정상으로 표시할 수 있습니다. 같은 시도의 MapView가 재생성되거나 오류 뒤 완료 콜백이 늦게 도착하는 경우도 구분해야 합니다.
+코스 선택이나 재조회가 바뀐 뒤 지난 결과와 View의 완료가 새 지도를 정상으로 만들 수 있었습니다. 렌더 완료를 제한해도 이미 남아 있는 네이티브 MapView는 별도로 입력을 처리했습니다. 화면이 P로 남은 순간 최신 D 값이 도착하면, 지도의 직접 조작과 출처 버튼도 같은 안전 조건을 따라야 했습니다.
 
 **원인**
 
-조회 취소와 화면 재조합은 준비 결과의 전달, MapView의 렌더 콜백과 동시에 끝나지 않습니다. 재시도 번호만으로는 현재 조회를 소유한 화면과 같은 시도에서 새로 만든 View를 식별할 수 없고, 버퍼 앞에서만 세대를 검사하면 이미 전달 중인 결과가 재시도의 로딩 상태를 덮을 수 있습니다.
+조회 취소, Compose 재구성과 SDK의 입력/예약 동작은 함께 끝나지 않습니다. 기존 조회 세대와 View 토큰은 완료 콜백을 구분했지만 네이티브 dispatch에는 연결되지 않았습니다. 실제 Route의 MapView에 같은 수평 drag를 전달하고 SDK camera를 읽으니, P 표시를 유지한 합성 D 입력에서도 이동했습니다. 차량 값은 수신 시점을 제어한 명시적 합성이며 실제 DDS나 주행 상황을 재현했다는 뜻은 아닙니다.
 
 **해결**
 
-다른 선택을 수신하면 카탈로그 해석 전에 기존 지도를 LOADING으로 무효화합니다. 준비 상태와 렌더 식별자를 함께 원자적으로 갱신하고, 반영 시점에 살아 있는 reader와 조회 세대를 다시 검사합니다. 렌더 완료는 최신 주차/UX 허용, 현재 시도와 View 토큰, LOADING 상태가 모두 맞을 때만 받아들입니다.
+수신한 선택 변경은 해석 전에 기존 지도를 무효화하고, reader/조회 세대/준비/렌더 식별자를 같은 상태로 갱신하는 원리를 유지했습니다. 이를 네이티브 입력까지 연결해 현재 attempt와 View token, 살아 있는 준비 소유권, 최신 P와 UX 허용을 dispatch 직전에 다시 판단합니다.
+
+STARTED와 허용 상태의 입력 수명을 구분하고, 허용된 DOWN의 시각/장치/입력 출처가 같은 MOVE/UP만 전달하도록 했습니다. 거부한 DOWN도 기억해 P 복귀가 지난 입력을 새 요청으로 바꾸지 않게 했습니다. 주행 잠금, STOP과 폐기에서는 CANCEL과 공개 취소 API로 진행 중 터치와 취소 가능한 SDK 동작, 출처 창을 정리합니다. 접근성/나침반/출처 동작도 캡처한 입력 소유권을 확인하도록 연결했습니다.
 
 **결과**
 
-수신한 선택 변경과 명시적 재조회 이후 이전 조회나 View의 결과가 현재 지도를 정상으로 만들지 못하게 했습니다. 오류 뒤 늦은 완료도 실패 상태를 덮지 않습니다. 이 경계는 앱이 수신한 준비 결과에 적용하며 Room이 아직 방출하지 않은 변경까지 즉시 감지한다고 보장하지 않습니다.
+기존 수신 경계에서는 선택 변경과 재조회 뒤 이전 조회나 View의 결과가 현재 지도를 정상으로 만들지 못하게 했습니다. 오류 뒤 늦은 완료도 실패 상태를 덮지 않습니다. 이 경계는 앱이 수신한 준비 결과에 적용하며 Room이 아직 방출하지 않은 변경까지 즉시 감지한다고 보장하지 않습니다.
+
+같은 실제 MapView에 옛 P 표시가 남아 있어도 최신 D에서 drag와 wheel이 camera를 바꾸지 않으며, P의 직접 이동과 pinch는 유지했습니다. STOP 전의 입력과 출처 창 콜백은 재개한 화면의 권한을 빌려 실행되지 않습니다. 실제 DDS의 P-D-P에서도 지도 제거와 주차 후 복귀, 코스 교체/화면 재생성/닫기와 재진입을 기본/확대 다크에서 확인했습니다.
+
+동일 지도 진입 계측은 각 워밍업5회 뒤30회, Android14/API34 Pleos/JDK17 debug/font1.0/라이트에서 중앙값2127.52→2000.33ms로 관찰됐습니다. 차이는−127.19ms(−5.98%)지만 사분위 분포가 겹치고 캐시/실행 순서 영향이 남아 있어 성능 향상은 미확정입니다. 입력 전달과 실제 렌더 확인/스크롤/검사 비용을 포함한 [측정 조건과 시각 원값](docs/development/map-live-input-boundary.md)을 함께 남겼습니다.
+
 
 **대체안/회고**
 
-flatMapLatest의 취소만 믿으면 이미 전달 중인 결과가 남을 수 있어 조회 세대와 반영 직전 검사를 함께 사용했습니다. 준비와 렌더를 별도로 갱신하는 대신 하나의 상태에 묶어 새 시도에 지난 코스가 섞이지 않게 했습니다. 스타일 수신은 화면 완성이 아니므로 실제 렌더 완료를 구분하며, 고정 시연 지점을 실제 주행 경로나 길안내로 해석하지 않습니다.
+OnTouchListener나 Compose 버튼 잠금만으로 자식 입력까지 막을 수 없어 native dispatch 앞에서 검사했습니다. flatMapLatest의 취소나 버튼 잠금만으로 네이티브 View와 SDK에 남은 작업을 중단할 수는 없었습니다. 조회/렌더와 입력의 소유권을 따로 식별하되 같은 준비 상태에 연결했습니다. SDK 내부 예약 객체를 수정하는 방법은 버전 의존이 커서 선택하지 않고 공개 dispatch, CANCEL과 취소 API를 사용했습니다.
+
+직접 drag/pinch와 지연 없는 휠 경로는 지원 대상으로 두었습니다. 관성, 더블탭/퀵줌과 keyboard/trackball 카메라 제어는 이번 입력 정책에서 껐습니다. 새 허용 세대보다 먼저 시작한 gesture는 보수적으로 거부할 수 있습니다. BACK과 출처/저작권 열람의 동작은 별도로 보존하는 범위입니다. 이 작업은 입력 정확성 경계이며 처리 속도 향상으로 설명하지 않습니다. 표시한 지점은 고정 공개 장소의 시연용 중심점으로, GPS 위치나 실제 주행 경로를 대표하지 않습니다.
 
 **코드**
 
-[수신 선택을 먼저 무효화한 뒤 해석하는 준비 스트림 발췌](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/MapViewModel.kt#L215-L219)
+[현재 View와 준비 소유권을 연결한 입력 허용 판정](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/MapViewModel.kt#L102-L110)
 
 ```kotlin
-flow { emitAll(repository.observeSelection()) }
-    .map { selection ->
-        invalidateReceivedSelection(owner, epoch, selection)
-        resolve(selection)
-    }.onStart { emit(MapPreparationState.Loading) }
+fun canInteractWithMap(
+    attempt: Int,
+    token: Long,
+): Boolean {
+    if (token <= 0) return false
+    val current = render.value
+    return current.id == attempt && current.token == token && current.load == MapLoadState.READY &&
+        canRender(current) && render.value === current
+}
 ```
 
-[준비와 렌더 식별자를 함께 갱신하는 반영 함수](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/MapViewModel.kt#L145-L168)
+[reader와 조회 세대의 소유권](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/MapViewModel.kt#L158-L162), [입력 DOWN과 후속 이벤트의 소유권](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/MapInputEpoch.kt#L50-L79)도 같은 경계에서 확인합니다.
+
+[SDK로 전달하기 직전의 실제 touch 진입점](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/ParkedMapView.kt#L173-L217)
 
 ```kotlin
-private fun publishPreparation(
-    owner: Reader,
-    state: MapPreparationState,
-    epoch: Long,
-) {
-    if (reader.get() !== owner || !owner.job.isActive || queryEpoch.get() != epoch) return
-    render.update {
-        if (reader.get() !== owner || !owner.job.isActive || queryEpoch.get() != epoch) {
-            it
+private inline fun deliverTouch(
+    event: MotionEvent,
+    deliver: () -> Boolean,
+): Boolean {
+    if (released) return true
+    recheckInput()
+    if (event.actionMasked == MotionEvent.ACTION_CANCEL) {
+        cancelNativeTouch()
+        input.endTouch()
+        return true
+    }
+    val allowed = livePermission() && input.owns(input.epoch)
+    val accepted =
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+            cancelNativeTouch()
+            input.beginTouch(
+                event.downTime,
+                event.eventTime,
+                SystemClock.uptimeMillis(),
+                event.deviceId,
+                event.source,
+            )
         } else {
-            val permitted =
-                if (state is MapPreparationState.Ready && !allowsInteraction()) {
-                    MapPreparationState.Locked
-                } else {
-                    state
-                }
-            if (it.reader == owner.id && it.queryEpoch == epoch && it.preparation == permitted) {
-                it
-            } else {
-                MapRenderAttempt(it.id + 1, reader = owner.id, preparation = permitted, queryEpoch = epoch)
-            }
+            input.ownsTouch(
+                event.downTime,
+                event.eventTime,
+                SystemClock.uptimeMillis(),
+                event.deviceId,
+                event.source,
+            )
+        }
+    if (!allowed || !accepted) {
+        if (!allowed) recheckInput()
+        return true
+    }
+    rememberTouch(event)
+    return try {
+        deliver()
+    } finally {
+        if (event.actionMasked == MotionEvent.ACTION_UP) {
+            input.endTouch()
+            forgetTouch()
         }
     }
 }
 ```
 
-[현재 View의 실제 완료만 받아들이는 렌더 처리](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/MapViewModel.kt#L96-L108)
+[주행 잠금과 수명 종료에서 공개 SDK 작업 정리](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/ParkedMapView.kt#L370-L394)
 
 ```kotlin
-fun onMapRendered(
-    attempt: Int,
-    token: Long,
-) {
-    if (token <= 0) return
-    render.update {
-        if (canRender(it) && it.id == attempt && it.token == token && it.load == MapLoadState.LOADING) {
-            it.copy(load = MapLoadState.READY)
-        } else {
-            it
+private fun cancelNativeInput() {
+    if (released || revoking) return
+    revoking = true
+    try {
+        cancelNativeTouch()
+        input.endTouch()
+        cancelPendingInputEvents()
+        val now = SystemClock.uptimeMillis()
+        val cancel = MotionEvent.obtain(now, now, MotionEvent.ACTION_CANCEL, 0f, 0f, 0)
+        cancel.source = InputDevice.SOURCE_TRACKBALL
+        try {
+            // Bypass our unsupported-input entrypoint to cancel any SDK timeout safely.
+            super.onTrackballEvent(cancel)
+        } finally {
+            cancel.recycle()
         }
+        currentAttribution?.onStop()
+        boundMap?.let {
+            it.cancelTransitions()
+            it.cancelAllVelocityAnimations()
+        }
+    } finally {
+        revoking = false
     }
 }
 ```

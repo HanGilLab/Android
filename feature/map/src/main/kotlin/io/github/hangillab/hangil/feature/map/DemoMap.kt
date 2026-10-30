@@ -13,8 +13,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import io.github.hangillab.hangil.core.domain.CourseMapPreview
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.collect
 import org.maplibre.android.MapLibre
 import org.maplibre.android.RenderingEngine
 import org.maplibre.android.WellKnownTileServer
@@ -38,6 +42,8 @@ internal fun DemoMap(
     pointBorder: Int,
     contentDescription: String,
     onLoading: (Int) -> Long?,
+    canInteract: (Int, Long) -> Boolean,
+    inputChanges: Flow<Unit>,
     onRendered: (Int, Long) -> Unit,
     onFailed: (Int, Long) -> Unit,
     modifier: Modifier = Modifier,
@@ -45,10 +51,10 @@ internal fun DemoMap(
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
     val savedState = rememberSaveable(saver = MapViewSavedState.Saver) { MapViewSavedState() }
-    val token = remember(attempt) { onLoading(attempt) } ?: return
-    val active = remember(attempt) { AtomicBoolean(true) }
+    val token = remember(attempt, owner) { onLoading(attempt) } ?: return
+    val active = remember(attempt, owner) { AtomicBoolean(true) }
     val result =
-        remember(context, attempt) {
+        remember(context, attempt, token, owner) {
             createMap(
                 context,
                 savedState,
@@ -59,6 +65,10 @@ internal fun DemoMap(
                 pointFill,
                 pointText,
                 pointBorder,
+                canInteract = {
+                    active.get() && owner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) &&
+                        canInteract(attempt, token)
+                },
                 onRendered = { onRendered(attempt, token) },
                 onFailed = { onFailed(attempt, token) },
             )
@@ -66,6 +76,11 @@ internal fun DemoMap(
     val view = result.getOrNull()
     LaunchedEffect(result) { if (result.isFailure) onFailed(attempt, token) }
     if (view == null) return
+    LaunchedEffect(view, owner) {
+        owner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            inputChanges.collect { view.recheckInput() }
+        }
+    }
     DisposableEffect(view, owner) {
         val observer = MapViewLifecycle(view, savedState) { active.set(false) }
         val memory =
@@ -83,7 +98,14 @@ internal fun DemoMap(
             observer.destroy()
         }
     }
-    AndroidView(factory = { view }, modifier = modifier, update = { it.contentDescription = contentDescription })
+    AndroidView(
+        factory = { view },
+        modifier = modifier,
+        update = {
+            it.contentDescription = contentDescription
+            it.recheckInput()
+        },
+    )
 }
 
 private fun createMap(
@@ -96,9 +118,10 @@ private fun createMap(
     pointFill: Int,
     pointText: Int,
     pointBorder: Int,
+    canInteract: () -> Boolean,
     onRendered: () -> Unit,
     onFailed: () -> Unit,
-): Result<MapView> {
+): Result<ParkedMapView> {
     var view: MapView? = null
     return try {
         MapLibre.getInstance(context.applicationContext, null, WellKnownTileServer.MapLibre, RenderingEngine.Type.OPENGL)
@@ -112,7 +135,7 @@ private fun createMap(
                 .attributionEnabled(true)
                 .localIdeographFontFamilyEnabled(true)
                 .localIdeographFontFamily("sans-serif")
-        val mapView = MapView(context, options)
+        val mapView = ParkedMapView(context, options, canInteract)
         view = mapView
         mapView.addOnDidFailLoadingMapListener { fail() }
         mapView.addOnRenderErrorListener { fail() }
@@ -128,6 +151,7 @@ private fun createMap(
         mapView.getMapAsync { map ->
             if (active.get()) {
                 try {
+                    mapView.bindMap(map)
                     map.uiSettings.isAttributionEnabled = true
                     val styleUrl = "https://tiles.openfreemap.org/styles/" + if (dark) "dark" else "liberty"
                     map.setStyle(styleUrl) { style ->

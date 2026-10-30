@@ -529,6 +529,132 @@ class MapViewModelTest {
             assertEquals(1, fixture.repository.maximumActive)
         }
 
+    @Test fun `denied first allocation exposes retry when a brief D P transition conflates before UI delivery`() =
+        runTest {
+            val fixture = Fixture()
+            subscribe(fixture)
+            val displayed = fixture.model.uiState.value
+            val attempt = displayed.attempt
+            assertEquals(MapLoadState.LOADING, displayed.load)
+            fixture.vehicle.state.value = parked().copy(gear = VehicleReading.Available(GearPosition.DRIVE))
+            assertEquals(displayed, fixture.model.uiState.value)
+            assertNull(fixture.model.onMapLoading(attempt))
+            fixture.vehicle.state.value = parked()
+            runCurrent()
+            assertTrue(fixture.model.uiState.value.allowsDetailedInteraction)
+            assertEquals(MapLoadState.FAILED, fixture.model.uiState.value.load)
+            assertNull(fixture.model.onMapLoading(attempt))
+            assertEquals(MapLoadState.FAILED, fixture.model.uiState.value.load)
+            fixture.model.retry()
+            runCurrent()
+            val retried = fixture.model.uiState.value.attempt
+            assertNotEquals(attempt, retried)
+            val token = checkNotNull(fixture.model.onMapLoading(retried))
+            fixture.model.onMapRendered(retried, token)
+            runCurrent()
+            assertTrue(fixture.model.canInteractWithMap(retried, token))
+            assertEquals(MapLoadState.READY, fixture.model.uiState.value.load)
+            assertEquals(1, fixture.repository.maximumActive)
+            assertEquals(0, fixture.repository.writes)
+        }
+
+    @Test fun `native input requires a fully ready current renderer token and active source owner`() =
+        runTest {
+            val fixture = Fixture()
+            assertFalse(fixture.model.canInteractWithMap(0, 0))
+            val subscriber = subscribe(fixture)
+            val attempt = fixture.model.uiState.value.attempt
+            val first = checkNotNull(fixture.model.onMapLoading(attempt))
+            assertFalse(fixture.model.canInteractWithMap(attempt, first))
+            fixture.model.onMapRendered(attempt, first)
+            runCurrent()
+            assertTrue(fixture.model.canInteractWithMap(attempt, first))
+            assertFalse(fixture.model.canInteractWithMap(attempt, 0))
+            assertFalse(fixture.model.canInteractWithMap(attempt + 1, first))
+            val recreated = checkNotNull(fixture.model.onMapLoading(attempt))
+            assertFalse(fixture.model.canInteractWithMap(attempt, first))
+            fixture.model.onMapRendered(attempt, recreated)
+            runCurrent()
+            assertTrue(fixture.model.canInteractWithMap(attempt, recreated))
+            fixture.model.onMapFailed(attempt, recreated)
+            assertFalse(fixture.model.canInteractWithMap(attempt, recreated))
+            assertNull(fixture.model.onMapLoading(attempt))
+            subscriber.cancelAndJoin()
+            runCurrent()
+            assertFalse(fixture.model.canInteractWithMap(attempt, recreated))
+            assertEquals(0, fixture.repository.active)
+            assertEquals(0, fixture.repository.writes)
+        }
+
+    @Test fun `native input rejects live denied values while a ready parked UI is still displayed`() =
+        runTest {
+            val denied =
+                listOf(
+                    parked().copy(gear = VehicleReading.Available(GearPosition.DRIVE)) to unrestricted(),
+                    parked().copy(connection = ConnectionState.DISCONNECTED) to unrestricted(),
+                    parked().copy(connection = ConnectionState.PERMISSION_DENIED) to unrestricted(),
+                    parked().copy(gear = VehicleReading.Unknown) to unrestricted(),
+                    parked().copy(gear = VehicleReading.PermissionDenied) to unrestricted(),
+                    parked() to unrestricted().copy(parkingState = ParkingState.UNKNOWN),
+                    parked() to unrestricted().copy(uxRestrictionState = UxRestrictionState.UNKNOWN),
+                    parked() to unrestricted().copy(uxRestrictionState = UxRestrictionState.RESTRICTED),
+                )
+            for ((vehicle, restrictions) in denied) {
+                val fixture = Fixture()
+                val subscriber = subscribe(fixture)
+                val attempt = fixture.model.uiState.value.attempt
+                val token = checkNotNull(fixture.model.onMapLoading(attempt))
+                fixture.model.onMapRendered(attempt, token)
+                runCurrent()
+                val displayed = fixture.model.uiState.value
+                assertTrue(displayed.allowsDetailedInteraction && displayed.load == MapLoadState.READY)
+                assertTrue(fixture.model.canInteractWithMap(attempt, token))
+                fixture.vehicle.state.value = vehicle
+                fixture.restrictions.restrictions.value = restrictions
+                assertEquals(displayed, fixture.model.uiState.value)
+                assertFalse(fixture.model.canInteractWithMap(attempt, token))
+                subscriber.cancelAndJoin()
+                runCurrent()
+                assertEquals(0, fixture.repository.active)
+            }
+        }
+
+    @Test fun `input change observation does not own preparation and old course permission is fenced before resolution`() =
+        runTest {
+            val fixture = Fixture()
+            var notifications = 0
+            val inputObserver =
+                backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+                    fixture.model.mapInputChanges.collect { notifications++ }
+                }
+            runCurrent()
+            assertEquals(0, fixture.repository.calls)
+            val subscriber = subscribe(fixture)
+            val attempt = fixture.model.uiState.value.attempt
+            val token = checkNotNull(fixture.model.onMapLoading(attempt))
+            fixture.model.onMapRendered(attempt, token)
+            runCurrent()
+            val initialNotifications = notifications
+            var checked = false
+            fixture.catalog.onResolve = { selection ->
+                if (selection?.courseId == "b") {
+                    checked = true
+                    assertFalse(fixture.model.canInteractWithMap(attempt, token))
+                }
+            }
+            fixture.repository.values.value = selection("b")
+            runCurrent()
+            assertTrue(checked)
+            assertTrue(notifications > initialNotifications)
+            assertFalse(fixture.model.canInteractWithMap(attempt, token))
+            assertEquals(1, fixture.repository.maximumActive)
+            subscriber.cancelAndJoin()
+            runCurrent()
+            assertEquals(0, fixture.repository.active)
+            assertFalse(fixture.model.canInteractWithMap(attempt, token))
+            inputObserver.cancelAndJoin()
+        }
+
     private fun TestScope.subscribe(fixture: Fixture): Job {
         val job = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { fixture.model.uiState.collect {} }
         runCurrent()
