@@ -419,6 +419,176 @@ class SessionHistoryViewModelTest {
             assertEquals("new", ready(fixture).session.sessionId)
         }
 
+    @Test fun `a live denied source receipt must not strand history after a conflated D to P return`() =
+        runTest {
+            val fixture = Fixture()
+            val driveReceipt = CompletableDeferred<Unit>()
+            val parkedReceipt = CompletableDeferred<Unit>()
+            var sourceStarts = 0
+            var attemptedDriveReceipt = false
+            var restoredP = false
+            val fresh =
+                fixture.repository.values.value
+                    .map { it.copy(courseTitle = "새로 검증한 저장 제목") }
+            fixture.repository.source = {
+                flow {
+                    sourceStarts++
+                    if (sourceStarts == 1) {
+                        emit(fixture.repository.values.value)
+                        driveReceipt.await()
+                        fixture.repository.values.value = fresh
+                        // This continuation does not yield between changing the live value and
+                        // source receipt. The VM's map calls receive before any downstream channel.
+                        fixture.vehicleState.value = parked().copy(gear = VehicleReading.Available(GearPosition.DRIVE))
+                        attemptedDriveReceipt = true
+                        try {
+                            emit(fresh)
+                        } finally {
+                            // The separate access collector may see only this latest P value.
+                            fixture.vehicleState.value = parked()
+                            restoredP = true
+                        }
+                        parkedReceipt.await()
+                        emit(fresh)
+                        awaitCancellation()
+                    } else {
+                        emitAll(fixture.repository.values)
+                    }
+                }
+            }
+            subscribe(fixture)
+            val previous = ready(fixture)
+            assertEquals("a", previous.session.sessionId)
+            driveReceipt.complete(Unit)
+            runCurrent()
+            assertTrue("The existing reader must attempt a real source emission with the live D value", attemptedDriveReceipt)
+            assertTrue("The same source continuation must restore P even if it is cancelled", restoredP)
+            assertTrue(fixture.model.canRead())
+            parkedReceipt.complete(Unit)
+            runCurrent()
+            assertTrue(
+                "Live P with a subsequently received valid history must recover from the direct live-gate rejection",
+                fixture.model.uiState.value is SessionHistoryUiState.Ready,
+            )
+            val current = ready(fixture)
+            assertEquals(fresh.first(), current.session)
+            assertNotEquals(previous.generation, current.generation)
+            assertFalse(fixture.model.older(previous.session.sessionId, previous.generation))
+            assertEquals(1, fixture.repository.active)
+            assertEquals(1, fixture.repository.maximumActive)
+        }
+
+    @Test fun `direct denied receipts cancel queries and wait for fully permitted fresh validation without losing selection`() =
+        runTest {
+            val blocked =
+                listOf(
+                    parked() to unrestricted().copy(uxRestrictionState = UxRestrictionState.UNKNOWN),
+                    parked() to unrestricted().copy(parkingState = ParkingState.UNKNOWN),
+                    parked() to unrestricted().copy(uxRestrictionState = UxRestrictionState.RESTRICTED),
+                    parked().copy(connection = ConnectionState.PERMISSION_DENIED) to unrestricted(),
+                    parked().copy(gear = VehicleReading.PermissionDenied) to unrestricted(),
+                )
+            for ((deniedVehicle, deniedRestrictions) in blocked) {
+                val fixture = Fixture()
+                val deliver = CompletableDeferred<Unit>()
+                var sourceStarts = 0
+                var attemptedDeniedReceipt = false
+                val fresh =
+                    fixture.repository.values.value
+                        .map { it.copy(taskTitle = "다시 확인한 저장 과제") }
+                fixture.repository.source = {
+                    flow {
+                        sourceStarts++
+                        if (sourceStarts == 1) {
+                            emit(fixture.repository.values.value)
+                            deliver.await()
+                            fixture.repository.values.value = fresh
+                            fixture.vehicleState.value = deniedVehicle
+                            fixture.restrictionState.value = deniedRestrictions
+                            attemptedDeniedReceipt = true
+                            emit(fresh)
+                            awaitCancellation()
+                        } else {
+                            emitAll(fixture.repository.values)
+                        }
+                    }
+                }
+                val job = subscribe(fixture)
+                val latest = ready(fixture)
+                assertTrue(fixture.model.older(latest.session.sessionId, latest.generation))
+                val previous = ready(fixture)
+                assertEquals("b", previous.session.sessionId)
+                deliver.complete(Unit)
+                runCurrent()
+                assertTrue(attemptedDeniedReceipt)
+                assertFalse(fixture.model.canRead())
+                assertEquals(SessionHistoryUiState.Locked, fixture.model.uiState.value)
+                assertEquals(0, fixture.repository.active)
+                assertEquals(1, fixture.repository.calls)
+                assertFalse(fixture.model.newer(previous.session.sessionId, previous.generation))
+                assertFalse(fixture.model.retry())
+                fixture.vehicleState.value = parked()
+                fixture.restrictionState.value = unrestricted()
+                val current = ready(fixture)
+                assertEquals(fresh[1], current.session)
+                assertEquals(1, current.index)
+                assertNotEquals(previous.generation, current.generation)
+                assertFalse(fixture.model.newer(previous.session.sessionId, previous.generation))
+                assertEquals(1, fixture.repository.active)
+                assertEquals(1, fixture.repository.maximumActive)
+                assertEquals(0, fixture.repository.writes)
+                job.cancelAndJoin()
+                runCurrent()
+                assertEquals(0, fixture.repository.active)
+            }
+        }
+
+    @Test fun `a denied begin query gate must recover when its D to P transition is conflated`() =
+        runTest {
+            val live = MutableStateFlow(parked())
+            var liveReads = 0
+            var deniedBeforeQuery = false
+            val access =
+                object : StateFlow<VehicleState> by live {
+                    override val value: VehicleState
+                        get() {
+                            liveReads++
+                            if (liveReads == 2) {
+                                // The first live read publishes access. The next is beginQuery's
+                                // own gate, before opening any repository flow. Capture an actual
+                                // denied backing value and restore P before its observer runs.
+                                live.value = parked().copy(gear = VehicleReading.Available(GearPosition.DRIVE))
+                                val denied = live.value
+                                deniedBeforeQuery = true
+                                live.value = parked()
+                                return denied
+                            }
+                            return live.value
+                        }
+                }
+            val fixture = Fixture(accessSource = access)
+            subscribe(fixture)
+            assertTrue("The direct beginQuery gate must observe the controlled denied backing value", deniedBeforeQuery)
+            assertTrue(fixture.model.canRead())
+            assertTrue(
+                "A current permitted value must not remain in Loading or Locked after the denied initial query gate",
+                fixture.model.uiState.value is SessionHistoryUiState.Ready,
+            )
+            assertEquals("a", ready(fixture).session.sessionId)
+            assertEquals(1, fixture.repository.calls)
+            assertEquals(1, fixture.repository.active)
+            assertEquals(1, fixture.repository.maximumActive)
+        }
+
+    @Test fun `a live denied exception publication recovers after its D to P transition is conflated`() =
+        runTest { deniedFailureRecovery(FailureMode.Exception) }
+
+    @Test fun `a live denied normal completion publication recovers after its D to P transition is conflated`() =
+        runTest { deniedFailureRecovery(FailureMode.NormalCompletion) }
+
+    @Test fun `a live denied internal cancellation publication recovers after its D to P transition is conflated`() =
+        runTest { deniedFailureRecovery(FailureMode.InternalCancellation) }
+
     @Test fun `cursor boundaries do not change identity or generation`() =
         runTest {
             val fixture = Fixture(listOf(session("only")))
@@ -707,6 +877,85 @@ class SessionHistoryViewModelTest {
             assertFalse(fixture.model.older(old.session.sessionId, old.generation))
             assertEquals("a", ready(fixture).session.sessionId)
         }
+
+    private suspend fun TestScope.deniedFailureRecovery(mode: FailureMode) {
+        val live = MutableStateFlow(parked())
+        var armedFailureGate = false
+        var readDeniedAtFailure = false
+        var restoredP = false
+        val access =
+            object : StateFlow<VehicleState> by live {
+                override val value: VehicleState
+                    get() {
+                        if (armedFailureGate) {
+                            armedFailureGate = false
+                            live.value = parked().copy(gear = VehicleReading.Available(GearPosition.DRIVE))
+                            val denied = live.value
+                            readDeniedAtFailure = denied.gear == VehicleReading.Available(GearPosition.DRIVE)
+                            // Restore only after capturing the actual denied live snapshot. Restoring
+                            // in an upstream source finally would happen before the VM catch and
+                            // would test ordinary permitted failure instead of this failure gate.
+                            try {
+                                return denied
+                            } finally {
+                                live.value = parked()
+                                restoredP = true
+                            }
+                        }
+                        return live.value
+                    }
+            }
+        val fixture = Fixture(accessSource = access)
+        val fail = CompletableDeferred<Unit>()
+        var sourceStarts = 0
+        val fresh =
+            fixture.repository.values.value
+                .map { it.copy(goalTitle = "실패 이후 다시 검증한 저장 목표") }
+        fixture.repository.source = {
+            flow {
+                sourceStarts++
+                if (sourceStarts == 1) {
+                    emit(fixture.repository.values.value)
+                    fail.await()
+                    fixture.repository.values.value = fresh
+                    armedFailureGate = true
+                    when (mode) {
+                        FailureMode.Exception -> throw IOException("fixture failure gate")
+                        FailureMode.NormalCompletion -> Unit
+                        FailureMode.InternalCancellation -> throw CancellationException("fixture internal failure gate")
+                    }
+                } else {
+                    emitAll(fixture.repository.values)
+                }
+            }
+        }
+        val job = subscribe(fixture)
+        val latest = ready(fixture)
+        assertTrue(fixture.model.older(latest.session.sessionId, latest.generation))
+        val previous = ready(fixture)
+        assertEquals("b", previous.session.sessionId)
+        fail.complete(Unit)
+        runCurrent()
+        assertTrue("The VM failure publication must read the controlled denied live snapshot", readDeniedAtFailure)
+        assertTrue("The live source must restore P before its access observer resumes", restoredP)
+        assertTrue(job.isActive)
+        assertTrue(fixture.model.canRead())
+        assertTrue(
+            "A denied failure publication must revalidate access instead of leaving live P with Locked and no query",
+            fixture.model.uiState.value is SessionHistoryUiState.Ready,
+        )
+        val current = ready(fixture)
+        assertEquals(fresh[1], current.session)
+        assertEquals(1, current.index)
+        assertNotEquals(previous.generation, current.generation)
+        assertFalse(fixture.model.newer(previous.session.sessionId, previous.generation))
+        assertEquals(2, fixture.repository.calls)
+        assertEquals(1, fixture.repository.active)
+        assertEquals(1, fixture.repository.maximumActive)
+        assertEquals(0, fixture.repository.writes)
+    }
+
+    private enum class FailureMode { Exception, NormalCompletion, InternalCancellation }
 
     private fun TestScope.subscribe(
         fixture: Fixture,

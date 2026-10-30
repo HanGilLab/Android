@@ -52,7 +52,7 @@ adb -s "$HANGIL_TEST_DEVICE" shell am instrument -w -r \
 ## 화면과 DDS 시나리오
 
 - 실제 P와 UX 허용을 확인하고 홈의 `home_history`로 진입한다. 최신 종료 기록부터 실제 저장된 모든 종료 기록을 이전 방향으로 읽고, 다시 새 기록 방향으로 이동한다. 카탈로그 대신 원래 저장한 제목/버튼 시각/시연 표시와 위치를 비교한다.
-- 각 기록의 텍스트 레이아웃에 시각적 overflow나 말줄임이 없고, 스크롤 후 원문과 이전/다음/닫기 버튼 전체가 실제 가용 viewport 안에 보이는지 확인한다. 모든 상세가 한 화면에 동시에 보인다는 의미는 아니다.
+- 각 기록의 실제 줄/문자 경계, 원문 전체 오프셋과 maxLines를 대조해 잘림과 말줄임이 없고, 스크롤 후 원문과 이전/다음/닫기 버튼 전체가 실제 가용 viewport 안에 보이는지 확인한다. Compose1.9.4의 semantics GetTextLayoutResult는 실제 layoutSize보다 넓은 문단 컨테이너를 다시 만들 수 있으므로 hasVisualOverflow 하나만으로 잘림을 단정하지 않는다. 실제 문자/줄 경계 검사와 양성/음성 fixture를 함께 사용하며 실패 직전 화면과 익명 레이아웃 수치는 비공개로 보존한다. 모든 상세가 한 화면에 동시에 보인다는 의미는 아니다.
 - 지난 기록을 선택한 채 Activity를 재생성하고 CREATED에서 RESUMED로 복귀한다. 매번 새 검증 뒤 같은 선택과 저장 원문을 확인한다.
 - `HISTORY_AWAIT_D`가 나오면 외부 DDS를 D로 전환한다. 실제 SDK의 연결된 D 수신과 `history_locked`, 상세 태그/조작의 제거를 함께 확인한다.
 - `HISTORY_AWAIT_P`가 나오면 DDS를 원래 P로 복원한다. 실제 P와 UX 허용을 모두 확인한 뒤 같은 지난 기록으로 돌아오는지 확인한다.

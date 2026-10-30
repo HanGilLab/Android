@@ -226,7 +226,11 @@ class SessionHistoryViewModel
             query: Query,
         ): Boolean =
             synchronized(lock) {
-                if (!currentReader(owner, query.epoch) || !query.job.isActive || !canRead()) return@synchronized false
+                if (!currentReader(owner, query.epoch) || !query.job.isActive) return@synchronized false
+                if (!canRead()) {
+                    restartDeniedQueryLocked(owner, query)
+                    return@synchronized false
+                }
                 owner.query = query
                 ended = null
                 publishLocked(SessionHistoryUiState.Loading)
@@ -241,9 +245,7 @@ class SessionHistoryViewModel
         ) = synchronized(lock) {
             if (!currentQuery(owner, query)) return@synchronized
             if (!canRead()) {
-                owner.query = null
-                ended = null
-                publishLocked(SessionHistoryUiState.Locked)
+                restartDeniedQueryLocked(owner, query)
                 return@synchronized
             }
             publishLocked(SessionHistoryUiState.Loading)
@@ -256,14 +258,38 @@ class SessionHistoryViewModel
             publishSelectionLocked(finished)
         }
 
+        /** Caller holds lock and has already observed a denied live value. */
+        private fun restartDeniedQueryLocked(
+            owner: Reader,
+            query: Query,
+        ) {
+            if (!currentReader(owner, query.epoch) || !query.job.isActive ||
+                (owner.query != null && owner.query !== query)
+            ) {
+                return
+            }
+            owner.query = null
+            ended = null
+            publishLocked(SessionHistoryUiState.Locked)
+            // A new access subscription sees the current value even when a short D/P transition
+            // was conflated. A sustained denied value settles at Locked without a database query.
+            epoch++
+            requests.value = epoch
+            query.job.cancel()
+        }
+
         private fun publishFailure(
             owner: Reader,
             query: Query,
             reason: SessionHistoryUiState.FailureReason,
         ) = synchronized(lock) {
             if (!currentQuery(owner, query)) return@synchronized
+            if (!canRead()) {
+                restartDeniedQueryLocked(owner, query)
+                return@synchronized
+            }
             ended = null
-            publishLocked(if (canRead()) SessionHistoryUiState.Failed(reason) else SessionHistoryUiState.Locked)
+            publishLocked(SessionHistoryUiState.Failed(reason))
         }
 
         private fun publishSelectionLocked(records: List<PracticeSession>) {

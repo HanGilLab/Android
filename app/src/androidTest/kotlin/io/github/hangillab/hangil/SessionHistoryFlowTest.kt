@@ -12,7 +12,14 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.MultiParagraph
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextMeasurer
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.IntSize
 import androidx.lifecycle.Lifecycle
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -33,6 +40,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import org.json.JSONArray
+import org.json.JSONObject
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Rule
@@ -44,6 +53,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.util.Locale
+import kotlin.math.ceil
 import io.github.hangillab.hangil.feature.home.R as HomeR
 
 /**
@@ -58,6 +68,7 @@ import io.github.hangillab.hangil.feature.home.R as HomeR
 @RunWith(AndroidJUnit4::class)
 class SessionHistoryFlowTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
+    private var layoutPolicyFixturesVerified = false
 
     @Test fun endedHistoryKeepsStoredSnapshotsAndSelectionAcrossLifecycleAndDrivingLock() {
         assumeTrue(
@@ -262,6 +273,10 @@ class SessionHistoryFlowTest {
                     .orEmpty()
                     .any { it.text == expected }
             }
+        var hasMatchingLayouts = false
+        var layoutsFit = false
+        val metrics = JSONArray()
+        var fixturesVerifiedNow = false
         compose.runOnIdle {
             val layouts = mutableListOf<TextLayoutResult>()
             for (node in textNodes) {
@@ -270,13 +285,211 @@ class SessionHistoryFlowTest {
                     ?.action
                     ?.invoke(layouts)
             }
-            assertTrue("원문 글자의 레이아웃을 실제로 확인해야 합니다 ($tag)", layouts.any { it.layoutInput.text.text == expected })
-            assertTrue(
-                "저장 원문을 말줄임이나 글자 잘림 없이 읽을 수 있어야 합니다 ($tag)",
-                layouts.filter { it.layoutInput.text.text == expected }.all { layout ->
-                    !layout.hasVisualOverflow && (0 until layout.lineCount).none { layout.isLineEllipsized(it) }
-                },
+            val matching = layouts.filter { it.layoutInput.text.text == expected }
+            hasMatchingLayouts = matching.isNotEmpty()
+            if (hasMatchingLayouts && !layoutPolicyFixturesVerified) {
+                verifyLayoutPolicyFixtures(matching.first())
+                layoutPolicyFixturesVerified = true
+                fixturesVerifiedNow = true
+            }
+            layoutsFit = hasMatchingLayouts && matching.all { textGeometryFits(it, expected) }
+            matching.forEach { metrics.put(layoutMetrics(it)) }
+        }
+        if (fixturesVerifiedNow) phase("HISTORY_LAYOUT_POLICY_FIXTURES_PASSED")
+        // UI automation runs off Main and before the assertion lets ActivityScenario tear down.
+        if (!hasMatchingLayouts || !layoutsFit) preserveLayoutFailure(tag, metrics)
+        assertTrue("원문 글자의 레이아웃을 실제로 확인해야 합니다 ($tag)", hasMatchingLayouts)
+        assertTrue("저장 원문을 말줄임이나 글자 잘림 없이 읽을 수 있어야 합니다 ($tag)", layoutsFit)
+    }
+
+    /**
+     * Compose 1.9.4 ParagraphLayoutCache.slowCreateTextLayoutResultOrNull reconstructs semantics
+     * with prevConstraints.copyMaxDimensions(), but retains the tight layoutSize. Its resulting
+     * didOverflowWidth compares that size with the paragraph container, not painted line bounds.
+     * Check complete logical coverage and actual line/character boxes instead. Both the text
+     * layout and the independent physical node viewport must fit; only 1 px rounding is allowed.
+     */
+    private fun textGeometryFits(
+        layout: TextLayoutResult,
+        expected: String,
+    ): Boolean {
+        if (layout.layoutInput.text.text != expected || expected.isEmpty() || layout.size.width <= 0 || layout.size.height <= 0 ||
+            layout.lineCount <= 0 || layout.multiParagraph.didExceedMaxLines
+        ) {
+            return false
+        }
+        val tolerance = 1f
+        var coveredUntil = 0
+        for (line in 0 until layout.lineCount) {
+            val start = layout.getLineStart(line)
+            val end = layout.getLineEnd(line, visibleEnd = false)
+            if (start != coveredUntil || end < start || end > expected.length || layout.isLineEllipsized(line)) return false
+            if (!insideLayout(
+                    layout.getLineLeft(line),
+                    layout.getLineTop(line),
+                    layout.getLineRight(line),
+                    layout.getLineBottom(line),
+                    layout.size,
+                    tolerance,
+                )
+            ) {
+                return false
+            }
+            coveredUntil = end
+        }
+        if (coveredUntil != expected.length) return false
+        for (offset in expected.indices) {
+            if (expected[offset].isWhitespace()) continue
+            val box = layout.getBoundingBox(offset)
+            if (!insideLayout(box.left, box.top, box.right, box.bottom, layout.size, tolerance)) return false
+        }
+        return true
+    }
+
+    private fun insideLayout(
+        left: Float,
+        top: Float,
+        right: Float,
+        bottom: Float,
+        size: IntSize,
+        tolerance: Float,
+    ): Boolean =
+        left.isFinite() && top.isFinite() && right.isFinite() && bottom.isFinite() &&
+            left <= right && top <= bottom && left >= -tolerance && top >= -tolerance &&
+            right <= size.width + tolerance && bottom <= size.height + tolerance
+
+    /** Real native paragraphs with fixed fixture text; these are not stored history or SDK evidence. */
+    private fun verifyLayoutPolicyFixtures(sample: TextLayoutResult) {
+        val input = sample.layoutInput
+        val measurer = TextMeasurer(input.fontFamilyResolver, input.density, input.layoutDirection, cacheSize = 0)
+        val fixtureText = "Layout fixture"
+        val style = input.style.copy(textAlign = TextAlign.Left)
+        val measured =
+            measurer.measure(
+                AnnotatedString(fixtureText),
+                style = style,
+                constraints = Constraints(maxWidth = 1504),
+                skipCache = true,
             )
+        val wide =
+            MultiParagraph(
+                measured.multiParagraph.intrinsics,
+                Constraints(maxWidth = maxOf(1504, measured.size.width + 128)),
+            )
+        val tight =
+            IntSize(
+                ceil((0 until wide.lineCount).maxOf { wide.getLineRight(it) }.toDouble()).toInt(),
+                ceil(wide.height.toDouble()).toInt(),
+            )
+        val semantics = TextLayoutResult(measured.layoutInput, wide, tight)
+        assertTrue("문단 컨테이너 폭 오탐을 실제 Compose 문단으로 재현해야 합니다", semantics.didOverflowWidth)
+        assertTrue("전체 글자가 맞는 타이트한 semantics 레이아웃은 허용해야 합니다", textGeometryFits(semantics, fixtureText))
+        val horizontalClip = TextLayoutResult(measured.layoutInput, wide, IntSize(maxOf(1, tight.width / 2), tight.height))
+        assertTrue("실제 가로 글자 잘림은 계속 거부해야 합니다", !textGeometryFits(horizontalClip, fixtureText))
+        val verticalClip = TextLayoutResult(measured.layoutInput, wide, IntSize(tight.width, maxOf(1, tight.height / 2)))
+        assertTrue("실제 세로 글자 잘림은 계속 거부해야 합니다", !textGeometryFits(verticalClip, fixtureText))
+        val longText = "Layout fixture ".repeat(30)
+        val ellipsized =
+            measurer.measure(
+                AnnotatedString(longText),
+                style = style,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                constraints = Constraints(maxWidth = maxOf(64, tight.width / 2)),
+                skipCache = true,
+            )
+        assertTrue("말줄임 음성 표본은 실제 말줄임을 포함해야 합니다", (0 until ellipsized.lineCount).any { ellipsized.isLineEllipsized(it) })
+        assertTrue("말줄임으로 누락된 글자는 거부해야 합니다", !textGeometryFits(ellipsized, longText))
+        val prefix = measurer.measure(AnnotatedString("Layout"), style = style, skipCache = true)
+        val missingSuffix = TextLayoutResult(measured.layoutInput, prefix.multiParagraph, prefix.size)
+        assertTrue("입력 원문의 뒷부분이 배치되지 않으면 거부해야 합니다", !textGeometryFits(missingSuffix, fixtureText))
+    }
+
+    /** Anonymous dimensions only: never serialize text, session identity or observation times. */
+    private fun layoutMetrics(layout: TextLayoutResult): JSONObject {
+        val lineBottoms = JSONArray()
+        val ellipsis = JSONArray()
+        val lines = JSONArray()
+        for (line in 0 until layout.lineCount) {
+            lineBottoms.put(layout.getLineBottom(line).toDouble())
+            ellipsis.put(layout.isLineEllipsized(line))
+            lines.put(
+                JSONObject()
+                    .put("left", layout.getLineLeft(line).toDouble())
+                    .put("right", layout.getLineRight(line).toDouble())
+                    .put("top", layout.getLineTop(line).toDouble())
+                    .put("bottom", layout.getLineBottom(line).toDouble())
+                    .put("start", layout.getLineStart(line))
+                    .put("end", layout.getLineEnd(line, visibleEnd = false))
+                    .put("visibleEnd", layout.getLineEnd(line, visibleEnd = true))
+                    .put("ellipsis", layout.isLineEllipsized(line)),
+            )
+        }
+        val constraints = layout.layoutInput.constraints
+        return JSONObject()
+            .put("size", JSONObject().put("width", layout.size.width).put("height", layout.size.height))
+            .put(
+                "multiParagraph",
+                JSONObject().put("width", layout.multiParagraph.width.toDouble()).put("height", layout.multiParagraph.height.toDouble()),
+            ).put("didOverflowWidth", layout.didOverflowWidth)
+            .put("didOverflowHeight", layout.didOverflowHeight)
+            .put("hasVisualOverflow", layout.hasVisualOverflow)
+            .put("lineCount", layout.lineCount)
+            .put("didExceedMaxLines", layout.multiParagraph.didExceedMaxLines)
+            .put("lines", lines)
+            .put("lineBottoms", lineBottoms)
+            .put("ellipsis", ellipsis)
+            .put(
+                "constraints",
+                JSONObject()
+                    .put("minWidth", constraints.minWidth)
+                    .put("maxWidth", constraints.maxWidth)
+                    .put("minHeight", constraints.minHeight)
+                    .put("maxHeight", constraints.maxHeight),
+            )
+    }
+
+    private fun preserveLayoutFailure(
+        tag: String,
+        layouts: JSONArray,
+    ) {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val details =
+            JSONObject()
+                .put("schema", 1)
+                .put("tag", tag)
+                .put("matchingLayouts", layouts.length())
+                .put("layouts", layouts)
+                .put("frontMatchesExpected", false)
+                .put("foregroundAvailable", false)
+                .put("screenshotCaptured", false)
+        val directory = File(instrumentation.targetContext.cacheDir, "screenshots")
+        var screenshot: Bitmap? = null
+        try {
+            val automation = instrumentation.uiAutomation
+            val foreground = automation.rootInActiveWindow?.packageName?.toString()
+            details.put("foregroundAvailable", foreground != null)
+            details.put("frontMatchesExpected", foreground == instrumentation.targetContext.packageName)
+            val captured = automation.takeScreenshot()
+            screenshot = captured
+            if (captured != null && (directory.isDirectory || directory.mkdirs())) {
+                val stored =
+                    File(directory, "history-layout-failure.png").outputStream().use {
+                        captured.compress(Bitmap.CompressFormat.PNG, 100, it)
+                    }
+                details.put("screenshotCaptured", stored)
+            }
+        } catch (_: Exception) {
+            // Diagnostic failure must never replace the original text layout assertion failure.
+        } finally {
+            screenshot?.recycle()
+        }
+        try {
+            if (directory.isDirectory || directory.mkdirs()) {
+                File(directory, "history-layout-failure.json").writeText(details.toString(2))
+            }
+        } catch (_: Exception) {
+            // Keep the original failure even if private evidence cannot be written.
         }
     }
 
