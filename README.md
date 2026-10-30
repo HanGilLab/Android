@@ -68,6 +68,11 @@
 |:---:|:---:|
 | [<img src="docs/images/screenshots/hangil-history.png" alt="종료 이력의 당시 코스와 목표, 과제를 저장 순서대로 확인하는 실제 한길 화면 영역" width="400" />](docs/images/screenshots/hangil-history.png) | [<img src="docs/images/screenshots/hangil-history-dark.png" alt="확대 글자와 다크 테마에서 지난 연습의 당시 준비를 확인하는 실제 한길 화면 영역" width="400" />](docs/images/screenshots/hangil-history-dark.png) |
 
+| 같은 코스에 남긴 마무리 기록, 기본/확대 다크 |
+|:---:|
+| [<img src="docs/images/screenshots/hangil-history-summary.png" alt="고정 시연 코스의 저장된 마무리 기록 수와 과제별 펼침을 보여 주는 실제 한길 요약 영역" width="800" />](docs/images/screenshots/hangil-history-summary.png) |
+| [<img src="docs/images/screenshots/hangil-history-summary-dark.png" alt="확대 글자와 다크에서 저장된 마무리 기록 수를 확인하는 실제 한길 요약 영역" width="800" />](docs/images/screenshots/hangil-history-summary-dark.png) |
+
 | 같은 코스의 다음 과제 선택 | 확대 글자와 다크 |
 |:---:|:---:|
 | [<img src="docs/images/screenshots/hangil-next-practice.png" alt="최근 마무리한 시연 코스에서 다음 과제를 직접 고르는 실제 한길 화면" width="400" />](docs/images/screenshots/hangil-next-practice.png) | [<img src="docs/images/screenshots/hangil-next-practice-dark.png" alt="확대 글자와 다크에서 선택 전 저장을 막고 다음 과제를 고르는 실제 한길 화면" width="400" />](docs/images/screenshots/hangil-next-practice-dark.png) |
@@ -87,6 +92,7 @@
 | **활성 연습의 차량 상태 관찰** | 앱 화면이 켜진 동안 SDK가 전달한 기어, 방향지시등과 브레이크 상태를 세션에 기록합니다. 미확인, 미지원, 거부와 오류를 보존하고, 화면 이탈과 종료 뒤에는 수집하지 않습니다. |
 | **주차 후 차량 기록 확인** | 최근 종료 세션의 저장된 SDK 관찰을 한 번에 하나씩 확인합니다. 당시 기어, 방향지시등과 브레이크, 연결과 앱 관찰 시각을 보고 이전/다음으로 저장 순서를 따라갑니다. |
 | **지난 연습 열람** | 종료 이력을 저장 순서대로 한 번에 하나씩 확인합니다. 당시 목표, 코스, 과제와 시작/마무리 버튼 시각을 보여 주며, 이탈과 주행 잠금 후에도 같은 기록으로 돌아옵니다. |
+| **코스별 마무리 기록 요약** | 저장 당시 목표, 코스, 버전과 표시 정보가 같은 마무리 기록을 모아 과제별 저장 기록 수를 확인합니다. |
 | **같은 코스의 다음 과제 준비** | 최근 마무리한 연습의 목표와 시연 코스를 다시 확인하고 다음 과제 하나를 직접 골라 저장합니다. 선택이나 취소만으로 기존 준비를 바꾸지 않으며 새 연습은 별도로 시작합니다. |
 | **주차 후 사용자 메모** | 최근 마무리한 연습에 짧은 메모를 직접 입력하고 저장, 수정, 명시적으로 지웁니다. 저장 내용은 앱을 다시 열어도 복원하며 미저장 초안과 구분합니다. |
 | **코스별 시연 지도** | 준비한 코스에 맞춰 서울 시청 또는 광화문 주변의 공개 장소 세 곳을 번호로 표시합니다. 시연 출처와 지도 출처를 구분하고 실제 이동 경로나 현재 위치로 표현하지 않습니다. |

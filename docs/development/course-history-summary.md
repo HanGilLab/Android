@@ -26,25 +26,46 @@
 | 항목 | 상태 | 실제 확인 범위 |
 |---|---|---|
 | 제품 변경 전 이력 진입 기준값 | 실행 성공 | 실제 SDK P+UX/Activity/Room, 5회 워밍업과 30회 원값, 원래 domain 보존과 홈 복귀, 설치 APK 해시 일치 |
-| 기준 측정의 외부 원본/설정 대조 | 실행 성공 | 전체 SQLite 원래 값/자료형/순서/sequence와 권한/runtime/글꼴/야간/IME/프록시 완전 일치, 이번 소유 AVD 종료 |
-| 요약 domain/History ViewModel 단위 경계 | 실행 성공 | 각각14개/49개, 실패/오류/건너뜀0. 실제 차량/UI 성능이나 실기 성공을 대신하지 않는다 |
-| 전체 verify/테스트 APK | 실행 성공 | JDK17 품질/모듈 경계/Lint/debug/unsigned release, 단위422개 실패/오류/건너뜀0과 실제 계측 APK 빌드. 실제 요약 화면과 비교 계측은 별도다 |
-| 요약 추가 후 이력 진입 비교 계측 | 미실행 | 아래 동일 경로로 실행해야 하며 새 비용이나 개선폭은 아직 없다 |
-| 요약 화면의 기본 라이트/확대 다크 실기 | 미실행 | 아래 native 시나리오가 있으며 성공으로 기록하지 않는다 |
+| 기준 측정의 외부 원본/설정 대조 | 실행 성공 | 기준 측정 뒤 전체 SQLite 원래 값/자료형/순서/sequence와 권한/runtime/글꼴/야간/IME/프록시 완전 일치, 기준 측정 소유 AVD 종료 |
+| 요약 domain/History ViewModel 단위 경계 | 실행 성공 | 각각14개/49개로 관련 단위63개, 실패/오류/건너뜀0. 전체422개, 실제 UI 실기와 전후 측정 표본을 서로 대신하지 않는다 |
+| 전체 verify/테스트 APK | 실행 성공 | JDK17 품질/모듈 경계/Lint/debug/unsigned release, 단위38개 suite/422개 실패/오류/건너뜀0과 실제 계측 APK 빌드 |
+| 요약 추가 후 이력 진입 비교 계측 | 실행 성공 | 5회 워밍업과30개 표본, 원래 domain 보존과 홈 복귀, 기준 파일 해시 불변 및 로컬 APK 해시 일치 |
+| 요약 화면의 기본 글꼴1.0/라이트 실기 | 1회 실행 성공 | 실제9개 기록의 원문/요약/과제별 펼침, 이전/다음, 재생성/STOP, 닫기/재진입, D/P와 원래 domain 대조 |
+| 요약 화면의 글꼴1.3/다크 최초 시도 | 1회 실패 | 외부 실행자가90초 안에 실제 DDS D 전환을 보내지 못해 `TimeoutCancellationException`. 앱 결함으로 판정하지 않는다 |
+| 요약 화면의 글꼴1.3/다크 재시도 | 1회 실행 성공 | 같은 코드/timeout/조건에서 실제 D/P 전환을 보낸 뒤 기본과 동일한 원문/요약/탐색/생명주기/원본 검증 통과 |
+| 비교 및 요약 실기의 외부 최종 원본/설정 대조 | 실행 성공 | 전체 SQLite 원래 값/자료형/순서/sequence와 권한/runtime/글꼴/야간/IME/프록시 완전 일치. 이번 소유 AVD/포워딩/임시 브라우저 탭 종료 |
 
-기준 제품은 `23ea21ff3cacdf1d6164bae8c615aaa05e19e241`, 기준 계측 원본은 `b98f31a98005ae87e7f7f4b23dee97c242716df7`다. 정제한 실제 기준값은 다음과 같다. 단위는 ms이며 느린 표본을 제거하지 않았다.
+요약 실기의 대상 소스는 `eac86f683512786a8e5170a9bca2282bc260078a`다. 기본 라이트는1회 성공, 확대 다크는2회 시도 중 최초1회 실패와 최종1회 성공이며 실패를 성공에 합치거나 없던 것으로 처리하지 않는다. 각 테마의 성공 표본은1회이므로 반복 사용 안정성이나 다른 환경까지 보장하지 않는다.
 
-| 실제 계측된 이력 진입 | 값 |
-|---|---:|
-| 측정 표본 수 | 30 |
-| 중앙값 | 255.634167 |
-| Q1 / Q3 | 243.132167 / 290.861000 |
-| 사분위 범위(Q3-Q1) | 47.728833 |
-| 최솟값 / 최댓값 | 222.689917 / 350.548209 |
-| 측정 성공 / 실패 / 시각 누락 / 미실행 / 제외 | 30 / 0 / 0 / 0 / 0 |
-| 워밍업 성공 / 실패 / 시각 누락 / 미실행 | 5 / 0 / 0 / 0 |
+최초 확대 시도는 `HISTORY_AWAIT_D` 뒤 외부 실행자가 실제 DDS D를90초 안에 보내지 못한 제어 실패다. 실패 직후 실제 Console의 P 상태를 확인하고 원래 모든 DB 값/자료형/순서/sequence, 권한과 기타 설정 보존을 확인한 뒤 재개했다. 그 시점에는 의도한 글꼴/야간 검증 조건만 원래 값과 달랐다. 코드/timeout/검사 조건을 완화하지 않은 재시도에서 실제 D/P를 제어해 성공했다. 과거 최초 확대 실행의 `history_finished` 대기 시간초과 원인은 여전히 미확정이며 이번 DDS 미전환 실패와 같은 원인이나 이번에 해결한 앱 결함으로 묶지 않는다.
 
-이 값은 계측이 포함된 기존 이력 진입의 기준이다. 요약 추가 후 값은 아직 없으므로 성능 개선이나 안정적인 추가 비용을 주장하지 않는다. 앱 내부 렌더링/프레임/GPU/SDK 시간, 사용자 읽기/행동 속도로 해석하지 않는다. 원문 source, 실제 시각/기기 환경, 개별 표본과 원시 로그는 비공개 근거에만 보존한다.
+최종 외부 대조에서는 schema4의 준비1/종료9/관찰15/메모0에 대해 모든 원래 필드, SQLite 자료형/순서/sequence와 권한/runtime 플래그, 글꼴/야간/IME/프록시의 완전 일치를 확인했다. 이는 native domain 비교와 별도로 확인한 결과다.
+
+기준 제품은 `23ea21ff3cacdf1d6164bae8c615aaa05e19e241`, 기준 계측 원본은 `b98f31a98005ae87e7f7f4b23dee97c242716df7`다. 비교 제품과 계측 원본은 `eac86f683512786a8e5170a9bca2282bc260078a`다. 아래는 동일한 단일 계측 경로에서 수집한 정제 결과이며 개별 원값은 비공개로 보존한다. 단위는 ms이고 느린 표본도 제거하지 않았다.
+
+### 실제 계측된 이력 진입 분포
+
+| 지표 | 요약 추가 전 기준 | 요약 추가 후 비교 |
+|---|---:|---:|
+| 측정 표본 수 | 30 | 30 |
+| 중앙값 | 255.634167 | 282.1220835 |
+| Q1 | 243.132167 | 261.400792 |
+| Q3 | 290.861000 | 303.671375 |
+| 사분위 범위(Q3-Q1) | 47.728833 | 42.270583 |
+| 최솟값 | 222.689917 | 219.565250 |
+| 최댓값 | 350.548209 | 424.448251 |
+| 측정 성공 / 실패 / 시각 누락 / 미실행 / 제외 | 30 / 0 / 0 / 0 / 0 | 30 / 0 / 0 / 0 / 0 |
+| 워밍업 성공 / 실패 / 시각 누락 / 미실행 | 5 / 0 / 0 / 0 | 5 / 0 / 0 / 0 |
+
+사분위수는 정렬한30개 원값의 아래/위 절반에서 각각 중앙값을 구했다. 타이머는 실제 클릭부터 동일 Ready/코스 표시와 Compose idle까지이며 클릭 전달/동기화/semantics 비용을 포함한다. 원래 source/기록/카탈로그/환경과 계측 계약이 같고 기준 파일 해시가 불변임을 비교 계측에서 확인했다. 비교 메서드의 원래 domain 전체 값 보존과 실기 종료 후 외부 전체 SQLite/설정 보존의 최종 대조도 각각 통과했다.
+
+### 절대 차이와 상대 변화의 해석
+
+이번 순차 실행에서 비교 중앙값은 기준보다 +26.4879165 ms였다. 중앙값의 상대 변화는 `(282.1220835 - 255.634167) / 255.634167 × 100`으로 약 +10.361649544%이며 양수는 더 긴 계측 지연을 뜻한다. 개선율로 표현하지 않는다. 기준값이0이면 상대 변화율을 계산하지 않는 정책을 유지한다.
+
+기준의 Q1/Q3는243.132167/290.861000 ms, 비교의 Q1/Q3는261.400792/303.671375 ms로 분포가 겹친다. 순차 전후 실행이므로 환경 이동, 캐시, 발열과 실행 순서 영향을 제거하지 못했고 계측 동기화 비용도 포함한다. 관찰한 중앙값 증가를 실제 앱 내부의 확정 추가 비용으로 인과 해석하거나 성능 향상으로 주장하지 않는다.
+
+기존 진입에 새 요약 정보를 추가하는 비용을 관찰한 결과이며 기능이 동등한 최적화 전후 시험이 아니다. 앱 내부 렌더링/프레임/GPU/SDK 시간이나 사용자 읽기/행동 속도로 확대하지 않는다. 원문 source, 실제 시각/기기 환경, 개별 표본과 원시 로그는 비공개 근거에만 보존한다.
 
 ## 실행 전 보존과 조건
 
@@ -64,7 +85,7 @@ env JAVA_HOME="$HANGIL_JDK17_HOME" ./scripts/verify.sh
 env JAVA_HOME="$HANGIL_JDK17_HOME" ./gradlew --no-daemon --console=plain :app:assembleDebugAndroidTest
 ```
 
-아래 명령에서 `HANGIL_TEST_DEVICE`는 외부 실행자가 소유한 전용 장치의 비공개 변수다. 실제 식별자나 개인 경로를 공개 문서/로그에 넣지 않는다. 명령만으로 사전 보존이나 DDS/설정 복구가 수행되지는 않는다.
+아래 명령에서 `HANGIL_TEST_DEVICE`는 외부 실행자가 소유한 전용 장치, `HANGIL_TEST_USER`는 현재 승인된 AAOS 사용자를 지정하는 비공개 변수다. 외부 실행자가 실제 전면 사용자와 설치 대상의 대응을 확인하고 baseline/comparison/flow 모두 `--user`를 명시한다. 실제 장치/사용자 ID나 개인 경로를 출력하거나 공개 문서/로그에 넣지 않는다. 명령만으로 사전 보존이나 DDS/설정 복구가 수행되지는 않는다.
 
 ## 같은 경로의 기준/비교 계측
 
@@ -75,7 +96,7 @@ env JAVA_HOME="$HANGIL_JDK17_HOME" ./gradlew --no-daemon --console=plain :app:as
 기준 명령은 아직 기준 파일이 없는 승인된 실행의 형식이다. 현재 완료된 기준을 삭제하거나 덮어써 재실행하는 절차가 아니다.
 
 ```bash
-adb -s "$HANGIL_TEST_DEVICE" shell am instrument -w -r \
+adb -s "$HANGIL_TEST_DEVICE" shell am instrument --user "$HANGIL_TEST_USER" -w -r \
   -e manualHistoryOpeningMeasure true \
   -e measurementStage baseline \
   -e declaredProductCommit "$HANGIL_BASELINE_PRODUCT_COMMIT" \
@@ -87,7 +108,7 @@ adb -s "$HANGIL_TEST_DEVICE" shell am instrument -w -r \
 비교도 같은 단일 메서드를 사용한다.
 
 ```bash
-adb -s "$HANGIL_TEST_DEVICE" shell am instrument -w -r \
+adb -s "$HANGIL_TEST_DEVICE" shell am instrument --user "$HANGIL_TEST_USER" -w -r \
   -e manualHistoryOpeningMeasure true \
   -e measurementStage comparison \
   -e declaredProductCommit "$HANGIL_COMPARISON_PRODUCT_COMMIT" \
@@ -113,7 +134,7 @@ comparison은 완료된 baseline의 실제5회/30개 원값/통계를 재계산�
 확장한 [SessionHistoryFlowTest](../../app/src/androidTest/kotlin/io/github/hangillab/hangil/SessionHistoryFlowTest.kt)의 `endedHistoryKeepsStoredSnapshotsAndSelectionAcrossLifecycleAndDrivingLock`만 선택한다. 이 시나리오는 기본 글꼴1.0/라이트와 글꼴1.3/다크에서 각각 실행한다. 외부 실행자가 원래 설정을 보존하고 검사 조건을 적용한 뒤 실패해도 복원한다. native 검사는 권한/설정을 바꾸지 않는다.
 
 ```bash
-adb -s "$HANGIL_TEST_DEVICE" shell am instrument -w -r \
+adb -s "$HANGIL_TEST_DEVICE" shell am instrument --user "$HANGIL_TEST_USER" -w -r \
   -e manualSessionHistory true \
   -e class 'io.github.hangillab.hangil.SessionHistoryFlowTest#endedHistoryKeepsStoredSnapshotsAndSelectionAcrossLifecycleAndDrivingLock' \
   io.github.hangillab.hangil.debug.test/androidx.test.runner.AndroidJUnitRunner
