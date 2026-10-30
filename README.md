@@ -38,7 +38,7 @@
 
 ## 🚘 핵심 기능
 
-**목표 선택 → 코스와 과제 준비 → 연습 시작 → 마무리 기록 → 주차 후 메모**
+**목표 선택 → 코스와 과제 준비 → 연습 시작 → 마무리 기록 → 주차 후 메모 → 다음 과제 준비**
 
 실제 Pleos 에뮬레이터에서 동작을 확인한 앱 화면입니다. 코스와 과제는 고정 시연 내용입니다. 버튼을 누른 시각과 실제 SDK 차량 상태 관찰은 별도로 기록하며, 차량 상태는 활성 연습 중 앱 화면이 켜져 있을 때만 기록합니다. 위치와 실제 경로는 수집하지 않습니다. 사진을 누르면 원본 크기로 볼 수 있습니다.
 
@@ -68,6 +68,10 @@
 |:---:|:---:|
 | [<img src="docs/images/screenshots/hangil-history.png" alt="종료 이력의 당시 코스와 목표, 과제를 저장 순서대로 확인하는 실제 한길 화면 영역" width="400" />](docs/images/screenshots/hangil-history.png) | [<img src="docs/images/screenshots/hangil-history-dark.png" alt="확대 글자와 다크 테마에서 지난 연습의 당시 준비를 확인하는 실제 한길 화면 영역" width="400" />](docs/images/screenshots/hangil-history-dark.png) |
 
+| 같은 코스의 다음 과제 선택 | 확대 글자와 다크 |
+|:---:|:---:|
+| [<img src="docs/images/screenshots/hangil-next-practice.png" alt="최근 마무리한 시연 코스에서 다음 과제를 직접 고르는 실제 한길 화면" width="400" />](docs/images/screenshots/hangil-next-practice.png) | [<img src="docs/images/screenshots/hangil-next-practice-dark.png" alt="확대 글자와 다크에서 선택 전 저장을 막고 다음 과제를 고르는 실제 한길 화면" width="400" />](docs/images/screenshots/hangil-next-practice-dark.png) |
+
 | 메모 입력, 확대 글자와 다크 | 재실행 후 저장 메모 복원 |
 |:---:|:---:|
 | [<img src="docs/images/screenshots/hangil-memo-input.png" alt="직접 입력한 검증용 다섯 줄 초안을 저장 전에 보여 주는 실제 한길 메모 영역" width="400" />](docs/images/screenshots/hangil-memo-input.png) | [<img src="docs/images/screenshots/hangil-memo-restored.png" alt="프로세스 재실행 후 검증용 저장 메모와 수정/지우기 버튼을 보여 주는 실제 한길 영역" width="400" />](docs/images/screenshots/hangil-memo-restored.png) |
@@ -83,6 +87,7 @@
 | **활성 연습의 차량 상태 관찰** | 앱 화면이 켜진 동안 SDK가 전달한 기어, 방향지시등과 브레이크 상태를 세션에 기록합니다. 미확인, 미지원, 거부와 오류를 보존하고, 화면 이탈과 종료 뒤에는 수집하지 않습니다. |
 | **주차 후 차량 기록 확인** | 최근 종료 세션의 저장된 SDK 관찰을 한 번에 하나씩 확인합니다. 당시 기어, 방향지시등과 브레이크, 연결과 앱 관찰 시각을 보고 이전/다음으로 저장 순서를 따라갑니다. |
 | **지난 연습 열람** | 종료 이력을 저장 순서대로 한 번에 하나씩 확인합니다. 당시 목표, 코스, 과제와 시작/마무리 버튼 시각을 보여 주며, 이탈과 주행 잠금 후에도 같은 기록으로 돌아옵니다. |
+| **같은 코스의 다음 과제 준비** | 최근 마무리한 연습의 목표와 시연 코스를 다시 확인하고 다음 과제 하나를 직접 골라 저장합니다. 선택이나 취소만으로 기존 준비를 바꾸지 않으며 새 연습은 별도로 시작합니다. |
 | **주차 후 사용자 메모** | 최근 마무리한 연습에 짧은 메모를 직접 입력하고 저장, 수정, 명시적으로 지웁니다. 저장 내용은 앱을 다시 열어도 복원하며 미저장 초안과 구분합니다. |
 | **코스별 시연 지도** | 준비한 코스에 맞춰 서울 시청 또는 광화문 주변의 공개 장소 세 곳을 번호로 표시합니다. 시연 출처와 지도 출처를 구분하고 실제 이동 경로나 현재 위치로 표현하지 않습니다. |
 | **주행 중 상세 조작 잠금** | 주차와 UX 허용을 모두 확인해야 상세 조작을 허용합니다. 주행이나 상태 미확인에서는 준비 화면과 지도 조작을 잠급니다. |
