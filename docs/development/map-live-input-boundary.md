@@ -43,4 +43,4 @@
 
 실제 오류/재시도는 `PreparedCourseMapFlowTest#injectedRemoteTileFailureRetriesPreparedPreviewWithoutDataChanges`에 별도 `manualPreparedMapNetwork=true`를 전달했다. 첫 잘못된 옵션의 assumption 건너뜀은 미실행으로 보존하고, 명시 재실행에서 실제 remote tile request/error/실패 UI/재시도 재렌더와 proxy 복원을 확인했다. 기본/확대 다크의 실제 준비 지도 흐름과 Main 지도 BACK도 성공했으며 마지막 전체 DB/설정 비교는 동일했다.
 
-검증과 PR/CI의 최종 상태는 [작업 계획](../plans/active/2026-10-31-map-live-input-boundary.md)에 따로 기록한다. `scripts/summarize-case-evidence.py`의 지도 사례 보조 대상에 `MapInputEpochTest`를 연결했으며, 해당 JUnit 집계는 실제 native 실행이나 성능 측정을 대신하지 않는다.
+검증과 PR/CI의 최종 상태는 [작업 계획](../plans/completed/2026-10-31-map-live-input-boundary.md)에 따로 기록한다. `scripts/summarize-case-evidence.py`의 지도 사례 보조 대상에 `MapInputEpochTest`를 연결했으며, 해당 JUnit 집계는 실제 native 실행이나 성능 측정을 대신하지 않는다.
