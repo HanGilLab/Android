@@ -92,6 +92,7 @@
 | **활성 연습의 차량 상태 관찰** | 앱 화면이 켜진 동안 SDK가 전달한 기어, 방향지시등과 브레이크 상태를 세션에 기록합니다. 미확인, 미지원, 거부와 오류를 보존하고, 화면 이탈과 종료 뒤에는 수집하지 않습니다. |
 | **주차 후 차량 기록 확인** | 최근 종료 세션의 저장된 SDK 관찰을 한 번에 하나씩 확인합니다. 당시 기어, 방향지시등과 브레이크, 연결과 앱 관찰 시각을 보고 이전/다음으로 저장 순서를 따라갑니다. |
 | **지난 연습 열람** | 종료 이력을 저장 순서대로 한 번에 하나씩 확인합니다. 당시 목표, 코스, 과제와 시작/마무리 버튼 시각을 보여 주며, 이탈과 주행 잠금 후에도 같은 기록으로 돌아옵니다. |
+| **기기 내 종료 기록 삭제** | 지난 연습에서 종료 기록을 직접 골라 확인 후 연결된 차량 관찰과 메모를 함께 지웁니다. 진행 중 연습, 다른 기록과 준비는 보존합니다. |
 | **코스별 마무리 기록 요약** | 저장 당시 목표, 코스, 버전과 표시 정보가 같은 마무리 기록을 모아 과제별 저장 기록 수를 확인합니다. |
 | **같은 코스의 다음 과제 준비** | 최근 마무리한 연습의 목표와 시연 코스를 다시 확인하고 다음 과제 하나를 직접 골라 저장합니다. 선택이나 취소만으로 기존 준비를 바꾸지 않으며 새 연습은 별도로 시작합니다. |
 | **주차 후 사용자 메모** | 최근 마무리한 연습에 짧은 메모를 직접 입력하고 저장, 수정, 명시적으로 지웁니다. 저장 내용은 앱을 다시 열어도 복원하며 미저장 초안과 구분합니다. |
@@ -202,7 +203,7 @@ fun allowsPracticeInteraction(
         vehicle.toDrivingRestrictions(restrictions.uxRestrictionState).allowsDetailedInteraction
 ```
 
-[표시한 원본과 조회 세대를 최신 reader에서 재확인](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L88)
+[표시한 원본과 조회 세대를 최신 reader에서 재확인](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L104-L117)
 
 ```kotlin
 fun canRevealSummary(
@@ -253,95 +254,184 @@ SideEffect {
 }
 ```
 
-### 2. 저장 도중 잠금 전환과 중복 시작을 트랜잭션으로 처리
+### 2. 확인한 종료 기록만 연결 자료와 함께 원자적으로 삭제
 
 **문제**
 
-연습 시작 요청이 겹치면 활성 연습이 중복될 수 있고, 저장 중 주행 상태로 바뀌면 금지된 기록이 남을 수 있습니다. 이후 준비 내용을 바꿨을 때 과거 연습의 표시 내용도 달라져서는 안 됩니다.
+기존 이력에는 종료 기록을 지우는 경로가 없었습니다. 삭제 기능을 연결할 때는 사용자가 확인한 뒤에도 메모 수정, 다른 기록 선택이나 주행 상태 전환이 끼어들 수 있습니다. 세션 ID만으로 삭제하면 확인하지 않은 최신 메모까지 지우거나, 이전 화면의 확인이 재진입한 화면에서 실행될 수 있습니다. 세션과 연결된 차량 관찰, 메모를 서로 다른 쓰기로 나누어 지우면 일부 자료만 남을 수도 있습니다.
 
 **원인**
 
-화면의 중복 클릭 방지는 동시 요청과 재실행을 보장하지 못합니다. 저장 전에만 조건을 검사하면 실제 쓰기가 끝날 때의 상태 변화도 놓칩니다. 과거 기록을 현재 코스 정보로 다시 해석하면 시작 당시 맥락이 사라집니다.
+확인창을 여는 조회와 실제 삭제는 서로 다른 시점입니다. 메모는 같은 문장을 다시 저장해도 변경 토큰이 바뀌며, 메모가 없던 상태도 새 입력으로 달라집니다. 목록 갱신, 화면 수명과 DB 작업의 완료 순서도 같지 않아 행이 사라졌다는 통지만으로 삭제 성공을 판단할 수 없었습니다.
 
 **해결**
 
-Room 트랜잭션 안에서 허용 조건을 쓰기 전후로 검사하고, 두 번째 검사에서 잠기면 예외로 전체 쓰기를 롤백합니다. 활성 슬롯의 유일 인덱스로 저장소 수준에서도 한 개의 활성 연습만 허용합니다. 시작 당시 목표, 코스 버전, 과제와 표시명을 스냅샷으로 저장합니다.
+확인 조회에서 종료 세션 전체 스냅샷, 연결 관찰 수와 메모 버전(null 포함)을 고정했습니다. 명시 확인은 하나의 nonce에 연결하고 최신 P/UX, reader/조회 세대/선택 원본과 STARTED 소유권을 다시 확인합니다. Room 트랜잭션 안에서 같은 스냅샷을 재비교한 뒤 부모 세션을 지우고, 기존 FK CASCADE로 연결 자료를 함께 삭제합니다. 쓰기 전후에 허용 조건과 취소를 확인해 commit 전에 거부되면 연결 삭제도 롤백합니다.
+
+자기 삭제로 행이 사라진 통지는 처리 중인 요청에 연결해 보존하고 저장소의 명시적 결과를 기다립니다. 이미 없음, 진행 중, 변경 충돌과 차단은 완료로 바꾸지 않습니다.
 
 **결과**
 
-겹친 시작 요청에도 활성 연습은 하나만 남습니다. 저장 중 잠금으로 바뀐 요청은 롤백하고, 시작 당시의 코스와 과제는 이후 준비 내용 변경이나 DB 재열기에도 보존합니다.
+확인 뒤 메모, 선택, 조회나 화면 수명이 바뀌면 옛 확인을 버리고 새 확인을 요구합니다. 쓰기 뒤 차단된 요청은 부모와 연결 자료를 되돌리고, 다른 종료 기록, 진행 중 연습과 준비는 보존합니다. 저장소의 `Deleted` 결과를 받은 경우만 완료로 표시하며 다른 기록을 자동 선택하지 않습니다.
+
+같은 이력 진입을 Android14/API34 Pleos/JDK17 debug/font1.0/라이트에서 전후 각각 워밍업5회 뒤 웜30회 측정했습니다. 중앙값263.03→260.93ms, 차이−2.11ms(−0.80%)로 관찰됐지만 사분위 분포가 겹치고 순차 실행의 캐시/발열을 통제하지 못해 성능 향상은 확정하지 않았습니다. 입력/동기화/표시 확인 비용을 포함한 [조건과 원값](docs/development/ended-session-deletion.md)을 남겼습니다. 이 값은 기존 이력 진입의 관찰이며, 이전에 없던 삭제 동작의 속도 전후 비교나 개선율을 뜻하지 않습니다.
 
 **대체안/회고**
 
-UI의 버튼 잠금이나 프로세스 내부 Mutex만으로는 DB에 직접 들어오는 중복 쓰기를 막지 못합니다. 트랜잭션과 유일 인덱스를 함께 사용했습니다. 비정상 시각과 저장 오류를 0초나 성공으로 보정하지 않고 명시적으로 구분해 원래 데이터를 보존했습니다.
+UI 버튼 잠금이나 프로세스 내부 Mutex만으로는 다른 저장 경로의 메모 변경을 통제하지 못해 DB 트랜잭션 안의 재비교를 선택했습니다. 자식을 각각 삭제하는 방식 대신 기존 FK CASCADE를 활용해 부모 삭제와 연결 자료 정리를 묶었습니다. 행 소실 관찰과 성공 응답을 구분하고, 확인할 때의 원본/수명과 쓰기 요청의 nonce를 함께 확인했습니다. commit 이후 화면을 닫았다고 이미 끝난 삭제를 소급 복구한다고 보장하지는 않습니다.
 
 **코드**
 
-[시작 요청의 트랜잭션과 당시 준비 내용 저장](core/database/src/main/kotlin/io/github/hangillab/hangil/core/database/RoomPracticeSessionRepository.kt#L22-L64)
+[확인 조회에서 고정하는 종료 원본과 연결 자료 버전](core/domain/src/main/kotlin/io/github/hangillab/hangil/core/domain/SessionDeletionTarget.kt#L4-L8)
 
 ```kotlin
-override suspend fun start(
-    practice: PreparedPractice,
-    startedAtEpochMillis: Long,
+data class SessionDeletionTarget(
+    val session: PracticeSession,
+    val observationCount: Long,
+    val memoVersion: String?,
+)
+```
+
+[같은 확인 nonce의 중복 실행과 바뀐 선택을 차단](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L165-L183)
+
+```kotlin
+fun confirmDeletion(nonce: Long): Boolean {
+    val work =
+        synchronized(lock) {
+            val action = deletion?.takeIf { it.nonce == nonce } ?: return@synchronized null
+            if (action.phase != DeletionPhase.CONFIRMING) return@synchronized null
+            if (!currentDeletionContextLocked(action)) {
+                invalidateDeletionLocked()
+                return@synchronized null
+            }
+            val target = action.target ?: return@synchronized null
+            val job = viewModelScope.launch(start = CoroutineStart.LAZY) { deleteSession(action, target) }
+            action.phase = DeletionPhase.DELETING
+            action.job = job
+            deletionPublished.value = SessionDeletionUiState.Deleting(nonce, target)
+            job
+        } ?: return false
+    work.start()
+    return true
+}
+```
+
+[쓰기 순간의 job, reader/조회/선택과 최신 차량 조건 재확인](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L321-L350)
+
+```kotlin
+private fun canCommitDeletion(
+    action: DeletionAction,
+    job: Job,
+): Boolean =
+    synchronized(lock) {
+        action.phase == DeletionPhase.DELETING && action.job === job && job.isActive && currentDeletionContextLocked(action)
+    }
+
+private fun currentDeletionOwnerLocked(action: DeletionAction): Boolean =
+    deletion === action && currentQuery(action.owner, action.query) &&
+        selectedId == action.session.sessionId && canRead() && action.canKeepOpen()
+
+private fun currentDeletionContextLocked(action: DeletionAction): Boolean =
+    currentDeletionOwnerLocked(action) && !selectionLost &&
+        currentSelectionLocked(action.session.sessionId, action.generation)?.session == action.session
+
+private fun currentSelectionLocked(
+    expectedSessionId: String,
+    expectedGeneration: Long,
+): SessionHistoryUiState.Ready? {
+    val owner = reader ?: return null
+    val query = owner.query ?: return null
+    if (!currentQuery(owner, query) || !canRead() || selectionLost || selectedId != expectedSessionId) return null
+    val current = published.value as? SessionHistoryUiState.Ready ?: return null
+    val records = ended ?: return null
+    return current.takeIf {
+        it.session.sessionId == expectedSessionId && it.generation == expectedGeneration &&
+            records.getOrNull(it.index) == it.session && it.summary.source == it.session
+    }
+}
+```
+
+[실제 DB에서 확인 스냅샷을 재비교한 뒤 연결 자료까지 삭제](core/database/src/main/kotlin/io/github/hangillab/hangil/core/database/RoomSessionDeletionRepository.kt#L40-L64)
+
+```kotlin
+override suspend fun delete(
+    target: SessionDeletionTarget,
     canCommit: () -> Boolean,
-): SessionStartResult {
-    if (startedAtEpochMillis <= 0) return SessionStartResult.InvalidTime
-    return try {
+): SessionDeletionResult =
+    try {
         database.withTransaction {
             requirePermission(canCommit)
-            val active = database.practiceSessionDao().active()
-            val prepared = catalog.resolve(database.preparationDao().current()?.selection()) as? Preparation.Ready
+            val actual = findCheckedSession(target.session.sessionId)
             val result =
                 when {
-                    active != null -> SessionStartResult.AlreadyActive(active.session())
-                    prepared?.practice != practice -> SessionStartResult.PreparationChanged
+                    actual == null -> SessionDeletionResult.Missing
+                    actual.isActive -> SessionDeletionResult.Active
+                    actual != target.session -> SessionDeletionResult.Changed
+                    readTarget(actual) != target -> SessionDeletionResult.Changed
                     else -> {
-                        val entity =
-                            PracticeSessionEntity(
-                                sessionId = UUID.randomUUID().toString(),
-                                goalId = practice.goal.id,
-                                courseId = practice.course.id,
-                                courseVersion = practice.course.version,
-                                briefingVersion = practice.course.briefingVersion,
-                                taskId = practice.task.id,
-                                goalTitle = practice.goal.title,
-                                courseTitle = practice.course.title,
-                                taskTitle = practice.task.title,
-                                courseReviewStatus = practice.course.reviewStatus.name,
-                                startedAtEpochMillis = startedAtEpochMillis,
-                                endedAtEpochMillis = null,
-                                activeSlot = 1,
-                            )
-                        database.practiceSessionDao().insert(entity)
-                        SessionStartResult.Started(entity.session())
+                        check(database.practiceSessionDao().deleteFinished(actual.sessionId) == 1)
+                        SessionDeletionResult.Deleted
                     }
                 }
             requirePermission(canCommit)
             result
         }
     } catch (_: WriteBlocked) {
-        SessionStartResult.Blocked
+        SessionDeletionResult.Blocked
+    }
+```
+
+[쓰기 전후 허용 조건과 코루틴 취소 확인](core/database/src/main/kotlin/io/github/hangillab/hangil/core/database/RoomSessionDeletionRepository.kt#L88-L93)
+
+```kotlin
+private suspend fun requirePermission(canProceed: () -> Boolean) {
+    currentCoroutineContext().ensureActive()
+    val allowed = canProceed()
+    currentCoroutineContext().ensureActive()
+    if (!allowed) throw WriteBlocked()
+}
+```
+
+[자기 삭제의 행 소실 통지를 결과 도착 전까지 보존](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L368-L384)
+
+```kotlin
+private fun preserveDeletionReceiptLocked(
+    owner: Reader,
+    query: Query,
+    records: List<PracticeSession>,
+): Boolean {
+    val action = deletion ?: return false
+    if (action.owner !== owner || action.query !== query || !currentDeletionOwnerLocked(action)) return false
+    val source = records.singleOrNull { it.sessionId == action.session.sessionId }
+    return when {
+        action.phase == DeletionPhase.DELETING && source == null -> {
+            action.sourceAbsent = true
+            true
+        }
+        action.phase == DeletionPhase.DELETED && (source == null || source == action.session) -> true
+        else -> false
     }
 }
 ```
 
-[쓰기 전후 호출하는 허용 조건 검사](core/database/src/main/kotlin/io/github/hangillab/hangil/core/database/RoomPracticeSessionRepository.kt#L96-L100)
+[저장소가 반환한 명시적 삭제 결과에 따른 완료/실패 분기](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L269-L283)
 
 ```kotlin
-private fun requirePermission(canCommit: () -> Boolean) {
-    if (!canCommit()) throw WriteBlocked()
+when (result) {
+    SessionDeletionResult.Deleted -> {
+        action.phase = DeletionPhase.DELETED
+        action.job = null
+        selectionLost = true
+        // Preserve the deleted cursor until the user explicitly accepts another record.
+        selectedId = action.session.sessionId
+        published.value = SessionHistoryUiState.SelectionChanged(nextGenerationLocked())
+        deletionPublished.value = SessionDeletionUiState.Deleted(action.nonce, action.session)
+    }
+    SessionDeletionResult.Missing -> failDeletionLocked(action, SessionDeletionUiState.FailureReason.MISSING)
+    SessionDeletionResult.Active -> failDeletionLocked(action, SessionDeletionUiState.FailureReason.ACTIVE)
+    SessionDeletionResult.Changed -> failDeletionLocked(action, SessionDeletionUiState.FailureReason.CHANGED)
+    SessionDeletionResult.Blocked -> failDeletionLocked(action, SessionDeletionUiState.FailureReason.BLOCKED)
 }
-
-private class WriteBlocked : RuntimeException()
-```
-
-[활성 연습 중복을 막는 유일 인덱스 선언 발췌](core/database/src/main/kotlin/io/github/hangillab/hangil/core/database/PracticeSessionEntity.kt#L10-L13)
-
-```kotlin
-@Entity(
-    tableName = "practice_session",
-    indices = [Index(value = ["sessionId"], unique = true), Index(value = ["activeSlot"], unique = true)],
-)
 ```
 
 ### 3. 지도 조회, 렌더 완료와 실제 입력의 소유권 연결
@@ -497,7 +587,7 @@ Long을 읽은 뒤 0/1만 검사하는 방법은 이미 일어난 묵시적 변�
 
 **코드**
 
-[값과 원래 SQLite 자료형을 함께 조회](core/database/src/main/kotlin/io/github/hangillab/hangil/core/database/VehicleObservationDao.kt#L8-L19)
+[값과 원래 SQLite 자료형을 함께 조회](core/database/src/main/kotlin/io/github/hangillab/hangil/core/database/VehicleObservationDao.kt#L8-L22)
 
 ```kotlin
 @Dao
@@ -508,6 +598,9 @@ internal interface VehicleObservationDao {
             "FROM vehicle_observation WHERE sessionId = :sessionId ORDER BY id ASC",
     )
     fun observe(sessionId: String): Flow<List<VehicleObservationRow>>
+
+    @Query("SELECT COUNT(*) FROM vehicle_observation WHERE sessionId = :sessionId")
+    suspend fun count(sessionId: String): Long
 
     @Insert
     suspend fun insert(entity: VehicleObservationEntity): Long
