@@ -1101,6 +1101,215 @@ class SessionHistoryViewModelTest {
             assertEquals(0, fixture.repository.writes)
         }
 
+    @Test fun `summary reveal requires its current visible identity and generation without side effects`() =
+        runTest {
+            val fixture = Fixture()
+            assertFalse(fixture.model.canRevealSummary("a", 1))
+            assertEquals(0, fixture.repository.calls)
+            subscribe(fixture)
+            val current = ready(fixture)
+            assertTrue(fixture.model.canRevealSummary(current.session.sessionId, current.generation))
+            assertFalse(fixture.model.canRevealSummary("different", current.generation))
+            assertFalse(fixture.model.canRevealSummary(current.session.sessionId, current.generation + 1))
+            assertTrue(fixture.model.canRevealSummary(current.session.sessionId, current.generation))
+            assertEquals(current, ready(fixture))
+            assertEquals(1, fixture.repository.calls)
+            assertEquals(1, fixture.repository.active)
+            assertEquals(0, fixture.repository.writes)
+        }
+
+    @Test fun `summary callbacks reject silent live D and unconfirmed UX before Ready recombines`() =
+        runTest {
+            val blocked =
+                listOf(
+                    parked().copy(gear = VehicleReading.Available(GearPosition.DRIVE)) to unrestricted(),
+                    parked().copy(gear = VehicleReading.Unknown) to unrestricted(),
+                    parked().copy(gear = VehicleReading.PermissionDenied) to unrestricted(),
+                    parked().copy(connection = ConnectionState.DISCONNECTED) to unrestricted(),
+                    parked() to unrestricted().copy(parkingState = ParkingState.UNKNOWN),
+                    parked() to unrestricted().copy(uxRestrictionState = UxRestrictionState.UNKNOWN),
+                    parked() to unrestricted().copy(uxRestrictionState = UxRestrictionState.RESTRICTED),
+                )
+            for ((vehicle, restrictions) in blocked) {
+                val fixture = Fixture()
+                val job = subscribe(fixture)
+                val current = ready(fixture)
+                val oldCallback = { fixture.model.canRevealSummary(current.session.sessionId, current.generation) }
+                assertTrue(oldCallback())
+                fixture.vehicleState.value = vehicle
+                fixture.restrictionState.value = restrictions
+                assertEquals(current, fixture.model.uiState.value)
+                assertFalse(oldCallback())
+                assertEquals(1, fixture.repository.calls)
+                assertEquals(0, fixture.repository.writes)
+                job.cancelAndJoin()
+                runCurrent()
+            }
+        }
+
+    @Test fun `summary retry fences an old callback before the UI receives Loading`() =
+        runTest {
+            val fixture = Fixture()
+            subscribe(fixture)
+            val previous = ready(fixture)
+            val oldCallback = { fixture.model.canRevealSummary(previous.session.sessionId, previous.generation) }
+            val fresh = CompletableDeferred<List<PracticeSession>>()
+            fixture.repository.source = {
+                flow {
+                    emit(fresh.await())
+                    awaitCancellation()
+                }
+            }
+            assertTrue(oldCallback())
+            assertTrue(fixture.model.retry())
+            assertFalse(oldCallback())
+            runCurrent()
+            assertEquals(SessionHistoryUiState.Loading, fixture.model.uiState.value)
+            fresh.complete(fixture.repository.values.value)
+            runCurrent()
+            val current = ready(fixture)
+            assertFalse(oldCallback())
+            assertTrue(fixture.model.canRevealSummary(current.session.sessionId, current.generation))
+            assertEquals(1, fixture.repository.maximumActive)
+            assertEquals(0, fixture.repository.writes)
+        }
+
+    @Test fun `each received history list fences the old summary callback before source continuation`() =
+        runTest {
+            for (editSource in listOf(false, true)) {
+                val fixture = Fixture()
+                val deliver = CompletableDeferred<Unit>()
+                var previous: SessionHistoryUiState.Ready? = null
+                var acceptedAfterReceipt: Boolean? = null
+                fixture.repository.source = {
+                    flow {
+                        emit(fixture.repository.values.value)
+                        deliver.await()
+                        val records =
+                            fixture.repository.values.value
+                                .toList()
+                        val delivered =
+                            if (editSource) records.map { it.copy(courseTitle = "다시 받은 당시 코스") } else records
+                        emit(delivered)
+                        val old = checkNotNull(previous)
+                        acceptedAfterReceipt = fixture.model.canRevealSummary(old.session.sessionId, old.generation)
+                        awaitCancellation()
+                    }
+                }
+                val job = subscribe(fixture)
+                previous = ready(fixture)
+                deliver.complete(Unit)
+                runCurrent()
+                val current = ready(fixture)
+                assertEquals(false, acceptedAfterReceipt)
+                assertNotEquals(checkNotNull(previous).generation, current.generation)
+                assertTrue(fixture.model.canRevealSummary(current.session.sessionId, current.generation))
+                assertEquals(1, fixture.repository.calls)
+                assertEquals(0, fixture.repository.writes)
+                job.cancelAndJoin()
+                runCurrent()
+            }
+        }
+
+    @Test fun `summary callbacks reject cancelled queries before cleanup and after reader reentry`() =
+        runTest {
+            val fixture = Fixture()
+            var previous: SessionHistoryUiState.Ready? = null
+            var acceptedDuringCleanup: Boolean? = null
+            fixture.repository.source = {
+                flow {
+                    try {
+                        emitAll(fixture.repository.values)
+                    } finally {
+                        previous?.let { acceptedDuringCleanup = fixture.model.canRevealSummary(it.session.sessionId, it.generation) }
+                    }
+                }
+            }
+            val first = subscribe(fixture)
+            previous = ready(fixture)
+            val old = checkNotNull(previous)
+            val oldCallback = { fixture.model.canRevealSummary(old.session.sessionId, old.generation) }
+            first.cancelAndJoin()
+            runCurrent()
+            assertEquals(false, acceptedDuringCleanup)
+            assertFalse(oldCallback())
+            assertEquals(0, fixture.repository.active)
+            subscribe(fixture)
+            val current = ready(fixture)
+            assertEquals(old.session, current.session)
+            assertFalse(oldCallback())
+            assertTrue(fixture.model.canRevealSummary(current.session.sessionId, current.generation))
+            assertEquals(1, fixture.repository.maximumActive)
+            assertEquals(0, fixture.repository.writes)
+        }
+
+    @Test fun `summary callbacks cannot follow a cursor away and back to the same source ID`() =
+        runTest {
+            val fixture = Fixture()
+            subscribe(fixture)
+            val first = ready(fixture)
+            val oldCallback = { fixture.model.canRevealSummary(first.session.sessionId, first.generation) }
+            assertTrue(oldCallback())
+            assertTrue(fixture.model.older(first.session.sessionId, first.generation))
+            val older = ready(fixture)
+            assertFalse(oldCallback())
+            assertTrue(fixture.model.canRevealSummary(older.session.sessionId, older.generation))
+            assertTrue(fixture.model.newer(older.session.sessionId, older.generation))
+            val current = ready(fixture)
+            assertEquals(first.session.sessionId, current.session.sessionId)
+            assertFalse(oldCallback())
+            assertTrue(fixture.model.canRevealSummary(current.session.sessionId, current.generation))
+            assertEquals(1, fixture.repository.calls)
+            assertEquals(0, fixture.repository.writes)
+        }
+
+    @Test fun `a removed summary source stays denied after explicit reset even when parking allows reading`() =
+        runTest {
+            val fixture = Fixture()
+            subscribe(fixture)
+            val previous = ready(fixture)
+            val oldCallback = { fixture.model.canRevealSummary(previous.session.sessionId, previous.generation) }
+            fixture.repository.values.value = listOf(session("b"), session("c"))
+            runCurrent()
+            assertTrue(fixture.model.canRead())
+            assertFalse(oldCallback())
+            val loss = changed(fixture)
+            assertTrue(fixture.model.resetToLatest(loss.generation))
+            val current = ready(fixture)
+            assertFalse(oldCallback())
+            assertTrue(fixture.model.canRevealSummary(current.session.sessionId, current.generation))
+            assertEquals(0, fixture.repository.writes)
+        }
+
+    @Test fun `summary read failures never leave a revealable cached Ready before explicit retry`() =
+        runTest {
+            val fixture = Fixture()
+            val fail = CompletableDeferred<Unit>()
+            fixture.repository.source = {
+                flow {
+                    emit(fixture.repository.values.value)
+                    fail.await()
+                    throw IOException("fixture disclosure failure")
+                }
+            }
+            subscribe(fixture)
+            val previous = ready(fixture)
+            val oldCallback = { fixture.model.canRevealSummary(previous.session.sessionId, previous.generation) }
+            fail.complete(Unit)
+            runCurrent()
+            assertTrue(fixture.model.canRead())
+            assertTrue(fixture.model.uiState.value is SessionHistoryUiState.Failed)
+            assertFalse(oldCallback())
+            fixture.repository.source = { fixture.repository.values }
+            assertTrue(fixture.model.retry())
+            assertFalse(oldCallback())
+            runCurrent()
+            val current = ready(fixture)
+            assertFalse(oldCallback())
+            assertTrue(fixture.model.canRevealSummary(current.session.sessionId, current.generation))
+            assertEquals(0, fixture.repository.writes)
+        }
+
     private suspend fun TestScope.deniedFailureRecovery(mode: FailureMode) {
         val live = MutableStateFlow(parked())
         var armedFailureGate = false

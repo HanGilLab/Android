@@ -142,7 +142,11 @@ private fun NextPracticeChoices(
             if (source.courseReviewStatus == CourseReviewStatus.DEMO) {
                 Box(Modifier.testTag("next_practice_demo")) { ParkedBadge(stringResource(R.string.demo_badge)) }
             }
-            ParkedDisclosure(stringResource(R.string.next_practice_source_details), Modifier.testTag("next_practice_source_details")) {
+            ParkedDisclosure(
+                title = stringResource(R.string.next_practice_source_details),
+                canExpand = { viewModel.canRevealSource(source.sessionId, state.generation) },
+                modifier = Modifier.testTag("next_practice_source_details"),
+            ) {
                 Text(
                     stringResource(R.string.next_practice_source_goal, source.goalTitle),
                     Modifier.testTag("next_practice_goal"),

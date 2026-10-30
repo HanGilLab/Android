@@ -12,9 +12,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
@@ -34,6 +31,7 @@ import io.github.hangillab.hangil.core.designsystem.ParkedLockedNotice
 import io.github.hangillab.hangil.core.designsystem.ParkedPage
 import io.github.hangillab.hangil.core.designsystem.ParkedPanel
 import io.github.hangillab.hangil.core.domain.Preparation
+import io.github.hangillab.hangil.core.domain.PreparedPractice
 
 @Composable
 fun HomeRoute(
@@ -52,6 +50,8 @@ fun HomeRoute(
         showDiagnostics,
         viewModel::retryLoading,
         { if (viewModel.canViewMap()) onMapPreview() },
+        viewModel::canExpandPreparation,
+        viewModel::canViewMap,
         {
             SessionRoute(
                 onPrepare = { if (viewModel.canPrepare()) onPrepare() },
@@ -77,9 +77,10 @@ internal fun HomeScreen(
     showDiagnostics: Boolean,
     onRetry: () -> Unit,
     onMapPreview: () -> Unit,
+    canExpandPreparation: (PreparedPractice) -> Boolean,
+    canExpandDiagnostics: () -> Boolean,
     sessionContent: @Composable () -> Unit,
 ) {
-    var diagnosticsExpanded by rememberSaveable { mutableStateOf(false) }
     key(state.allowsDetailedInteraction) {
         ParkedPage {
             if (!state.allowsDetailedInteraction) {
@@ -142,9 +143,10 @@ internal fun HomeScreen(
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                     Text(ready.task.title, Modifier.testTag("saved_task"), style = MaterialTheme.typography.titleLarge)
-                                    key(ready.goal.id, ready.course.id, ready.task.id) {
+                                    key(ready) {
                                         ParkedDisclosure(
                                             stringResource(R.string.preparation_details),
+                                            { canExpandPreparation(ready) },
                                             Modifier.testTag("home_preparation_details"),
                                         ) {
                                             Text(
@@ -169,13 +171,13 @@ internal fun HomeScreen(
                     }
                 })
                 if (showDiagnostics) {
-                    TextButton(
-                        onClick = { diagnosticsExpanded = !diagnosticsExpanded },
-                        modifier = Modifier.heightIn(min = HanGilDimensions.compactActionMinHeight),
+                    ParkedDisclosure(
+                        title = stringResource(R.string.vehicle_diagnostics),
+                        canExpand = canExpandDiagnostics,
+                        modifier = Modifier.testTag("home_diagnostics_details"),
                     ) {
-                        Text(stringResource(if (diagnosticsExpanded) R.string.diagnostics_hide else R.string.diagnostics_show))
+                        Column(Modifier.testTag("home_diagnostics_content")) { VehicleDiagnostics(state) }
                     }
-                    if (diagnosticsExpanded) VehicleDiagnostics(state)
                 }
             }
         }

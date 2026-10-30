@@ -69,6 +69,22 @@ class CourseViewModel
                     saveJob?.cancel()
                 }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(0, 0), CourseUiState())
 
+        /** Rechecks the displayed draft directly, before a delayed combined UI update. */
+        internal fun canRevealDetails(expected: CourseUiState): Boolean {
+            if (!livePermission() || !expected.allowsInteraction) return false
+            val current = draft.value
+            if (current.step != expected.step || current.goalId != expected.goal?.id ||
+                current.courseId != expected.course?.id || current.taskId != expected.taskId
+            ) {
+                return false
+            }
+            if (current.step != PreparationStep.COURSE && current.step != PreparationStep.BRIEFING) return false
+            if (catalog.goals.find { it.id == current.goalId } != expected.goal) return false
+            val course = expected.course ?: return current.courseId == null
+            return current.courseVersion == course.version && current.briefingVersion == course.briefingVersion &&
+                catalog.courses.find { it.id == current.courseId && current.goalId in it.goalIds } == course
+        }
+
         fun selectGoal(id: String) {
             if (!canEdit() || draft.value.step != PreparationStep.GOAL || catalog.goals.none { it.id == id }) return
             if (draft.value.goalId != id) update(PreparationDraft(goalId = id))

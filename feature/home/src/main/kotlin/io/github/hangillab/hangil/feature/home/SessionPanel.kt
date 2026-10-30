@@ -20,6 +20,7 @@ import io.github.hangillab.hangil.core.designsystem.ParkedButton
 import io.github.hangillab.hangil.core.designsystem.ParkedDisclosure
 import io.github.hangillab.hangil.core.designsystem.ParkedPanel
 import io.github.hangillab.hangil.core.domain.CourseReviewStatus
+import io.github.hangillab.hangil.core.domain.PracticeSession
 import io.github.hangillab.hangil.core.domain.Preparation
 import java.time.Instant
 import java.time.ZoneId
@@ -45,6 +46,8 @@ internal fun SessionRoute(
             viewModel::retryLoading,
             onPrepare,
             { id -> if (viewModel.canPrepareNext(id)) onPrepareNext(id) },
+            viewModel::canExpandGuide,
+            viewModel::canExpandRecent,
             canPrepare,
             recordingState,
             onRetryRecording,
@@ -60,6 +63,8 @@ internal fun SessionPanel(
     onRetry: () -> Unit,
     onPrepare: () -> Unit,
     onPrepareNext: (String) -> Unit,
+    canExpandGuide: (HomeJourneyStep, PracticeSession?) -> Boolean,
+    canExpandRecent: (PracticeSession) -> Boolean,
     canPrepare: Boolean,
     recordingState: VehicleRecordingState,
     onRetryRecording: () -> Unit,
@@ -186,8 +191,12 @@ internal fun SessionPanel(
                 Text(stringResource(R.string.prepare_change), style = MaterialTheme.typography.titleMedium)
             }
         }
-        key(state.nextStep, state.active?.sessionId) {
-            ParkedDisclosure(stringResource(R.string.record_guide), Modifier.testTag("home_record_guide")) {
+        key(state.nextStep, state.active) {
+            ParkedDisclosure(
+                stringResource(R.string.record_guide),
+                { canExpandGuide(state.nextStep, state.active) },
+                Modifier.testTag("home_record_guide"),
+            ) {
                 Text(stringResource(R.string.preparation_scope), style = MaterialTheme.typography.bodyLarge)
                 Text(stringResource(R.string.session_scope), style = MaterialTheme.typography.bodyLarge)
                 Text(
@@ -207,7 +216,7 @@ internal fun SessionPanel(
             }
         }
     }
-    LatestSessionPanel(state, onPrepareNext)
+    LatestSessionPanel(state, onPrepareNext, canExpandRecent)
 }
 
 @Composable
@@ -240,6 +249,7 @@ private fun VehicleRecordingStatus(
 private fun LatestSessionPanel(
     state: SessionUiState,
     onPrepareNext: (String) -> Unit,
+    canExpandRecent: (PracticeSession) -> Boolean,
 ) {
     val records = state.records as? SessionLoadState.Loaded ?: return
     val latest = state.latestFinished
@@ -251,8 +261,12 @@ private fun LatestSessionPanel(
             latest.endedAtEpochMillis?.let {
                 Text(stringResource(R.string.session_finished_at, displayTime(it)), Modifier.testTag("session_latest_finished"))
             }
-            key(latest.sessionId) {
-                ParkedDisclosure(stringResource(R.string.session_details), Modifier.testTag("home_recent_details")) {
+            key(latest) {
+                ParkedDisclosure(
+                    stringResource(R.string.session_details),
+                    { canExpandRecent(latest) },
+                    Modifier.testTag("home_recent_details"),
+                ) {
                     Text(stringResource(R.string.session_goal_task, latest.goalTitle, latest.taskTitle))
                     Text(
                         stringResource(R.string.session_started_at, displayTime(latest.startedAtEpochMillis)),
@@ -261,8 +275,12 @@ private fun LatestSessionPanel(
                     RecentVehicleObservationRoute(latest.sessionId)
                 }
             }
-            key(latest.sessionId) {
-                ParkedDisclosure(stringResource(R.string.memo_heading), Modifier.testTag("home_recent_memo")) {
+            key(latest) {
+                ParkedDisclosure(
+                    stringResource(R.string.memo_heading),
+                    { canExpandRecent(latest) },
+                    Modifier.testTag("home_recent_memo"),
+                ) {
                     SessionMemoEditorRoute(latest.sessionId)
                 }
             }

@@ -5,4 +5,7 @@ plugins {
 
 android { namespace = "io.github.hangillab.hangil.core.designsystem" }
 
-dependencies { testImplementation(libs.junit) }
+dependencies {
+    implementation(libs.lifecycle.runtime.compose)
+    testImplementation(libs.junit)
+}

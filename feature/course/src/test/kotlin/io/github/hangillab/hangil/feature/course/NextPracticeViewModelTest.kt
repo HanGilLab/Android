@@ -893,6 +893,250 @@ class NextPracticeViewModelTest {
         return job
     }
 
+    @Test fun `source reveal checks current identity and generation without selecting or saving`() =
+        runTest {
+            val f = Fixture()
+            assertFalse(f.model.canRevealSource("source", 1))
+            assertEquals(0, f.sessions.calls)
+            watch(f)
+            val initial = ready(f)
+            val oldCallback = { f.model.canRevealSource(initial.seed.source.sessionId, initial.generation) }
+            assertTrue(oldCallback())
+            assertFalse(f.model.canRevealSource("different", initial.generation))
+            assertFalse(f.model.canRevealSource("source", initial.generation + 1))
+            assertEquals(initial, ready(f))
+            val selected = choose(f)
+            assertFalse(oldCallback())
+            assertTrue(f.model.canRevealSource("source", selected.generation))
+            assertEquals(1, f.sessions.calls)
+            assertEquals(0, f.sessions.writes)
+            assertEquals(0, f.next.calls)
+            f.model.leave()
+            assertFalse(f.model.canRevealSource("source", selected.generation))
+        }
+
+    @Test fun `source callbacks reject silent live D and unconfirmed UX before Ready recombines`() =
+        runTest {
+            val blocked =
+                listOf(
+                    driving() to permitted(),
+                    parked().copy(gear = VehicleReading.Unknown) to permitted(),
+                    parked().copy(gear = VehicleReading.PermissionDenied) to permitted(),
+                    parked().copy(connection = ConnectionState.DISCONNECTED) to permitted(),
+                    parked() to permitted().copy(parkingState = ParkingState.UNKNOWN),
+                    parked() to permitted().copy(uxRestrictionState = UxRestrictionState.UNKNOWN),
+                    parked() to permitted().copy(uxRestrictionState = UxRestrictionState.RESTRICTED),
+                )
+            for ((vehicle, restrictions) in blocked) {
+                val f = Fixture()
+                val job = watch(f)
+                val state = ready(f)
+                val oldCallback = { f.model.canRevealSource(state.seed.source.sessionId, state.generation) }
+                assertTrue(oldCallback())
+                f.vehicleState.value = vehicle
+                f.restrictionState.value = restrictions
+                assertEquals(state, f.model.uiState.value)
+                assertFalse(oldCallback())
+                assertEquals(1, f.sessions.calls)
+                assertEquals(0, f.sessions.writes)
+                assertEquals(0, f.next.calls)
+                job.cancelAndJoin()
+                runCurrent()
+            }
+        }
+
+    @Test fun `source retry rejects an old callback while Loading and after fresh same source validation`() =
+        runTest {
+            val f = Fixture()
+            watch(f)
+            val previous = ready(f)
+            val oldCallback = { f.model.canRevealSource("source", previous.generation) }
+            val fresh = CompletableDeferred<List<PracticeSession>>()
+            f.sessions.querySource = {
+                flow {
+                    emit(fresh.await())
+                    awaitCancellation()
+                }
+            }
+            assertTrue(f.model.retry())
+            assertFalse(oldCallback())
+            runCurrent()
+            assertEquals(NextPracticeUiState.Loading, f.model.uiState.value)
+            fresh.complete(f.sessions.values.value)
+            runCurrent()
+            val current = ready(f)
+            assertFalse(oldCallback())
+            assertTrue(f.model.canRevealSource("source", current.generation))
+            assertEquals(1, f.sessions.maximumActive)
+            assertEquals(0, f.sessions.writes)
+            assertEquals(0, f.next.calls)
+        }
+
+    @Test fun `source callbacks reject cancelled queries before cleanup and after reader reentry`() =
+        runTest {
+            val f = Fixture()
+            var previous: NextPracticeUiState.Ready? = null
+            var acceptedDuringCleanup: Boolean? = null
+            f.sessions.querySource = {
+                flow {
+                    try {
+                        emitAll(f.sessions.values)
+                    } finally {
+                        previous?.let { acceptedDuringCleanup = f.model.canRevealSource("source", it.generation) }
+                    }
+                }
+            }
+            val first = watch(f)
+            previous = ready(f)
+            val old = checkNotNull(previous)
+            val oldCallback = { f.model.canRevealSource("source", old.generation) }
+            first.cancelAndJoin()
+            runCurrent()
+            assertEquals(false, acceptedDuringCleanup)
+            assertFalse(oldCallback())
+            assertEquals(0, f.sessions.active)
+            watch(f)
+            val current = ready(f)
+            assertEquals(old.seed, current.seed)
+            assertFalse(oldCallback())
+            assertTrue(f.model.canRevealSource("source", current.generation))
+            assertEquals(1, f.sessions.maximumActive)
+            assertEquals(0, f.sessions.writes)
+            assertEquals(0, f.next.calls)
+        }
+
+    @Test fun `identical seed receipt denies reentrant reveal but preserves its validated generation`() =
+        runTest {
+            val f = Fixture()
+            val deliver = CompletableDeferred<Unit>()
+            var previous: NextPracticeUiState.Ready? = null
+            var acceptedDuringResolution: Boolean? = null
+            f.sessions.querySource = {
+                flow {
+                    emit(f.sessions.values.value)
+                    deliver.await()
+                    emit(
+                        f.sessions.values.value
+                            .toList(),
+                    )
+                    awaitCancellation()
+                }
+            }
+            watch(f)
+            previous = ready(f)
+            val old = checkNotNull(previous)
+            val oldCallback = { f.model.canRevealSource("source", old.generation) }
+            f.catalog.onGoalsRead = {
+                acceptedDuringResolution = oldCallback()
+            }
+            deliver.complete(Unit)
+            runCurrent()
+            val current = ready(f)
+            assertEquals(false, acceptedDuringResolution)
+            assertEquals(old.generation, current.generation)
+            assertTrue(oldCallback())
+            assertEquals(1, f.sessions.calls)
+            assertEquals(0, f.sessions.writes)
+            assertEquals(0, f.next.calls)
+        }
+
+    @Test fun `received source active or catalog changes reject old source callbacks while still parked`() =
+        runTest {
+            for (change in 0..2) {
+                val f = Fixture()
+                val deliver = CompletableDeferred<Unit>()
+                f.sessions.querySource = {
+                    flow {
+                        emit(f.sessions.values.value)
+                        deliver.await()
+                        val rows =
+                            when (change) {
+                                0 -> listOf(source().copy(endedAtEpochMillis = 2_001))
+                                1 -> listOf(source("active", ended = null), source())
+                                else -> {
+                                    f.catalog.courses =
+                                        f.catalog.courses.map { course ->
+                                            course.copy(tasks = course.tasks.map { it.copy(description = "변경된 과제 설명") })
+                                        }
+                                    listOf(source())
+                                }
+                            }
+                        emit(rows)
+                        awaitCancellation()
+                    }
+                }
+                val job = watch(f)
+                val previous = ready(f)
+                val oldCallback = { f.model.canRevealSource("source", previous.generation) }
+                deliver.complete(Unit)
+                runCurrent()
+                assertTrue(f.model.canInteract())
+                assertFalse(oldCallback())
+                if (change == 2) {
+                    assertTrue(f.model.uiState.value is NextPracticeUiState.Unavailable)
+                } else {
+                    assertTrue(f.model.uiState.value is NextPracticeUiState.SourceChanged)
+                }
+                assertEquals(1, f.sessions.calls)
+                assertEquals(0, f.sessions.writes)
+                assertEquals(0, f.next.calls)
+                job.cancelAndJoin()
+                runCurrent()
+            }
+        }
+
+    @Test fun `source read failure cannot reveal a cached source before or after a new parked retry`() =
+        runTest {
+            val f = Fixture()
+            val fail = CompletableDeferred<Unit>()
+            f.sessions.querySource = {
+                flow {
+                    emit(f.sessions.values.value)
+                    fail.await()
+                    throw IOException("fixture source disclosure failure")
+                }
+            }
+            watch(f)
+            val previous = ready(f)
+            val oldCallback = { f.model.canRevealSource("source", previous.generation) }
+            fail.complete(Unit)
+            runCurrent()
+            assertTrue(f.model.canInteract())
+            assertTrue(f.model.uiState.value is NextPracticeUiState.Failed)
+            assertFalse(oldCallback())
+            f.sessions.querySource = { f.sessions.values }
+            assertTrue(f.model.retry())
+            assertFalse(oldCallback())
+            runCurrent()
+            val current = ready(f)
+            assertFalse(oldCallback())
+            assertTrue(f.model.canRevealSource("source", current.generation))
+            assertEquals(0, f.sessions.writes)
+            assertEquals(0, f.next.calls)
+        }
+
+    @Test fun `a valid source remains readable during an explicit save without starting another write`() =
+        runTest {
+            val f = Fixture()
+            val release = CompletableDeferred<Unit>()
+            f.next.waitFor(release)
+            watch(f)
+            val state = choose(f)
+            assertTrue(f.model.save("source", state.generation))
+            runCurrent()
+            val saving = ready(f)
+            assertTrue(saving.saving)
+            assertTrue(f.model.canRevealSource("source", saving.generation))
+            assertTrue(f.model.canRevealSource("source", saving.generation))
+            assertEquals(1, f.next.calls)
+            assertEquals(1, f.sessions.calls)
+            assertEquals(0, f.sessions.writes)
+            release.complete(Unit)
+            runCurrent()
+            assertFalse(ready(f).saving)
+            assertEquals(1, f.next.calls)
+        }
+
     private fun TestScope.ready(f: Fixture): NextPracticeUiState.Ready {
         runCurrent()
         return f.model.uiState.value as NextPracticeUiState.Ready
@@ -941,7 +1185,13 @@ class NextPracticeViewModelTest {
     }
 
     private class FakeCatalog : PracticeCatalog {
-        override val goals = listOf(PracticeGoal("goal", "저장 목표", "목표 설명"))
+        private val storedGoals = listOf(PracticeGoal("goal", "저장 목표", "목표 설명"))
+        var onGoalsRead: (() -> Unit)? = null
+        override val goals: List<PracticeGoal>
+            get() {
+                onGoalsRead?.invoke()
+                return storedGoals
+            }
         override var courses =
             listOf(
                 PracticeCourse(

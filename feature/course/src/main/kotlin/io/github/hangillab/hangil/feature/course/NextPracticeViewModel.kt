@@ -105,6 +105,12 @@ class NextPracticeViewModel
 
         fun canInteract(): Boolean = synchronized(lock) { !closed && reader?.job?.isActive == true && permitted() }
 
+        /** A detail callback remains bound to its displayed source and manually selected generation. */
+        fun canRevealSource(
+            expectedSourceId: String,
+            expectedGeneration: Long,
+        ): Boolean = synchronized(lock) { currentReady(expectedSourceId, expectedGeneration) != null }
+
         fun selectTask(
             taskId: String,
             expectedSourceId: String,
