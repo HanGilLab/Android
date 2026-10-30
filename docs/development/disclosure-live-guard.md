@@ -86,6 +86,6 @@ JDK17 전체 verify와 debug/native/unsigned release 빌드가 성공했다. 저
 - [필수 live/수명 guard의 공통 Disclosure](../../core/designsystem/src/main/kotlin/io/github/hangillab/hangil/core/designsystem/ParkedDisclosure.kt)
 - [이력의 source/조회 세대 검사](../../feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt)
 - [같은 조건의 실제 펼침 계측](../../app/src/androidTest/kotlin/io/github/hangillab/hangil/SessionHistoryDisclosureMeasureTest.kt)
-- [작업 계획](../plans/active/2026-10-31-disclosure-live-guard.md)
+- [작업 계획](../plans/completed/2026-10-31-disclosure-live-guard.md)
 
-README는 기존1번 정확성 사례와 실제 코드만 보강했다. 다른3개 내용/순서는 보존했고 사례는 정확히4개이며 회귀 집계나 성능 개선율을 추가하지 않았다. 최신 PR의 필수 CI/정확한 head Codex 리뷰가 끝나기 전에는 병합 완료로 기록하지 않는다.
+README는 기존1번 정확성 사례와 실제 코드만 보강했다. 다른3개 내용/순서는 보존했고 사례는 정확히4개이며 회귀 집계나 성능 개선율을 추가하지 않았다. PR49의 최신 head11015c33 필수 CI4개와 정확한 head Codex 완료/지적 없음 확인 후 실제 main83384e1에 반영했다. 종료 문서 PR48은 같은 소스를 보존해 완료 계획과 링크를 정리하며 최신 문서 head의 검사를 별도로 받는다.
