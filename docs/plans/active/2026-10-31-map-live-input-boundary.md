@@ -15,10 +15,10 @@ APP-08 삭제는 독립 구현 가능하지만 실제 원본 검증에서 검사
 ## 완료 조건
 
 - [x] 제품 수정 전 실제 Route와 실제 MapLibre SDK View에서 합성 무방출 live D/옛 P 표시의 입력 경계를 RED로 재현하고 실제 DDS 재현과 구분한다.
-- [ ] 고정 source/attempt/token/STARTED와 최신 P/UX를 입력 처리에서 확인한다. 진행 입력/예약 동작/자식 접근성/출처 dialog의 오래된 동작을 차단하며 SDK thread와 destroy 경계를 지킨다.
-- [ ] 허용 P에서 실제 지도 이동/확대와 출처 표시/읽기를 보존하고, BACK/닫기/STOP/재진입에서 묵은 입력을 실행하지 않는다.
-- [ ] 단위/제어 native, JDK17 전체 verify와 실제 Pleos 기본/확대 다크 P-D-P, 이전 지도 source/재생성/재시도 관련 흐름을 확인한다.
-- [ ] 같은 입력/불변 계측의 지도 진입 전후 처리 비용을 수집하고 원래 자료/권한/설정과 측정 원본을 보존한다. 성능 향상은 별도로 입증하지 않으면 주장하지 않는다.
+- [x] 고정 source/attempt/token/STARTED와 최신 P/UX를 입력 처리에서 확인한다. 진행 입력/예약 동작/자식 접근성/출처 dialog의 오래된 동작을 차단하며 SDK thread와 destroy 경계를 지킨다.
+- [x] 허용 P에서 실제 지도 이동/확대와 출처 표시/읽기를 보존하고, BACK/닫기/STOP/재진입에서 묵은 입력을 실행하지 않는다.
+- [x] 단위/제어 native, JDK17 전체 verify와 실제 Pleos 기본/확대 다크 P-D-P, 이전 지도 source/재생성/재시도 관련 흐름을 확인한다.
+- [x] 같은 입력/불변 계측의 지도 진입 전후 처리 비용을 수집하고 원래 자료/권한/설정과 측정 원본을 보존한다. 성능 향상은 별도로 입증하지 않으면 주장하지 않는다.
 - [ ] 최신 PR의 정확한 head CI/Codex/수동/정책을 충족해 main 반영, 해당 브랜치 정리/노션/README 정확히4사례 비교와 완료 계획을 정리한다.
 
 ## 구현 단계
@@ -49,8 +49,17 @@ APP-08 삭제는 독립 구현 가능하지만 실제 원본 검증에서 검사
 | 실제 SDK 지도 진입 기준 계측 | 성공 | 워밍업5/표본30, 실패/누락/미실행/제외0. 중앙값2127.5183965ms, Q1 2022.010292ms, Q3 2212.044752ms, IQR190.03446ms, min1823.575501ms/max2983.734043ms. 원본/환경/source/catalog/APK hash 확인, 완료 기준 raw는 ignored 비공개 파일과 앱 cache에 불변 보존. |
 | 기준 실행 전체 원본 보존 | 성공 | 모든 테이블/행/필드/자료형/순서/sequence, grants/runtime/font/night/IME/proxy를 실행 전후 대조했다. 원래 준비/종료 기록/관찰/메모 유지. 소유 AVD와 forwarding을 정리한 뒤 제품 수정 시작. |
 | 제품 타깃 첫 빌드 | 실패, 수정 후 재실행 예정 | SDK attribution manager setter의 Kotlin 속성 대입이 val 재할당 오류로 컴파일 중단. 공개 setAttributionDialogManager 직접 호출로 수정했다. 앱 실행 실패나 검증 통과로 기록하지 않는다. |
-| 제품 타깃 재실행 | 부분 성공, 검사 APK 컴파일 실패 | 제품 debug와 지도 JVM 검사45개는 성공. 추가 native 검사 정리 helper의 nullable SDK manager 접근으로 검사 APK 컴파일 중단. 실제 manager 존재를 checkNotNull로 요구하도록 수정하고 재실행한다. Native 실행 성공으로 기록하지 않는다. |
-| `./scripts/verify.sh` | 미실행 | |
+| 제품 타깃 재실행 | 부분 성공, 검사 APK 컴파일 실패 | 제품 debug와 지도 VM/입력 정책 검사45개는 성공. 추가 native 검사 정리 helper의 nullable SDK manager 접근으로 검사 APK 컴파일 중단. 실제 manager 존재를 checkNotNull로 요구하도록 수정하고 재실행한다. Native 실행 성공으로 기록하지 않는다. |
+| 제품 타깃 최종 빌드 | 성공 | JDK17 debug/검사 APK와 지도 단위 검사 성공. 원래 native RED와 지도 진입 계측 소스는9a8d8d0과 byte 동일하다. |
+| 동일 native RED 재실행 | 성공 | 제품81d0664에서 같은 실제 P pan 양성/복원/옛 P+live D/동일 View 비교가 통과했다. |
+| 추가 제어 native 입력 | 성공 | 실제 P drag/pinch, 직접 native wheel P 양성/D 거부, D DOWN의 P MOVE/UP, STOP/재개 old stream/key/trackball, 실제 자식 접근성 클릭, 실제 dialog ListView의 늦은 URL listener를 확인했다.6개 모두 성공. URL은 ActivityMonitor로 실제 외부 실행을 차단한 시도 집계이며 실제 DDS 순서/하드웨어 mouse/모든 URL item 검증이 아니다. |
+| 실제 네트워크 오류 첫 실행 | 미실행/건너뜀 | 별도 manualPreparedMapNetwork 대신 준비 지도 옵션을 전달해 JUnit assumption -4로 건너뛰었다. ignored runner가 OK 토큰만 보고 PASS로 오분류한 사실을 발견해 -4/Assumption도 거부하도록 수정하고 로컬 상태를 정정했다. 다른7개 실행 로그도 감사해 해당 건너뜀이 없음을 확인했다. 원래 로그는 보존하며 올바른 옵션으로 별도 재실행한다. |
+| 실제 SDK 준비 지도 기본/확대 다크 | 성공 | 실제2개 준비 코스의 source/3점/카메라 교체, 재생성/닫기와 재진입/P-D-P/실제 잠금과 복귀를 font1.0/라이트와1.3/다크에서 각각 실행했다. 실제 앱 전면/화면을 보고 source 배지/점/출처/닫기 도달을 확인했다. 합성 위치가 실제 주행 경로라는 주장은 하지 않는다. |
+| 실제 네트워크 오류 명시 재실행 | 성공 | 올바른 manualPreparedMapNetwork=true로 실제 remote tile request/error, FAILED/재시도 UI와 원래 preview 재렌더, proxy 정확 복원을 확인했다. 첫 건너뜀은 별도로 보존했다. host urllib preflight403은 SDK 실패가 아니며 curl로 공개 style200/JSON을 확인한 뒤 실제 앱 검사로 구분했다. |
+| 실제 Main 지도 BACK | 성공 | 실제 전면 Main에서 보이는 지도 버튼과 고정 시연 설명을 확인한 뒤 KEYCODE_BACK으로 원래 홈 복귀를 확인했다. 원래 준비/기록 입력은 변경하지 않았다. |
+| 비교 계측과 최종 원본 보존 | 성공 | 비교도 워밍업5/표본30, 실패/누락/미실행/제외0. 중앙값2000.331397ms, Q1 1907.143917/Q3 2107.241292/IQR200.097375/min1661.788917/max2668.382334ms. 차이−127.1869995ms/−5.97818565%이나 분포 겹침/순차 캐시 한계로 성능 향상 미확정. 기준 raw 불변, source/catalog/환경/원본 계약과 설치/빌드 APK hash를 대조했고 정제70행 CSV/재현 문서를 남겼다. 전체 SQLite 값/자료형/순서/sequence/grants/runtime/font/night/IME/proxy가 원본과 동일했고 소유 AVD/forwarding/탭을 정리했다. |
+| `./scripts/verify.sh` | 성공 | JDK17 public-content/Spotless/모듈 경계/Lint, build-logic/JVM/Android 단위39suites481개 실패/오류/건너뜀0, debug와 unsigned release를 통과했다. Gradle/cache/JUnit 시간은 앱 성능으로 사용하지 않는다. |
+| README와 실측 공개 QA | 성공 | 독립 읽기 검토에서 정확4/여섯 항목/13개 실제 연속 Kotlin 코드/유효 anchor, 다른3사례/브랜드 byte 보존, 정제 CSV의 원값→통계 재계산/비짝표본/잡음 한계/개인정보 비노출을 확인했다. README에 회귀/검사 수/JUnit/CI 설명을 넣지 않았다. |
 
 ## 구현 판단
 
@@ -60,5 +69,8 @@ APP-08 삭제는 독립 구현 가능하지만 실제 원본 검증에서 검사
 
 ## 남은 문제와 인계
 
-실패한 검사, 확인하지 못한 환경, 다음 실행자가 필요한 정보를 적는다.
-완료 조건이 충족되면 상태를 완료로 바꾸고 이 파일을 `completed/`로 이동한다.
+현재 PR 최신 head의 필수 CI/Codex 리뷰와 정상 병합/브랜치 정리가 남았다. 완료/승인으로 기록하지 않는다. 원래 PR8/10의 최종 리뷰 미확인과 ENV-06 독립 UX/플랫폼 오류 주입 차단은 이 수정의 전체 완료로 대신하지 않는다. 이번에는 위치/기본 내비/구간 선택/삭제를 구현하거나 권한을 추가하지 않았다. 실제 release 기기 실행/하드웨어 mouse 전달/모든 출처 URL item/같은 millisecond의 모든 물리 입력 구분은 확인 대상이 아니며 debug 측정을 일반 차량 성능으로 확대하지 않는다. 병합 뒤 실제 최종 상태를 확인해 이 계획의 마지막 조건을 닫고 completed로 이동한다. 최종 문서 이동은 런타임과 무관하여 새 성능 측정 대상에서 제외하고 경로/링크/공개 내용/필수 CI/리뷰를 검증한다.
+
+## README 사례 선정
+
+기존3번의 reader/query/renderer 소유권 설명에 실제 SDK 입력 경계를 연결한 사례로 강화했다. 기존3번은 취소/늦은 callback의 상태 오염을 설명했지만 실제 native camera의 P 양성 대조와 D 재현, 자식 접근성/출처 URL과 수명 경계의 직접 구현 판단은 없었다. 이번에는 같은 Route/SDK View를 관찰해 원인을 좁혔고 공개 SDK로 처리할 범위와 지연 camera 입력을 제한한 이유, 동일 계측의 분포/한계까지 확인해 플랫폼과 비동기 경계 판단을 더 구체적으로 보여 준다. 기능 최신성이나 코드/검사 총수로 우수성을 주장하지 않는다.1/2/4와 브랜드/목차/개요/실제 화면/스택/모듈/담당/나머지 순서는 byte 그대로 보존했다. 최종4개와 여섯 항목 순서, 실제 연속 코드3블록/현재 anchor, 기본 펼침을 확인했다. 지도 사례의 보조 JVM 집계 대상은 MapInputEpochTest로 갱신했으며 native 근거는 계획/PR에 분리한다.
