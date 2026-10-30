@@ -1,6 +1,7 @@
 package io.github.hangillab.hangil
 
 import android.content.res.Configuration
+import android.graphics.Bitmap
 import android.graphics.Rect
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.mutableStateOf
@@ -10,6 +11,7 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
@@ -19,6 +21,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModelStore
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.hangillab.hangil.core.database.OwnedPracticeTestStore
@@ -53,6 +56,7 @@ import io.github.hangillab.hangil.feature.home.SessionHistoryViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalForInheritanceCoroutinesApi
 import kotlinx.coroutines.InternalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -61,16 +65,20 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import org.json.JSONObject
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.File
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
+import java.util.IdentityHashMap
 import java.util.Locale
+import java.util.UUID
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -310,17 +318,44 @@ class SessionDeletionFlowTest {
             block(fixture)
         } catch (failure: Throwable) {
             primary = failure
+            preserveFailure(fixture, failure)
             throw failure
         } finally {
-            try {
-                compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
-                fixture?.dispose()
-                assertTrue("격리 검사 뒤 실제 FK 무결성을 유지해야 합니다", store.foreignKeyViolationCount() == 0)
-                store.close()
-            } catch (cleanup: Throwable) {
+            val cleanupFailures = mutableListOf<Throwable>()
+            var safeToClose = fixture == null
+            val current = fixture
+            if (current != null) {
+                try {
+                    val disposal = current.dispose()
+                    safeToClose = disposal.safeToClose
+                    cleanupFailures.addAll(disposal.failures)
+                } catch (cleanup: Throwable) {
+                    cleanupFailures.add(cleanup)
+                }
+            }
+            if (safeToClose) {
+                try {
+                    assertTrue("격리 검사 뒤 실제 FK 무결성을 유지해야 합니다", store.foreignKeyViolationCount() == 0)
+                } catch (cleanup: Throwable) {
+                    cleanupFailures.add(cleanup)
+                }
+                try {
+                    store.close()
+                } catch (cleanup: Throwable) {
+                    cleanupFailures.add(cleanup)
+                }
+            } else {
+                cleanupFailures.add(IllegalStateException("취소와 DB 작업 종료를 확인하지 못해 소유 격리 파일을 보존했습니다"))
+            }
+            if (cleanupFailures.isNotEmpty()) {
                 val original = primary
-                if (original == null) throw cleanup
-                original.addSuppressed(cleanup)
+                if (original != null) {
+                    cleanupFailures.filterNot { it === original }.forEach(original::addSuppressed)
+                } else {
+                    val first = cleanupFailures.first()
+                    cleanupFailures.drop(1).filterNot { it === first }.forEach(first::addSuppressed)
+                    throw first
+                }
             }
         }
     }
@@ -396,6 +431,7 @@ class SessionDeletionFlowTest {
                 override val restrictions: StateFlow<DrivingRestrictions> = restrictionState
             }
         private val visible = mutableStateOf(true)
+        private val ownedModelStores = IdentityHashMap<ViewModelStore, Unit>()
         private val readers = AtomicInteger(0)
         private val sessions =
             object : PracticeSessionRepository by store.sessions {
@@ -414,6 +450,8 @@ class SessionDeletionFlowTest {
 
         fun mount() {
             compose.activityRule.scenario.onActivity { activity ->
+                // Record the real owner before construction, including a partially failed mount.
+                ownedModelStores[activity.viewModelStore] = Unit
                 val factory =
                     object : ViewModelProvider.Factory {
                         override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -486,13 +524,144 @@ class SessionDeletionFlowTest {
             assertTrue("스키마 버전과 FK 무결성을 보존해야 합니다", store.schemaVersion() == 4 && store.foreignKeyViolationCount() == 0)
         }
 
-        fun dispose() {
-            compose.activityRule.scenario.onActivity { activity ->
-                visible.value = false
-                activity.viewModelStore.clear()
+        fun failureState(): JSONObject =
+            JSONObject()
+                .put("modelInitialized", ::model.isInitialized)
+                .put("uiStateKind", if (::model.isInitialized) model.uiState.value.javaClass.simpleName else JSONObject.NULL)
+                .put("deletionStateKind", if (::model.isInitialized) model.deletionState.value.javaClass.simpleName else JSONObject.NULL)
+                .put("activeReaders", readers.get())
+                .put("activeMutationCalls", deletions.active.get())
+
+        fun dispose(): FixtureDisposal {
+            val failures = mutableListOf<Throwable>()
+            var ownersCleared = false
+            try {
+                // Neither ActivityScenario state recovery nor a live Compose root is a prerequisite.
+                InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                    try {
+                        visible.value = false
+                    } catch (cleanup: Throwable) {
+                        failures.add(cleanup)
+                    }
+                    if (::model.isInitialized) {
+                        try {
+                            model.deletionState.value.nonce
+                                ?.let(model::dismissDeletion)
+                        } catch (cleanup: Throwable) {
+                            failures.add(cleanup)
+                        }
+                    }
+                    ownersCleared = ownedModelStores.isNotEmpty() || !::model.isInitialized
+                    for (owner in ownedModelStores.keys.toList()) {
+                        try {
+                            owner.clear()
+                        } catch (cleanup: Throwable) {
+                            ownersCleared = false
+                            failures.add(cleanup)
+                        }
+                    }
+                }
+            } catch (cleanup: Throwable) {
+                ownersCleared = false
+                failures.add(cleanup)
             }
-            compose.waitForIdle()
-            compose.waitUntil(20_000) { readers.get() == 0 && deletions.active.get() == 0 }
+            var operationsStopped = false
+            try {
+                runBlocking {
+                    withTimeout(20_000) {
+                        while (readers.get() != 0 || deletions.active.get() != 0) delay(10)
+                    }
+                }
+                operationsStopped = true
+            } catch (cleanup: Throwable) {
+                failures.add(cleanup)
+            }
+            return FixtureDisposal(ownersCleared && operationsStopped, failures)
+        }
+    }
+
+    private data class FixtureDisposal(
+        val safeToClose: Boolean,
+        val failures: List<Throwable>,
+    )
+
+    /** Observations are taken before cleanup. Raw text, source identities and times are never serialized. */
+    private fun preserveFailure(
+        fixture: Fixture?,
+        original: Throwable,
+    ) {
+        try {
+            val instrumentation = InstrumentationRegistry.getInstrumentation()
+            val directory = File(instrumentation.targetContext.cacheDir, "session-deletion-failures/${UUID.randomUUID()}")
+            check(directory.mkdirs()) { "새 비공개 실패 근거 폴더를 준비하지 못했습니다" }
+            val details =
+                JSONObject()
+                    .put("schema", 1)
+                    .put("fixtureState", fixture?.failureState() ?: JSONObject.NULL)
+                    .put("foregroundInspectionComplete", false)
+                    .put("foregroundAvailable", JSONObject.NULL)
+                    .put("foregroundPackageMatches", JSONObject.NULL)
+                    .put("screenshotCaptured", false)
+                    .put("semanticsInspectionComplete", false)
+            var screenshot: Bitmap? = null
+            try {
+                val foreground =
+                    instrumentation.uiAutomation.rootInActiveWindow
+                        ?.packageName
+                        ?.toString()
+                details.put("foregroundAvailable", foreground != null)
+                details.put(
+                    "foregroundPackageMatches",
+                    foreground?.let { it == instrumentation.targetContext.packageName } ?: JSONObject.NULL,
+                )
+                details.put("foregroundInspectionComplete", true)
+                val captured = instrumentation.uiAutomation.takeScreenshot()
+                screenshot = captured
+                if (captured != null) {
+                    val written =
+                        File(directory, "failure.png").outputStream().use {
+                            captured.compress(Bitmap.CompressFormat.PNG, 100, it)
+                        }
+                    details.put("screenshotCaptured", written)
+                    check(written) { "실제 실패 화면을 저장하지 못했습니다" }
+                }
+            } catch (diagnostic: Throwable) {
+                if (diagnostic !== original) original.addSuppressed(diagnostic)
+            } finally {
+                screenshot?.recycle()
+            }
+            val counts = JSONObject()
+            details.put("tagCounts", counts)
+            try {
+                listOf(
+                    "history_ready",
+                    "history_course",
+                    "history_task",
+                    "history_locked",
+                    "history_loading",
+                    "history_failed",
+                    "history_selection_changed",
+                    "history_delete_dialog",
+                    "history_delete_confirm",
+                    "history_delete_loading",
+                    "history_delete_error",
+                    "history_delete_success",
+                ).forEach { counts.put(it, nodes(it).size) }
+                details.put(
+                    "semanticsRootCount",
+                    compose
+                        .onAllNodes(isRoot(), useUnmergedTree = true)
+                        .fetchSemanticsNodes(atLeastOneRootRequired = false)
+                        .size,
+                )
+                details.put("semanticsInspectionComplete", true)
+            } catch (diagnostic: Throwable) {
+                if (diagnostic !== original) original.addSuppressed(diagnostic)
+            }
+            File(directory, "failure.json").writeText(details.toString(2))
+        } catch (diagnostic: Throwable) {
+            // Evidence failure supplements the original assertion and never changes its outcome.
+            if (diagnostic !== original) original.addSuppressed(diagnostic)
         }
     }
 

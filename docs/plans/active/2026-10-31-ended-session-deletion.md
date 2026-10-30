@@ -54,6 +54,10 @@
 
 | 단일 worker JDK17 전체 `./scripts/verify.sh` | 성공 | 품질/모듈 경계/Lint, build-logic, domain/Android 단위, debug와 unsigned release가 통과했다. 기존 보고서 합계41 suites/539개/실패/오류/건너뜀0이며 변경 없는 검사는 캐시/UP-TO-DATE를 포함한다. 이번 새 실제 SQLite27개와 controller fake31개는 새로 실행해 각각0실패/오류/건너뜀을 확인했다. 이 수와 빌드 시간은 성능 성과가 아니다. native/실제 SDK/비교 계측/리뷰는 아직 미실행이다. |
 
+| 실제 Route/격리 Room 기본 | 성공 | 명시 opt-in9개, 실패/건너뜀0. 선택 자료 cascade/그 밖의 준비와 활성/종료 자료 및 sequence 보존, 메모 생성/버전 충돌, silent D/선택/source/STOP/재생성, 실제 삭제 뒤0/0/0 확인 후 D/STOP 차단 rollback을 실행했다. 합성 차량 상태이며 실제 DDS 삭제 증거로 확대하지 않는다. 기존 상세 공개 경계1개도 기본에서 통과했다. |
+| 첫 확대/다크 격리 실행 | 실패 | 설정 직후 첫 시나리오가 최초 Ready 뒤 코스 UI 대기에서20초 timeout, cleanup은 Activity STOPPED→RESUMED 실패로 추가 실패했다. 나머지8개 성공과 분리해 전체 실행을 실패로 보존했다. 실패 시점 전면/화면 증거가 없어 최초 원인은 확정하지 않는다. 실패 후 원본 raw 모든 값/형/순서/sequence/grants/runtime/설정 동일을 확인해 소유 AVD를 중단했다. 실패한 자기 격리 자료의 잔여는 원본과 구분해 보존한다. |
+| 실패 정리와 진단 보강 | 구현/자동 검사 성공, native 재실행 대기 | Activity 재개를 정리 선행 조건에서 빼고 실제 소유 ViewModelStore 취소와 reader/쓰기0 확인 후 FK/close를 각각 시도한다. 종료 확인 실패 시 자기 DB도 보존한다. 최초 실패와 cleanup 오류를 모두 보존하고 다음 실패 직전 익명 상태/태그 개수/전면 일치와 실제 PNG를 비공개 cache에 남긴다. 시나리오 본문/기존 timeout/성공 조건은 완화하지 않는다. JDK17 전체 verify와 AndroidTest APK 재빌드를 통과했고 기존 단위 결과/539개는 캐시 재사용을 포함한다. |
+
 ## 남은 문제와 인계
 
 기존 P0 독립 UX/플랫폼 오류 주입 차단, PR8/10 최종 리뷰 미확인, 새 삭제 속도 자체의 전후 비교 불가를 구분한다. 외부 계정/서명/접수 발송은 수행하지 않는다. 결과와 최신 PR 상태가 실제 확인되기 전 완료로 쓰지 않는다.
