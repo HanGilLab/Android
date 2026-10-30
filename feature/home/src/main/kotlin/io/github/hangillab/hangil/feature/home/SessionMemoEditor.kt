@@ -2,8 +2,12 @@ package io.github.hangillab.hangil.feature.home
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
@@ -19,6 +23,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
@@ -46,6 +52,14 @@ internal fun SessionMemoEditorRoute(
     var deleteVersion by remember(sessionId) { mutableStateOf<String?>(null) }
     val allowed = state.sessionId == sessionId && viewModel.canRead()
     val displayedMemoVersion = state.memo?.version
+    val editorIntoView = remember(sessionId) { BringIntoViewRequester() }
+    var editorFocused by remember(sessionId) { mutableStateOf(false) }
+    val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
+    LaunchedEffect(imeBottom, editorFocused, state.load, state.editing) {
+        if (imeBottom > 0 && editorFocused && allowed && state.load == SessionMemoUiState.Load.Ready && state.editing) {
+            editorIntoView.bringIntoView()
+        }
+    }
     DisposableEffect(sessionId) {
         onDispose {
             focus.clearFocus(force = true)
@@ -86,7 +100,12 @@ internal fun SessionMemoEditorRoute(
                     OutlinedTextField(
                         value = state.draft,
                         onValueChange = { viewModel.edit(sessionId, it) },
-                        modifier = Modifier.fillMaxWidth().testTag("memo_textfield"),
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .bringIntoViewRequester(editorIntoView)
+                                .onFocusChanged { editorFocused = it.hasFocus }
+                                .testTag("memo_textfield"),
                         enabled = state.canEdit,
                         textStyle = MaterialTheme.typography.bodyLarge,
                         label = { Text(stringResource(R.string.memo_field_label), style = MaterialTheme.typography.bodyLarge) },

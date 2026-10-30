@@ -1,6 +1,7 @@
 package io.github.hangillab.hangil
 
 import android.graphics.Bitmap
+import android.graphics.Rect
 import android.os.Build
 import android.os.Bundle
 import android.os.Process
@@ -140,7 +141,7 @@ class SessionMemoFlowTest {
                 compose.onNodeWithTag("memo_textfield").performTextInput(DRAFT)
                 assertField(DRAFT)
                 waitFor("memo_unsaved")
-                capture("memo-input", "memo_textfield", scroll = false)
+                capture("memo-input", "memo_textfield", scroll = false, requireFocus = true)
                 phase("MEMO_AWAIT_D")
                 awaitGear(graph, GearPosition.DRIVE)
                 waitFor("home_locked_title")
@@ -186,7 +187,12 @@ class SessionMemoFlowTest {
                 waitFor("memo_saved_text")
                 assertNodeText("memo_saved_text", FINAL_MEMO)
                 assertIme(false)
-                capture("memo-saved", "memo_saved_text")
+                capture(
+                    "memo-saved",
+                    "memo_saved_text",
+                    scrollTarget = "memo_delete",
+                    companionTags = listOf("memo_source", "memo_edit", "memo_delete"),
+                )
                 compose.activityRule.scenario.recreate()
                 waitFor("home_recent_memo")
                 if (!exists("memo_saved_text")) openMemo()
@@ -232,7 +238,12 @@ class SessionMemoFlowTest {
                 waitFor("memo_saved_text")
                 assertNodeText("memo_saved_text", expectedMemo.text)
                 assertNodeText("memo_source", text(HomeR.string.memo_source))
-                capture("memo-restored", "memo_saved_text")
+                capture(
+                    "memo-restored",
+                    "memo_saved_text",
+                    scrollTarget = "memo_delete",
+                    companionTags = listOf("memo_source", "memo_edit", "memo_delete"),
+                )
 
                 // Controlled boundary injection: retain v1's callback, then use the actual
                 // repository as a second writer for this test's owned memo only. No baseline
@@ -455,6 +466,8 @@ class SessionMemoFlowTest {
     private fun focusEditorAndAssertIme() {
         touch("memo_textfield")
         assertIme(true)
+        // Do not scroll after the keyboard opens: the product must reveal the focused field.
+        assertFullyVisible(listOf("memo_textfield"), requireFocus = true)
     }
 
     private fun assertIme(expected: Boolean) {
@@ -472,6 +485,81 @@ class SessionMemoFlowTest {
             if (expected) insetsVisible == true || imeWindow else insetsVisible == false && !imeWindow
         }
     }
+
+    /** Physical viewport checks do not move the page or hide an IME layout failure. */
+    private fun assertFullyVisible(
+        tags: List<String>,
+        requireFocus: Boolean = false,
+    ) {
+        compose.waitUntil(15_000) {
+            val viewport = appViewport()
+            viewport != null && tags.all { fullyVisible(it, viewport, requireFocus) }
+        }
+        val viewport = appViewport()
+        assertTrue(
+            "입력창 또는 캡처 대상 전체가 실제 앱 가용 영역에 보여야 합니다",
+            viewport != null && tags.all { fullyVisible(it, viewport, requireFocus) },
+        )
+    }
+
+    private fun fullyVisible(
+        tag: String,
+        viewport: AppViewport,
+        requireFocus: Boolean,
+    ): Boolean {
+        val node = nodes(tag).singleOrNull() ?: return false
+        if (requireFocus && node.config.getOrNull(SemanticsProperties.Focused) != true) return false
+        val bounds = node.boundsInWindow
+        val size = node.size
+        val tolerance = 1f
+        if (size.width <= 0 || size.height <= 0 ||
+            bounds.width < size.width - tolerance || bounds.height < size.height - tolerance
+        ) {
+            return false
+        }
+        val left = bounds.left + viewport.windowOriginX
+        val top = bounds.top + viewport.windowOriginY
+        val right = bounds.right + viewport.windowOriginX
+        val bottom = bounds.bottom + viewport.windowOriginY
+        return left >= viewport.available.left - tolerance && top >= viewport.available.top - tolerance &&
+            right <= viewport.available.right + tolerance && bottom <= viewport.available.bottom + tolerance
+    }
+
+    private fun appViewport(): AppViewport? {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        var viewport: AppViewport? = null
+        instrumentation.runOnMainSync {
+            val activity = compose.activity
+            val decor = activity.window.decorView
+            val onScreen = IntArray(2)
+            val inWindow = IntArray(2)
+            decor.getLocationOnScreen(onScreen)
+            decor.getLocationInWindow(inWindow)
+            val available = Rect(onScreen[0], onScreen[1], onScreen[0] + decor.width, onScreen[1] + decor.height)
+            val visibleFrame = Rect()
+            decor.getWindowVisibleDisplayFrame(visibleFrame)
+            if (!available.intersect(visibleFrame)) return@runOnMainSync
+            if (Build.VERSION.SDK_INT >= 30) {
+                val insets = decor.rootWindowInsets
+                if (insets?.isVisible(WindowInsets.Type.ime()) == true) {
+                    // Use the full window bottom, not an already resized decor bottom; otherwise
+                    // adjustResize can subtract the keyboard twice and invent a smaller viewport.
+                    val fullWindow = activity.windowManager.currentWindowMetrics.bounds
+                    val imeBottom = insets.getInsets(WindowInsets.Type.ime()).bottom
+                    available.bottom = minOf(available.bottom, fullWindow.bottom - imeBottom)
+                }
+            }
+            if (available.width() <= 0 || available.height() <= 0) return@runOnMainSync
+            viewport = AppViewport(available, onScreen[0] - inWindow[0], onScreen[1] - inWindow[1])
+        }
+        return viewport
+    }
+
+    private data class AppViewport(
+        val available: Rect,
+        val windowOriginX: Int,
+        val windowOriginY: Int,
+    )
 
     private fun assertField(expected: String) {
         waitFor("memo_textfield")
@@ -531,10 +619,17 @@ class SessionMemoFlowTest {
         name: String,
         visibleTag: String,
         scroll: Boolean = true,
+        scrollTarget: String = visibleTag,
+        companionTags: List<String> = emptyList(),
+        requireFocus: Boolean = false,
     ) {
         waitFor(visibleTag)
-        if (scroll) compose.onNodeWithTag(visibleTag).performScrollTo()
+        if (scroll) {
+            waitFor(scrollTarget)
+            compose.onNodeWithTag(scrollTarget).performScrollTo()
+        }
         compose.waitForIdle()
+        assertFullyVisible(listOf(visibleTag) + companionTags, requireFocus)
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val automation = instrumentation.uiAutomation
         val expectedPackage = instrumentation.targetContext.packageName
@@ -611,7 +706,7 @@ class SessionMemoFlowTest {
     private fun JSONArray.strings(): List<String> = (0 until length()).map { getString(it) }
 
     private companion object {
-        const val DRAFT = "계측 검증용 초안 A\n저장 전 화면 잠금 확인"
+        const val DRAFT = "계측 검증용 초안 A\n두 번째 줄 입력 확인\n세 번째 줄 입력 확인\n네 번째 줄 입력 확인\n다섯 번째 줄 가시성 확인"
         const val CANCELLED_DRAFT = "계측 검증용 취소 초안"
         const val FINAL_MEMO = "계측 검증용 수정 메모 B\n사용자 기록과 구분한 입력 검증"
         const val SECOND_WRITER_MEMO = "계측 검증용 두 번째 쓰기 C\n이전 삭제 확인의 버전 경계 검증"

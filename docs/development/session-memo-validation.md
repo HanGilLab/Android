@@ -10,7 +10,7 @@
 
 편집기는 펼친 주차 상세의 수명주기에 맞춰 읽고 같은 세션의 초안을 VM에서 유지한다. reader Job, action nonce와 revision이 IO의 commit callback에서도 유효해야 하며 닫힘/STOP/D 뒤 같은 세션에 재진입해도 이전 callback을 다시 허용하지 않는다. 저장 중 Room 자체 emit을 외부 충돌로 오인하거나 새 세션에 이전 결과를 섞지 않는다. 저장 성공은 실제 저장 결과 이후에만 표시한다.
 
-키보드가 열린 동안 스크롤 viewport가 IME inset을 피하도록 구성하고 기존 Scaffold inset 소비를 반영한다. 잠금/편집 종료/화면 이탈에서는 포커스와 IME를 숨긴다. 기본 글자와 확대/다크에서 입력창과 저장 버튼에 실제 도달할 수 있는지 검증한다. [Compose inset 기준](https://developer.android.com/develop/ui/compose/system/insets-ui)을 참고하되 실제 Pleos 지원 여부는 실행으로 확인한다.
+키보드가 열린 동안 스크롤 viewport가 IME inset을 피하도록 구성하고 기존 Scaffold inset 소비를 반영한다. IME 높이와 포커스 변화에 맞춰 실제 편집기를 `BringIntoViewRequester`로 다시 보이게 한다. 잠금/편집 종료/화면 이탈에서는 포커스와 IME를 숨긴다. 기본 글자와 확대/다크에서 입력창과 저장 버튼에 실제 도달할 수 있는지 검증한다. [Compose inset 기준](https://developer.android.com/develop/ui/compose/system/insets-ui)을 참고하되 실제 Pleos 지원 여부는 실행으로 확인한다.
 
 ## 원본을 전진하기 전의 검증 순서
 
@@ -23,7 +23,7 @@
 
 `SessionMemoFlowTest`는 `manualMemo=true`를 명시한 전용 debug 앱에서만 실행한다. 실제 브라우저 DDS 브리지와 SDK의 P 수신, 전면 앱을 확인하고 기본 내비/카메라 오버레이/빈 계층을 앱 복원 성공으로 해석하지 않는다. 키보드 표시를 확인하기 위해 필요한 표시 설정만 원래 값과 구분하고 복원하며 새로운 입력기나 권한을 임의 설치/허용하지 않는다.
 
-첫 메서드 `createEditAndLockMemo`는 기존 준비/세션/관찰/메모의 모든 값을 검사 앱의 비공개 소유 cache에 보존한다. 미완료 소유 기록이 있으면 새 작업을 중복 시작하지 않는다. UI를 통해 새 검사 소유 연습을 시작/종료하고 그 세션에만 일반적인 검증 문구를 입력한다. 실제 IME 표시와 Compose IME commit 입력을 확인하며 실제 사람의 키 탭이나 실제 주행 메모로 과장하지 않는다.
+첫 메서드 `createEditAndLockMemo`는 기존 준비/세션/관찰/메모의 모든 값을 검사 앱의 비공개 소유 cache에 보존한다. 미완료 소유 기록이 있으면 새 작업을 중복 시작하지 않는다. UI를 통해 새 검사 소유 연습을 시작/종료하고 그 세션에만 일반적인 검증 문구를 입력한다. 실제 IME 표시와 Compose IME commit 입력을 확인하며 실제 사람의 키 탭이나 실제 주행 메모로 과장하지 않는다. IME가 열린 뒤 검사가 추가 스크롤을 해 입력창 문제를 숨기지 않고, 포커스/전체 노드 크기/클리핑과 실제 native 가용 viewport를 함께 비교한다. 빈 입력창과 다섯 줄 초안의 전체 가시성을 확인하고 저장/복원 캡처에서는 출처/본문/수정/삭제가 함께 보여야 한다.
 
 `MEMO_AWAIT_D`에서 DDS를 D로 전환해 상세/IME 숨김과 DB 미저장을 확인하고 `MEMO_AWAIT_P`에서 P로 복원해 초안/저장본 구분을 확인한다. 명시적 저장/편집 취소/수정과 실제 토큰 변경, 재생성을 검사한 후 `MEMO_AWAIT_PROCESS_RESTART`와 소유 상태를 남긴다.
 
