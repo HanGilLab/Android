@@ -14,7 +14,7 @@ APP-08 삭제는 독립 구현 가능하지만 실제 원본 검증에서 검사
 
 ## 완료 조건
 
-- [ ] 제품 수정 전 실제 Route와 실제 MapLibre SDK View에서 합성 무방출 live D/옛 P 표시의 입력 경계를 RED로 재현하고 실제 DDS 재현과 구분한다.
+- [x] 제품 수정 전 실제 Route와 실제 MapLibre SDK View에서 합성 무방출 live D/옛 P 표시의 입력 경계를 RED로 재현하고 실제 DDS 재현과 구분한다.
 - [ ] 고정 source/attempt/token/STARTED와 최신 P/UX를 입력 처리에서 확인한다. 진행 입력/예약 동작/자식 접근성/출처 dialog의 오래된 동작을 차단하며 SDK thread와 destroy 경계를 지킨다.
 - [ ] 허용 P에서 실제 지도 이동/확대와 출처 표시/읽기를 보존하고, BACK/닫기/STOP/재진입에서 묵은 입력을 실행하지 않는다.
 - [ ] 단위/제어 native, JDK17 전체 verify와 실제 Pleos 기본/확대 다크 P-D-P, 이전 지도 source/재생성/재시도 관련 흐름을 확인한다.
@@ -33,7 +33,7 @@ APP-08 삭제는 독립 구현 가능하지만 실제 원본 검증에서 검사
 이번 목표는 확인된 입력 정확성 경계다. 지도 진입에 추가되는 경계의 처리 비용을 관찰하며 속도 향상을 가정하지 않는다. 이력 진입/펼침 계측의 과거 값이나 JUnit/Gradle 시간은 지도 성능으로 대체하지 않는다.
 
 - 지표: 실제 MainActivity에서 home_map 클릭 직전→map_view 생성 후 동일 performScrollTo를 포함해 선택한 고정 시연 preview의 실제 SDK 완전 렌더/카메라와 map_ready/map_view가 실제 viewport에서 확인되고 Compose idle 뒤 재확인될 때까지 monotonic ms. 입력 전달/고정 스크롤/semantics/idle/실제 renderer 비용을 포함하며 순수 GPU/SDK 처리나 운전자 속도가 아니다.
-- 기준: d0385bc, 고정 계측 revision은 실제 첫 빌드/커밋 뒤 기록. 같은 메서드/endpoint를 수정하지 않고 비교에 사용한다.
+- 기준 제품: d0385bc. 재현/계측 고정 revision9a8d8d0c706ce16008f975286b3fd6986b080358. 같은 메서드/endpoint를 수정하지 않고 비교에 사용한다.
 - 조건: 기존 Android14/API34 Pleos/JDK17 debug, 원래 준비/종료9/관찰15/메모0과 원문 카탈로그/선택 preview, 실제 SDK P+UX, font1.0/라이트. 캐시를 지우지 않고 무거운 빌드와 동시 실행하지 않는다. MapLibre13.5.0/OpenFreeMap 원래 style/타일/출처를 사용한다.
 - 순서/표본: 앱 자료 확인으로 정지된 상태에서 새 Activity,5회 워밍업 뒤30회. 매회 Home→지도/close→Home, 원래 준비/preview/실제 native source/카메라를 확인한다. 캐시/네트워크/OS/발열의 순차 실행 한계는 기록하며 전후 분포가 겹치면 고정 비용이나 개선으로 확정하지 않는다.
 - 타이밍 밖: 실제 SDK gate/원본/카탈로그/환경/시연 source와 권한 대조, JSON, 닫기/전체 보존. 표본 endpoint는 실제 renderer 완료와 native source를 확인하며 HTTP200/UI tag만으로 성공을 만들지 않는다.
@@ -44,7 +44,19 @@ APP-08 삭제는 독립 구현 가능하지만 실제 원본 검증에서 검사
 
 | 명령 또는 시나리오 | 결과 | 근거 |
 |---|---|---|
+| JDK17 검사용 APK 빌드 | 성공 | 제품 d0385bc 유지, 계측/재현 고정9a8d8d0. 컴파일 경고2개는 플랫폼 getMapAsync의 nullable 해석으로 별도 정리 대상이다. |
+| 실제 Route/native 입력 RED | 예상 결함 재현 | 실제 P의 수평 pan 이동과 camera 복원/같은 native View를 먼저 확인했다. 합성 무방출 D/옛 Ready P가 남은 뒤 같은 pan이 이동해 마지막 거부 assertion만 실패했다. 실제 DDS 전이 증거가 아니다. fixture 쓰기0과 이탈 정리 확인, 실패 원문은 비공개 보존. |
+| 실제 SDK 지도 진입 기준 계측 | 성공 | 워밍업5/표본30, 실패/누락/미실행/제외0. 중앙값2127.5183965ms, Q1 2022.010292ms, Q3 2212.044752ms, IQR190.03446ms, min1823.575501ms/max2983.734043ms. 원본/환경/source/catalog/APK hash 확인, 완료 기준 raw는 ignored 비공개 파일과 앱 cache에 불변 보존. |
+| 기준 실행 전체 원본 보존 | 성공 | 모든 테이블/행/필드/자료형/순서/sequence, grants/runtime/font/night/IME/proxy를 실행 전후 대조했다. 원래 준비/종료 기록/관찰/메모 유지. 소유 AVD와 forwarding을 정리한 뒤 제품 수정 시작. |
+| 제품 타깃 첫 빌드 | 실패, 수정 후 재실행 예정 | SDK attribution manager setter의 Kotlin 속성 대입이 val 재할당 오류로 컴파일 중단. 공개 setAttributionDialogManager 직접 호출로 수정했다. 앱 실행 실패나 검증 통과로 기록하지 않는다. |
+| 제품 타깃 재실행 | 부분 성공, 검사 APK 컴파일 실패 | 제품 debug와 지도 JVM 검사45개는 성공. 추가 native 검사 정리 helper의 nullable SDK manager 접근으로 검사 APK 컴파일 중단. 실제 manager 존재를 checkNotNull로 요구하도록 수정하고 재실행한다. Native 실행 성공으로 기록하지 않는다. |
 | `./scripts/verify.sh` | 미실행 | |
+
+## 구현 판단
+
+직접 touchscreen pan/pinch/rotate/tilt를 유지하되 SDK 공개 UiSettings로 관성 velocity animation 전체, doubleTap/quickZoom을 비활성화한다. 늦게 실행되는 key/trackball camera 입력은 지원하지 않으며 BACK은 통과시킨다. 공개 즉시 wheel zoom 경로와 접근성 정보 탐색은 실제 SDK 동작에 맞춰 분리한다. compass는 guarded 즉시 bearing 복원으로 처리하고 출처 dialog는 매번 새로운 고정 owner를 가진 manager를 사용한다. 이 제약을 모든 입력 지원이나 SDK 예약 작업 전체의 무조건 최신 guard로 과장하지 않는다. 직접 입력은 처리 직전 live 값을 확인하고 수신 변화/STOP에서 Android pending input과 SDK 공개 cancel API를 정리한다.
+
+로컬 독립 검토에서 첫 생성의 `onMapLoading=null`도 remember에 남는 복구 결함을 찾았다. D/P 수신이 UI 전달 전에 합쳐져 같은 attempt가 유지되면 native View 없이 spinner만 남을 수 있었다. 현재 reader/query/준비/attempt가 유효한 첫 할당만 거부 결과를 FAILED로 발행해 P 복귀 후 명시 재시도를 노출한다. FAILED attempt는 같은 할당 호출로 복구시키지 않고 retry가 만든 새 attempt만 허용한다. 관련 VM 검사는 미실행 상태로 추가했으며 성공 결과는 실제 실행 뒤 별도로 기록한다.
 
 ## 남은 문제와 인계
 

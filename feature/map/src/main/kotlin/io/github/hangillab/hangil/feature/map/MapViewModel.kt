@@ -88,10 +88,30 @@ class MapViewModel
             val token = tokens.incrementAndGet()
             while (true) {
                 val current = render.value
-                if (!canRender(current) || current.id != attempt) return null
-                if (render.compareAndSet(current, current.copy(token = token, load = MapLoadState.LOADING))) return token
+                if (!ownsPreparation(current) || current.id != attempt || current.load == MapLoadState.FAILED) return null
+                if (!allowsInteraction()) {
+                    // A rejected first composition must expose retry even if D/P receipts conflate.
+                    if (render.compareAndSet(current, current.copy(token = 0, load = MapLoadState.FAILED))) return null
+                } else if (render.compareAndSet(current, current.copy(token = token, load = MapLoadState.LOADING))) {
+                    return token
+                }
             }
         }
+
+        /** Native input reads the fixed renderer/source owner and live gate before SDK dispatch. */
+        fun canInteractWithMap(
+            attempt: Int,
+            token: Long,
+        ): Boolean {
+            if (token <= 0) return false
+            val current = render.value
+            return current.id == attempt && current.token == token && current.load == MapLoadState.READY &&
+                canRender(current) && render.value === current
+        }
+
+        /** Wake cancellation for received changes without waiting for the displayed Compose state. */
+        val mapInputChanges: Flow<Unit> =
+            combine(vehicleGateway.state, restrictionsProvider.restrictions, render) { _, _, _ -> Unit }
 
         fun onMapRendered(
             attempt: Int,
@@ -133,10 +153,12 @@ class MapViewModel
             return true
         }
 
-        private fun canRender(attempt: MapRenderAttempt): Boolean {
+        private fun canRender(attempt: MapRenderAttempt): Boolean = ownsPreparation(attempt) && allowsInteraction()
+
+        private fun ownsPreparation(attempt: MapRenderAttempt): Boolean {
             val owner = reader.get() ?: return false
             return owner.job.isActive && owner.id == attempt.reader && attempt.queryEpoch == queryEpoch.get() &&
-                attempt.preparation is MapPreparationState.Ready && allowsInteraction()
+                attempt.preparation is MapPreparationState.Ready
         }
 
         private fun allowsInteraction(): Boolean =

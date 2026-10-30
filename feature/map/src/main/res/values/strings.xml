@@ -19,7 +19,7 @@
   <string name="map_demo_badge">고정 시연 지점</string>
   <string name="map_content_description">%1$s 고정 시연 지점. 이동 경로와 현재 위치는 표시하지 않아요.</string>
   <string name="map_loading">지도를 불러오고 있어요.</string>
-  <string name="map_failed">지도를 불러오지 못했어요. 연결을 확인해 주세요.</string>
+  <string name="map_failed">지도를 불러오지 못했어요. 다시 시도해 주세요.</string>
   <string name="map_retry">다시 불러오기</string>
   <string name="map_close">닫기</string>
   <string name="map_sources">지도: OpenFreeMap, © OpenMapTiles, © OpenStreetMap 기여자</string>

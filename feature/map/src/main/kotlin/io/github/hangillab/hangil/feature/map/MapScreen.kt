@@ -112,6 +112,8 @@ private fun PreparedMap(
                     pointBorder = MaterialTheme.colorScheme.surface.toArgb(),
                     contentDescription = stringResource(R.string.map_content_description, preparation.prepared.course.title),
                     onLoading = viewModel::onMapLoading,
+                    canInteract = viewModel::canInteractWithMap,
+                    inputChanges = viewModel.mapInputChanges,
                     onRendered = viewModel::onMapRendered,
                     onFailed = viewModel::onMapFailed,
                     modifier = Modifier.fillMaxSize().testTag("map_view"),
