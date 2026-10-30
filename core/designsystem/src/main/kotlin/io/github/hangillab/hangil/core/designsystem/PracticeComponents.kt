@@ -8,9 +8,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
@@ -39,7 +41,15 @@ fun PracticePage(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Scaffold { inset ->
-        Box(Modifier.fillMaxSize().padding(inset).verticalScroll(rememberScrollState()), contentAlignment = Alignment.TopCenter) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .padding(inset)
+                .consumeWindowInsets(inset)
+                .imePadding()
+                .verticalScroll(rememberScrollState()),
+            contentAlignment = Alignment.TopCenter,
+        ) {
             Column(
                 Modifier.widthIn(max = maxWidth).fillMaxWidth().padding(contentPadding),
                 verticalArrangement = Arrangement.spacedBy(verticalSpacing),

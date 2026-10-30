@@ -13,6 +13,9 @@ internal interface PracticeSessionDao {
     @Query("SELECT * FROM practice_session WHERE activeSlot = 1 LIMIT 1")
     suspend fun active(): PracticeSessionEntity?
 
+    @Query("SELECT * FROM practice_session WHERE endedAtEpochMillis IS NOT NULL ORDER BY rowId DESC LIMIT 1")
+    suspend fun latestFinished(): PracticeSessionEntity?
+
     @Query("SELECT * FROM practice_session WHERE sessionId = :sessionId")
     suspend fun find(sessionId: String): PracticeSessionEntity?
 

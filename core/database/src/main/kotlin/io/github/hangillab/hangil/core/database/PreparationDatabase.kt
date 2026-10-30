@@ -4,8 +4,8 @@ import androidx.room.Database
 import androidx.room.RoomDatabase
 
 @Database(
-    entities = [PreparationEntity::class, PracticeSessionEntity::class, VehicleObservationEntity::class],
-    version = 3,
+    entities = [PreparationEntity::class, PracticeSessionEntity::class, VehicleObservationEntity::class, SessionMemoEntity::class],
+    version = 4,
     exportSchema = true,
 )
 internal abstract class PreparationDatabase : RoomDatabase() {
@@ -14,4 +14,6 @@ internal abstract class PreparationDatabase : RoomDatabase() {
     abstract fun practiceSessionDao(): PracticeSessionDao
 
     abstract fun vehicleObservationDao(): VehicleObservationDao
+
+    abstract fun sessionMemoDao(): SessionMemoDao
 }
