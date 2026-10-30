@@ -255,6 +255,11 @@ private fun LatestSessionPanel(state: SessionUiState) {
                     RecentVehicleObservationRoute(latest.sessionId)
                 }
             }
+            key(latest.sessionId) {
+                ParkedDisclosure(stringResource(R.string.memo_heading), Modifier.testTag("home_recent_memo")) {
+                    SessionMemoEditorRoute(latest.sessionId)
+                }
+            }
         }
     } else if (records.sessions.isEmpty()) {
         ParkedPanel {

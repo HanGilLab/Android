@@ -117,7 +117,11 @@ class VehicleObservationStorageTest {
                     assertTrue(stored.all { it.sessionId == sessionId && it.id > 0 })
                     assertTrue(stored.zipWithNext().all { (a, b) -> a.id < b.id })
                     assertTrue(stored.all { it.observation.source == VehicleObservationSource.SDK_STATE_OBSERVATION })
-                    assertEquals(3, db.openHelper.writableDatabase.version)
+                    assertEquals(4, db.openHelper.writableDatabase.version)
+                    db.openHelper.writableDatabase.query("SELECT COUNT(*) FROM session_memo").use { cursor ->
+                        check(cursor.moveToFirst())
+                        assertEquals(0, cursor.getInt(0))
+                    }
                 }
                 phase("ISOLATED_FIXTURE_ROUND_TRIP_PASSED")
             } finally {
@@ -138,7 +142,7 @@ class VehicleObservationStorageTest {
             }
         open(file.name).useDatabase { db ->
             val sqlite = db.openHelper.writableDatabase
-            assertEquals(3, sqlite.version)
+            assertEquals(4, sqlite.version)
             // Do not put original row contents in assertion messages or instrumentation output.
             assertTrue(
                 "Preparation rows must be preserved",
@@ -149,6 +153,10 @@ class VehicleObservationStorageTest {
                 previous[1] == sqlite.query("SELECT * FROM practice_session ORDER BY rowid").use(::readRows),
             )
             sqlite.query("SELECT COUNT(*) FROM vehicle_observation").use { cursor ->
+                check(cursor.moveToFirst())
+                assertEquals(0, cursor.getInt(0))
+            }
+            sqlite.query("SELECT COUNT(*) FROM session_memo").use { cursor ->
                 check(cursor.moveToFirst())
                 assertEquals(0, cursor.getInt(0))
             }
@@ -164,7 +172,7 @@ class VehicleObservationStorageTest {
     private fun open(name: String) =
         Room
             .databaseBuilder(context, PreparationDatabase::class.java, name)
-            .addMigrations(PreparationMigration1To2, PreparationMigration2To3)
+            .addMigrations(PreparationMigration1To2, PreparationMigration2To3, PreparationMigration3To4)
             .build()
 
     private fun readRows(

@@ -27,19 +27,21 @@ import org.robolectric.annotation.Config
 class VehicleObservationMigrationTest {
     private val selection = PracticeSelection("commute", "neighborhood", 1, 1, "sequence")
 
-    @Test fun `version two migration preserves every existing preparation and session field and starts with no observations`() =
+    @Test fun `version two preserves rows and creates empty observations at version three before reaching current version`() =
         runBlocking {
             val context = RuntimeEnvironment.getApplication()
             val name = "vehicle-observation-v2-migration-fixture.db"
             context.deleteDatabase(name)
             try {
                 val before = createLegacy(name, 2)
+                verifyVersionThreeBoundary(name, before)
                 open(name).useDatabase { database ->
                     val sqlite = database.openHelper.writableDatabase
-                    assertEquals(3, sqlite.version)
+                    assertEquals(4, sqlite.version)
                     assertEquals(before.getValue("preparation"), rows(sqlite, "preparation", "slot"))
                     assertEquals(before.getValue("practice_session"), rows(sqlite, "practice_session", "rowId"))
                     assertEquals(emptyList<List<Any?>>(), rows(sqlite, "vehicle_observation", "id"))
+                    assertTrue(rows(sqlite, "session_memo", "sessionId").isEmpty())
                     sqlite.query("PRAGMA foreign_key_check").use { assertEquals(0, it.count) }
                     val repository = RoomVehicleObservationRepository(database)
                     assertTrue(repository.observe("legacy-finished").first().isEmpty())
@@ -67,10 +69,11 @@ class VehicleObservationMigrationTest {
                 val before = createLegacy(name, 1)
                 open(name).useDatabase { database ->
                     val sqlite = database.openHelper.writableDatabase
-                    assertEquals(3, sqlite.version)
+                    assertEquals(4, sqlite.version)
                     assertEquals(before.getValue("preparation"), rows(sqlite, "preparation", "slot"))
                     assertTrue(rows(sqlite, "practice_session", "rowId").isEmpty())
                     assertTrue(rows(sqlite, "vehicle_observation", "id").isEmpty())
+                    assertTrue(rows(sqlite, "session_memo", "sessionId").isEmpty())
                     val catalog = LocalPracticeCatalog()
                     val practice = (catalog.resolve(selection) as Preparation.Ready).practice
                     val started = RoomPracticeSessionRepository(database, catalog).start(practice, 1_000) { true }
@@ -89,8 +92,43 @@ class VehicleObservationMigrationTest {
     private fun open(name: String) =
         Room
             .databaseBuilder(RuntimeEnvironment.getApplication(), PreparationDatabase::class.java, name)
-            .addMigrations(PreparationMigration1To2, PreparationMigration2To3)
+            .addMigrations(PreparationMigration1To2, PreparationMigration2To3, PreparationMigration3To4)
             .build()
+
+    /** Keep the original v2 to v3 contract explicit although the production Room target is v4. */
+    private fun verifyVersionThreeBoundary(
+        name: String,
+        before: Map<String, List<List<Any?>>>,
+    ) {
+        val callback =
+            object : SupportSQLiteOpenHelper.Callback(3) {
+                override fun onCreate(db: SupportSQLiteDatabase) = error("The version two fixture must already exist")
+
+                override fun onUpgrade(
+                    db: SupportSQLiteDatabase,
+                    oldVersion: Int,
+                    newVersion: Int,
+                ) {
+                    assertEquals(2, oldVersion)
+                    assertEquals(3, newVersion)
+                    PreparationMigration2To3.migrate(db)
+                }
+            }
+        val configuration =
+            SupportSQLiteOpenHelper.Configuration
+                .builder(RuntimeEnvironment.getApplication())
+                .name(name)
+                .callback(callback)
+                .build()
+        FrameworkSQLiteOpenHelperFactory().create(configuration).use { helper ->
+            val sqlite = helper.writableDatabase
+            assertEquals(3, sqlite.version)
+            assertEquals(before.getValue("preparation"), rows(sqlite, "preparation", "slot"))
+            assertEquals(before.getValue("practice_session"), rows(sqlite, "practice_session", "rowId"))
+            assertTrue(rows(sqlite, "vehicle_observation", "id").isEmpty())
+            sqlite.query("PRAGMA foreign_key_check").use { assertEquals(0, it.count) }
+        }
+    }
 
     private fun createLegacy(
         name: String,
