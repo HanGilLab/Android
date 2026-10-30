@@ -12,6 +12,7 @@ import io.github.hangillab.hangil.core.domain.PracticeSessionRepository
 import io.github.hangillab.hangil.core.domain.PreparedPractice
 import io.github.hangillab.hangil.core.domain.SessionFinishResult
 import io.github.hangillab.hangil.core.domain.SessionStartResult
+import io.github.hangillab.hangil.core.domain.SessionTaskCount
 import io.github.hangillab.hangil.core.domain.UxRestrictionState
 import io.github.hangillab.hangil.core.domain.VehicleGateway
 import io.github.hangillab.hangil.core.domain.VehicleReading
@@ -878,6 +879,228 @@ class SessionHistoryViewModelTest {
             assertEquals("a", ready(fixture).session.sessionId)
         }
 
+    @Test fun `ready binds each selected historical snapshot and its course summary together`() =
+        runTest {
+            val a = courseSession("a")
+            val b = courseSession("b", "other", "다른 저장 과제")
+            val c = session("c")
+            val fixture = Fixture(listOf(a, b, c))
+            val trace = mutableListOf<SessionHistoryUiState>()
+            subscribe(fixture, trace)
+            val first = ready(fixture)
+            assertEquals(2, first.summary.sessionCount)
+            assertEquals(
+                listOf(SessionTaskCount("task", "저장 과제", 1), SessionTaskCount("other", "다른 저장 과제", 1)),
+                first.summary.tasks,
+            )
+            assertTrue(fixture.model.older(first.session.sessionId, first.generation))
+            val second = ready(fixture)
+            assertEquals(b, second.summary.source)
+            assertEquals(first.summary.tasks, second.summary.tasks)
+            assertTrue(fixture.model.older(second.session.sessionId, second.generation))
+            val third = ready(fixture)
+            assertEquals(c, third.summary.source)
+            assertEquals(1, third.summary.sessionCount)
+            for (state in trace.filterIsInstance<SessionHistoryUiState.Ready>()) {
+                assertEquals(state.session, state.summary.source)
+            }
+            assertEquals(1, fixture.repository.calls)
+            assertEquals(1, fixture.repository.maximumActive)
+            assertEquals(0, fixture.repository.writes)
+        }
+
+    @Test fun `a received insertion updates summary order and counts while retaining selected identity`() =
+        runTest {
+            val a = courseSession("a")
+            val b = courseSession("b")
+            val fixture = Fixture(listOf(a, b))
+            subscribe(fixture)
+            val previous = ready(fixture)
+            val inserted = courseSession("inserted", "new-task", "먼저 받은 새 과제")
+            fixture.repository.values.value = listOf(inserted, a, b)
+            runCurrent()
+            val current = ready(fixture)
+            assertEquals(a, current.session)
+            assertEquals(1, current.index)
+            assertEquals(3, current.summary.sessionCount)
+            assertEquals(
+                listOf(SessionTaskCount("new-task", "먼저 받은 새 과제", 1), SessionTaskCount("task", "저장 과제", 2)),
+                current.summary.tasks,
+            )
+            assertNotEquals(previous.generation, current.generation)
+            assertFalse(fixture.model.older(previous.session.sessionId, previous.generation))
+            assertEquals(0, fixture.repository.writes)
+        }
+
+    @Test fun `a received source title change rebuilds the summary from its new historical context`() =
+        runTest {
+            val a = courseSession("a")
+            val b = courseSession("b")
+            val fixture = Fixture(listOf(a, b))
+            subscribe(fixture)
+            val previous = ready(fixture)
+            val changed = a.copy(courseTitle = "별도로 저장된 코스 제목")
+            fixture.repository.values.value = listOf(changed, b)
+            runCurrent()
+            val current = ready(fixture)
+            assertEquals(changed, current.session)
+            assertEquals(1, current.summary.sessionCount)
+            assertFalse(fixture.model.older(previous.session.sessionId, previous.generation))
+            assertTrue(fixture.model.older(current.session.sessionId, current.generation))
+            val older = ready(fixture)
+            assertEquals(b, older.session)
+            assertEquals(1, older.summary.sessionCount)
+            assertEquals(0, fixture.repository.writes)
+        }
+
+    @Test fun `a received historical task rename splits counts without changing the course group`() =
+        runTest {
+            val a = courseSession("a")
+            val b = courseSession("b")
+            val fixture = Fixture(listOf(a, b))
+            subscribe(fixture)
+            val previous = ready(fixture)
+            assertEquals(listOf(SessionTaskCount("task", "저장 과제", 2)), previous.summary.tasks)
+            fixture.repository.values.value = listOf(a, b.copy(taskTitle = "변경된 당시 과제"))
+            runCurrent()
+            val current = ready(fixture)
+            assertEquals(2, current.summary.sessionCount)
+            assertEquals(
+                listOf(SessionTaskCount("task", "저장 과제", 1), SessionTaskCount("task", "변경된 당시 과제", 1)),
+                current.summary.tasks,
+            )
+            assertNotEquals(previous.generation, current.generation)
+        }
+
+    @Test fun `driving hides summary until fresh parked validation includes received records`() =
+        runTest {
+            val a = courseSession("a")
+            val b = courseSession("b")
+            val fixture = Fixture(listOf(a, b))
+            subscribe(fixture)
+            val first = ready(fixture)
+            assertTrue(fixture.model.older(first.session.sessionId, first.generation))
+            val previous = ready(fixture)
+            fixture.vehicleState.value = parked().copy(gear = VehicleReading.Available(GearPosition.DRIVE))
+            runCurrent()
+            assertEquals(SessionHistoryUiState.Locked, fixture.model.uiState.value)
+            assertEquals(0, fixture.repository.active)
+            fixture.repository.values.value = listOf(courseSession("inserted"), a, b)
+            runCurrent()
+            assertEquals(SessionHistoryUiState.Locked, fixture.model.uiState.value)
+            fixture.vehicleState.value = parked()
+            runCurrent()
+            val current = ready(fixture)
+            assertEquals(b, current.session)
+            assertEquals(3, current.summary.sessionCount)
+            assertFalse(fixture.model.newer(previous.session.sessionId, previous.generation))
+            assertEquals(1, fixture.repository.maximumActive)
+            assertEquals(0, fixture.repository.writes)
+        }
+
+    @Test fun `closing clears summary and reopening validates new counts for the retained selection`() =
+        runTest {
+            val a = courseSession("a")
+            val b = courseSession("b")
+            val fixture = Fixture(listOf(a, b))
+            val firstReader = subscribe(fixture)
+            val first = ready(fixture)
+            assertTrue(fixture.model.older(first.session.sessionId, first.generation))
+            val previous = ready(fixture)
+            firstReader.cancelAndJoin()
+            runCurrent()
+            assertEquals(SessionHistoryUiState.Loading, fixture.model.uiState.value)
+            assertEquals(0, fixture.repository.active)
+            fixture.repository.values.value = listOf(courseSession("inserted"), a, b)
+            runCurrent()
+            assertEquals(SessionHistoryUiState.Loading, fixture.model.uiState.value)
+            subscribe(fixture)
+            val current = ready(fixture)
+            assertEquals(b, current.session)
+            assertEquals(3, current.summary.sessionCount)
+            assertFalse(fixture.model.newer(previous.session.sessionId, previous.generation))
+            assertEquals(1, fixture.repository.maximumActive)
+            assertEquals(0, fixture.repository.writes)
+        }
+
+    @Test fun `source read failure removes summary until explicit retry validates fresh counts`() =
+        runTest {
+            val a = courseSession("a")
+            val b = courseSession("b")
+            val fixture = Fixture(listOf(a, b))
+            val fail = CompletableDeferred<Unit>()
+            fixture.repository.source = {
+                flow {
+                    emit(fixture.repository.values.value)
+                    fail.await()
+                    throw IOException("fixture summary source failure")
+                }
+            }
+            subscribe(fixture)
+            val previous = ready(fixture)
+            fail.complete(Unit)
+            runCurrent()
+            assertEquals(
+                SessionHistoryUiState.Failed(SessionHistoryUiState.FailureReason.SESSION_READ),
+                fixture.model.uiState.value,
+            )
+            fixture.repository.values.value = listOf(courseSession("inserted"), a, b)
+            runCurrent()
+            assertTrue(fixture.model.uiState.value is SessionHistoryUiState.Failed)
+            fixture.repository.source = { fixture.repository.values }
+            assertTrue(fixture.model.retry())
+            runCurrent()
+            val current = ready(fixture)
+            assertEquals(a, current.session)
+            assertEquals(3, current.summary.sessionCount)
+            assertFalse(fixture.model.older(previous.session.sessionId, previous.generation))
+            assertEquals(1, fixture.repository.maximumActive)
+            assertEquals(0, fixture.repository.writes)
+        }
+
+    @Test fun `a removed selection has no replacement summary until its current loss is acknowledged`() =
+        runTest {
+            val a = courseSession("a")
+            val b = courseSession("b")
+            val fixture = Fixture(listOf(a, b))
+            subscribe(fixture)
+            val first = ready(fixture)
+            assertTrue(fixture.model.older(first.session.sessionId, first.generation))
+            fixture.repository.values.value = listOf(a)
+            runCurrent()
+            val oldLoss = changed(fixture)
+            val other = session("other-course")
+            fixture.repository.values.value = listOf(other, a)
+            runCurrent()
+            val currentLoss = changed(fixture)
+            assertFalse(fixture.model.resetToLatest(oldLoss.generation))
+            assertTrue(fixture.model.resetToLatest(currentLoss.generation))
+            val current = ready(fixture)
+            assertEquals(other, current.session)
+            assertEquals(1, current.summary.sessionCount)
+            assertEquals(0, fixture.repository.writes)
+        }
+
+    @Test fun `undelivered input list mutations do not alter a published or retained course summary`() =
+        runTest {
+            val a = courseSession("a")
+            val b = courseSession("b")
+            val records = mutableListOf(a, b)
+            val fixture = Fixture(records)
+            subscribe(fixture)
+            val previous = ready(fixture)
+            records.clear()
+            records += session("undelivered")
+            assertEquals(previous, fixture.model.uiState.value)
+            assertEquals(2, previous.summary.sessionCount)
+            assertTrue(fixture.model.older(previous.session.sessionId, previous.generation))
+            val current = ready(fixture)
+            assertEquals(b, current.session)
+            assertEquals(2, current.summary.sessionCount)
+            assertEquals(1, fixture.repository.calls)
+            assertEquals(0, fixture.repository.writes)
+        }
+
     private suspend fun TestScope.deniedFailureRecovery(mode: FailureMode) {
         val live = MutableStateFlow(parked())
         var armedFailureGate = false
@@ -976,7 +1199,9 @@ class SessionHistoryViewModelTest {
 
     private fun TestScope.ready(fixture: Fixture): SessionHistoryUiState.Ready {
         runCurrent()
-        return fixture.model.uiState.value as SessionHistoryUiState.Ready
+        val current = fixture.model.uiState.value as SessionHistoryUiState.Ready
+        assertEquals(current.session, current.summary.source)
+        return current
     }
 
     private class Fixture(
@@ -1049,6 +1274,17 @@ class SessionHistoryViewModelTest {
     }
 
     private companion object {
+        fun courseSession(
+            id: String,
+            taskId: String = "task",
+            taskTitle: String = "저장 과제",
+        ) = session(id).copy(
+            selection = PracticeSelection("summary-goal", "summary-course", 2, 3, taskId),
+            goalTitle = "같은 당시 목표",
+            courseTitle = "같은 당시 코스",
+            taskTitle = taskTitle,
+        )
+
         fun parked() = VehicleState(ConnectionState.CONNECTED, VehicleReading.Available(GearPosition.PARK))
 
         fun unrestricted() = DrivingRestrictions(ParkingState.PARKED, UxRestrictionState.UNRESTRICTED)

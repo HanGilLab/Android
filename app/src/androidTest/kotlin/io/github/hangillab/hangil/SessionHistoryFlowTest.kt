@@ -55,6 +55,8 @@ import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.util.Locale
 import kotlin.math.ceil
+import kotlin.math.floor
+import io.github.hangillab.hangil.core.designsystem.R as DesignR
 import io.github.hangillab.hangil.feature.home.R as HomeR
 
 /**
@@ -106,28 +108,29 @@ class SessionHistoryFlowTest {
             try {
                 awaitAllowed(graph)
                 touch("home_history")
-                assertRecord(ended[0], 0, ended.size)
+                assertRecord(ended[0], 0, ended)
+                captureSummaryPanel(expectedSummary(ended[0], ended).count)
                 assertControlEnabled("history_newer", false)
                 assertControlEnabled("history_older", true)
                 capture("history-latest", "history_course", listOf("history_course"))
 
                 for (index in 1..ended.lastIndex) {
                     touch("history_older")
-                    assertRecord(ended[index], index, ended.size)
+                    assertRecord(ended[index], index, ended)
                 }
                 assertControlEnabled("history_older", false)
                 assertControlEnabled("history_newer", true)
                 for (index in ended.lastIndex - 1 downTo olderIndex) {
                     touch("history_newer")
-                    assertPosition(index, ended.size)
+                    assertRecord(ended[index], index, ended)
                 }
-                assertRecord(older, olderIndex, ended.size)
+                assertRecord(older, olderIndex, ended)
                 capture("history-older", "history_course", listOf("history_course"))
                 assertPreserved(graph, before)
 
                 compose.activityRule.scenario.recreate()
                 awaitAllowed(graph)
-                assertRecord(older, olderIndex, ended.size)
+                assertRecord(older, olderIndex, ended)
                 assertPreserved(graph, before)
 
                 compose.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
@@ -135,27 +138,29 @@ class SessionHistoryFlowTest {
                 assertPreserved(graph, before)
                 compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
                 awaitAllowed(graph)
-                assertRecord(older, olderIndex, ended.size)
+                assertRecord(older, olderIndex, ended)
                 assertPreserved(graph, before)
 
                 phase("HISTORY_AWAIT_D")
                 awaitDrive(graph)
                 waitFor("history_locked")
                 detailTags.forEach(::assertAbsent)
+                assertNoSummaryTags()
                 capture("history-driving", "history_locked", listOf("history_locked"))
                 assertPreserved(graph, before)
 
                 phase("HISTORY_AWAIT_P")
                 awaitAllowed(graph)
-                assertRecord(older, olderIndex, ended.size)
+                assertRecord(older, olderIndex, ended)
                 capture("history-returned", "history_course", listOf("history_course"))
                 assertPreserved(graph, before)
 
                 touch("history_close")
                 waitFor("home_history")
                 detailTags.forEach(::assertAbsent)
+                assertNoSummaryTags()
                 touch("home_history")
-                assertRecord(ended[0], 0, ended.size)
+                assertRecord(ended[0], 0, ended)
                 assertControlEnabled("history_newer", false)
                 assertControlEnabled("history_older", true)
                 assertPreserved(graph, before)
@@ -218,8 +223,9 @@ class SessionHistoryFlowTest {
     private fun assertRecord(
         record: PracticeSession,
         index: Int,
-        total: Int,
+        ended: List<PracticeSession>,
     ) {
+        val total = ended.size
         assertTrue("활성 기록을 종료 이력으로 표시하면 안 됩니다", record.endedAtEpochMillis != null)
         waitFor("history_ready")
         assertPosition(index, total)
@@ -240,6 +246,97 @@ class SessionHistoryFlowTest {
             .forEach(::assertAbsent)
         assertControlEnabled("history_newer", index > 0)
         assertControlEnabled("history_older", index < total - 1)
+        assertSummary(record, ended)
+    }
+
+    /** Independent projection of actual original rows; never call the production summary factory. */
+    private fun expectedSummary(
+        source: PracticeSession,
+        ended: List<PracticeSession>,
+    ): ExpectedSummary {
+        val group =
+            ended.filter { row ->
+                !row.isActive && row.selection.goalId == source.selection.goalId &&
+                    row.selection.courseId == source.selection.courseId &&
+                    row.selection.courseVersion == source.selection.courseVersion &&
+                    row.selection.briefingVersion == source.selection.briefingVersion &&
+                    row.goalTitle == source.goalTitle && row.courseTitle == source.courseTitle &&
+                    row.courseReviewStatus == source.courseReviewStatus
+            }
+        assertTrue("선택한 실제 종료 source가 자체 요약 그룹에 있어야 합니다", group.any { it == source })
+        val taskCounts = linkedMapOf<Pair<String, String>, Int>()
+        for (row in group) {
+            val key = row.selection.taskId to row.taskTitle
+            taskCounts[key] = (taskCounts[key] ?: 0) + 1
+        }
+        return ExpectedSummary(
+            group.size,
+            taskCounts.map { (key, count) -> ExpectedTask(key.first, key.second, count) },
+        )
+    }
+
+    private fun assertSummary(
+        source: PracticeSession,
+        ended: List<PracticeSession>,
+    ) {
+        val expected = expectedSummary(source, ended)
+        assertTrue("요약 개수는 독립 투영한 전체 기록 수와 같아야 합니다", expected.tasks.sumOf { it.count } == expected.count)
+        waitFor("history_course_summary")
+        assertTextVisible("history_summary_heading", text(HomeR.string.history_summary_title))
+        assertTextVisible("history_summary_count", text(HomeR.string.history_summary_count, expected.count))
+        assertTextVisible("history_summary_tasks", text(HomeR.string.history_summary_tasks))
+        assertSummaryDisclosure(expanded = false)
+        assertSummaryRowsAbsent()
+        touch("history_summary_tasks")
+        assertSummaryDisclosure(expanded = true)
+        assertTextVisible("history_summary_scope", text(HomeR.string.history_summary_scope))
+        val titles = summaryTags().filter { it.matches(Regex("history_summary_task_[0-9]+")) }
+        val counts = summaryTags().filter { it.matches(Regex("history_summary_task_count_[0-9]+")) }
+        assertTrue("과제별 기록은 독립 그룹 수만큼만 표시해야 합니다", titles.size == expected.tasks.size && counts.size == expected.tasks.size)
+        expected.tasks.forEachIndexed { index, task ->
+            assertTextVisible("history_summary_task_$index", task.title)
+            assertTextVisible("history_summary_task_count_$index", text(HomeR.string.history_summary_count, task.count))
+        }
+        touch("history_summary_tasks")
+        assertSummaryDisclosure(expanded = false)
+        assertSummaryRowsAbsent()
+        assertTextVisible("history_summary_count", text(HomeR.string.history_summary_count, expected.count))
+    }
+
+    private fun assertSummaryDisclosure(expanded: Boolean) {
+        scrollVisible("history_summary_tasks")
+        val node = nodes("history_summary_tasks").single()
+        val expectedState = text(if (expanded) DesignR.string.parked_detail_expanded else DesignR.string.parked_detail_collapsed)
+        assertTrue(
+            "과제별 기록의 실제 접기/펼침 상태를 확인해야 합니다",
+            node.config.getOrNull(SemanticsProperties.StateDescription) == expectedState,
+        )
+        assertTrue("주차 중 과제별 기록 버튼을 조작할 수 있어야 합니다", !node.config.contains(SemanticsProperties.Disabled))
+        assertTextVisible(
+            "history_summary_tasks",
+            text(if (expanded) DesignR.string.parked_detail_hide else DesignR.string.parked_detail_show),
+        )
+    }
+
+    private fun summaryTags(): Set<String> =
+        compose
+            .onAllNodes(isRoot(), useUnmergedTree = true)
+            .fetchSemanticsNodes(atLeastOneRootRequired = false)
+            .flatMap(::descendants)
+            .mapNotNull { it.config.getOrNull(SemanticsProperties.TestTag) }
+            .filter { it == "history_course_summary" || it.startsWith("history_summary_") }
+            .toSet()
+
+    private fun assertSummaryRowsAbsent() {
+        assertAbsent("history_summary_scope")
+        assertTrue(
+            "접힌 요약에 과제 원문이나 개수를 남기면 안 됩니다",
+            summaryTags().none { it.matches(Regex("history_summary_task_[0-9]+|history_summary_task_count_[0-9]+")) },
+        )
+    }
+
+    private fun assertNoSummaryTags() {
+        assertTrue("잠금 또는 이탈 상태에 요약을 남기면 안 됩니다", summaryTags().isEmpty())
     }
 
     private fun assertPosition(
@@ -516,6 +613,11 @@ class SessionHistoryFlowTest {
                 "history_finished",
                 "history_demo",
                 "history_position",
+                "history_course_summary",
+                "history_summary_heading",
+                "history_summary_count",
+                "history_summary_tasks",
+                "history_summary_scope",
             ).forEach { states.put(it, nodes(it).size) }
             diagnostics.put("stateTagCounts", states)
             diagnostics.put(
@@ -622,6 +724,58 @@ class SessionHistoryFlowTest {
         }
     }
 
+    /** Only the collapsed fixed-text summary panel is eligible for a later public image review. */
+    private fun captureSummaryPanel(expectedCount: Int) {
+        assertSummaryDisclosure(expanded = false)
+        assertSummaryRowsAbsent()
+        scrollVisible("history_course_summary")
+        assertFullyVisible(listOf("history_course_summary", "history_summary_heading", "history_summary_count", "history_summary_tasks"))
+        compose.waitForIdle()
+        val panel = nodes("history_course_summary").single()
+        val allowedText =
+            setOf(
+                text(HomeR.string.history_summary_title),
+                text(HomeR.string.history_summary_count, expectedCount),
+                text(HomeR.string.history_summary_tasks),
+                text(DesignR.string.parked_detail_show),
+            )
+        assertTrue("공개 검토용 crop 안에는 고정 제목/개수/버튼 이외의 원문을 담으면 안 됩니다", nodeTexts(panel).toSet() == allowedText)
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val automation = instrumentation.uiAutomation
+        val expectedPackage = instrumentation.targetContext.packageName
+        compose.waitUntil(20_000) { automation.rootInActiveWindow?.packageName?.toString() == expectedPackage }
+        automation.waitForIdle(500, 5_000)
+        assertTrue(
+            "실제 앱 전면을 확인한 뒤 요약을 캡처해야 합니다",
+            automation.rootInActiveWindow?.packageName?.toString() == expectedPackage,
+        )
+        val viewport = checkNotNull(appViewport())
+        val bounds = panel.boundsInWindow
+        val crop =
+            Rect(
+                floor((bounds.left + viewport.originX).toDouble()).toInt(),
+                floor((bounds.top + viewport.originY).toDouble()).toInt(),
+                ceil((bounds.right + viewport.originX).toDouble()).toInt(),
+                ceil((bounds.bottom + viewport.originY).toDouble()).toInt(),
+            )
+        assertTrue("접힌 요약 패널 전체가 실제 앱 가용 영역 안에 있어야 합니다", viewport.available.contains(crop))
+        val screenshot = checkNotNull(automation.takeScreenshot())
+        var panelImage: Bitmap? = null
+        try {
+            assertTrue(
+                "요약 패널 전체가 원본 캡처 안에 있어야 합니다",
+                crop.left >= 0 && crop.top >= 0 && crop.right <= screenshot.width && crop.bottom <= screenshot.height,
+            )
+            val captured = Bitmap.createBitmap(screenshot, crop.left, crop.top, crop.width(), crop.height())
+            panelImage = captured
+            val directory = File(instrumentation.targetContext.cacheDir, "screenshots").apply { mkdirs() }
+            File(directory, "history-summary.png").outputStream().use { check(captured.compress(Bitmap.CompressFormat.PNG, 100, it)) }
+        } finally {
+            if (panelImage !== screenshot) panelImage?.recycle()
+            screenshot.recycle()
+        }
+    }
+
     private fun capture(
         name: String,
         scrollTarget: String,
@@ -662,6 +816,17 @@ class SessionHistoryFlowTest {
         val originY: Int,
     )
 
+    private data class ExpectedTask(
+        val taskId: String,
+        val title: String,
+        val count: Int,
+    )
+
+    private data class ExpectedSummary(
+        val count: Int,
+        val tasks: List<ExpectedTask>,
+    )
+
     private data class ExistingData(
         val preparation: PracticeSelection?,
         val sessions: List<PracticeSession>,
@@ -682,6 +847,11 @@ class SessionHistoryFlowTest {
                 "history_position",
                 "history_older",
                 "history_newer",
+                "history_course_summary",
+                "history_summary_heading",
+                "history_summary_count",
+                "history_summary_tasks",
+                "history_summary_scope",
             )
     }
 }
