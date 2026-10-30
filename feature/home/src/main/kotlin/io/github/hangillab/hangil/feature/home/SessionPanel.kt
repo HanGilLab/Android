@@ -30,6 +30,7 @@ import java.util.Locale
 @Composable
 internal fun SessionRoute(
     onPrepare: () -> Unit,
+    onPrepareNext: (String) -> Unit,
     canPrepare: Boolean,
     recordingState: VehicleRecordingState,
     onRetryRecording: () -> Unit,
@@ -43,6 +44,7 @@ internal fun SessionRoute(
             viewModel::finish,
             viewModel::retryLoading,
             onPrepare,
+            { id -> if (viewModel.canPrepareNext(id)) onPrepareNext(id) },
             canPrepare,
             recordingState,
             onRetryRecording,
@@ -57,6 +59,7 @@ internal fun SessionPanel(
     onFinish: (String) -> Unit,
     onRetry: () -> Unit,
     onPrepare: () -> Unit,
+    onPrepareNext: (String) -> Unit,
     canPrepare: Boolean,
     recordingState: VehicleRecordingState,
     onRetryRecording: () -> Unit,
@@ -204,7 +207,7 @@ internal fun SessionPanel(
             }
         }
     }
-    LatestSessionPanel(state)
+    LatestSessionPanel(state, onPrepareNext)
 }
 
 @Composable
@@ -234,7 +237,10 @@ private fun VehicleRecordingStatus(
 }
 
 @Composable
-private fun LatestSessionPanel(state: SessionUiState) {
+private fun LatestSessionPanel(
+    state: SessionUiState,
+    onPrepareNext: (String) -> Unit,
+) {
     val records = state.records as? SessionLoadState.Loaded ?: return
     val latest = state.latestFinished
     if (latest != null) {
@@ -259,6 +265,14 @@ private fun LatestSessionPanel(state: SessionUiState) {
                 ParkedDisclosure(stringResource(R.string.memo_heading), Modifier.testTag("home_recent_memo")) {
                     SessionMemoEditorRoute(latest.sessionId)
                 }
+            }
+            if (state.active == null) {
+                ParkedButton(
+                    onClick = { onPrepareNext(latest.sessionId) },
+                    enabled = state.operation != SessionOperationState.Saving,
+                    prominent = false,
+                    modifier = Modifier.fillMaxWidth().testTag("home_next_practice"),
+                ) { Text(stringResource(R.string.next_practice_open), style = MaterialTheme.typography.titleLarge) }
             }
         }
     } else if (records.sessions.isEmpty()) {

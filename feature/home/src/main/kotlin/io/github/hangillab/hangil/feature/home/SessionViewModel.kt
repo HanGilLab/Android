@@ -62,6 +62,12 @@ class SessionViewModel
                 SessionUiState(allowsPracticeInteraction(v, r), p, s, o)
             }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(0, 0), SessionUiState())
 
+        fun canPrepareNext(expectedSessionId: String): Boolean {
+            if (!canCommit() || mutation.isLocked || operation.value == SessionOperationState.Saving) return false
+            val records = (uiState.value.records as? SessionLoadState.Loaded)?.sessions ?: return false
+            return records.none { it.isActive } && records.firstOrNull { !it.isActive }?.sessionId == expectedSessionId
+        }
+
         fun start() {
             if (!canCommit() || !uiState.value.canStart) return
             val practice = uiState.value.ready ?: return
