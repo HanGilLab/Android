@@ -131,4 +131,19 @@
     <string name="memo_invalid">빈 메모는 저장할 수 없어요. 280자 안으로 적어 주세요.</string>
     <string name="memo_save_failed">저장을 확인하지 못했어요. 초안은 남겨 두었어요.</string>
     <string name="memo_delete_failed">지우기를 확인하지 못했어요. 다시 확인해 주세요.</string>
+    <string name="history_open">지난 연습 보기</string>
+    <string name="history_title">지난 연습</string>
+    <string name="history_close">닫기</string>
+    <string name="history_scope">당시 준비와 버튼 시각을 확인해요.</string>
+    <string name="history_position">저장 순서 %1$d / %2$d</string>
+    <string name="history_goal_label">목표</string>
+    <string name="history_task_label">오늘의 과제</string>
+    <string name="history_newer">더 최근 기록</string>
+    <string name="history_older">더 이전 기록</string>
+    <string name="history_loading">지난 기록을 읽고 있어요.</string>
+    <string name="history_empty">마무리한 연습이 아직 없어요.</string>
+    <string name="history_failed">지난 기록을 불러오지 못했어요.</string>
+    <string name="history_retry">다시 읽기</string>
+    <string name="history_selection_changed">보고 있던 기록이 바뀌었어요.</string>
+    <string name="history_reset">최근 기록부터 보기</string>
 </resources>

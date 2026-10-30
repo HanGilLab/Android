@@ -1,0 +1,822 @@
+package io.github.hangillab.hangil.feature.home
+
+import io.github.hangillab.hangil.core.domain.ConnectionState
+import io.github.hangillab.hangil.core.domain.CourseReviewStatus
+import io.github.hangillab.hangil.core.domain.DrivingRestrictions
+import io.github.hangillab.hangil.core.domain.DrivingRestrictionsProvider
+import io.github.hangillab.hangil.core.domain.GearPosition
+import io.github.hangillab.hangil.core.domain.ParkingState
+import io.github.hangillab.hangil.core.domain.PracticeSelection
+import io.github.hangillab.hangil.core.domain.PracticeSession
+import io.github.hangillab.hangil.core.domain.PracticeSessionRepository
+import io.github.hangillab.hangil.core.domain.PreparedPractice
+import io.github.hangillab.hangil.core.domain.SessionFinishResult
+import io.github.hangillab.hangil.core.domain.SessionStartResult
+import io.github.hangillab.hangil.core.domain.UxRestrictionState
+import io.github.hangillab.hangil.core.domain.VehicleGateway
+import io.github.hangillab.hangil.core.domain.VehicleReading
+import io.github.hangillab.hangil.core.domain.VehicleState
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.ExperimentalForInheritanceCoroutinesApi
+import kotlinx.coroutines.InternalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.FlowCollector
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+import java.io.IOException
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class SessionHistoryViewModelTest {
+    @Before fun setUp() {
+        Dispatchers.setMain(StandardTestDispatcher())
+    }
+
+    @After fun tearDown() {
+        Dispatchers.resetMain()
+    }
+
+    @Test fun `constructing history is cold and no cursor action works without a visible reader`() =
+        runTest {
+            val fixture = Fixture()
+            assertTrue(fixture.model.canRead())
+            assertEquals(SessionHistoryUiState.Loading, fixture.model.uiState.value)
+            assertFalse(fixture.model.retry())
+            assertFalse(fixture.model.resetToLatest(0L))
+            assertFalse(fixture.model.older("a", 1))
+            assertFalse(fixture.model.newer("a", 1))
+            runCurrent()
+            assertEquals(0, fixture.repository.calls)
+            assertEquals(0, fixture.vehicleState.subscriptionCount.value)
+            assertEquals(0, fixture.restrictionState.subscriptionCount.value)
+        }
+
+    @Test fun `ended snapshots follow repository creation order despite regressing wall clocks and an active row`() =
+        runTest {
+            val a = session("a", started = 100, ended = 200).copy(goalTitle = "저장 당시 목표", courseTitle = "과거 코스", taskTitle = "과거 과제")
+            val b = session("b", started = 4_000, ended = 5_000)
+            val fixture = Fixture(listOf(session("active", ended = null), a, b))
+            subscribe(fixture)
+            val first = ready(fixture)
+            assertEquals(a, first.session)
+            assertEquals(0, first.index)
+            assertEquals(2, first.total)
+            assertTrue(first.canOlder)
+            assertFalse(first.canNewer)
+            assertTrue(fixture.model.older(first.session.sessionId, first.generation))
+            val second = ready(fixture)
+            assertEquals(b, second.session)
+            assertEquals(1, second.index)
+            assertFalse(second.canOlder)
+            assertTrue(second.canNewer)
+            assertEquals(0, fixture.repository.writes)
+        }
+
+    @Test fun `initial empty and active only histories are known empty ended history`() =
+        runTest {
+            for (records in listOf(emptyList(), listOf(session("active", ended = null)))) {
+                val fixture = Fixture(records)
+                val job = subscribe(fixture)
+                assertEquals(SessionHistoryUiState.Empty, fixture.model.uiState.value)
+                assertFalse(fixture.model.resetToLatest(0L))
+                assertEquals(0, fixture.repository.writes)
+                job.cancelAndJoin()
+                runCurrent()
+            }
+        }
+
+    @Test fun `an initial empty history selects a subsequently received first ended session`() =
+        runTest {
+            val fixture = Fixture(emptyList())
+            subscribe(fixture)
+            fixture.repository.values.value = listOf(session("first"))
+            runCurrent()
+            assertEquals("first", ready(fixture).session.sessionId)
+        }
+
+    @Test fun `unknown denied disconnected driving or restricted access never opens the repository`() =
+        runTest {
+            val blocked =
+                listOf(
+                    parked().copy(connection = ConnectionState.DISCONNECTED) to unrestricted(),
+                    parked().copy(connection = ConnectionState.PERMISSION_DENIED) to unrestricted(),
+                    parked().copy(gear = VehicleReading.Available(GearPosition.DRIVE)) to unrestricted(),
+                    parked().copy(gear = VehicleReading.Unknown) to unrestricted(),
+                    parked().copy(gear = VehicleReading.PermissionDenied) to unrestricted(),
+                    parked().copy(gear = VehicleReading.Unsupported) to unrestricted(),
+                    parked().copy(gear = VehicleReading.Error) to unrestricted(),
+                    parked() to unrestricted().copy(parkingState = ParkingState.UNKNOWN),
+                    parked() to unrestricted().copy(uxRestrictionState = UxRestrictionState.UNKNOWN),
+                    parked() to unrestricted().copy(uxRestrictionState = UxRestrictionState.RESTRICTED),
+                )
+            for ((vehicle, restrictions) in blocked) {
+                val fixture = Fixture()
+                fixture.vehicleState.value = vehicle
+                fixture.restrictionState.value = restrictions
+                val job = subscribe(fixture)
+                assertFalse(fixture.model.canRead())
+                assertEquals(SessionHistoryUiState.Locked, fixture.model.uiState.value)
+                assertFalse(fixture.model.retry())
+                assertFalse(fixture.model.resetToLatest(0L))
+                assertEquals(0, fixture.repository.calls)
+                job.cancelAndJoin()
+                runCurrent()
+            }
+        }
+
+    @Test fun `live D fences every action before the displayed ready state recombines`() =
+        runTest {
+            val fixture = Fixture()
+            subscribe(fixture)
+            val previous = ready(fixture)
+            fixture.vehicleState.value = parked().copy(gear = VehicleReading.Available(GearPosition.DRIVE))
+            assertEquals(previous, fixture.model.uiState.value)
+            assertFalse(fixture.model.older(previous.session.sessionId, previous.generation))
+            assertFalse(fixture.model.newer(previous.session.sessionId, previous.generation))
+            assertFalse(fixture.model.retry())
+            assertFalse(fixture.model.resetToLatest(0L))
+            runCurrent()
+            assertEquals(SessionHistoryUiState.Locked, fixture.model.uiState.value)
+            assertEquals(0, fixture.repository.active)
+        }
+
+    @Test fun `returning to parked retains the selected ID only after a fresh read and new generation`() =
+        runTest {
+            val fixture = Fixture()
+            subscribe(fixture)
+            val a = ready(fixture)
+            assertTrue(fixture.model.older(a.session.sessionId, a.generation))
+            val b = ready(fixture)
+            val delayed = CompletableDeferred<List<PracticeSession>>()
+            fixture.repository.source = {
+                flow {
+                    emit(delayed.await())
+                    awaitCancellation()
+                }
+            }
+            fixture.vehicleState.value = parked().copy(gear = VehicleReading.Available(GearPosition.DRIVE))
+            runCurrent()
+            fixture.vehicleState.value = parked()
+            runCurrent()
+            assertEquals(SessionHistoryUiState.Loading, fixture.model.uiState.value)
+            assertFalse(fixture.model.newer(b.session.sessionId, b.generation))
+            delayed.complete(fixture.repository.values.value)
+            runCurrent()
+            assertEquals("b", ready(fixture).session.sessionId)
+            assertNotEquals(b.generation, ready(fixture).generation)
+            assertEquals(1, fixture.repository.maximumActive)
+        }
+
+    @Test fun `parked gear alone cannot resume history while UX remains restricted`() =
+        runTest {
+            val fixture = Fixture()
+            subscribe(fixture)
+            fixture.restrictionState.value = unrestricted().copy(uxRestrictionState = UxRestrictionState.RESTRICTED)
+            runCurrent()
+            fixture.vehicleState.value = parked()
+            runCurrent()
+            assertEquals(SessionHistoryUiState.Locked, fixture.model.uiState.value)
+            assertEquals(0, fixture.repository.active)
+            fixture.restrictionState.value = unrestricted()
+            runCurrent()
+            assertEquals("a", ready(fixture).session.sessionId)
+            assertEquals(1, fixture.repository.active)
+            assertEquals(1, fixture.repository.maximumActive)
+        }
+
+    @Test fun `a new insertion retains the selected ID and updates its created position`() =
+        runTest {
+            val fixture = Fixture()
+            subscribe(fixture)
+            val a = ready(fixture)
+            assertTrue(fixture.model.older(a.session.sessionId, a.generation))
+            val previous = ready(fixture)
+            fixture.repository.values.value = listOf(session("new")) + fixture.repository.values.value
+            runCurrent()
+            val current = ready(fixture)
+            assertEquals("b", current.session.sessionId)
+            assertEquals(2, current.index)
+            assertEquals(4, current.total)
+            assertNotEquals(previous.generation, current.generation)
+            assertFalse(fixture.model.older(previous.session.sessionId, previous.generation))
+            assertEquals(current, ready(fixture))
+        }
+
+    @Test fun `a received source update fences stale actions before the source continuation returns`() =
+        runTest {
+            val fixture = Fixture()
+            val deliver = CompletableDeferred<Unit>()
+            var stale: SessionHistoryUiState.Ready? = null
+            var accepted: Boolean? = null
+            fixture.repository.source = {
+                flow {
+                    emit(listOf(session("a"), session("b"), session("c")))
+                    deliver.await()
+                    emit(listOf(session("new"), session("a"), session("b"), session("c")))
+                    val previous = checkNotNull(stale)
+                    accepted = fixture.model.older(previous.session.sessionId, previous.generation)
+                    awaitCancellation()
+                }
+            }
+            subscribe(fixture)
+            stale = ready(fixture)
+            deliver.complete(Unit)
+            runCurrent()
+            assertEquals(false, accepted)
+            assertEquals("a", ready(fixture).session.sessionId)
+            assertEquals(1, ready(fixture).index)
+        }
+
+    @Test fun `received edits refresh the stored snapshot without catalog reinterpretation or stale cursor moves`() =
+        runTest {
+            val fixture = Fixture()
+            subscribe(fixture)
+            val previous = ready(fixture)
+            val changed = session("a").copy(courseTitle = "보존된 새 스냅샷", taskTitle = "실제 저장 과제")
+            fixture.repository.values.value = listOf(changed, session("b"), session("c"))
+            runCurrent()
+            assertEquals(changed, ready(fixture).session)
+            assertFalse(fixture.model.older(previous.session.sessionId, previous.generation))
+        }
+
+    @Test fun `a removed selection stays changed even if the same ID later reappears until explicit reset`() =
+        runTest {
+            val fixture = Fixture()
+            subscribe(fixture)
+            val a = ready(fixture)
+            fixture.model.older(a.session.sessionId, a.generation)
+            val b = ready(fixture)
+            fixture.repository.values.value = listOf(session("a"), session("c"))
+            runCurrent()
+            assertTrue(fixture.model.uiState.value is SessionHistoryUiState.SelectionChanged)
+            assertFalse(fixture.model.newer(b.session.sessionId, b.generation))
+            fixture.repository.values.value = listOf(session("new"), session("b"), session("a"), session("c"))
+            runCurrent()
+            assertTrue(fixture.model.uiState.value is SessionHistoryUiState.SelectionChanged)
+            assertTrue(fixture.model.resetToLatest(changed(fixture).generation))
+            assertEquals("new", ready(fixture).session.sessionId)
+            assertEquals(0, ready(fixture).index)
+        }
+
+    @Test fun `explicitly resetting a removed last selection can acknowledge an empty ended history`() =
+        runTest {
+            val fixture = Fixture(listOf(session("a")))
+            subscribe(fixture)
+            fixture.repository.values.value = emptyList()
+            runCurrent()
+            assertTrue(fixture.model.uiState.value is SessionHistoryUiState.SelectionChanged)
+            assertTrue(fixture.model.resetToLatest(changed(fixture).generation))
+            runCurrent()
+            assertEquals(SessionHistoryUiState.Empty, fixture.model.uiState.value)
+            fixture.repository.values.value = listOf(session("fresh"))
+            runCurrent()
+            assertEquals("fresh", ready(fixture).session.sessionId)
+        }
+
+    @Test fun `a previous reset callback cannot overwrite a new ready cursor after reset and navigation`() =
+        runTest {
+            val fixture = Fixture()
+            subscribe(fixture)
+            fixture.repository.values.value = listOf(session("b"), session("c"))
+            runCurrent()
+            assertTrue(fixture.model.uiState.value is SessionHistoryUiState.SelectionChanged)
+            val firstGeneration = changed(fixture).generation
+            assertTrue(fixture.model.resetToLatest(firstGeneration))
+            val latest = ready(fixture)
+            assertTrue(fixture.model.older(latest.session.sessionId, latest.generation))
+            val current = ready(fixture)
+            assertFalse(fixture.model.resetToLatest(firstGeneration))
+            assertEquals(current, ready(fixture))
+        }
+
+    @Test fun `an old selection changed reset cannot accept a later different selection changed state`() =
+        runTest {
+            val fixture = Fixture()
+            subscribe(fixture)
+            fixture.repository.values.value = listOf(session("b"), session("c"))
+            runCurrent()
+            assertTrue(fixture.model.uiState.value is SessionHistoryUiState.SelectionChanged)
+            val firstGeneration = changed(fixture).generation
+            val firstReset = { fixture.model.resetToLatest(firstGeneration) }
+            assertTrue(firstReset())
+            val b = ready(fixture)
+            assertTrue(fixture.model.older(b.session.sessionId, b.generation))
+            assertEquals("c", ready(fixture).session.sessionId)
+            fixture.repository.values.value = listOf(session("b"))
+            runCurrent()
+            assertTrue(fixture.model.uiState.value is SessionHistoryUiState.SelectionChanged)
+            assertFalse(firstReset())
+        }
+
+    @Test fun `retry gives a lost selection a fresh generation and rejects the previous reset`() =
+        runTest {
+            val fixture = Fixture()
+            subscribe(fixture)
+            fixture.repository.values.value = listOf(session("b"), session("c"))
+            val old = changed(fixture)
+            val fresh = CompletableDeferred<List<PracticeSession>>()
+            fixture.repository.source = {
+                flow {
+                    emit(fresh.await())
+                    awaitCancellation()
+                }
+            }
+            assertTrue(fixture.model.retry())
+            assertFalse(fixture.model.resetToLatest(old.generation))
+            runCurrent()
+            assertEquals(SessionHistoryUiState.Loading, fixture.model.uiState.value)
+            fresh.complete(fixture.repository.values.value)
+            val current = changed(fixture)
+            assertNotEquals(old.generation, current.generation)
+            assertFalse(fixture.model.resetToLatest(old.generation))
+            assertEquals(current, fixture.model.uiState.value)
+            assertTrue(fixture.model.resetToLatest(current.generation))
+            assertEquals("b", ready(fixture).session.sessionId)
+        }
+
+    @Test fun `D and fresh P reentry never accepts a reset from the previous lost selection generation`() =
+        runTest {
+            val fixture = Fixture()
+            subscribe(fixture)
+            fixture.repository.values.value = listOf(session("b"), session("c"))
+            val old = changed(fixture)
+            val fresh = CompletableDeferred<List<PracticeSession>>()
+            fixture.repository.source = {
+                flow {
+                    emit(fresh.await())
+                    awaitCancellation()
+                }
+            }
+            fixture.vehicleState.value = parked().copy(gear = VehicleReading.Available(GearPosition.DRIVE))
+            assertFalse(fixture.model.resetToLatest(old.generation))
+            runCurrent()
+            assertEquals(SessionHistoryUiState.Locked, fixture.model.uiState.value)
+            fixture.vehicleState.value = parked()
+            runCurrent()
+            assertEquals(SessionHistoryUiState.Loading, fixture.model.uiState.value)
+            assertFalse(fixture.model.resetToLatest(old.generation))
+            fresh.complete(fixture.repository.values.value)
+            val current = changed(fixture)
+            assertNotEquals(old.generation, current.generation)
+            assertFalse(fixture.model.resetToLatest(old.generation))
+            assertTrue(fixture.model.resetToLatest(current.generation))
+            assertEquals("b", ready(fixture).session.sessionId)
+        }
+
+    @Test fun `closing a lost selection fences its reset even after a new reader validates that loss again`() =
+        runTest {
+            val fixture = Fixture()
+            val first = subscribe(fixture)
+            fixture.repository.values.value = listOf(session("b"), session("c"))
+            val old = changed(fixture)
+            first.cancelAndJoin()
+            runCurrent()
+            assertFalse(fixture.model.resetToLatest(old.generation))
+            assertEquals(0, fixture.repository.active)
+            subscribe(fixture)
+            val current = changed(fixture)
+            assertNotEquals(old.generation, current.generation)
+            assertFalse(fixture.model.resetToLatest(old.generation))
+            assertTrue(fixture.model.resetToLatest(current.generation))
+            assertEquals("b", ready(fixture).session.sessionId)
+        }
+
+    @Test fun `another received history list invalidates the reset captured from an earlier loss display`() =
+        runTest {
+            val fixture = Fixture()
+            subscribe(fixture)
+            fixture.repository.values.value = listOf(session("b"), session("c"))
+            val old = changed(fixture)
+            fixture.repository.values.value = listOf(session("new"), session("b"), session("c"))
+            val current = changed(fixture)
+            assertNotEquals(old.generation, current.generation)
+            assertFalse(fixture.model.resetToLatest(old.generation))
+            assertTrue(fixture.model.resetToLatest(current.generation))
+            assertEquals("new", ready(fixture).session.sessionId)
+        }
+
+    @Test fun `cursor boundaries do not change identity or generation`() =
+        runTest {
+            val fixture = Fixture(listOf(session("only")))
+            subscribe(fixture)
+            val current = ready(fixture)
+            assertFalse(current.canOlder)
+            assertFalse(current.canNewer)
+            assertFalse(fixture.model.older(current.session.sessionId, current.generation))
+            assertFalse(fixture.model.newer(current.session.sessionId, current.generation))
+            assertEquals(current, ready(fixture))
+        }
+
+    @Test fun `wrong ID wrong generation and a repeated old click never move the new cursor`() =
+        runTest {
+            val fixture = Fixture()
+            subscribe(fixture)
+            val previous = ready(fixture)
+            assertFalse(fixture.model.older("different", previous.generation))
+            assertFalse(fixture.model.older(previous.session.sessionId, previous.generation + 1))
+            assertTrue(fixture.model.older(previous.session.sessionId, previous.generation))
+            val current = ready(fixture)
+            assertFalse(fixture.model.older(previous.session.sessionId, previous.generation))
+            assertEquals(current, ready(fixture))
+            assertTrue(fixture.model.newer(current.session.sessionId, current.generation))
+            assertEquals("a", ready(fixture).session.sessionId)
+        }
+
+    @Test fun `closing releases the query and reopening the same ViewModel validates the retained selected ID`() =
+        runTest {
+            val fixture = Fixture()
+            val first = subscribe(fixture)
+            val a = ready(fixture)
+            fixture.model.older(a.session.sessionId, a.generation)
+            val b = ready(fixture)
+            first.cancelAndJoin()
+            runCurrent()
+            assertEquals(0, fixture.repository.active)
+            assertEquals(SessionHistoryUiState.Loading, fixture.model.uiState.value)
+            assertFalse(fixture.model.older(b.session.sessionId, b.generation))
+            assertFalse(fixture.model.retry())
+            subscribe(fixture)
+            assertEquals("b", ready(fixture).session.sessionId)
+            assertNotEquals(b.generation, ready(fixture).generation)
+            assertFalse(fixture.model.newer(b.session.sessionId, b.generation))
+            assertEquals(1, fixture.repository.maximumActive)
+        }
+
+    @Test fun `a cancelled delayed reader cannot publish into a newly opened reader`() =
+        runTest {
+            val fixture = Fixture()
+            val late = CompletableDeferred<List<PracticeSession>>()
+            fixture.repository.source = {
+                flow {
+                    emit(late.await())
+                    awaitCancellation()
+                }
+            }
+            val old = subscribe(fixture)
+            old.cancelAndJoin()
+            runCurrent()
+            assertEquals(0, fixture.repository.active)
+            fixture.repository.source = { fixture.repository.values }
+            subscribe(fixture)
+            val current = ready(fixture)
+            late.complete(listOf(session("late")))
+            runCurrent()
+            assertEquals(current, ready(fixture))
+            assertEquals(1, fixture.repository.maximumActive)
+        }
+
+    @Test fun `retry invalidates the displayed generation immediately and validates the same selection afresh`() =
+        runTest {
+            val fixture = Fixture()
+            subscribe(fixture)
+            val a = ready(fixture)
+            fixture.model.older(a.session.sessionId, a.generation)
+            val old = ready(fixture)
+            val fresh = CompletableDeferred<List<PracticeSession>>()
+            fixture.repository.source = {
+                flow {
+                    emit(fresh.await())
+                    awaitCancellation()
+                }
+            }
+            assertTrue(fixture.model.retry())
+            assertFalse(fixture.model.newer(old.session.sessionId, old.generation))
+            assertFalse(fixture.model.resetToLatest(0L))
+            runCurrent()
+            assertEquals(SessionHistoryUiState.Loading, fixture.model.uiState.value)
+            fresh.complete(fixture.repository.values.value)
+            runCurrent()
+            assertEquals("b", ready(fixture).session.sessionId)
+            assertNotEquals(old.generation, ready(fixture).generation)
+            assertEquals(1, fixture.repository.maximumActive)
+        }
+
+    @Test fun `retry cancels a previous delayed query and its later completion cannot replace the fresh list`() =
+        runTest {
+            val fixture = Fixture()
+            val late = CompletableDeferred<List<PracticeSession>>()
+            fixture.repository.source = {
+                flow {
+                    emit(late.await())
+                    awaitCancellation()
+                }
+            }
+            subscribe(fixture)
+            fixture.repository.source = { fixture.repository.values }
+            assertTrue(fixture.model.retry())
+            runCurrent()
+            val current = ready(fixture)
+            late.complete(listOf(session("late")))
+            runCurrent()
+            assertEquals(current, ready(fixture))
+            assertEquals(1, fixture.repository.active)
+            assertEquals(1, fixture.repository.maximumActive)
+        }
+
+    @Test fun `factory failures are explicit read failures and require a new parked retry`() =
+        runTest {
+            val fixture = Fixture()
+            fixture.repository.factoryFailure = IOException("fixture factory failure")
+            subscribe(fixture)
+            assertEquals(
+                SessionHistoryUiState.Failed(SessionHistoryUiState.FailureReason.SESSION_READ),
+                fixture.model.uiState.value,
+            )
+            assertFalse(fixture.model.resetToLatest(0L))
+            fixture.repository.factoryFailure = null
+            runCurrent()
+            assertTrue(fixture.model.uiState.value is SessionHistoryUiState.Failed)
+            assertTrue(fixture.model.retry())
+            runCurrent()
+            assertEquals("a", ready(fixture).session.sessionId)
+        }
+
+    @Test fun `a stream failure removes the usable cursor but preserves its ID for explicit retry`() =
+        runTest {
+            val fixture = Fixture()
+            val fail = CompletableDeferred<Unit>()
+            fixture.repository.source = {
+                flow {
+                    emit(fixture.repository.values.value)
+                    fail.await()
+                    throw IOException("fixture stream failure")
+                }
+            }
+            subscribe(fixture)
+            val a = ready(fixture)
+            fixture.model.older(a.session.sessionId, a.generation)
+            val b = ready(fixture)
+            fail.complete(Unit)
+            runCurrent()
+            assertEquals(
+                SessionHistoryUiState.Failed(SessionHistoryUiState.FailureReason.SESSION_READ),
+                fixture.model.uiState.value,
+            )
+            assertFalse(fixture.model.newer(b.session.sessionId, b.generation))
+            fixture.repository.source = { fixture.repository.values }
+            assertTrue(fixture.model.retry())
+            runCurrent()
+            assertEquals("b", ready(fixture).session.sessionId)
+        }
+
+    @Test fun `normal stream completion is a failure instead of an empty or permanently ready history`() =
+        runTest {
+            val fixture = Fixture()
+            val complete = CompletableDeferred<Unit>()
+            fixture.repository.source = {
+                flow {
+                    emit(fixture.repository.values.value)
+                    complete.await()
+                }
+            }
+            subscribe(fixture)
+            complete.complete(Unit)
+            runCurrent()
+            assertEquals(
+                SessionHistoryUiState.Failed(SessionHistoryUiState.FailureReason.SESSION_STREAM_COMPLETED),
+                fixture.model.uiState.value,
+            )
+            assertEquals(0, fixture.repository.active)
+            fixture.repository.source = { fixture.repository.values }
+            assertTrue(fixture.model.retry())
+            runCurrent()
+            assertEquals("a", ready(fixture).session.sessionId)
+        }
+
+    @Test fun `internal cancellation becomes a read failure while reader cancellation remains cancellation`() =
+        runTest {
+            val fixture = Fixture()
+            fixture.repository.source = { flow { throw CancellationException("fixture internal cancellation") } }
+            val trace = mutableListOf<SessionHistoryUiState>()
+            val job = subscribe(fixture, trace)
+            assertTrue(job.isActive)
+            assertEquals(
+                SessionHistoryUiState.Failed(SessionHistoryUiState.FailureReason.SESSION_READ),
+                fixture.model.uiState.value,
+            )
+            fixture.repository.source = { fixture.repository.values }
+            fixture.model.retry()
+            runCurrent()
+            val failures = trace.count { it is SessionHistoryUiState.Failed }
+            job.cancelAndJoin()
+            runCurrent()
+            assertEquals(failures, trace.count { it is SessionHistoryUiState.Failed })
+            assertEquals(0, fixture.repository.active)
+        }
+
+    @Test fun `duplicate session IDs including an active duplicate are invalid rather than silently deduplicated`() =
+        runTest {
+            val fixture = Fixture(listOf(session("same"), session("same", ended = null)))
+            subscribe(fixture)
+            assertEquals(
+                SessionHistoryUiState.Failed(SessionHistoryUiState.FailureReason.INVALID_SESSIONS),
+                fixture.model.uiState.value,
+            )
+            assertEquals(0, fixture.repository.writes)
+        }
+
+    @Test fun `invalid saved identity titles versions and times fail without repairing the records`() =
+        runTest {
+            val valid = session("a")
+            val invalid =
+                listOf(
+                    valid.copy(sessionId = " "),
+                    valid.copy(selection = valid.selection.copy(goalId = "")),
+                    valid.copy(selection = valid.selection.copy(courseId = "")),
+                    valid.copy(selection = valid.selection.copy(taskId = "")),
+                    valid.copy(selection = valid.selection.copy(courseVersion = 0)),
+                    valid.copy(selection = valid.selection.copy(briefingVersion = -1)),
+                    valid.copy(goalTitle = ""),
+                    valid.copy(courseTitle = " "),
+                    valid.copy(taskTitle = "\n"),
+                    valid.copy(startedAtEpochMillis = 0),
+                    valid.copy(endedAtEpochMillis = valid.startedAtEpochMillis - 1),
+                    valid.copy(endedAtEpochMillis = -1),
+                )
+            for (record in invalid) {
+                val fixture = Fixture(listOf(record))
+                val job = subscribe(fixture)
+                assertEquals(
+                    SessionHistoryUiState.Failed(SessionHistoryUiState.FailureReason.INVALID_SESSIONS),
+                    fixture.model.uiState.value,
+                )
+                assertEquals(0, fixture.repository.writes)
+                job.cancelAndJoin()
+                runCurrent()
+            }
+        }
+
+    @Test fun `equal start and finish times remain valid saved button times`() =
+        runTest {
+            val record = session("a", started = 500, ended = 500)
+            val fixture = Fixture(listOf(record))
+            subscribe(fixture)
+            assertEquals(record, ready(fixture).session)
+        }
+
+    @Test fun `access stream errors are distinct from repository errors and never query or report empty history`() =
+        runTest {
+            val state = BrokenStateFlow(MutableStateFlow(parked()))
+            val fixture = Fixture(accessSource = state)
+            subscribe(fixture)
+            assertEquals(
+                SessionHistoryUiState.Failed(SessionHistoryUiState.FailureReason.ACCESS_READ),
+                fixture.model.uiState.value,
+            )
+            assertEquals(0, fixture.repository.calls)
+        }
+
+    @Test fun `a refreshed equal delivered list also fences a cursor action captured from the previous generation`() =
+        runTest {
+            val fixture = Fixture()
+            val delivered = MutableSharedFlow<List<PracticeSession>>(replay = 1)
+            delivered.tryEmit(fixture.repository.values.value)
+            fixture.repository.source = { delivered }
+            subscribe(fixture)
+            val old = ready(fixture)
+            delivered.emit(
+                fixture.repository.values.value
+                    .toList(),
+            )
+            runCurrent()
+            assertNotEquals(old.generation, ready(fixture).generation)
+            assertFalse(fixture.model.older(old.session.sessionId, old.generation))
+            assertEquals("a", ready(fixture).session.sessionId)
+        }
+
+    private fun TestScope.subscribe(
+        fixture: Fixture,
+        trace: MutableList<SessionHistoryUiState> = mutableListOf(),
+    ): Job {
+        val job =
+            backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+                fixture.model.uiState.collect { trace += it }
+            }
+        runCurrent()
+        return job
+    }
+
+    private fun TestScope.changed(fixture: Fixture): SessionHistoryUiState.SelectionChanged {
+        runCurrent()
+        return fixture.model.uiState.value as SessionHistoryUiState.SelectionChanged
+    }
+
+    private fun TestScope.ready(fixture: Fixture): SessionHistoryUiState.Ready {
+        runCurrent()
+        return fixture.model.uiState.value as SessionHistoryUiState.Ready
+    }
+
+    private class Fixture(
+        records: List<PracticeSession> = listOf(session("a"), session("b"), session("c")),
+        accessSource: StateFlow<VehicleState>? = null,
+    ) {
+        val vehicleState = MutableStateFlow(parked())
+        val restrictionState = MutableStateFlow(unrestricted())
+        val vehicle =
+            object : VehicleGateway {
+                override val state = accessSource ?: vehicleState
+            }
+        val restrictions =
+            object : DrivingRestrictionsProvider {
+                override val restrictions = restrictionState
+            }
+        val repository = FakeRepository(records)
+        val model = SessionHistoryViewModel(vehicle, restrictions, repository)
+    }
+
+    private class FakeRepository(
+        records: List<PracticeSession>,
+    ) : PracticeSessionRepository {
+        val values = MutableStateFlow(records)
+        var source: () -> Flow<List<PracticeSession>> = { values }
+        var factoryFailure: Exception? = null
+        var calls = 0
+        var active = 0
+        var maximumActive = 0
+        var writes = 0
+
+        override fun observeSessions(): Flow<List<PracticeSession>> {
+            calls++
+            factoryFailure?.let { throw it }
+            return flow {
+                active++
+                maximumActive = maxOf(maximumActive, active)
+                try {
+                    emitAll(source())
+                } finally {
+                    active--
+                }
+            }
+        }
+
+        override suspend fun start(
+            practice: PreparedPractice,
+            startedAtEpochMillis: Long,
+            canCommit: () -> Boolean,
+        ): SessionStartResult {
+            writes++
+            error("History must not start a session")
+        }
+
+        override suspend fun finish(
+            sessionId: String,
+            endedAtEpochMillis: Long,
+            canCommit: () -> Boolean,
+        ): SessionFinishResult {
+            writes++
+            error("History must not finish a session")
+        }
+    }
+
+    @OptIn(InternalCoroutinesApi::class, ExperimentalForInheritanceCoroutinesApi::class)
+    private class BrokenStateFlow<T>(
+        private val backing: StateFlow<T>,
+    ) : StateFlow<T> by backing {
+        override suspend fun collect(collector: FlowCollector<T>): Nothing = throw IOException("fixture access stream failure")
+    }
+
+    private companion object {
+        fun parked() = VehicleState(ConnectionState.CONNECTED, VehicleReading.Available(GearPosition.PARK))
+
+        fun unrestricted() = DrivingRestrictions(ParkingState.PARKED, UxRestrictionState.UNRESTRICTED)
+
+        fun session(
+            id: String,
+            started: Long = 1_000,
+            ended: Long? = 2_000,
+        ) = PracticeSession(
+            id,
+            PracticeSelection("goal-$id", "course-$id", 1, 1, "task-$id"),
+            "저장 목표 $id",
+            "저장 코스 $id",
+            "저장 과제 $id",
+            CourseReviewStatus.DEMO,
+            started,
+            ended,
+        )
+    }
+}

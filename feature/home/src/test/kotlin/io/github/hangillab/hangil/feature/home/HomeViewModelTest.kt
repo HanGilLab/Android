@@ -86,6 +86,7 @@ class HomeViewModelTest {
             assertEquals(PreparationLoadState.Failed, model.uiState.value.preparation)
             assertFalse(model.canPrepare())
             assertTrue(model.canViewMap())
+            assertTrue(model.canViewHistory())
             fail = false
             model.retryLoading()
             runCurrent()
@@ -100,8 +101,10 @@ class HomeViewModelTest {
             runCurrent()
             assertTrue(model.canPrepare())
             assertTrue(model.canViewMap())
+            assertTrue(model.canViewHistory())
             vehicle.state.value = VehicleState()
             assertFalse(model.canPrepare())
             assertFalse(model.canViewMap())
+            assertFalse(model.canViewHistory())
         }
 }
