@@ -1,8 +1,10 @@
 package io.github.hangillab.hangil
 
+import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Rect
+import android.os.SystemClock
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.semantics.SemanticsActions
@@ -308,6 +310,7 @@ class SessionDeletionFlowTest {
         var fixture: Fixture? = null
         var primary: Throwable? = null
         try {
+            establishHostForeground()
             assertTrue("새 격리 저장소는 원래 데이터가 없는 스키마4여야 합니다", store.schemaVersion() == 4)
             assertTrue("새 격리 저장소의 FK 위반은 없어야 합니다", store.foreignKeyViolationCount() == 0)
             val seed = runBlocking { seed(store, latestMemo) }
@@ -358,6 +361,35 @@ class SessionDeletionFlowTest {
                 }
             }
         }
+    }
+
+    /** One setup request for the Rule-owned host; never recover focus during a scenario. */
+    private fun establishHostForeground() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val scenario = compose.activityRule.scenario
+        val deadline = SystemClock.elapsedRealtime() + 20_000
+        lateinit var expectedHost: ComponentCatalogActivity
+        scenario.onActivity { host ->
+            expectedHost = host
+            host.startActivity(
+                Intent(host, ComponentCatalogActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            )
+        }
+        val remaining = deadline - SystemClock.elapsedRealtime()
+        assertTrue("전면 setup 요청도 원래 20초 안에 끝나야 합니다", remaining > 0)
+        compose.waitUntil(remaining) {
+            var sameResumedFocusedHost = false
+            scenario.onActivity { current ->
+                sameResumedFocusedHost =
+                    current === expectedHost && current.lifecycle.currentState == Lifecycle.State.RESUMED && current.hasWindowFocus()
+            }
+            sameResumedFocusedHost &&
+                instrumentation.uiAutomation.rootInActiveWindow
+                    ?.packageName
+                    ?.toString() == instrumentation.targetContext.packageName
+        }
+        assertTrue("호스트 identity/RESUMED/포커스/실제 전면 확인이 20초 안에 끝나야 합니다", SystemClock.elapsedRealtime() <= deadline)
     }
 
     private suspend fun seed(
