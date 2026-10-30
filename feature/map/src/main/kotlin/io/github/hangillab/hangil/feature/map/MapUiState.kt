@@ -9,6 +9,7 @@ data class MapUiState(
     val restrictions: DrivingRestrictions = DrivingRestrictions(),
     val attempt: Int = 0,
     val load: MapLoadState = MapLoadState.LOADING,
+    val preparation: MapPreparationState = MapPreparationState.Loading,
 ) {
     val allowsDetailedInteraction: Boolean get() = allowsPracticeInteraction(vehicle, restrictions)
 }

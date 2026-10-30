@@ -60,4 +60,5 @@ dependencies {
     androidTestImplementation(libs.androidx.test.junit)
     androidTestImplementation(project(":core:domain"))
     androidTestImplementation(libs.coroutines.core)
+    androidTestImplementation(libs.maplibre.android)
 }

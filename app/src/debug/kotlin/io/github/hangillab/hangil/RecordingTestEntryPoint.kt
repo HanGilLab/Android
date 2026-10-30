@@ -4,6 +4,7 @@ import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import io.github.hangillab.hangil.core.domain.DrivingRestrictionsProvider
+import io.github.hangillab.hangil.core.domain.PracticeCatalog
 import io.github.hangillab.hangil.core.domain.PracticeRepository
 import io.github.hangillab.hangil.core.domain.PracticeSessionRepository
 import io.github.hangillab.hangil.core.domain.SessionMemoRepository
@@ -21,6 +22,8 @@ interface RecordingTestEntryPoint {
     fun vehicle(): VehicleGateway
 
     fun preparation(): PracticeRepository
+
+    fun catalog(): PracticeCatalog
 
     fun memos(): SessionMemoRepository
 

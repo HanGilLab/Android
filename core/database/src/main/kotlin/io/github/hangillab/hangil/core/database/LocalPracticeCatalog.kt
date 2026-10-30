@@ -1,12 +1,14 @@
 package io.github.hangillab.hangil.core.database
 
+import io.github.hangillab.hangil.core.domain.CourseMapPreview
+import io.github.hangillab.hangil.core.domain.CoursePreviewPoint
 import io.github.hangillab.hangil.core.domain.PracticeCatalog
 import io.github.hangillab.hangil.core.domain.PracticeCourse
 import io.github.hangillab.hangil.core.domain.PracticeGoal
 import io.github.hangillab.hangil.core.domain.PracticeTask
 import javax.inject.Inject
 
-/** Fictional examples for the preparation flow; no coordinates or reviewed road routes. */
+/** Fictional preparation examples with separate fixed landmark previews, not reviewed road routes. */
 class LocalPracticeCatalog
     @Inject
     constructor() : PracticeCatalog {
@@ -30,6 +32,18 @@ class LocalPracticeCatalog
                             PracticeTask("arrival", "도착 후 할 일 생각하기", "도착했을 때 확인하고 싶은 일 하나를 정해 보세요."),
                         ),
                     goalIds = setOf("commute", "shopping"),
+                    mapPreview =
+                        CourseMapPreview(
+                            id = "seoul-city-hall-landmarks",
+                            version = 1,
+                            title = "서울 시청 주변",
+                            points =
+                                listOf(
+                                    CoursePreviewPoint("seoul-city-hall", "서울특별시청", 37.5666904, 126.9784222, 198561926L, 28),
+                                    CoursePreviewPoint("seoul-plaza", "서울광장", 37.5656223, 126.9779906, 370019676L, 8),
+                                    CoursePreviewPoint("daehanmun", "대한문", 37.5650316, 126.9765496, 377289797L, 8),
+                                ),
+                        ),
                 ),
                 PracticeCourse(
                     id = "intersections",
@@ -44,6 +58,18 @@ class LocalPracticeCatalog
                             PracticeTask("review", "다시 살펴볼 구간 정하기", "이동 후 차분히 돌아보고 싶은 구간 하나를 정해 보세요."),
                         ),
                     goalIds = setOf("commute", "shopping"),
+                    mapPreview =
+                        CourseMapPreview(
+                            id = "gwanghwamun-landmarks",
+                            version = 1,
+                            title = "광화문 주변",
+                            points =
+                                listOf(
+                                    CoursePreviewPoint("gwanghwamun", "광화문", 37.5759283, 126.9768176, 170199440L, 22),
+                                    CoursePreviewPoint("sejong-center", "세종문화회관", 37.5723190, 126.9756030, 543729863L, 14),
+                                    CoursePreviewPoint("government-seoul-complex", "정부서울청사", 37.5748313, 126.9749411, 196076051L, 18),
+                                ),
+                        ),
                 ),
             )
     }

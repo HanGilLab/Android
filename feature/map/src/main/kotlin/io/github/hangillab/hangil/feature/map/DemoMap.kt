@@ -4,6 +4,7 @@ import android.content.ComponentCallbacks
 import android.content.Context
 import android.content.res.Configuration
 import android.os.Bundle
+import android.view.View
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -13,19 +14,28 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import io.github.hangillab.hangil.core.domain.CourseMapPreview
 import org.maplibre.android.MapLibre
 import org.maplibre.android.RenderingEngine
 import org.maplibre.android.WellKnownTileServer
-import org.maplibre.android.camera.CameraPosition
+import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLng
+import org.maplibre.android.geometry.LatLngBounds
 import org.maplibre.android.maps.MapLibreMapOptions
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.tile.TileOperation
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.math.roundToInt
 
 @Composable
 internal fun DemoMap(
     attempt: Int,
+    preview: CourseMapPreview,
+    dark: Boolean,
+    fontScale: Float,
+    pointFill: Int,
+    pointText: Int,
+    pointBorder: Int,
     contentDescription: String,
     onLoading: (Int) -> Long?,
     onRendered: (Int, Long) -> Unit,
@@ -43,16 +53,19 @@ internal fun DemoMap(
                 context,
                 savedState,
                 active,
+                preview,
+                dark,
+                fontScale,
+                pointFill,
+                pointText,
+                pointBorder,
                 onRendered = { onRendered(attempt, token) },
                 onFailed = { onFailed(attempt, token) },
             )
         }
     val view = result.getOrNull()
-    LaunchedEffect(result) {
-        if (result.isFailure) onFailed(attempt, token)
-    }
+    LaunchedEffect(result) { if (result.isFailure) onFailed(attempt, token) }
     if (view == null) return
-
     DisposableEffect(view, owner) {
         val observer = MapViewLifecycle(view, savedState) { active.set(false) }
         val memory =
@@ -77,14 +90,20 @@ private fun createMap(
     context: Context,
     savedState: MapViewSavedState,
     active: AtomicBoolean,
+    preview: CourseMapPreview,
+    dark: Boolean,
+    fontScale: Float,
+    pointFill: Int,
+    pointText: Int,
+    pointBorder: Int,
     onRendered: () -> Unit,
     onFailed: () -> Unit,
 ): Result<MapView> {
     var view: MapView? = null
     return try {
-        // Match the single-backend artifact explicitly; device Vulkan advertising is not a compatibility test.
         MapLibre.getInstance(context.applicationContext, null, WellKnownTileServer.MapLibre, RenderingEngine.Type.OPENGL)
         val styleLoaded = AtomicBoolean(false)
+        val cameraFitted = AtomicBoolean(false)
         val fail = { if (active.get()) onFailed() }
         val options =
             MapLibreMapOptions
@@ -102,22 +121,56 @@ private fun createMap(
         mapView.addOnSpriteErrorListener { _, _ -> fail() }
         mapView.addOnTileActionListener { operation, _, _, _, _, _, _ -> if (operation == TileOperation.Error) fail() }
         mapView.addOnDidFinishRenderingMapListener { fully ->
-            if (active.get() && styleLoaded.get() && fully) onRendered()
+            if (active.get() && styleLoaded.get() && cameraFitted.get() && fully) onRendered()
         }
         mapView.onCreate(savedState.bundle?.let(::Bundle))
         savedState.attach(mapView)
         mapView.getMapAsync { map ->
             if (active.get()) {
-                if (savedState.bundle?.isEmpty != false) {
-                    map.cameraPosition =
-                        CameraPosition
-                            .Builder()
-                            .target(LatLng(37.5665, 126.9780))
-                            .zoom(14.0)
-                            .build()
+                try {
+                    map.uiSettings.isAttributionEnabled = true
+                    val styleUrl = "https://tiles.openfreemap.org/styles/" + if (dark) "dark" else "liberty"
+                    map.setStyle(styleUrl) { style ->
+                        if (active.get()) {
+                            try {
+                                CoursePreviewLayers.add(style, preview, pointFill, pointText, pointBorder, fontScale)
+                                styleLoaded.set(true)
+                                val bounds =
+                                    LatLngBounds
+                                        .Builder()
+                                        .includes(
+                                            preview.points.map { LatLng(it.latitude, it.longitude) },
+                                        ).build()
+                                val padding = (40 * context.resources.displayMetrics.density).roundToInt()
+                                var layout: View.OnLayoutChangeListener? = null
+                                val fitCamera = {
+                                    if (active.get() && !cameraFitted.get() && mapView.width > padding * 2 &&
+                                        mapView.height > padding * 2
+                                    ) {
+                                        try {
+                                            map.moveCamera(CameraUpdateFactory.newLatLngBounds(bounds, padding))
+                                            cameraFitted.set(true)
+                                            layout?.let(mapView::removeOnLayoutChangeListener)
+                                        } catch (_: Exception) {
+                                            fail()
+                                        }
+                                    }
+                                }
+                                layout = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> fitCamera() }
+                                mapView.addOnLayoutChangeListener(checkNotNull(layout))
+                                fitCamera()
+                            } catch (_: Exception) {
+                                fail()
+                            } catch (_: LinkageError) {
+                                fail()
+                            }
+                        }
+                    }
+                } catch (_: Exception) {
+                    fail()
+                } catch (_: LinkageError) {
+                    fail()
                 }
-                map.uiSettings.isAttributionEnabled = true
-                map.setStyle("https://tiles.openfreemap.org/styles/liberty") { styleLoaded.set(true) }
             }
         }
         Result.success(mapView)
