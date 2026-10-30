@@ -8,6 +8,7 @@ import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
@@ -452,6 +453,7 @@ class SessionHistoryFlowTest {
     private fun preserveLayoutFailure(
         tag: String,
         layouts: JSONArray,
+        includeWaitDiagnostics: Boolean = false,
     ) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val details =
@@ -484,6 +486,7 @@ class SessionHistoryFlowTest {
         } finally {
             screenshot?.recycle()
         }
+        if (includeWaitDiagnostics) details.put("waitDiagnostics", waitDiagnostics(tag))
         try {
             if (directory.isDirectory || directory.mkdirs()) {
                 File(directory, "history-layout-failure.json").writeText(details.toString(2))
@@ -491,6 +494,42 @@ class SessionHistoryFlowTest {
         } catch (_: Exception) {
             // Keep the original failure even if private evidence cannot be written.
         }
+    }
+
+    /** Counts only, collected after the failure screenshot; never dump semantics text or IDs. */
+    private fun waitDiagnostics(tag: String): JSONObject {
+        val diagnostics = JSONObject().put("inspectionComplete", false)
+        try {
+            diagnostics.put("targetMatches", nodes(tag).size)
+            val states = JSONObject()
+            listOf(
+                "history_ready",
+                "history_loading",
+                "history_empty",
+                "history_failed",
+                "history_selection_changed",
+                "history_locked",
+                "history_course",
+                "history_goal",
+                "history_task",
+                "history_started",
+                "history_finished",
+                "history_demo",
+                "history_position",
+            ).forEach { states.put(it, nodes(it).size) }
+            diagnostics.put("stateTagCounts", states)
+            diagnostics.put(
+                "semanticsRoots",
+                compose
+                    .onAllNodes(isRoot(), useUnmergedTree = true)
+                    .fetchSemanticsNodes(atLeastOneRootRequired = false)
+                    .size,
+            )
+            diagnostics.put("inspectionComplete", true)
+        } catch (_: Throwable) {
+            // Missing diagnostics stay missing rather than becoming invented zero counts.
+        }
+        return diagnostics
     }
 
     private fun nodeTexts(node: SemanticsNode): List<String> =
@@ -507,7 +546,16 @@ class SessionHistoryFlowTest {
     private fun exists(tag: String): Boolean = nodes(tag).size == 1
 
     private fun waitFor(tag: String) {
-        compose.waitUntil(20_000) { exists(tag) }
+        try {
+            compose.waitUntil(20_000) { exists(tag) }
+        } catch (failure: Throwable) {
+            try {
+                preserveLayoutFailure(tag, JSONArray(), includeWaitDiagnostics = true)
+            } catch (_: Throwable) {
+                // Evidence collection must not replace the original wait condition or failure.
+            }
+            throw failure
+        }
     }
 
     private fun assertAbsent(tag: String) {
