@@ -1,6 +1,6 @@
 # 선택한 종료 이력의 수동 과정 마무리 선언
 
-- 상태: PR #69의 삭제 취소/준비 실패 뒤 선언 읽기 복원을 수정한 최종 제품/native `d1bd59dc5969ca44b94db976032260cd92d71f79`의 전체 verify와 A6/B 양 테마3/C 양 테마1을 확인했다. 기준 A/중간 B1/최종 B2의 여섯 M0/M1 보고서와 원본/환경 보존도 완료했다. 원래 P2 답글/native 해결과 d1 Codex completed/no findings는 확인했으나 CI는 진행 중이며 문서 갱신 head의 CI/Codex 및 병합/정리는 미완료다.
+- 상태: 완료. PR #69의 삭제 취소/준비 실패 뒤 선언 읽기 복원을 수정한 최종 제품/native `d1bd59dc5969ca44b94db976032260cd92d71f79`의 전체 verify와 A6/B 양 테마3/C 양 테마1을 확인했다. 기준 A/중간 B1/최종 B2의 여섯 M0/M1 보고서와 원본/환경 보존도 완료했다. 최종 PR head `3f896a5616a9339febed4448f032d2f1af8f1e23`의 필수 CI4개와 Codex completed/no findings, P2 native 해결을 확인한 뒤 `824140e67abada4ecc9612e49633c2d9c6577e2d`로 정상 병합했다. main의 ff-only 동기화와 로컬/원격 브랜치 정리도 확인했다. 병합 main의 별도 push CI4개도 통과해 독립 범위를 완료하고 이 계획을 completed로 이동했다. APP-08 전체는 미완료다.
 - 요구사항: APP-08의 과정 마무리 중 사용자의 명시적 선언 저장과 재열람. 전체 과정 진행, 보관 정책과 APP-08 전체 완료는 별도다.
 - 기준 제품: `4b1ba6d9c437767c258e9d33843af6c600f24b01`
 - 관련 계약: [당시 코스 기록 요약](../../development/course-history-summary.md), [종료 기록 삭제](../../development/ended-session-deletion.md), [저장 실행 이력](../../development/history-recording-runs.md)
@@ -50,7 +50,7 @@
 - [x] 같은 입력과 고정 하네스의 M0/M1 비교를 완료한다. 새 저장 M2는 아래 반복 조건 미확정에 따라 미측정으로 구분하고 구현 완료나 성능 향상의 조건으로 대신 쓰지 않는다. 실제 원값, 분포와 실패/미실행/누락/제외를 보존한다.
 - [x] 원래 DB 전체, 권한/runtime/설정과 baseline 파일을 exact 대조하고 실행이 소유한 검증 자료 및 프로세스/forward/AVD만 정리한다.
 - [x] README 대표 사례 4개와 새 실제 근거를 비교해 근거가 있는 경우만 교체하며 기존 실제 코드/이미지와 개인정보 경계를 유지한다.
-- [ ] 최신 PR의 동일 head 필수 CI/Codex, 구체적 지적 처리와 관련 실제 검증을 확인한다. 정상 병합, main 동기화/브랜치 정리와 전체 완료 판정은 root가 별도로 수행한다.
+- [x] PR #69 최종 동일 head의 필수 CI/Codex, 구체적 지적 처리와 관련 실제 검증을 확인했다. 정상 병합, main ff-only 동기화와 로컬/원격 작업 브랜치 정리도 확인했다. 병합 main의 별도 push CI4개도 통과했고 이 독립 범위의 완료를 확인했다.
 
 ## 구현 단계
 
@@ -313,9 +313,14 @@ B2/캐시 이동 전 외부 보존 checkpoint/hash 대조 뒤 해당 실행 소�
 - [x] 최종 d1bd59의 A6/B 양 테마3/C 양 테마1과 원본/선언0 보존.
 - [x] A/B1/B2 여섯 보고서, 원래140행과 추가70행, 분포/실패/미실행/누락/제외 및 한계 기록.
 - [x] 최종 native와 timing 뒤 자료/권한/설정/원형 baseline exact 보존 및 이번 소유 자원 정리.
-- [ ] 이 문서 갱신을 포함한 최신 PR 동일 head의 필수 CI/Codex와 새 구체 지적 확인.
-- [ ] 정상 병합, main 동기화와 병합 작업 브랜치 정리 후 root의 전체 완료/계획 이동 판단.
+- [x] 문서 갱신을 포함한 PR #69 최종 동일 head의 필수 CI4개/Codex와 구체 지적 처리 확인.
+- [x] 정상 병합, main ff-only 동기화와 병합 작업 브랜치의 로컬/원격 정리 확인.
+- [x] 병합 main의 별도 push CI4개 success와 root의 독립 범위 완료 판단 뒤 이 계획을 completed로 이동.
 
-원래 [P2 답글](https://github.com/HanGilLab/Android/pull/69#discussion_r4433638300)과 native resolved를 확인했다. 원래 지적 본문이 새로 갱신된 것이 아니라 수정 답글/해결 및 d1bd59의 Codex completed/no findings가 새 근거다. CI는 진행 중이었으며 문서 갱신 head는 다시 확인해야 한다. 이 독립 선언으로 APP-08 전체, 능력 인증, 보관 정책이나 생산 저장 후 프로세스 재시작 성공을 주장하지 않는다. 계획을 active로 유지하고 완료/병합을 선행 표시하지 않는다.
+원래 [P2 답글](https://github.com/HanGilLab/Android/pull/69#discussion_r4433638300)과 원스레드 native resolved를 확인했다. 원래 지적 본문 갱신과 수정 답글/해결을 구분하며 정식 리뷰2건에 CHANGES_REQUESTED는 없었다. 최종 head `3f896a5616a9339febed4448f032d2f1af8f1e23`의 [PR CI](https://github.com/HanGilLab/Android/actions/runs/41252100840) attempt1 필수4개 success와 exact-head Codex completed/no findings를 확인했고 우회 없이 정상 병합했다. 병합 commit `824140e67abada4ecc9612e49633c2d9c6577e2d`의 main ff-only 동기화와 로컬/원격 작업 브랜치 정리를 확인했다. [병합 main CI](https://github.com/HanGilLab/Android/actions/runs/41252576739) attempt1/App15368 필수4개 success도 확인한 뒤 이 독립 범위를 완료하고 계획을 completed로 이동한다. 이 독립 선언으로 APP-08 전체, 능력 인증, 보관 정책이나 생산 저장 후 프로세스 재시작 성공을 주장하지 않는다.
 
 fresh process/Activity 조건은 각 metric 전에 앱 프로세스를 외부에서 새로 시작했다는 뜻이며 기기 cold boot를 동일하게 통제했다는 뜻이 아니다. 검증/빌드/AVD 재시작을 사이에 거쳤고 OS/서비스 부하, 장치 uptime과 캐시/컴파일 프로필 동등성은 입증하지 못했다. 같은 기록 입력/계측/가용 영역과 명시한 조건의 관측값으로만 해석한다.
+
+## 완료 계획 이동의 문서 검증 범위
+
+이번 종료 기록과 계획 이동은 앱/계측/빌드 설정/README/CSV를 바꾸지 않는다. 앱 실행 성능과 무관하므로 새 전후 측정을 적용하지 않는다. 실제 PR head와 merge/tree/parent/noreply 및 보호 정책, 상대 링크와 기존 수치/실패 기록 보존을 확인했다. 종료 문서의 독립 읽기 검토에서 구체 결함이 없었고 JDK17 `./scripts/verify.sh quality`, 공개 콘텐츠의 제한된 패턴 guard 및 diff 검사가 통과했다. 종료 문서 PR 자체의 최신 CI/Codex 및 병합은 그 PR과 로컬 체크포인트에서 별도로 추적한다.
