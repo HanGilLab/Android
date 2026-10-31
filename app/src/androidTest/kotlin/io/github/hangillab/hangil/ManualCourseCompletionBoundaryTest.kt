@@ -263,15 +263,21 @@ class ManualCourseCompletionBoundaryTest {
         val restrictionValues = MutableStateFlow(DrivingRestrictions(ParkingState.PARKED, UxRestrictionState.UNRESTRICTED))
         private val instrument = InstrumentationRegistry.getInstrumentation()
         private val visible = mutableStateOf(true)
-        private val owner = ControlledOwner()
+        private lateinit var owner: ControlledOwner
         private val modelStore = ViewModelStore()
         private val activeReads = AtomicInteger(0)
         private val activeWrites = AtomicInteger(0)
         private val hostIntervened = AtomicBoolean(false)
+
+        @Volatile private var lastHostEvent: String? = null
+        private var setupFocusConfirmed = false
+        private var setupWaitMillis: Long? = null
+        private var lastWindowObservation = JSONObject()
         private val hostObserver =
             LifecycleEventObserver { _, event ->
                 if (event in listOf(Lifecycle.Event.ON_PAUSE, Lifecycle.Event.ON_STOP, Lifecycle.Event.ON_DESTROY)) {
                     hostIntervened.set(true)
+                    lastHostEvent = event.name
                 }
             }
         private var displayId: Int? = null
@@ -281,12 +287,39 @@ class ManualCourseCompletionBoundaryTest {
         val isStopped: Boolean get() = modelCleared && activeReads.get() == 0 && activeWrites.get() == 0
         lateinit var model: SessionHistoryViewModel
 
+        private fun awaitInitialCatalogFocus() {
+            val started = SystemClock.elapsedRealtime()
+            val deadline = started + TIMEOUT
+            while (SystemClock.elapsedRealtime() < deadline) {
+                var ready = false
+                instrument.runOnMainSync {
+                    val activity = compose.activity
+                    val display = activity.display
+                    ready = activity.lifecycle.currentState == Lifecycle.State.RESUMED &&
+                        display != null && display.isValid && activity.hasWindowFocus()
+                }
+                setupWaitMillis = SystemClock.elapsedRealtime() - started
+                if (ready) {
+                    check(SystemClock.elapsedRealtime() < deadline) { "initial Catalog focus exceeded setup deadline" }
+                    return
+                }
+                SystemClock.sleep(50)
+            }
+            error("initial Catalog RESUMED/display/window focus was not confirmed")
+        }
+
         fun mount() {
+            // ActivityScenario RESUMED can precede input-window attachment. This bounded gate
+            // happens before fixture ownership; no later foreign-package result is retried here.
+            awaitInitialCatalogFocus()
             instrument.runOnMainSync {
-                val display = checkNotNull(compose.activity.display)
-                check(display.isValid)
+                val activity = compose.activity
+                val display = checkNotNull(activity.display)
+                check(activity.lifecycle.currentState == Lifecycle.State.RESUMED && display.isValid && activity.hasWindowFocus())
                 displayId = display.displayId
-                compose.activity.lifecycle.addObserver(hostObserver)
+                setupFocusConfirmed = true
+                activity.lifecycle.addObserver(hostObserver)
+                owner = ControlledOwner()
                 owner.move(Lifecycle.State.RESUMED)
                 model =
                     ViewModelProvider(
@@ -474,18 +507,50 @@ class ManualCourseCompletionBoundaryTest {
         }
 
         private fun actualPackage(): String? {
-            val captured = displayId ?: return null
-            val all = instrument.uiAutomation.windowsOnAllDisplays
+            val observed =
+                JSONObject()
+                    .put("basis", "single-focused-window-on-captured-Catalog-display")
+                    .put("captured_display_known", displayId != null)
+                    .put("window_count", JSONObject.NULL)
+                    .put("focused_count", JSONObject.NULL)
+                    .put("root_present", false)
+                    .put("same_display", JSONObject.NULL)
+                    .put("package_available", false)
+                    .put("package_matches", JSONObject.NULL)
+                    .put("unknown_reason", JSONObject.NULL)
+            lastWindowObservation = observed
+
+            fun unknown(reason: String): String? {
+                observed.put("unknown_reason", reason)
+                return null
+            }
+            val captured = displayId ?: return unknown("captured_display_unknown")
             val windows = mutableListOf<AccessibilityWindowInfo>()
             var root: AccessibilityNodeInfo? = null
             try {
+                val all = instrument.uiAutomation.windowsOnAllDisplays
                 for (index in 0 until all.size()) windows.addAll(all.valueAt(index))
-                val current = all[captured] ?: return null
-                if (current.any { it.displayId != captured }) return null
+                observed.put(
+                    "interactive_windows_flag",
+                    instrument.uiAutomation.serviceInfo.flags and
+                        AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS != 0,
+                )
+                val current = all[captured] ?: return unknown("display_windows_unavailable")
+                observed.put("window_count", current.size)
+                val sameDisplay = current.all { it.displayId == captured }
+                observed.put("same_display", sameDisplay)
+                if (!sameDisplay) return unknown("window_display_mismatch")
                 val focused = current.filter { it.isFocused }
-                if (focused.size != 1) return null
-                root = focused.single().root ?: return null
-                return root?.packageName?.toString()
+                observed.put("focused_count", focused.size)
+                if (focused.size != 1) return unknown("focused_window_count_not_one")
+                root = focused.single().root ?: return unknown("focused_root_unavailable")
+                observed.put("root_present", true)
+                val actual = root?.packageName?.toString() ?: return unknown("focused_package_unavailable")
+                observed.put("package_available", true).put("package_matches", actual == instrument.targetContext.packageName)
+                return actual
+            } catch (failure: Throwable) {
+                observed.put("unknown_reason", "observer_exception").put("exception", failure.javaClass.name)
+                throw failure
             } finally {
                 root?.recycle()
                 windows.forEach { it.recycle() }
@@ -493,19 +558,54 @@ class ManualCourseCompletionBoundaryTest {
         }
 
         fun diagnose(original: Throwable) {
-            // Controlled fixture metadata only. No synthetic UI screenshot is presented as SDK evidence.
+            // Controlled metadata only; no raw package names or synthetic SDK screenshot claim.
             try {
                 val folder = File(instrument.targetContext.cacheDir, "manual-course-completion-controlled/${UUID.randomUUID()}")
                 check(folder.mkdirs())
-                File(folder, "failure.json").writeText(
+                val proof =
                     JSONObject()
                         .put("kind", "controlled-compose-policy")
                         .put("exception", original.javaClass.name)
                         .put("activeReads", activeReads.get())
                         .put("activeWrites", activeWrites.get())
                         .put("hostIntervened", hostIntervened.get())
-                        .toString(2),
-                )
+                        .put("last_host_event", lastHostEvent ?: JSONObject.NULL)
+                        .put("setup_focus_confirmed", setupFocusConfirmed)
+                        .put("setup_wait_ms", setupWaitMillis ?: JSONObject.NULL)
+                        .put("last_window_observation", lastWindowObservation)
+                try {
+                    instrument.runOnMainSync {
+                        val activity = compose.activity
+                        val display = activity.display
+                        proof
+                            .put("host_state", activity.lifecycle.currentState.name)
+                            .put("host_has_window_focus", activity.hasWindowFocus())
+                            .put("display_known", display != null)
+                            .put("display_valid", display?.isValid ?: JSONObject.NULL)
+                            .put(
+                                "same_captured_display",
+                                if (display == null || displayId == null) {
+                                    JSONObject.NULL
+                                } else {
+                                    display.displayId == displayId
+                                },
+                            )
+                    }
+                } catch (probe: Throwable) {
+                    proof.put("host_probe_failure", probe.javaClass.name)
+                    original.addSuppressed(probe)
+                }
+                try {
+                    proof.put(
+                        "interactive_windows_flag",
+                        instrument.uiAutomation.serviceInfo.flags and
+                            AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS != 0,
+                    )
+                } catch (probe: Throwable) {
+                    proof.put("flag_probe_failure", probe.javaClass.name)
+                    original.addSuppressed(probe)
+                }
+                File(folder, "failure.json").writeText(proof.toString(2))
             } catch (diagnostic: Throwable) {
                 original.addSuppressed(diagnostic)
             }
@@ -527,7 +627,9 @@ class ManualCourseCompletionBoundaryTest {
             attempt { if (displayId != null) requireHost() }
             attempt {
                 instrument.runOnMainSync {
-                    if (owner.lifecycle.currentState != Lifecycle.State.INITIALIZED) owner.move(Lifecycle.State.DESTROYED)
+                    if (::owner.isInitialized && owner.lifecycle.currentState != Lifecycle.State.INITIALIZED) {
+                        owner.move(Lifecycle.State.DESTROYED)
+                    }
                 }
             }
             attempt { instrument.runOnMainSync { visible.value = false } }
