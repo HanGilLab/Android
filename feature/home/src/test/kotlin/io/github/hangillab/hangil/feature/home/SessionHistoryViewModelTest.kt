@@ -1458,7 +1458,16 @@ class SessionHistoryViewModelTest {
                     observation: VehicleObservation,
                 ): VehicleObservationAppendResult = error("Stored observation writes are outside this fixture")
             }
-        val model = SessionHistoryViewModel(vehicle, restrictions, repository, deletions, observations, UnexpectedHistoryMemoRepository)
+        val model =
+            SessionHistoryViewModel(
+                vehicle,
+                restrictions,
+                repository,
+                deletions,
+                observations,
+                UnexpectedHistoryMemoRepository,
+                UnexpectedHistoryRecordingRunRepository,
+            )
     }
 
     private class FakeRepository(

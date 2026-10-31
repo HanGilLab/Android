@@ -213,6 +213,7 @@ class SessionHistoryMemoBoundaryTest {
                                 ): VehicleObservationAppendResult = error("Read-only history must not append observations")
                             },
                             f.memos,
+                            UnexpectedHistoryRecordingRunRepository,
                         ) as T
                     }
                 }

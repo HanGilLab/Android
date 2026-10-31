@@ -576,6 +576,7 @@ class SessionHistoryMemoViewModelTest {
                     ): VehicleObservationAppendResult = error("No observation append in memo history")
                 },
                 memos,
+                UnexpectedHistoryRecordingRunRepository,
             )
     }
 

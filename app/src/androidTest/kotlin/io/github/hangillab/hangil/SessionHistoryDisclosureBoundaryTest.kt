@@ -121,6 +121,7 @@ class SessionHistoryDisclosureBoundaryTest {
                             deletions,
                             observations,
                             UnexpectedHistoryMemoRepository,
+                            UnexpectedHistoryRecordingRunRepository,
                         ) as T
                     }
                 }

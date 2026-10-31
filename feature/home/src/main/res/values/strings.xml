@@ -194,4 +194,23 @@
     <string name="background_recording_stop">내비 중 기록 끄기</string>
     <string name="background_recording_foreign">다른 연습의 기록 실행을 먼저 정리해 주세요.</string>
     <string name="background_recording_cleanup">남아 있는 기록 실행을 정리해 주세요. 새 연습은 시작하지 않아요.</string>
+    <string name="history_recording_runs_title">배경 기록 실행</string>
+    <string name="history_recording_run_source">저장된 배경 실행 정보</string>
+    <string name="history_recording_run_scope">앱이 저장한 실행 상태와 시각이에요. 실제 SDK 수집 기간, 연속 기록이나 서비스 종료를 확인한 정보는 아니에요.</string>
+    <string name="history_recording_run_position">저장 순서 %1$d / %2$d</string>
+    <string name="history_recording_run_loading">배경 실행 정보를 불러오고 있어요…</string>
+    <string name="history_recording_run_empty">저장된 배경 실행 정보가 없어요. 차량 관찰은 따로 확인할 수 있어요.</string>
+    <string name="history_recording_run_changed">선택한 연습이 바뀌었어요. 실행 정보를 다시 열어 주세요.</string>
+    <string name="history_recording_run_failed">배경 실행 정보를 불러오지 못했어요.</string>
+    <string name="history_recording_run_retry">다시 불러오기</string>
+    <string name="history_recording_run_stopped">종료 상태가 저장됐어요.</string>
+    <string name="history_recording_run_failed_status">실패 상태가 저장됐어요.</string>
+    <string name="history_recording_run_interrupted_status">실행 종료를 확인하지 못했어요.</string>
+    <string name="history_recording_run_open">종료 상태가 아직 저장되지 않았어요.</string>
+    <string name="history_recording_run_started">실행 시작 기록: %1$s</string>
+    <string name="history_recording_run_ended">실행 종료 기록: %1$s</string>
+    <string name="history_recording_run_ended_unknown">실행 종료 기록: 시각 미확인</string>
+    <string name="history_recording_run_interrupted">종료를 확인하지 못한 이전 실행이 있어요.</string>
+    <string name="history_recording_run_previous">이전 실행</string>
+    <string name="history_recording_run_next">다음 실행</string>
 </resources>

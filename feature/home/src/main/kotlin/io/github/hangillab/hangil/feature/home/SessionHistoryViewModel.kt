@@ -6,6 +6,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import io.github.hangillab.hangil.core.domain.DrivingRestrictionsProvider
 import io.github.hangillab.hangil.core.domain.PracticeSession
 import io.github.hangillab.hangil.core.domain.PracticeSessionRepository
+import io.github.hangillab.hangil.core.domain.RecordingRunRepository
 import io.github.hangillab.hangil.core.domain.SessionCourseSummary
 import io.github.hangillab.hangil.core.domain.SessionDeletionPreparation
 import io.github.hangillab.hangil.core.domain.SessionDeletionRepository
@@ -57,10 +58,12 @@ class SessionHistoryViewModel
         private val deletions: SessionDeletionRepository,
         observations: VehicleObservationRepository,
         memos: SessionMemoRepository,
+        recordingRuns: RecordingRunRepository,
     ) : ViewModel() {
         private val lock = Any()
         private val storedObservations = SessionHistoryObservationReader(lock, observations, ::canRead)
         private val storedMemos = SessionHistoryMemoReader(lock, memos, ::canRead)
+        private val storedRecordingRuns = SessionHistoryRecordingRunReader(lock, recordingRuns, ::canRead)
         private val published = MutableStateFlow<SessionHistoryUiState>(SessionHistoryUiState.Loading)
         private val requests = MutableStateFlow(0L)
         private var reader: Reader? = null
@@ -161,6 +164,62 @@ class SessionHistoryViewModel
                     )
                 }
             }
+
+        /** A run detail has its own cold query, bound to the same received history selection. */
+        fun canRevealStoredRecordingRuns(
+            expectedSessionId: String,
+            expectedGeneration: Long,
+        ): Boolean =
+            synchronized(lock) {
+                val owner = reader ?: return@synchronized false
+                val query = owner.query ?: return@synchronized false
+                if (selectionSnapshotLocked(expectedSessionId, expectedGeneration) == null) return@synchronized false
+                if (!canRead()) {
+                    restartDeniedQueryLocked(owner, query)
+                    return@synchronized false
+                }
+                true
+            }
+
+        fun observeStoredRecordingRuns(
+            expected: PracticeSession,
+            historyGeneration: Long,
+            canKeepOpen: () -> Boolean,
+        ): Flow<SessionHistoryRecordingRunUiState> =
+            storedRecordingRuns.observe(expected, historyGeneration, canKeepOpen) {
+                val owner = reader
+                val query = owner?.query
+                if (owner == null || query == null || selectionSnapshotLocked(expected.sessionId, historyGeneration)?.session != expected) {
+                    null
+                } else {
+                    SessionHistoryRecordingRunReader.Binding(
+                        isCurrent = {
+                            currentQuery(owner, query) &&
+                                selectionSnapshotLocked(expected.sessionId, historyGeneration)?.session == expected
+                        },
+                        denyAccess = {
+                            if (currentQuery(owner, query)) restartDeniedQueryLocked(owner, query)
+                        },
+                    )
+                }
+            }
+
+        fun canReadStoredRecordingRuns(token: SessionHistoryRecordingRunUiState.Token): Boolean = storedRecordingRuns.canRead(token)
+
+        fun previousStoredRecordingRun(
+            token: SessionHistoryRecordingRunUiState.Token,
+            expectedRunId: String,
+        ): Boolean = storedRecordingRuns.previous(token, expectedRunId)
+
+        fun nextStoredRecordingRun(
+            token: SessionHistoryRecordingRunUiState.Token,
+            expectedRunId: String,
+        ): Boolean = storedRecordingRuns.next(token, expectedRunId)
+
+        fun retryStoredRecordingRuns(
+            token: SessionHistoryRecordingRunUiState.Token,
+            expectedRunId: String?,
+        ): Boolean = storedRecordingRuns.retry(token, expectedRunId)
 
         fun canReadStoredObservations(token: Token): Boolean = storedObservations.canRead(token)
 
@@ -707,6 +766,7 @@ class SessionHistoryViewModel
         private fun publishSelectionLocked(records: List<PracticeSession>) {
             storedObservations.invalidate()
             storedMemos.invalidate()
+            storedRecordingRuns.invalidate()
             val index = records.indexOfFirst { it.sessionId == selectedId }
             val nextGeneration = nextGenerationLocked()
             published.value =
@@ -725,6 +785,7 @@ class SessionHistoryViewModel
         private fun publishLocked(state: SessionHistoryUiState) {
             storedObservations.invalidate(state == SessionHistoryUiState.Locked)
             storedMemos.invalidate(state == SessionHistoryUiState.Locked)
+            storedRecordingRuns.invalidate(state == SessionHistoryUiState.Locked)
             nextGenerationLocked()
             published.value = state
         }
