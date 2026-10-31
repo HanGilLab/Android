@@ -1,6 +1,7 @@
 package io.github.hangillab.hangil
 
 import android.app.ActivityManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
@@ -59,8 +60,10 @@ import kotlin.math.abs
  * recovery reuse it. Original preparation, sessions, observations, memos and runs are read only.
  * Evidence and ownership markers stay in private app cache. The external runner owns DDS and
  * restores its vehicle/settings changes. No location, route, permission or SDK state is replaced.
- * Instrumentation itself affects process priority: Main STOP plus native FGS plus received SDK
- * snapshots is the claim, not continuous road support in an uninstrumented process.
+ * The recording flow hands off to the real navigation app through its system launcher intent.
+ * This is independent Main/FGS/vehicle evidence, not proof that the app's Navi SDK request opens
+ * the navigation screen. Instrumentation itself affects process priority: Main STOP plus native
+ * FGS plus received SDK snapshots is the claim, not continuous uninstrumented road support.
  */
 @RunWith(AndroidJUnit4::class)
 class BackgroundVehicleRecordingFlowTest {
@@ -92,8 +95,7 @@ class BackgroundVehicleRecordingFlowTest {
                 capture("main-active-open")
                 phase("BG_RECORDING_ACTIVE_OPEN")
 
-                waitTag("navigation_screen_open")
-                compose.onNodeWithTag("navigation_screen_open").performScrollTo().performClick()
+                launchSystemNavigation()
                 awaitStableNavigation()
                 awaitMainBelowStarted()
                 assertActiveOwnership(graph, active)
@@ -674,6 +676,35 @@ class BackgroundVehicleRecordingFlowTest {
         assertTrue("실제 전면 패키지가 요청한 앱이어야 합니다", packageNow() == expected)
     }
 
+    /**
+     * OS handoff only to the runner's previously verified explicit launcher component. The supplied
+     * package/component bounds and real foreground/lifecycle postconditions define this fixture;
+     * missing package visibility never implies that arbitrary targets are allowed. Installation and
+     * exported access are checked by the real OS dispatch. This is not app Navi SDK request evidence.
+     */
+    private fun launchSystemNavigation() {
+        val expected = navigationPackage()
+        val supplied =
+            checkNotNull(arguments.getString("expectedNavigationComponent")) {
+                "외부 runner가 실제로 확인한 내비 launcher component를 명시해야 합니다"
+            }
+        val component =
+            checkNotNull(ComponentName.unflattenFromString(supplied)) {
+                "명시한 내비 launcher component 형식이 유효해야 합니다"
+            }
+        assertTrue(
+            "명시적 launcher component는 지정한 내비 package와 그 내부 class만 가리켜야 합니다",
+            component.packageName == expected && component.className.startsWith("$expected."),
+        )
+        val launch =
+            Intent(Intent.ACTION_MAIN)
+                .addCategory(Intent.CATEGORY_LAUNCHER)
+                .setComponent(component)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        instrumentation.runOnMainSync { context.startActivity(launch) }
+        phase("BG_RECORDING_SYSTEM_NAVIGATION_LAUNCH_REQUESTED")
+    }
+
     private fun awaitStableNavigation() {
         awaitPackage(navigationPackage())
         instrumentation.uiAutomation.waitForIdle(1_000, 10_000)
@@ -802,7 +833,11 @@ class BackgroundVehicleRecordingFlowTest {
                         .toString(),
                 ).put("owned_runs", JSONArray(runs(graph, sessionId).map { runJson(it) }))
                 .put("owned_observations", observations(graph, sessionId).toString())
-                .put("claim_limit", "Instrumentation affects process priority; Main STOP, native FGS and actual SDK snapshot receipt only")
+                .put("navigation_handoff_policy", "system_launcher_for_recording_flow_only")
+                .put(
+                    "claim_limit",
+                    "Instrumentation affects process priority; Main STOP, native FGS and actual SDK snapshot receipt only; system launcher handoff does not establish app Navi SDK request success",
+                )
         File(evidence, "$name.json").writeText(proof.toString(2))
     }
 
