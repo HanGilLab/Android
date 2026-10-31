@@ -1,6 +1,6 @@
 # 선택한 종료 이력의 수동 과정 마무리 선언
 
-- 상태: 최종 제품 a639의 자동/native 검증과 고정6f45 M0/M1 전후 비교, 최종 원본/설정 exact 보존 및 소유 자원 정리를 마쳤다. 관측 차이의 성능 향상/동등성/무회귀는 확정하지 않는다. 최신 PR의 CI/Codex/구체 지적 처리와 정상 병합은 미완료이며 계획은 active로 유지한다.
+- 상태: PR #69의 삭제 취소/준비 실패 뒤 선언 읽기 복원을 수정했다. 원래 재현5개는 수정 전4개 실패/수정 후 전부 통과했고 기존 취소 계약을 유지한 전체 feature386개와 JDK17 전체 verify가 통과했다. 최신 실제 A/B/C와 별도 최종 B2, 최신 head CI/Codex/스레드 처리는 미완료다.
 - 요구사항: APP-08의 과정 마무리 중 사용자의 명시적 선언 저장과 재열람. 전체 과정 진행, 보관 정책과 APP-08 전체 완료는 별도다.
 - 기준 제품: `4b1ba6d9c437767c258e9d33843af6c600f24b01`
 - 관련 계약: [당시 코스 기록 요약](../../development/course-history-summary.md), [종료 기록 삭제](../../development/ended-session-deletion.md), [저장 실행 이력](../../development/history-recording-runs.md)
@@ -254,3 +254,19 @@ B의 저장 복원 근거는 새 ViewModel과 실제 Room handle 재개방/재�
 ## 최종 문서와 원값 검산
 
 마지막 README 기능 소개/출처 링크, 작업 기록과 익명 CSV 배치는 앱 실행 경로를 바꾸지 않아 새 성능 측정 적용 대상이 아니다. 같은 제품/계측 소스와 실제 APK의 앞선 검증을 보존하고 공개 원값의 독립 Decimal 재계산, source 바이트 동일성, 상대 링크/README 발췌/정적 개인정보 guard와 diff 검사를 수행한다. 새 앱 성능 성과를 추가하지 않는다. 최신 PR의 CI/Codex 완료와 정상 병합은 아직 별도 조건이다.
+
+## PR #69의 삭제 취소 뒤 reader 복원 지적
+
+최초 head `dffc61254dcb0ce0efe7445abfceb616a4fc34a1`의 Codex는 삭제 확인을 취소하거나 준비에 실패한 뒤 펼쳐진 과정 마무리 본문이 사라지는 P2를 지적했다. requestDeletion의 invalidate는 기존 reader를 영구 revoked로 만들지만 같은 source/generation의 Compose Flow는 유지되고 dismissDeletion은 삭제 상태만 지우므로 새 읽기가 시작되지 않는다. 저장 자료 손실이나 능력 판정 문제가 아니라 읽기/새 명시 요청의 복원 결함이다. 원래 스레드와 댓글은 수정/검증 후 최신 상태를 다시 확인해 답글과 native 해결을 처리한다. 리뷰 완료/CI 일부 통과를 승인으로 쓰지 않는다.
+
+변경 전 focused JVM에서 펼친 Absent/Ready, 삭제 취소와 prepare 거부/예외, 옛 동의/토큰의 거부를 RED로 재현한다. 수정은 선언 읽기만의 refresh epoch로 새 reader/query를 연결하고 옛 nonce와 저장 의도는 영구 폐기하는 범위다. parent 이력 세대, 다른 펼침, 저장 원형과 SDK 계약은 바꾸지 않는다. 삭제 상태를 Idle/Failed로 먼저 정리한 뒤 현재 full source/host/P+UX가 맞는 경우에만 일회 새 읽기를 시작한다. 성공 삭제/source 부재는 복원하지 않으며 오류 피드백의 후속 dismiss가 새 동의를 다시 폐기하지 않아야 한다. 제어 A와 별도 UUID Room B, 실제 Main의 readonly 삭제 준비/취소 후 새 과정 확인/취소를 양 테마에서 검증한다. 원본 DB의 최종 삭제나 과정 저장 확인은 누르지 않는다.
+
+성능 계약은 최초 코드 변경 전에 정한 M0/M1/고정6f45 APK/단위/5warm30본/실패와 표본 제외 기준을 유지한다. 원래 기준 A는4b1이고 지금의 B1(a639)은 리뷰 수정 전의 실제 중간 결과다. B1 원형140행 CSV/보고서/고정 APK는 보존하며 최종 수정 뒤 같은 원본/조건의 B2를 추가 수집한다. B1을 유리한 결과로 교체하거나 실패로 재분류하지 않는다. 캐시의 이 실행 소유 comparison 두 보고서만, 원형의 외부 백업 바이트 동일성 확인 후 별도 소유 archive로 이름 이동해 보존하고 최종 B2를 새 파일로 작성한다. baseline과 사용자 DB/자료는 이동/삭제/덮어쓰지 않는다. B2는 별도 원형 archive와 익명70행으로 보존하고 A→최종 B2의 분포/차이와 B1 중간 결과의 범위를 구분한다. 새 저장 M2는 여전히 미측정이다. 삭제 취소 뒤 복구되지 않은 이전 동작의 시간을0이나 임의 timeout값으로 성능 baseline에 넣지 않으며 reader 복원은 정확성 개선으로 검증한다. SDK/DB 성능 향상이나 인과/동등성/무회귀 결론을 만들지 않는다.
+
+이 지적의 수정/최신 제품 검증/최종 B2/최신 head CI와 Codex는 아직 미완료다. 앞선 기능/실기/계측 성공은 각 원래 source/제품에 한정한다.
+
+추가로 알려진 삭제 실행 실패의 명시 feedback dismiss에서는 새 읽기를 한 번 복원하되, 이미 prepare 실패에서 복원된 새 동의를 다시 폐기하지 않게 한다. DELETING 중 dismiss는 기존 disabled UI와 같이 false로 거부해 결과 미확인 작업을 취소/정상화하지 않는다. 성공Deleted/관찰된 sourceAbsent에는 새 읽기를 만들지 않는다. 이 경계는 별도 JVM 사례로 확인하고 현재 부모 source/host/P+UX 확인과 transaction guard를 그대로 유지한다.
+
+DELETING dismiss를 false로 바꾸자는 초안은 기존 명시 취소가 commit predicate/job을 폐기해야 한다는 회귀 계약을 확인한 뒤 철회했다. 기존 검사와 원래 취소 보장은 변경하지 않는다. 이 단계의 COMMIT/응답 불확실성에는 자동 선언 읽기를 복원하지 않으며 기존 부모 이력 결과와 명시적인 펼침 재열람 경계를 유지한다. 안전한 PREPARING/CONFIRMING 취소 및 prepare 실패의 자동 읽기 복원, 확정된 terminal 실패의 명시 dismiss 복원과 구분한다. 기존5개 RED 기대와 기존 삭제/선언 검사를 완화하지 않는다.
+
+리뷰 수정 후 기존 재현5개 source 바이트를 바꾸지 않은 GREEN과 전체 feature386개 실패0을 먼저 확인했다. 원래 RED/XML을 보존한 뒤 긴 if 식의 포맷1회 실패를 조건/기대 변경 없는 괄호/줄바꿈으로 고쳤다. 이어 JDK17 전체 verify4단계, debug/unsigned release 및 계측 APK 빌드를 통과했다. 제품 모듈57 suites/876개와 별도 build-logic1 suite/4개 각각 실패/오류/건너뜀0이며 cache/up-to-date 가능성은 유지한다. 실제 삭제 확인창의 선언 표시도 read-only 사진으로 확인하도록 계측만 보강했다. 아직 최신 장치 및 B2 결과로 쓰지 않는다.

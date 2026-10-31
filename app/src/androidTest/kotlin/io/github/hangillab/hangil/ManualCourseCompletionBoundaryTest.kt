@@ -226,11 +226,109 @@ class ManualCourseCompletionBoundaryTest {
             assertEquals("failed parent cannot mean no active session", 0, repo.writes.get())
         }
 
-    private fun fixture(block: (Driver, Sessions, Completion) -> Unit) {
+    @Test fun deletionCancellationRestoresTheExpandedReaderWithoutRevivingOldConsent() {
+        val deletion = ControlledDeletion(ControlledDeletion.Mode.READY, null)
+        fixture(deletions = deletion) { f, sessions, repo ->
+            f.open()
+            val parentReceipt = f.model.uiState.value
+            val parentQueries = sessions.reads.get()
+            val oldRequest = f.action("history_course_completion_request")
+            val delete = f.action("history_delete")
+            f.touch("history_course_completion_request")
+            val oldConfirm = f.action("history_course_completion_confirm")
+            val reads = repo.reads.get()
+            // Controlled interleaving of previously displayed actions, not a tap through a dialog.
+            f.invoke(delete)
+            f.waitTag("history_delete_dialog")
+            f.waitTag("history_delete_completion_status")
+            f.invoke(oldConfirm, oldRequest)
+            assertEquals(0, repo.writes.get())
+            f.touch("history_delete_cancel")
+            f.absent("history_delete_dialog")
+            f.waitTag("history_course_completion_absent")
+            assertEquals("one fresh reader repairs the still-expanded declaration", reads + 1, repo.reads.get())
+            assertEquals("completion refresh preserves the parent source/generation", parentReceipt, f.model.uiState.value)
+            assertEquals("completion refresh cannot restart the parent query", parentQueries, sessions.reads.get())
+            f.invoke(oldConfirm, oldRequest)
+            assertTrue(f.nodes("history_course_completion_dialog").isEmpty())
+            assertEquals(0, repo.writes.get())
+            f.touch("history_course_completion_request")
+            f.touch("history_course_completion_confirm")
+            f.waitTag("history_course_completion_failed")
+            assertEquals("only new explicit consent may reach declare", 1, repo.writes.get())
+            assertTrue(repo.acceptedGuard.get())
+            assertEquals(1, deletion.prepares.get())
+            assertEquals(0, deletion.deletes.get())
+        }
+    }
+
+    @Test fun deletionPreparationFailuresRestoreAbsentAndStoredReadersWithoutDoubleRetirement() {
+        for (stored in listOf(false, true)) {
+            for (mode in listOf(ControlledDeletion.Mode.BLOCKED, ControlledDeletion.Mode.ERROR)) {
+                val original = if (stored) declaration(source(A)) else null
+                val deletion = ControlledDeletion(mode, original)
+                fixture(deletions = deletion, initialDeclaration = original) { f, sessions, repo ->
+                    val parentReceipt = f.model.uiState.value
+                    val parentQueries = sessions.reads.get()
+                    f.touch("history_course_completion")
+                    f.waitTag(if (stored) "history_course_completion_ready" else "history_course_completion_absent")
+                    val reads = repo.reads.get()
+                    var oldRequest: (() -> Boolean)? = null
+                    var oldConfirm: (() -> Boolean)? = null
+                    val delete = f.action("history_delete")
+                    if (!stored) {
+                        oldRequest = f.action("history_course_completion_request")
+                        f.touch("history_course_completion_request")
+                        oldConfirm = f.action("history_course_completion_confirm")
+                    }
+                    f.invoke(delete)
+                    f.waitTag("history_delete_error")
+                    f.waitTag(if (stored) "history_course_completion_ready" else "history_course_completion_absent")
+                    assertEquals("prepare failure must repair only this reader once", reads + 1, repo.reads.get())
+                    assertEquals(parentReceipt, f.model.uiState.value)
+                    assertEquals(parentQueries, sessions.reads.get())
+                    oldRequest?.let { f.invoke(it) }
+                    oldConfirm?.let { f.invoke(it) }
+                    assertEquals("recovery never saves", 0, repo.writes.get())
+                    assertTrue(f.nodes("history_course_completion_dialog").isEmpty())
+                    val dismissFailure = f.action("history_delete_cancel")
+                    val repairedReads = repo.reads.get()
+                    if (stored) {
+                        assertEquals(original, repo.rows.value[A])
+                        assertTrue(f.nodes("history_course_completion_request").isEmpty())
+                        f.invoke(dismissFailure)
+                        f.absent("history_delete_error")
+                        f.waitTag("history_course_completion_ready")
+                    } else {
+                        f.touch("history_course_completion_request")
+                        f.waitTag("history_course_completion_dialog")
+                        // Dismissing old deletion feedback cannot revoke this newly granted consent.
+                        f.invoke(dismissFailure)
+                        f.absent("history_delete_error")
+                        f.waitTag("history_course_completion_dialog")
+                        f.touch("history_course_completion_confirm")
+                        f.waitTag("history_course_completion_failed")
+                        assertEquals(1, repo.writes.get())
+                        assertTrue(repo.acceptedGuard.get())
+                    }
+                    assertEquals("feedback dismissal cannot refresh or retire again", repairedReads, repo.reads.get())
+                    assertEquals(1, deletion.prepares.get())
+                    assertEquals(0, deletion.deletes.get())
+                }
+            }
+        }
+    }
+
+    private fun fixture(
+        deletions: SessionDeletionRepository? = null,
+        initialDeclaration: CourseCompletionDeclaration? = null,
+        block: (Driver, Sessions, Completion) -> Unit,
+    ) {
         assumeTrue(InstrumentationRegistry.getArguments().getString("manualCourseCompletionBoundary") == "true")
         val sessions = Sessions()
         val completion = Completion()
-        val f = Driver(compose, sessions, completion)
+        initialDeclaration?.let { completion.rows.value = mapOf(A to it) }
+        val f = if (deletions == null) Driver(compose, sessions, completion) else Driver(compose, sessions, completion, deletions)
         var primary: Throwable? = null
         try {
             f.mount()
@@ -267,6 +365,7 @@ class ManualCourseCompletionBoundaryTest {
         private val modelStore = ViewModelStore()
         private val activeReads = AtomicInteger(0)
         private val activeWrites = AtomicInteger(0)
+        private val activeDeletionPreparations = AtomicInteger(0)
         private val hostIntervened = AtomicBoolean(false)
 
         @Volatile private var lastHostEvent: String? = null
@@ -284,7 +383,9 @@ class ManualCourseCompletionBoundaryTest {
         private var flagBefore: Boolean? = null
         private var disposed = false
         private var modelCleared = false
-        val isStopped: Boolean get() = modelCleared && activeReads.get() == 0 && activeWrites.get() == 0
+        val isStopped: Boolean get() =
+            modelCleared && activeReads.get() == 0 && activeWrites.get() == 0 &&
+                activeDeletionPreparations.get() == 0
         lateinit var model: SessionHistoryViewModel
 
         private fun awaitInitialCatalogFocus() {
@@ -338,7 +439,31 @@ class ManualCourseCompletionBoundaryTest {
                                     object : PracticeSessionRepository by sessions {
                                         override fun observeSessions(): Flow<List<PracticeSession>> = counted(sessions.observeSessions())
                                     },
-                                    deletions,
+                                    object : SessionDeletionRepository by deletions {
+                                        override suspend fun prepare(
+                                            expected: PracticeSession,
+                                            canRead: () -> Boolean,
+                                        ): SessionDeletionPreparation {
+                                            activeDeletionPreparations.incrementAndGet()
+                                            try {
+                                                return deletions.prepare(expected, canRead)
+                                            } finally {
+                                                activeDeletionPreparations.decrementAndGet()
+                                            }
+                                        }
+
+                                        override suspend fun delete(
+                                            target: SessionDeletionTarget,
+                                            canCommit: () -> Boolean,
+                                        ): SessionDeletionResult {
+                                            activeWrites.incrementAndGet()
+                                            try {
+                                                return deletions.delete(target, canCommit)
+                                            } finally {
+                                                activeWrites.decrementAndGet()
+                                            }
+                                        }
+                                    },
                                     observations,
                                     memos,
                                     UnexpectedHistoryRecordingRunRepository,
@@ -399,7 +524,8 @@ class ManualCourseCompletionBoundaryTest {
             val node = compose.onNodeWithTag(tag, useUnmergedTree = true)
             // AlertDialog footer actions are already visible and have no scroll parent. The
             // history body keeps its required real scroll path; a missing scroll action there fails.
-            if (tag != "history_course_completion_confirm" && tag != "history_course_completion_cancel") {
+            val deletionDialogFooter = tag == "history_delete_cancel" && nodes("history_delete_dialog").size == 1
+            if (tag != "history_course_completion_confirm" && tag != "history_course_completion_cancel" && !deletionDialogFooter) {
                 node.performScrollTo()
             }
             return node.assertIsDisplayed()
@@ -568,6 +694,7 @@ class ManualCourseCompletionBoundaryTest {
                         .put("exception", original.javaClass.name)
                         .put("activeReads", activeReads.get())
                         .put("activeWrites", activeWrites.get())
+                        .put("activeDeletionPreparations", activeDeletionPreparations.get())
                         .put("hostIntervened", hostIntervened.get())
                         .put("last_host_event", lastHostEvent ?: JSONObject.NULL)
                         .put("setup_focus_confirmed", setupFocusConfirmed)
@@ -641,7 +768,11 @@ class ManualCourseCompletionBoundaryTest {
             }
             attempt { instrument.runOnMainSync { compose.activity.lifecycle.removeObserver(hostObserver) } }
             attempt { compose.waitForIdle() }
-            attempt { compose.waitUntil(TIMEOUT) { activeReads.get() == 0 && activeWrites.get() == 0 } }
+            attempt {
+                compose.waitUntil(TIMEOUT) {
+                    activeReads.get() == 0 && activeWrites.get() == 0 && activeDeletionPreparations.get() == 0
+                }
+            }
             attempt {
                 flagBefore?.let { old ->
                     val info = instrument.uiAutomation.serviceInfo
@@ -693,11 +824,17 @@ class ManualCourseCompletionBoundaryTest {
     private class Sessions : PracticeSessionRepository {
         val values = MutableStateFlow(listOf(source(A), source(B)))
         val failed = MutableStateFlow(false)
+        val reads = AtomicInteger(0)
 
         override fun observeSessions(): Flow<List<PracticeSession>> =
-            combine(values, failed) { list, error ->
-                check(!error)
-                list
+            flow {
+                reads.incrementAndGet()
+                emitAll(
+                    combine(values, failed) { list, error ->
+                        check(!error)
+                        list
+                    },
+                )
             }
 
         override suspend fun start(
@@ -711,6 +848,37 @@ class ManualCourseCompletionBoundaryTest {
             endedAtEpochMillis: Long,
             canCommit: () -> Boolean,
         ): SessionFinishResult = error("unexpected finish")
+    }
+
+    private class ControlledDeletion(
+        private val mode: Mode,
+        private val declaration: CourseCompletionDeclaration?,
+    ) : SessionDeletionRepository {
+        enum class Mode { READY, BLOCKED, ERROR }
+
+        val prepares = AtomicInteger(0)
+        val deletes = AtomicInteger(0)
+
+        override suspend fun prepare(
+            expected: PracticeSession,
+            canRead: () -> Boolean,
+        ): SessionDeletionPreparation {
+            prepares.incrementAndGet()
+            check(expected == source(A) && canRead()) { "controlled preparation requires the exact allowed source" }
+            return when (mode) {
+                Mode.READY -> SessionDeletionPreparation.Ready(SessionDeletionTarget(expected, 0, null, emptyList(), declaration))
+                Mode.BLOCKED -> SessionDeletionPreparation.Blocked
+                Mode.ERROR -> error("controlled deletion preparation error")
+            }
+        }
+
+        override suspend fun delete(
+            target: SessionDeletionTarget,
+            canCommit: () -> Boolean,
+        ): SessionDeletionResult {
+            deletes.incrementAndGet()
+            error("this fixture must never confirm or execute deletion")
+        }
     }
 
     private class Completion : CourseCompletionRepository {

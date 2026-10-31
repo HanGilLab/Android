@@ -79,8 +79,27 @@ class ManualCourseCompletionFlowTest {
                     h.assertSource(source, 0, before.sessions.count { !it.isActive })
                     h.assertCollapsed("history_course_completion")
                     openAndCancel(source)
+                    // Production deletion preparation is read-only. Never click either final
+                    // declaration confirm or delete confirm on an original session.
+                    h.touch("history_delete")
+                    h.waitFor("history_delete_dialog")
+                    h.assertText("history_delete_course", source.courseTitle)
+                    h.assertText("history_delete_task", source.taskTitle)
+                    h.assertText("history_delete_completion_status", h.text(HomeR.string.history_delete_completion_absent))
+                    compose.onNodeWithTag("history_delete_completion_status", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
+                    capture("deletion-confirmation-readonly", diagnostic = false)
+                    dialogTouch("history_delete_cancel")
+                    compose.waitUntil(20_000) { h.nodes("history_delete_dialog").isEmpty() }
+                    h.waitFor("history_course_completion_absent")
+                    h.assertSource(source, 0, ended.size)
+                    h.touch("history_course_completion_request")
+                    confirmation(source)
+                    dialogTouch("history_course_completion_cancel")
+                    compose.waitUntil(20_000) { h.nodes("history_course_completion_dialog").isEmpty() }
+                    h.waitFor("history_course_completion_absent")
                     h.assertPreserved(h.graph, before)
                     assertDeclarationsAbsent(before.sessions)
+                    assertHashes()
                     h.touch("history_course_completion")
                     h.assertCollapsed("history_course_completion")
                     if (ended.size > 1) {
@@ -138,6 +157,17 @@ class ManualCourseCompletionFlowTest {
                         bodyFailure?.let { if (it !== problem) it.addSuppressed(problem) }
                     }
                     withContext(NonCancellable) {
+                        try {
+                            if (h.nodes("history_delete_cancel").size == 1) {
+                                if (h.nodes("history_delete_dialog").size == 1) {
+                                    dialogTouch("history_delete_cancel")
+                                } else {
+                                    h.touch("history_delete_cancel")
+                                }
+                            }
+                        } catch (cleanup: Throwable) {
+                            preserve(cleanup)
+                        }
                         try {
                             if (h.nodes("history_course_completion_cancel").size == 1) dialogTouch("history_course_completion_cancel")
                         } catch (cleanup: Throwable) {

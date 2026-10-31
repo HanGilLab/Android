@@ -70,9 +70,33 @@ class ManualCourseCompletionRoomFlowTest {
 
     @Test fun explicitSaveRestoresAcrossFreshHandleAndDuplicateKeepsTheFirstOriginal() =
         fixture { f ->
-            var ui = f.mount()
+            val actual = f.store.courseCompletions
+            val declarations = AtomicInteger(0)
+            val counted =
+                object : CourseCompletionRepository by actual {
+                    override suspend fun declare(
+                        expectedSource: PracticeSession,
+                        declaredAtEpochMillis: Long,
+                        canCommit: () -> Boolean,
+                    ): CourseCompletionDeclarationResult {
+                        declarations.incrementAndGet()
+                        return actual.declare(expectedSource, declaredAtEpochMillis, canCommit)
+                    }
+                }
+            var ui = f.mount(counted)
             val before = f.snapshot()
             ui.open()
+            val oldRequest = ui.action("history_course_completion_request")
+            ui.touch("history_delete")
+            ui.waitTag("history_delete_dialog")
+            ui.assertText("history_delete_completion_status", ui.text(HomeR.string.history_delete_completion_absent))
+            ui.touch("history_delete_cancel")
+            ui.absent("history_delete_dialog")
+            ui.waitTag("history_course_completion_absent")
+            ui.invoke(oldRequest)
+            assertTrue("deleted consent is not revived by reader recovery", ui.nodes("history_course_completion_dialog").isEmpty())
+            assertEquals("read-only deletion preparation/cancellation cannot declare", 0, declarations.get())
+            assertEquals(before, f.snapshot())
             ui.touch("history_course_completion_request")
             ui.confirmation(f.latest)
             ui.touch("history_course_completion_cancel")
@@ -87,6 +111,15 @@ class ManualCourseCompletionRoomFlowTest {
             assertEquals(CourseCompletionOrigin.USER_DECLARATION, stored.origin)
             assertTrue(stored.version.isNotBlank() && stored.declaredAtEpochMillis > 0)
             assertAndCaptureStoredReady(ui, stored, "saved")
+            assertEquals(1, declarations.get())
+            ui.touch("history_delete")
+            ui.waitTag("history_delete_dialog")
+            ui.assertText("history_delete_completion_status", ui.text(HomeR.string.history_delete_completion_present))
+            ui.touch("history_delete_cancel")
+            ui.absent("history_delete_dialog")
+            ui.waitTag("history_course_completion_ready")
+            assertEquals("stored declaration recovery is read-only", 1, declarations.get())
+            assertAndCaptureStoredReady(ui, stored, "delete-cancel-stored")
             assertEquals(before.copy(declarations = before.declarations + (f.latest.sessionId to stored)), f.snapshot())
             val duplicate =
                 runBlocking {
