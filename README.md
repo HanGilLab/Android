@@ -467,7 +467,7 @@ OnTouchListener나 Compose 버튼 잠금만으로 자식 입력까지 막을 수
 
 **코드**
 
-[현재 View와 준비 소유권을 연결한 입력 허용 판정](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/MapViewModel.kt#L102-L110)
+[현재 View와 준비 소유권을 연결한 입력 허용 판정](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/MapViewModel.kt#L118-L131)
 
 ```kotlin
 fun canInteractWithMap(
@@ -476,12 +476,17 @@ fun canInteractWithMap(
 ): Boolean {
     if (token <= 0) return false
     val current = render.value
+    val choice = current.pointSelection
+    if (choice != null && (!allowsInteraction() || !choice.canPresent())) {
+        render.compareAndSet(current, current.copy(pointSelection = null))
+        return false
+    }
     return current.id == attempt && current.token == token && current.load == MapLoadState.READY &&
         canRender(current) && render.value === current
 }
 ```
 
-[reader와 조회 세대의 소유권](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/MapViewModel.kt#L158-L162), [입력 DOWN과 후속 이벤트의 소유권](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/MapInputEpoch.kt#L50-L79)도 같은 경계에서 확인합니다.
+[reader와 조회 세대의 소유권](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/MapViewModel.kt#L257-L261), [입력 DOWN과 후속 이벤트의 소유권](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/MapInputEpoch.kt#L50-L79)도 같은 경계에서 확인합니다.
 
 [SDK로 전달하기 직전의 실제 touch 진입점](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/ParkedMapView.kt#L173-L217)
 

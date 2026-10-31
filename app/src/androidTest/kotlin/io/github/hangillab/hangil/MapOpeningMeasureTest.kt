@@ -103,7 +103,7 @@ class MapOpeningMeasureTest {
             configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_NO,
         )
         val graph = EntryPointAccessors.fromApplication(context.applicationContext, RecordingTestEntryPoint::class.java)
-        val baselineFile = File(context.cacheDir, "measurements/map-opening-baseline.json")
+        val baselineFile = File(context.cacheDir, "measurements/map-point-selection-entry-baseline.json")
         val baselineHash = if (stage == "comparison") completedBaselineHash(baselineFile) else null
         val baseline = if (stage == "comparison") readBaseline(baselineFile).also(::validateBaseline) else null
         runBlocking {
@@ -135,14 +135,14 @@ class MapOpeningMeasureTest {
                 requireSameJson(baseline.getJSONObject("environment"), environment, "environment")
                 requireSameJson(baseline.getJSONObject("measurementContract"), contract, "measurementContract")
             }
-            val output = File(context.cacheDir, "measurements/map-opening-$stage.json")
+            val output = File(context.cacheDir, "measurements/map-point-selection-entry-$stage.json")
             reserve(output)
             val warmups = JSONArray()
             val samples = JSONArray()
             val report =
                 JSONObject()
                     .put("schema", 1)
-                    .put("kind", "map_opening")
+                    .put("kind", "map_point_selection_entry")
                     .put("measurementStage", stage)
                     .put("runNonce", UUID.randomUUID().toString())
                     .put("status", "started")
@@ -765,7 +765,7 @@ class MapOpeningMeasureTest {
     private fun validateBaseline(baseline: JSONObject) {
         assertTrue(
             "완료된 같은 지도 진입 기준이어야 합니다",
-            baseline.getInt("schema") == 1 && baseline.getString("kind") == "map_opening" &&
+            baseline.getInt("schema") == 1 && baseline.getString("kind") == "map_point_selection_entry" &&
                 baseline.getString("measurementStage") == "baseline" && baseline.getString("status") == "completed" &&
                 baseline.getBoolean("preservedOriginalData") && baseline.getBoolean("returnedHome") &&
                 baseline.getInt("excludedSamples") == 0,

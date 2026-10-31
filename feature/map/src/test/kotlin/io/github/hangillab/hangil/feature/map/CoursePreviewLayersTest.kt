@@ -31,6 +31,26 @@ class CoursePreviewLayersTest {
         }
     }
 
+    @Test fun `clearing the selection emits a literal false filter without choosing a default point`() {
+        val filter = CoursePreviewLayers.selectionFilter(null).toArray()
+        assertTrue(arrayOf<Any>("literal", false).contentDeepEquals(filter))
+        val preview = CourseMapPreview("public-places", 1, "서울 시청 주변", points)
+        val features = checkNotNull(CoursePreviewLayers.features(preview).features())
+        assertEquals(listOf("city-hall", "plaza"), features.map { it.getStringProperty("point_id") })
+    }
+
+    @Test fun `selection compares the exact point ID as a literal instead of title order or parsed expression`() {
+        val identities = listOf("city-hall", "plaza", "literal\"[point]\n")
+        for (identity in identities) {
+            val filter = CoursePreviewLayers.selectionFilter(identity).toArray()
+            assertEquals(3, filter.size)
+            assertEquals("==", filter[0])
+            assertTrue(filter[1] is Array<*>)
+            assertTrue(arrayOf<Any>("get", "point_id").contentDeepEquals(filter[1] as Array<*>))
+            assertEquals(identity, filter[2])
+        }
+    }
+
     @Test fun `new preview creates only its own point features without retaining previous content`() {
         CoursePreviewLayers.features(CourseMapPreview("old", 1, "이전", points))
         val next = CourseMapPreview("new", 2, "새 미리보기", points.reversed())
