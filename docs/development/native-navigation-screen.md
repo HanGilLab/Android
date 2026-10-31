@@ -1,6 +1,6 @@
 # 주차 후 기본 내비 화면 연결
 
-홈의 명시적인 ‘기본 내비 열기’ 행동을 실제 NaviHelper3.0.5로 연결했다. [작업 계획](../plans/active/2026-10-31-native-navigation-screen.md)에 최초 실패와 검증, 최신 PR 조건을 관리한다. 이 문서 시점에는 최신 PR CI/Codex/병합이 아직 대기다. 전체 MAP-04/APP-05 완료를 뜻하지 않는다.
+홈의 명시적인 ‘기본 내비 열기’ 행동을 실제 NaviHelper3.0.5로 연결했다. [작업 계획](../plans/active/2026-10-31-native-navigation-screen.md)에 최초 실패와 검증, 최신 PR 조건을 관리한다. [제품 PR62](https://github.com/HanGilLab/Android/pull/62)는 최신 CI/Codex/관련 실기와 보호 정책 확인 뒤 정상 병합했다. 이번 정리 문서 PR의 최신 검사는 별도다. 전체 MAP-04/APP-05 완료를 뜻하지 않는다.
 
 ## 제품 경계와 판단
 
@@ -58,3 +58,9 @@ REQUESTED는 void SDK 함수를 호출했다는 결과다. 실제 전면이나 �
 5. 외부 SQLite/sequence/권한/runtime/설정을 별도로 대조하고 원래 환경을 복구한다. 이 실행은 새 자료를 생성하지 않으며 소유 프로세스/forward/탭만 정리한다.
 
 README의 기존4개는 그대로 유지했다. 이번 전환은 기존1번/3번의 live/source/수명 판단을 재사용하지만 더 강한 독립 원인/성능 개선을 입증하지 않았다. 기존2번의 CAS/트랜잭션/롤백과4번의 SQLite 물리 자료형도 그대로 필요하다. 모듈 권한 Lint와 캡처 시차는 로컬 준비/검증 문제이며 그것만으로 더 강한 제품 사례라고 교체하지 않는다. 기존 브랜드/이미지18개/실제 펼친 코드17개를 유지하고 새 공개 캡처나 placeholder를 만들지 않는다. 문서 정리는 런타임 성능 측정 적용 제외이고 링크/발췌/렌더/공개 콘텐츠로 확인한다.
+
+## 제품 PR62 반영 기록
+
+최종 head7e1ae499b7d2ebbb43c7fb76006a9e7deefef525의 [CI41196869030](https://github.com/HanGilLab/Android/actions/runs/41196869030)/attempt1과 같은 SHA App15368의 quality/test/build/ci-required4개 success, [Codex6542768713](https://github.com/HanGilLab/Android/pull/62#issuecomment-6542768713)의 completed/지적 없음/미해결 없음, native/정식 리뷰0과 active strict/no bypass를 확인했다. 정상 squash mergea5651033fd4ef8110060a6bd5a21d32029d0eee7의 실제 head/tree/parent/noreply와 main ff-only/양쪽 작업 브랜치 정리를 확인했다. 별도 main push41197339886와 이번 문서 PR의 검사는 이 시점에 완료로 기록하지 않으며 PR/Notion/비공개 체크포인트에서 마지막 실제 상태를 관리한다.
+
+Notion readback은19/54/선택3개 제외이며 전체 MAP04/APP05는 미체크다. 활성 안내 보존이라는 원래 계획의 미검증 항목을 남겨 계획을 active에 유지한다. 화면 전환 제품의 반영과 전체 계획/길안내 완료 판정을 구분한다. 이번 문서 변경은 runtime/계측/README/원값을 바꾸지 않는다.
