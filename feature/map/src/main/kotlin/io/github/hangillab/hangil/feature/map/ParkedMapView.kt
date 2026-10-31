@@ -1,12 +1,14 @@
 package io.github.hangillab.hangil.feature.map
 
 import android.content.Context
+import android.graphics.Rect
 import android.os.Looper
 import android.os.SystemClock
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.widget.ImageView
 import androidx.core.view.ViewCompat
@@ -16,6 +18,7 @@ import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapLibreMapOptions
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.widgets.CompassView
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Native input checks happen before child dispatch, independently of delayed Compose state.
@@ -41,6 +44,25 @@ internal class ParkedMapView(
     private var forwardingTouch = false
     private var forwardedEpoch = 0L
     private var lastTouch: MotionEvent? = null
+    private var permissionOwner = AtomicBoolean(false)
+    private val canvasVisibleRect = Rect()
+    private var pointTapAction: ((MapLibreMap, Float, Float, () -> Boolean) -> Unit)? = null
+    private val pointTap =
+        MapPointTapTracker<TapAction>(
+            ViewConfiguration.get(context).scaledTouchSlop.toFloat(),
+            ViewConfiguration.getLongPressTimeout().toLong(),
+        )
+
+    private data class TapAction(
+        val deliver: (MapLibreMap, Float, Float, () -> Boolean) -> Unit,
+        val owner: AtomicBoolean,
+    )
+
+    /** Recomposition may replace the next action; an already accepted DOWN keeps its own action. */
+    fun setPointTapAction(action: (MapLibreMap, Float, Float, () -> Boolean) -> Unit) {
+        checkMain()
+        if (!released) pointTapAction = action
+    }
 
     init {
         initialized = true
@@ -71,8 +93,10 @@ internal class ParkedMapView(
         val allowed = livePermission()
         val changed = input.updatePermission(allowed, SystemClock.uptimeMillis())
         if (!allowed) {
+            permissionOwner.set(false)
             if (changed || lastTouch != null) cancelNativeInput()
         } else if (changed) {
+            permissionOwner = AtomicBoolean(true)
             refreshAccessibility(this)
             installCompassClicks(this)
             installAttributionManager()
@@ -92,6 +116,7 @@ internal class ParkedMapView(
         checkMain()
         if (released) return
         sdkStarted = false
+        permissionOwner.set(false)
         input.stop()
         cancelNativeInput()
         super.onStop()
@@ -101,9 +126,11 @@ internal class ParkedMapView(
         checkMain()
         if (released) return
         sdkStarted = false
+        permissionOwner.set(false)
         input.stop()
         cancelNativeInput()
         released = true
+        pointTapAction = null
         boundMap = null
         super.onDestroy()
     }
@@ -118,6 +145,7 @@ internal class ParkedMapView(
 
     override fun onDetachedFromWindow() {
         if (initialized && !released) {
+            permissionOwner.set(false)
             input.stop()
             cancelNativeInput()
         }
@@ -165,9 +193,68 @@ internal class ParkedMapView(
                 recheckInput()
                 return true
             }
-            return super.onTouchEvent(event)
+            return deliverCanvasTouch(event, forwardedEpoch)
         }
-        return deliverTouch(event) { super.onTouchEvent(event) }
+        return deliverTouch(event) { deliverCanvasTouch(event, input.epoch) }
+    }
+
+    /** Only the canvas path sees taps; compass/attribution child clicks never become point taps. */
+    private fun deliverCanvasTouch(
+        event: MotionEvent,
+        epoch: Long,
+    ): Boolean {
+        val now = SystemClock.uptimeMillis()
+        val pointVisible = canvasPointVisible(event.x, event.y)
+        if (!pointVisible) pointTap.cancel()
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+            val action = pointTapAction
+            if (action != null && event.pointerCount == 1 && pointVisible) {
+                pointTap.begin(epoch, event.downTime, now, event.getPointerId(0), event.x, event.y, TapAction(action, permissionOwner))
+            }
+        }
+        for (index in 0 until event.historySize) {
+            pointTap.update(
+                epoch,
+                event.downTime,
+                event.getHistoricalEventTime(index),
+                now,
+                event.pointerCount,
+                event.getPointerId(0),
+                event.getHistoricalX(index),
+                event.getHistoricalY(index),
+            )
+        }
+        pointTap.update(epoch, event.downTime, event.eventTime, now, event.pointerCount, event.getPointerId(0), event.x, event.y)
+        val dispatchedTap = pointTap.current()
+        // Consume this UP before SDK code may reenter with a newer DOWN.
+        val tap = if (event.actionMasked == MotionEvent.ACTION_UP) pointTap.take() else null
+        val handled =
+            try {
+                super.onTouchEvent(event)
+            } catch (failure: Throwable) {
+                pointTap.discard(dispatchedTap)
+                throw failure
+            }
+        if (!handled) pointTap.discard(dispatchedTap)
+        if (handled && tap != null) {
+            val map = boundMap
+            if (map != null && tap.action.owner.get() && ownsContext(tap.epoch) &&
+                input.ownsTouch(event.downTime, event.eventTime, SystemClock.uptimeMillis(), event.deviceId, event.source)
+            ) {
+                // Persistent selection validity reads only this atomic owner, never VM -> View -> VM.
+                tap.action.deliver(map, event.x, event.y, tap.action.owner::get)
+            }
+        }
+        return handled
+    }
+
+    private fun canvasPointVisible(
+        x: Float,
+        y: Float,
+    ): Boolean {
+        if (!isShown || !x.isFinite() || !y.isFinite() || x < 0f || y < 0f || x >= width || y >= height) return false
+        return getLocalVisibleRect(canvasVisibleRect) && x >= canvasVisibleRect.left && y >= canvasVisibleRect.top &&
+            x < canvasVisibleRect.right && y < canvasVisibleRect.bottom
     }
 
     private inline fun deliverTouch(
@@ -206,12 +293,14 @@ internal class ParkedMapView(
             return true
         }
         rememberTouch(event)
+        val deliveredTouch = lastTouch
+        val deliveredEpoch = input.epoch
         return try {
             deliver()
         } finally {
             if (event.actionMasked == MotionEvent.ACTION_UP) {
-                input.endTouch()
-                forgetTouch()
+                input.endTouch(deliveredEpoch, event.downTime, event.deviceId, event.source)
+                if (lastTouch === deliveredTouch) forgetTouch()
             }
         }
     }
@@ -394,6 +483,7 @@ internal class ParkedMapView(
     }
 
     private fun cancelNativeTouch() {
+        pointTap.cancel()
         val previous = lastTouch ?: return
         lastTouch = null
         val cancel = MotionEvent.obtain(previous)

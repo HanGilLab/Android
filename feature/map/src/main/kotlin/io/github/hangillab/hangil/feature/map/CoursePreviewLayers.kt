@@ -27,6 +27,19 @@ internal object CoursePreviewLayers {
     private const val CIRCLES = "hangil-course-preview-circles"
     const val SELECTION = "hangil-course-preview-selection"
     private const val NUMBERS = "hangil-course-preview-numbers"
+    private const val POINT_TEXT_SIZE = 20f
+    private const val SELECTION_RADIUS_EXTENSION = 11f
+    private const val SELECTION_STROKE_WIDTH = 4f
+    private const val MIN_VIEWPORT_PADDING_DP = 40f
+    private const val SELECTION_EDGE_SPACE = 5f
+
+    /** Preserve the default font's nominal outer-stroke clearance at the initial fit. */
+    fun viewportPaddingDp(fontScale: Float): Float =
+        maxOf(MIN_VIEWPORT_PADDING_DP, selectionRadius(fontScale) + SELECTION_STROKE_WIDTH + SELECTION_EDGE_SPACE)
+
+    private fun pointTextSize(fontScale: Float): Float = POINT_TEXT_SIZE * fontScale
+
+    private fun selectionRadius(fontScale: Float): Float = pointTextSize(fontScale) + SELECTION_RADIUS_EXTENSION
 
     fun features(preview: CourseMapPreview): FeatureCollection =
         FeatureCollection.fromFeatures(
@@ -49,7 +62,7 @@ internal object CoursePreviewLayers {
         border: Int,
         fontScale: Float,
     ) {
-        val textSize = 20f * fontScale
+        val textSize = pointTextSize(fontScale)
         style.addSource(GeoJsonSource(SOURCE, features(preview)))
         style.addLayer(
             CircleLayer(CIRCLES, SOURCE).withProperties(
@@ -62,11 +75,11 @@ internal object CoursePreviewLayers {
         style.addLayer(
             CircleLayer(SELECTION, SOURCE)
                 .withProperties(
-                    circleRadius(textSize + 11f),
+                    circleRadius(selectionRadius(fontScale)),
                     org.maplibre.android.style.layers.PropertyFactory
                         .circleOpacity(0f),
                     circleStrokeColor(fill),
-                    circleStrokeWidth(4f),
+                    circleStrokeWidth(SELECTION_STROKE_WIDTH),
                 ).withFilter(selectionFilter(null)),
         )
         style.addLayer(

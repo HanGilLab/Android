@@ -180,4 +180,17 @@ class MapInputEpochTest {
     private fun started(): MapInputEpoch = MapInputEpoch().also { it.start(100) }
 
     private fun permitted(): MapInputEpoch = started().also { it.updatePermission(true, 100) }
+
+    @Test fun endingAnOldUpPreservesAReentrantNewDown() {
+        val input = MapInputEpoch()
+        input.start(10)
+        input.updatePermission(true, 10)
+        val epoch = input.epoch
+        assertTrue(input.beginTouch(11, 11, 11, 7, 8))
+        assertTrue(input.beginTouch(12, 12, 12, 7, 8))
+        input.endTouch(epoch, 11, 7, 8)
+        assertTrue(input.ownsTouch(12, 13, 13, 7, 8))
+        input.endTouch(epoch, 12, 7, 8)
+        assertFalse(input.ownsTouch(12, 13, 13, 7, 8))
+    }
 }

@@ -4,6 +4,8 @@ import android.app.Activity
 import android.app.Instrumentation
 import android.content.Intent
 import android.content.res.Configuration
+import android.graphics.PointF
+import android.graphics.Rect
 import android.os.Bundle
 import android.os.Looper
 import android.os.SystemClock
@@ -71,6 +73,7 @@ import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.geometry.LatLngBounds
+import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
 import org.maplibre.android.style.expressions.Expression
@@ -97,6 +100,211 @@ import org.maplibre.android.R as MapSdkR
 @RunWith(AndroidJUnit4::class)
 class MapInputLifecycleTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentCatalogActivity>()
+
+    /** Baseline RED target: synthetic gate, real Activity dispatch/Route/MapLibre, no SDK/Room claim. */
+    @Test fun nativeCanvasPointTapsSelectAllThreeCurrentPointsWithoutMovingCamera() =
+        withMap { fixture, initial ->
+            assertNoCanvasSelection(fixture, initial.view)
+            for (index in fixture.preview.points.indices) {
+                tapPreviewPoint(fixture, initial.view, index)
+                assertTrue("짧은 native 지점 탭은 camera를 움직이면 안 됩니다", sameCamera(initial.camera, awaitStableCamera(initial.view)))
+            }
+        }
+
+    @Test fun nativeCanvasPointTapsUseAllThreePointsOfTheSecondCatalogPreview() {
+        val courses = LocalPracticeCatalog().courses.filter { it.mapPreview != null }
+        assertTrue("서로 다른 두 공개 시연 preview가 있어야 합니다", courses.size >= 2)
+        withMap(courseId = courses[1].id) { fixture, initial ->
+            assertTrue("두 번째 실제 카탈로그 preview를 사용해야 합니다", fixture.preview == courses[1].mapPreview)
+            assertNoCanvasSelection(fixture, initial.view)
+            for (index in fixture.preview.points.indices) {
+                tapPreviewPoint(fixture, initial.view, index)
+                assertTrue("두 번째 preview의 짧은 탭도 camera를 보존해야 합니다", sameCamera(initial.camera, awaitStableCamera(initial.view)))
+            }
+        }
+    }
+
+    @Test fun backgroundCancelLongPressDragReturnAndMultiplePointersNeverBecomePointChoices() =
+        withMap { fixture, initial ->
+            val background = canvasBackground(initial.view)
+            shortCanvasTouch(initial.view, background)
+            assertNoCanvasSelection(fixture, initial.view)
+
+            val point = awaitCanvasPoint(initial.view, fixture.preview, 0, "negative_after_background")
+            var down = freshCanvasDownTime()
+            sendCanvasTouch(initial.view, down, MotionEvent.ACTION_DOWN, point)
+            sendCanvasTouch(initial.view, down, MotionEvent.ACTION_CANCEL, point)
+            sendCanvasTouch(initial.view, down, MotionEvent.ACTION_UP, point)
+            assertNoCanvasSelection(fixture, initial.view)
+
+            down = freshCanvasDownTime()
+            sendCanvasTouch(initial.view, down, MotionEvent.ACTION_DOWN, point)
+            delay(ViewConfiguration.getLongPressTimeout().toLong() + 100)
+            sendCanvasTouch(initial.view, down, MotionEvent.ACTION_UP, point)
+            assertNoCanvasSelection(fixture, initial.view)
+
+            restoreCamera(initial.view, initial.camera)
+            val returnedPoint = awaitCanvasPoint(initial.view, fixture.preview, 0, "negative_drag_after_camera_restore")
+            val distance = ViewConfiguration.get(compose.activity).scaledTouchSlop * 3f + 1f
+            val away =
+                returnedPoint.copy(
+                    x =
+                        if (returnedPoint.x + distance < initial.view.width - 2f) {
+                            returnedPoint.x + distance
+                        } else {
+                            returnedPoint.x - distance
+                        },
+                )
+            down = freshCanvasDownTime()
+            sendCanvasTouch(initial.view, down, MotionEvent.ACTION_DOWN, returnedPoint)
+            delay(20)
+            sendCanvasTouch(initial.view, down, MotionEvent.ACTION_MOVE, away)
+            delay(20)
+            sendCanvasTouch(initial.view, down, MotionEvent.ACTION_MOVE, returnedPoint)
+            sendCanvasTouch(initial.view, down, MotionEvent.ACTION_UP, returnedPoint)
+            assertNoCanvasSelection(fixture, initial.view)
+
+            restoreCamera(initial.view, initial.camera)
+            secondPointerContactAtPreviewPoint(initial.view, fixture.preview, 0)
+            assertNoCanvasSelection(fixture, initial.view)
+            restoreCamera(initial.view, initial.camera)
+            tapPreviewPoint(fixture, initial.view, 0, waitForPreparedPoint = true)
+        }
+
+    /** Direct dispatch probes impossible screen coordinates/visibility; not real user delivery. */
+    @Test fun outsideAndInvisibleCanvasSamplesNeverBecomePointChoices() =
+        withMap { fixture, initial ->
+            val point = canvasPoint(initial.view, fixture.preview, 0)
+            val outside = CanvasPixel(-2f, point.y)
+            var down = freshCanvasDownTime()
+            sendCanvasTouch(initial.view, down, MotionEvent.ACTION_DOWN, outside, throughActivity = false)
+            sendCanvasTouch(initial.view, down, MotionEvent.ACTION_UP, point, throughActivity = false)
+            assertNoCanvasSelection(fixture, initial.view)
+
+            restoreCamera(initial.view, initial.camera)
+            val restored = canvasPoint(initial.view, fixture.preview, 0)
+            down = freshCanvasDownTime()
+            sendCanvasTouch(initial.view, down, MotionEvent.ACTION_DOWN, restored, throughActivity = false)
+            sendCanvasTouch(initial.view, down, MotionEvent.ACTION_MOVE, outside, throughActivity = false)
+            sendCanvasTouch(initial.view, down, MotionEvent.ACTION_MOVE, restored, throughActivity = false)
+            sendCanvasTouch(initial.view, down, MotionEvent.ACTION_UP, restored, throughActivity = false)
+            assertNoCanvasSelection(fixture, initial.view)
+
+            restoreCamera(initial.view, initial.camera)
+            val hiddenPoint = canvasPoint(initial.view, fixture.preview, 0)
+            var originalVisibility = View.VISIBLE
+            try {
+                onMain {
+                    originalVisibility = initial.view.visibility
+                    assertTrue("원래 실제 View는 보여야 합니다", initial.view.isShown)
+                    initial.view.visibility = View.INVISIBLE
+                    assertTrue("가시성 주입은 실제 숨김 상태여야 합니다", !initial.view.isShown)
+                }
+                down = freshCanvasDownTime()
+                sendCanvasTouch(initial.view, down, MotionEvent.ACTION_DOWN, hiddenPoint, throughActivity = false)
+                sendCanvasTouch(initial.view, down, MotionEvent.ACTION_UP, hiddenPoint, throughActivity = false)
+            } finally {
+                onMain { initial.view.visibility = originalVisibility }
+            }
+            assertNoCanvasSelection(fixture, initial.view)
+            restoreCamera(initial.view, initial.camera)
+            tapPreviewPoint(fixture, initial.view, 0)
+        }
+
+    @Test fun actualCompassAndAttributionChildTouchesNeverBecomePointChoices() =
+        withMap { fixture, initial ->
+            restoreCamera(initial.view, initial.camera.copy(bearing = 35.0))
+            awaitStableCamera(initial.view)
+            delay(700)
+            val compass = nativeChild(initial.view, MapSdkR.string.maplibre_compassContentDescription)
+            shortChildTouch(compass)
+            assertTrue("실제 compass 자식 터치는 북쪽 복귀를 유지해야 합니다", abs(awaitStableCamera(initial.view).bearing) < 0.1)
+            assertNoCanvasSelection(fixture, initial.view)
+            val attribution = nativeChild(initial.view, MapSdkR.string.maplibre_attributionsIconContentDescription)
+            shortChildTouch(attribution)
+            awaitAttributionItem()
+            // Open/read the actual owned dialog only; never invoke an external URL item.
+            stopAttributionManager(initial.view)
+            compose.waitForIdle()
+            assertTrue("검사 소유 출처 대화상자를 닫아야 합니다", attributionLists().isEmpty())
+            assertNoCanvasSelection(fixture, initial.view)
+        }
+
+    @Test fun nativePointUpDeniedBySilentDDoesNotReviveAfterSilentP() =
+        withMap { fixture, initial ->
+            val point = canvasPoint(initial.view, fixture.preview, 0)
+            val displayed = fixture.model.uiState.value
+            val down = freshCanvasDownTime()
+            sendCanvasTouch(initial.view, down, MotionEvent.ACTION_DOWN, point)
+            onMain {
+                fixture.vehicleState.setWithoutEmission(parked().copy(gear = VehicleReading.Available(GearPosition.DRIVE)))
+                assertTrue("무방출 D는 옛 P/Ready를 유지해야 합니다", fixture.model.uiState.value == displayed)
+            }
+            sendCanvasTouch(initial.view, down, MotionEvent.ACTION_UP, point)
+            onMain { fixture.vehicleState.setWithoutEmission(parked()) }
+            // Silent fixtures omit the real P receipt. A no-op public key dispatch establishes
+            // the fresh permitted input floor before comparing an old UP and then a fresh DOWN.
+            onMain {
+                val now = SystemClock.uptimeMillis()
+                initial.view.dispatchKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_UNKNOWN, 0))
+                initial.view.dispatchKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_UNKNOWN, 0))
+            }
+            pointChoiceTrace("TAP_SILENT_P_RECHECKED", "oldUiRetained" to (fixture.model.uiState.value == displayed))
+            sendCanvasTouch(initial.view, down, MotionEvent.ACTION_UP, point)
+            assertNoCanvasSelection(fixture, initial.view)
+            tapPreviewPoint(fixture, initial.view, 0)
+        }
+
+    @Test fun nativePointDownCannotCrossStopAndRestartIntoANewView() =
+        withMap { fixture, initial ->
+            val point = canvasPoint(initial.view, fixture.preview, 0)
+            val down = freshCanvasDownTime()
+            sendCanvasTouch(initial.view, down, MotionEvent.ACTION_DOWN, point)
+            compose.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
+            compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+            waitMapReady()
+            compose.onNodeWithTag("map_view", useUnmergedTree = true).performScrollTo()
+            compose.waitForIdle()
+            val resumed = awaitPreview(fixture.preview)
+            assertTrue("STOP 후에는 새 native View로 시작해야 합니다", resumed.view !== initial.view)
+            // Direct stale View dispatch is allowed; no JNI read is made from that released View.
+            sendCanvasTouch(initial.view, down, MotionEvent.ACTION_UP, point, throughActivity = false)
+            sendCanvasTouch(resumed.view, down, MotionEvent.ACTION_UP, point, throughActivity = false)
+            assertNoCanvasSelection(fixture, resumed.view)
+            tapPreviewPoint(fixture, resumed.view, 0)
+        }
+
+    @Test fun nativePointDownCannotBorrowAnotherTaskOfTheSamePreview() =
+        withMap { fixture, initial ->
+            val original = checkNotNull(fixture.repository.values.value)
+            val old = fixture.model.uiState.value
+            val course = LocalPracticeCatalog().courses.single { it.id == original.courseId }
+            val nextTask = course.tasks.first { it.id != original.taskId }
+            val point = canvasPoint(initial.view, fixture.preview, 0)
+            val down = freshCanvasDownTime()
+            sendCanvasTouch(initial.view, down, MotionEvent.ACTION_DOWN, point)
+            try {
+                compose.runOnIdle { fixture.repository.values.value = original.copy(taskId = nextTask.id) }
+                compose.waitUntil(90_000) {
+                    val current = fixture.model.uiState.value
+                    val ready = current.preparation as? MapPreparationState.Ready
+                    current.load == MapLoadState.READY && current.attempt != old.attempt &&
+                        current.rendererToken > 0 && current.rendererToken != old.rendererToken &&
+                        ready != null && ready.prepared.task.id == nextTask.id && ready.preview == fixture.preview
+                }
+                waitMapReady()
+                compose.onNodeWithTag("map_view", useUnmergedTree = true).performScrollTo()
+                compose.waitForIdle()
+                val replacement = awaitPreview(fixture.preview)
+                assertTrue("같은 preview의 과제 교체도 새 View여야 합니다", replacement.view !== initial.view)
+                sendCanvasTouch(initial.view, down, MotionEvent.ACTION_UP, point, throughActivity = false)
+                sendCanvasTouch(replacement.view, down, MotionEvent.ACTION_UP, point, throughActivity = false)
+                assertNoCanvasSelection(fixture, replacement.view)
+                tapPreviewPoint(fixture, replacement.view, 0)
+            } finally {
+                onMain { fixture.repository.values.value = original }
+            }
+        }
 
     /** Synthetic P/UX and preparation with the real second catalog preview, Route and MapLibre. */
     @Test fun secondCatalogPreviewChoicesMatchNativeCurrentSource() =
@@ -766,13 +974,432 @@ class MapInputLifecycleTest {
             }
         }
 
-    private fun withMap(block: suspend (Fixture, NativeReadback) -> Unit) {
+    /** Native inputs below are controlled dispatch, not human taps or a real vehicle feed. */
+    private suspend fun freshCanvasDownTime(): Long {
+        delay(5)
+        return SystemClock.uptimeMillis()
+    }
+
+    /**
+     * Keep finger zero on a verified real circle throughout a brief two-pointer contact.
+     * No MOVE is sent: this isolates pointer-count rejection from long press, slop and a
+     * background UP. Existing positive pinch tests separately verify real SDK camera zoom.
+     */
+    private suspend fun secondPointerContactAtPreviewPoint(
+        view: MapView,
+        preview: CourseMapPreview,
+        index: Int,
+    ) {
+        awaitCanvasPoint(view, preview, index, "negative_multiple_pointers_before_down")
+        freshCanvasDownTime()
+        readCurrentCanvas(view) { map ->
+            val expected = preview.points[index]
+            val first = map.projection.toScreenLocation(LatLng(expected.latitude, expected.longitude))
+
+            fun assertCurrentCircle() {
+                assertTrue("다중 포인터 경계의 JNI는 현재 부착 View에서만 읽습니다", view.isAttachedToWindow && currentMapViewOnMain() === view)
+                val projected = map.projection.toScreenLocation(LatLng(expected.latitude, expected.longitude))
+                assertTrue(
+                    "움직이지 않은 첫 finger는 실제 같은 point 중심에 있어야 합니다",
+                    abs(projected.x - first.x) <= 1f && abs(projected.y - first.y) <= 1f,
+                )
+                val ids = map.queryRenderedFeatures(first, "hangil-course-preview-circles").map { it.getStringProperty("point_id") }.toSet()
+                assertTrue("첫 DOWN과 마지막 UP 위치는 같은 실제 circle hit여야 합니다", ids == setOf(expected.id))
+            }
+            assertCurrentCircle()
+            val offset = maxOf(ViewConfiguration.get(view.context).scaledTouchSlop * 2f, 24f)
+            val secondX = if (first.x + offset < view.width - 1f) first.x + offset else first.x - offset
+            assertTrue("두 번째 finger도 실제 canvas 안에 있어야 합니다", secondX >= 1f && secondX < view.width - 1f)
+            val origin = IntArray(2)
+            view.getLocationInWindow(origin)
+            val down = SystemClock.uptimeMillis()
+
+            fun dispatch(
+                action: Int,
+                count: Int,
+            ) {
+                assertTrue("같은 부착 native View로만 다중 포인터 입력을 전달합니다", view.isAttachedToWindow && currentMapViewOnMain() === view)
+                val properties =
+                    Array(count) { pointer ->
+                        MotionEvent.PointerProperties().apply {
+                            id = pointer
+                            toolType = MotionEvent.TOOL_TYPE_FINGER
+                        }
+                    }
+                val coordinates =
+                    Array(count) { pointer ->
+                        MotionEvent.PointerCoords().apply {
+                            x = origin[0] + if (pointer == 0) first.x else secondX
+                            y = origin[1] + first.y
+                            pressure = 1f
+                            size = 1f
+                        }
+                    }
+                val event =
+                    MotionEvent.obtain(
+                        down,
+                        SystemClock.uptimeMillis(),
+                        action,
+                        count,
+                        properties,
+                        coordinates,
+                        0,
+                        0,
+                        1f,
+                        1f,
+                        0,
+                        0,
+                        InputDevice.SOURCE_TOUCHSCREEN,
+                        0,
+                    )
+                try {
+                    compose.activity.dispatchTouchEvent(event)
+                } finally {
+                    event.recycle()
+                }
+            }
+            dispatch(MotionEvent.ACTION_DOWN, 1)
+            dispatch(MotionEvent.ACTION_POINTER_DOWN or (1 shl MotionEvent.ACTION_POINTER_INDEX_SHIFT), 2)
+            dispatch(MotionEvent.ACTION_POINTER_UP or (1 shl MotionEvent.ACTION_POINTER_INDEX_SHIFT), 2)
+            assertCurrentCircle()
+            assertTrue(
+                "다중 포인터 검사가 긴 누름 거부와 겹치면 안 됩니다",
+                SystemClock.uptimeMillis() - down < ViewConfiguration.getLongPressTimeout(),
+            )
+            dispatch(MotionEvent.ACTION_UP, 1)
+        }
+    }
+
+    private suspend fun shortCanvasTouch(
+        view: MapView,
+        point: CanvasPixel,
+    ) {
+        val down = freshCanvasDownTime()
+        sendCanvasTouch(view, down, MotionEvent.ACTION_DOWN, point)
+        delay(20)
+        sendCanvasTouch(view, down, MotionEvent.ACTION_UP, point)
+    }
+
+    private fun sendCanvasTouch(
+        view: MapView,
+        downTime: Long,
+        action: Int,
+        point: CanvasPixel,
+        throughActivity: Boolean = true,
+    ) = onMain {
+        val origin = IntArray(2)
+        if (throughActivity) {
+            assertTrue("새 입력은 현재 부착 View로만 전달합니다", view.isAttachedToWindow && currentMapViewOnMain() === view)
+            view.getLocationInWindow(origin)
+        }
+        val properties =
+            arrayOf(
+                MotionEvent.PointerProperties().apply {
+                    id = 0
+                    toolType = MotionEvent.TOOL_TYPE_FINGER
+                },
+            )
+        val coordinates =
+            arrayOf(
+                MotionEvent.PointerCoords().apply {
+                    x = origin[0] + point.x
+                    y = origin[1] + point.y
+                    pressure = 1f
+                    size = 1f
+                },
+            )
+        val event =
+            MotionEvent.obtain(
+                downTime,
+                SystemClock.uptimeMillis(),
+                action,
+                1,
+                properties,
+                coordinates,
+                0,
+                0,
+                1f,
+                1f,
+                0,
+                0,
+                InputDevice.SOURCE_TOUCHSCREEN,
+                0,
+            )
+        try {
+            if (throughActivity) compose.activity.dispatchTouchEvent(event) else view.dispatchTouchEvent(event)
+        } finally {
+            event.recycle()
+        }
+    }
+
+    private suspend fun shortChildTouch(child: View) {
+        val down = freshCanvasDownTime()
+        for (action in listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP)) {
+            onMain {
+                assertTrue("실제 SDK 자식이 붙어 있고 보여야 합니다", child.isAttachedToWindow && child.isShown)
+                val origin = IntArray(2)
+                child.getLocationInWindow(origin)
+                val event =
+                    MotionEvent.obtain(
+                        down,
+                        SystemClock.uptimeMillis(),
+                        action,
+                        origin[0] + child.width * 0.5f,
+                        origin[1] + child.height * 0.5f,
+                        0,
+                    )
+                event.source = InputDevice.SOURCE_TOUCHSCREEN
+                try {
+                    compose.activity.dispatchTouchEvent(event)
+                } finally {
+                    event.recycle()
+                }
+            }
+            if (action == MotionEvent.ACTION_DOWN) delay(20)
+        }
+    }
+
+    /** Only immutable values escape; every MapLibre/controller/style query stays on current Main. */
+    private suspend fun <T> readCurrentCanvas(
+        view: MapView,
+        query: (MapLibreMap) -> T,
+    ): T {
+        compose.waitForIdle()
+        val result = CompletableDeferred<T>()
+        onMain {
+            assertTrue("JNI 조회 전 현재 부착 View를 확인합니다", view.isAttachedToWindow && currentMapViewOnMain() === view)
+            view.getMapAsync { map ->
+                try {
+                    assertTrue("native 조회는 Main에서만 합니다", Looper.myLooper() == Looper.getMainLooper())
+                    assertTrue("SDK callback 직전에도 같은 View여야 합니다", view.isAttachedToWindow && currentMapViewOnMain() === view)
+                    result.complete(query(map))
+                } catch (failure: Throwable) {
+                    result.completeExceptionally(failure)
+                }
+            }
+        }
+        return withTimeout(5_000) { result.await() }
+    }
+
+    private suspend fun canvasPoint(
+        view: MapView,
+        preview: CourseMapPreview,
+        index: Int,
+    ): CanvasPixel {
+        compose.onNodeWithTag("map_view", useUnmergedTree = true).performScrollTo()
+        compose.waitForIdle()
+        val point = preview.points[index]
+        return readCurrentCanvas(view) { map ->
+            val projected = map.projection.toScreenLocation(LatLng(point.latitude, point.longitude))
+            assertTrue(
+                "실제 point 중심이 native canvas 안에 있어야 합니다",
+                projected.x.isFinite() && projected.y.isFinite() && projected.x >= 1f && projected.y >= 1f &&
+                    projected.x < view.width - 1f && projected.y < view.height - 1f,
+            )
+            val rendered = map.queryRenderedFeatures(projected, "hangil-course-preview-circles")
+            assertTrue("실제 표시된 현재 point 하나를 눌러야 합니다", rendered.map { it.getStringProperty("point_id") }.toSet() == setOf(point.id))
+            CanvasPixel(projected.x, projected.y)
+        }
+    }
+
+    /**
+     * Input precondition after camera restoration, not an altered expected hit or a success stub.
+     * The earlier failed run remains separate. A full current preview and the same actual circle
+     * metadata/hit/visibility must become valid within a real 30-second deadline before DOWN.
+     */
+    private suspend fun awaitCanvasPoint(
+        view: MapView,
+        preview: CourseMapPreview,
+        index: Int,
+        purpose: String,
+    ): CanvasPixel {
+        compose.onNodeWithTag("map_view", useUnmergedTree = true).performScrollTo()
+        val started = SystemClock.elapsedRealtime()
+        var lastSignature: String? = null
+        while (true) {
+            compose.waitForIdle()
+            assertTrue("입력 전 native point 준비도 실제30초 한도 안이어야 합니다", SystemClock.elapsedRealtime() - started <= 30_000)
+            val currentPreview = nativePreviewReadback(preview)
+            val previewMatches = currentPreview?.view === view
+            val readback =
+                readCurrentCanvas(view) { map ->
+                    val expected = preview.points[index]
+                    val style = map.style
+                    val layer = style?.getLayerAs<CircleLayer>("hangil-course-preview-circles")
+                    val source = style?.getSourceAs<GeoJsonSource>(SOURCE_ID)
+                    val projected = map.projection.toScreenLocation(LatLng(expected.latitude, expected.longitude))
+                    val bounded =
+                        projected.x.isFinite() && projected.y.isFinite() && projected.x >= 1f && projected.y >= 1f &&
+                            projected.x < view.width - 1f && projected.y < view.height - 1f
+                    val visibleRect = Rect()
+                    val visible =
+                        bounded && view.isShown && view.getLocalVisibleRect(visibleRect) &&
+                            projected.x >= visibleRect.left && projected.y >= visibleRect.top &&
+                            projected.x < visibleRect.right && projected.y < visibleRect.bottom
+                    val hits = if (bounded) map.queryRenderedFeatures(projected, "hangil-course-preview-circles") else emptyList()
+                    val idsMatch = hits.isNotEmpty() && hits.map { it.getStringProperty("point_id") }.toSet() == setOf(expected.id)
+                    val metadataMatches =
+                        hits.isNotEmpty() &&
+                            hits.all { feature ->
+                                val geometry = feature.geometry() as? Point
+                                val metadata =
+                                    feature.getStringProperty("title") == expected.title &&
+                                        feature.getStringProperty("preview_id") == preview.id &&
+                                        feature.getNumberProperty("preview_version").toDouble() == preview.version.toDouble() &&
+                                        feature.getNumberProperty("order").toDouble() == (index + 1).toDouble()
+                                if (geometry == null) {
+                                    false
+                                } else {
+                                    val actual = map.projection.toScreenLocation(LatLng(geometry.latitude(), geometry.longitude()))
+                                    metadata && abs(actual.x - projected.x) <= 1f && abs(actual.y - projected.y) <= 1f
+                                }
+                            }
+                    CanvasPointReadiness(
+                        CanvasPixel(projected.x, projected.y),
+                        style != null && style.isFullyLoaded && map.style === style,
+                        layer != null && layer.sourceId == SOURCE_ID && layer.visibility.value != "none" && source != null,
+                        visible,
+                        idsMatch,
+                        metadataMatches,
+                    )
+                }
+            val flags =
+                arrayOf(
+                    "preview" to previewMatches,
+                    "fullStyle" to readback.fullStyle,
+                    "source" to readback.sourceMatches,
+                    "visible" to readback.visible,
+                    "ids" to readback.idsMatch,
+                    "metadata" to readback.metadataMatches,
+                )
+            val signature = flags.joinToString { it.second.toString() }
+            if (signature != lastSignature) {
+                pointChoiceTrace("TAP_AWAIT_$purpose", *flags)
+                lastSignature = signature
+            }
+            assertTrue("native point를 승인하는 시점도 실제30초 한도 안이어야 합니다", SystemClock.elapsedRealtime() - started <= 30_000)
+            if (flags.all { it.second }) return readback.pixel
+            delay(30)
+        }
+    }
+
+    private data class CanvasPointReadiness(
+        val pixel: CanvasPixel,
+        val fullStyle: Boolean,
+        val sourceMatches: Boolean,
+        val visible: Boolean,
+        val idsMatch: Boolean,
+        val metadataMatches: Boolean,
+    )
+
+    private suspend fun canvasBackground(view: MapView): CanvasPixel =
+        readCurrentCanvas(view) { map ->
+            val mapOrigin = IntArray(2)
+            view.getLocationInWindow(mapOrigin)
+            val controls = descendants(view).filter { it !== view && it.isShown && it.contentDescription != null }
+            val candidates =
+                listOf(0.5f, 0.25f, 0.75f, 0.1f, 0.9f).flatMap { x ->
+                    listOf(0.45f, 0.25f, 0.7f).map { y -> CanvasPixel(view.width * x, view.height * y) }
+                }
+            checkNotNull(
+                candidates.firstOrNull { point ->
+                    val overControl =
+                        controls.any { control ->
+                            val origin = IntArray(2)
+                            control.getLocationInWindow(origin)
+                            val x = mapOrigin[0] + point.x
+                            val y = mapOrigin[1] + point.y
+                            x >= origin[0] && x <= origin[0] + control.width && y >= origin[1] && y <= origin[1] + control.height
+                        }
+                    !overControl && map.queryRenderedFeatures(PointF(point.x, point.y), "hangil-course-preview-circles").isEmpty()
+                },
+            ) { "실제 지점과 자식 제어가 없는 canvas 배경이 필요합니다" }
+        }
+
+    private suspend fun tapPreviewPoint(
+        fixture: Fixture,
+        view: MapView,
+        index: Int,
+        waitForPreparedPoint: Boolean = false,
+    ) {
+        val expected = fixture.preview.points[index]
+        val pixel =
+            if (waitForPreparedPoint) {
+                awaitCanvasPoint(view, fixture.preview, index, "negative_fresh_positive_after_camera_restore")
+            } else {
+                canvasPoint(view, fixture.preview, index)
+            }
+        shortCanvasTouch(view, pixel)
+        compose.mainClock.advanceTimeByFrame()
+        compose.waitForIdle()
+        compose.waitUntil(30_000) {
+            fixture.model.uiState.value.pointSelection
+                ?.let { it.pointId == expected.id && it.rendered } == true &&
+                nodes("map_selected_point_title")
+                    .singleOrNull()
+                    ?.config
+                    ?.getOrNull(SemanticsProperties.Text)
+                    ?.any { it.text == expected.title } == true && nodes("map_selection_pending").isEmpty()
+        }
+        for (choice in fixture.preview.points.indices) {
+            assertTrue(
+                "실제 목록 선택은 native ACK의 지점 하나와 일치해야 합니다",
+                nodes("map_point_$choice").single().config.getOrNull(SemanticsProperties.Selected) == (choice == index),
+            )
+        }
+        val filterMatches =
+            readCurrentCanvas(view) { map ->
+                val layer = map.style?.getLayerAs<CircleLayer>("hangil-course-preview-selection")
+                val expression = Expression.eq(Expression.get("point_id"), Expression.literal(expected.id))
+                layer != null && layer.sourceId == SOURCE_ID &&
+                    layer.filter?.toArray()?.contentDeepEquals(expression.toArray()) == true
+            }
+        assertTrue("현재 native 선택 filter는 누른 point의 정확한 식이어야 합니다", filterMatches)
+    }
+
+    private suspend fun assertNoCanvasSelection(
+        fixture: Fixture,
+        view: MapView,
+    ) {
+        compose.mainClock.advanceTimeByFrame()
+        compose.waitForIdle()
+        delay(100)
+        compose.waitForIdle()
+        assertTrue("거부/비탭 입력은 선택 의도를 남기면 안 됩니다", fixture.model.uiState.value.pointSelection == null)
+        assertTrue(
+            "거부/비탭 입력은 설명이나 대기를 만들면 안 됩니다",
+            nodes("map_selected_point").isEmpty() && nodes("map_selection_pending").isEmpty(),
+        )
+        assertTrue(
+            "거부/비탭 입력은 목록 선택을 표시하면 안 됩니다",
+            fixture.preview.points.indices.all {
+                nodes("map_point_$it").single().config.getOrNull(SemanticsProperties.Selected) == false
+            },
+        )
+        val nativeEmpty =
+            readCurrentCanvas(view) { map ->
+                val layer = map.style?.getLayerAs<CircleLayer>("hangil-course-preview-selection")
+                layer != null && layer.sourceId == SOURCE_ID &&
+                    layer.filter?.toArray()?.contentDeepEquals(Expression.literal(false).toArray()) == true
+            }
+        assertTrue("현재 native 선택 filter도 비어 있어야 합니다", nativeEmpty)
+    }
+
+    private data class CanvasPixel(
+        val x: Float,
+        val y: Float,
+    )
+
+    private fun withMap(
+        courseId: String? = null,
+        block: suspend (Fixture, NativeReadback) -> Unit,
+    ) {
         assumeTrue(
             "입력 guard 후 제어 native 경계의 명시적 실행에서만 검사합니다",
             InstrumentationRegistry.getArguments().getString("manualMapInputBoundary") == "true",
         )
         val catalog = LocalPracticeCatalog()
-        val course = catalog.courses.first { it.mapPreview != null }
+        val course = catalog.courses.first { it.mapPreview != null && (courseId == null || it.id == courseId) }
         val preview = checkNotNull(course.mapPreview)
         val goal = catalog.goals.first { it.id in course.goalIds }
         val selection = PracticeSelection(goal.id, course.id, course.version, course.briefingVersion, course.tasks.first().id)
@@ -1273,13 +1900,27 @@ class MapInputLifecycleTest {
                                     valid = valid && projectionMatches && insideView
                                 }
                             }
-                            val padding = (40 * view.resources.displayMetrics.density).roundToInt()
                             val bounds =
                                 LatLngBounds
                                     .Builder()
                                     .includes(preview.points.map { LatLng(it.latitude, it.longitude) })
                                     .build()
-                            val fit = CameraUpdateFactory.newLatLngBounds(bounds, padding).getCameraPosition(map)
+                            // 실제 선택 원의 반경과 전체 stroke에 명목5 style px를 더하고 최소40을 유지합니다.
+                            // 확대 글자에서 원 바깥쪽이 잘리지 않도록 같은 값을 화면 density로 변환합니다.
+                            val selection = style?.getLayerAs<CircleLayer>("hangil-course-preview-selection")
+                            val selectionRadius = selection?.circleRadius?.value
+                            val selectionStroke = selection?.circleStrokeWidth?.value
+                            val fit =
+                                if (selection != null && selection.sourceId == SOURCE_ID &&
+                                    selectionRadius != null && selectionRadius.isFinite() && selectionRadius >= 0f &&
+                                    selectionStroke != null && selectionStroke.isFinite() && selectionStroke >= 0f
+                                ) {
+                                    val stylePadding = maxOf(40f, selectionRadius + selectionStroke + 5f)
+                                    val padding = (stylePadding * view.resources.displayMetrics.density).roundToInt()
+                                    CameraUpdateFactory.newLatLngBounds(bounds, padding).getCameraPosition(map)
+                                } else {
+                                    null
+                                }
                             val camera = map.cameraPosition
                             val target = camera.target
                             val fitTarget = fit?.target

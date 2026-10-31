@@ -488,7 +488,7 @@ fun canInteractWithMap(
 
 [reader와 조회 세대의 소유권](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/MapViewModel.kt#L257-L261), [입력 DOWN과 후속 이벤트의 소유권](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/MapInputEpoch.kt#L50-L79)도 같은 경계에서 확인합니다.
 
-[SDK로 전달하기 직전의 실제 touch 진입점](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/ParkedMapView.kt#L173-L217)
+[SDK로 전달하기 직전의 실제 touch 진입점](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/ParkedMapView.kt#L260-L306)
 
 ```kotlin
 private inline fun deliverTouch(
@@ -527,18 +527,20 @@ private inline fun deliverTouch(
         return true
     }
     rememberTouch(event)
+    val deliveredTouch = lastTouch
+    val deliveredEpoch = input.epoch
     return try {
         deliver()
     } finally {
         if (event.actionMasked == MotionEvent.ACTION_UP) {
-            input.endTouch()
-            forgetTouch()
+            input.endTouch(deliveredEpoch, event.downTime, event.deviceId, event.source)
+            if (lastTouch === deliveredTouch) forgetTouch()
         }
     }
 }
 ```
 
-[주행 잠금과 수명 종료에서 공개 SDK 작업 정리](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/ParkedMapView.kt#L370-L394)
+[주행 잠금과 수명 종료에서 공개 SDK 작업 정리](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/ParkedMapView.kt#L459-L483)
 
 ```kotlin
 private fun cancelNativeInput() {

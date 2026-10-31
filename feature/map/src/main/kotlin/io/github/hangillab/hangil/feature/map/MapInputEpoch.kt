@@ -88,6 +88,19 @@ internal class MapInputEpoch {
         touch = null
     }
 
+    /** Completing an older UP must not finish a reentrant new DOWN. */
+    fun endTouch(
+        expectedEpoch: Long,
+        downTime: Long,
+        deviceId: Int,
+        source: Int,
+    ) {
+        val current = touch
+        if (current?.epoch == expectedEpoch && current.downTime == downTime && current.deviceId == deviceId && current.source == source) {
+            touch = null
+        }
+    }
+
     private fun validTime(
         downTime: Long,
         eventTime: Long,

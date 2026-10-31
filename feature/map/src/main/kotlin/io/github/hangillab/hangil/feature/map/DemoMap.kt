@@ -49,6 +49,7 @@ internal fun DemoMap(
     selection: MapPointSelection?,
     canApplySelection: (Int, Long, Long) -> Boolean,
     onSelectionApplied: (Int, Long, Long) -> Unit,
+    onNativeSelect: (String, () -> Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -107,6 +108,21 @@ internal fun DemoMap(
         modifier = modifier,
         update = {
             it.contentDescription = contentDescription
+            it.setPointTapAction { map, x, y, nativeOwner ->
+                fun current(): Boolean =
+                    nativeOwner() && active.get() && owner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) &&
+                        canInteract(attempt, token)
+                if (current()) {
+                    try {
+                        val pointId = MapPointHitTest.find(map, preview, x, y)
+                        if (pointId != null && current()) onNativeSelect(pointId, nativeOwner)
+                    } catch (_: Exception) {
+                        if (current()) onFailed(attempt, token)
+                    } catch (_: LinkageError) {
+                        if (current()) onFailed(attempt, token)
+                    }
+                }
+            }
             it.recheckInput()
             selectionApplier.apply(
                 it,
@@ -179,7 +195,8 @@ private fun createMap(
                                         .includes(
                                             preview.points.map { LatLng(it.latitude, it.longitude) },
                                         ).build()
-                                val padding = (40 * context.resources.displayMetrics.density).roundToInt()
+                                val density = context.resources.displayMetrics.density
+                                val padding = (CoursePreviewLayers.viewportPaddingDp(fontScale) * density).roundToInt()
                                 var layout: View.OnLayoutChangeListener? = null
                                 val fitCamera = {
                                     if (active.get() && !cameraFitted.get() && mapView.width > padding * 2 &&
