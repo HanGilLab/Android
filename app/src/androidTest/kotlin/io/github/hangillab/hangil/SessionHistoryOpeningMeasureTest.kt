@@ -24,6 +24,7 @@ import io.github.hangillab.hangil.core.domain.PracticeSession
 import io.github.hangillab.hangil.core.domain.SessionMemo
 import io.github.hangillab.hangil.core.domain.SessionVehicleObservation
 import io.github.hangillab.hangil.core.domain.VehicleReading
+import io.github.hangillab.hangil.core.domain.VehicleRecordingRun
 import io.github.hangillab.hangil.core.domain.allowsPracticeInteraction
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancelAndJoin
@@ -81,6 +82,7 @@ class SessionHistoryOpeningMeasureTest {
                 "history-memo-entry-v1" -> "history-opening-history-memo-entry-v1"
                 "native-navigation-entry-v1" -> "history-opening-native-navigation-entry-v1"
                 "background-recording-entry-v1" -> "history-opening-background-recording-entry-v1"
+                "history-recording-runs-entry-v1" -> "history-opening-history-recording-runs-entry-v1"
                 else -> throw AssertionError("정의한 실험 계열만 실행해야 합니다")
             }
         val productCommit = checkNotNull(arguments.getString("declaredProductCommit")) { "제품 원본 선언이 필요합니다" }
@@ -492,6 +494,14 @@ class SessionHistoryOpeningMeasureTest {
                 sessions,
                 sessions.associate { it.sessionId to graph.observations().observe(it.sessionId).first() },
                 sessions.associate { it.sessionId to graph.memos().observe(it.sessionId).first() },
+                sessions.associate {
+                    it.sessionId to
+                        graph
+                            .recordingRuns()
+                            .observe(it.sessionId)
+                            .first()
+                            .toList()
+                },
             )
         }
 
@@ -504,6 +514,7 @@ class SessionHistoryOpeningMeasureTest {
         assertTrue("모든 세션 필드와 저장 생성 순서를 보존해야 합니다", after.sessions == before.sessions)
         assertTrue("모든 관찰 필드와 순서를 보존해야 합니다", after.observations == before.observations)
         assertTrue("모든 메모 원문과 변경 토큰을 보존해야 합니다", after.memos == before.memos)
+        assertTrue("모든 기록 실행 필드와 저장 생성 순서를 보존해야 합니다", after.recordingRuns == before.recordingRuns)
         assertTrue("읽기 계측으로 활성 연습이 생기면 안 됩니다", after.sessions.none { it.isActive })
     }
 
@@ -736,6 +747,15 @@ class SessionHistoryOpeningMeasureTest {
             .put("preparation", data.preparation?.let(::selectionJson) ?: JSONObject.NULL)
             .put("sessions", JSONArray(data.sessions.map(::sessionJson)))
             .put(
+                "recordingRuns",
+                JSONArray(
+                    data.recordingRuns.map { (sessionId, rows) ->
+                        JSONObject()
+                            .put("sessionId", sessionId)
+                            .put("rows", JSONArray(rows.map(::recordingRunJson)))
+                    },
+                ),
+            ).put(
                 "observations",
                 JSONArray(
                     data.observations.map { (sessionId, rows) ->
@@ -773,6 +793,15 @@ class SessionHistoryOpeningMeasureTest {
                     },
                 ),
             )
+
+    private fun recordingRunJson(run: VehicleRecordingRun): JSONObject =
+        JSONObject()
+            .put("runId", run.runId)
+            .put("sessionId", run.sessionId)
+            .put("processId", run.processId)
+            .put("startedAtEpochMillis", run.startedAtEpochMillis)
+            .put("endedAtEpochMillis", run.endedAtEpochMillis ?: JSONObject.NULL)
+            .put("status", run.status.name)
 
     private fun selectionJson(selection: PracticeSelection): JSONObject =
         JSONObject()
@@ -820,6 +849,7 @@ class SessionHistoryOpeningMeasureTest {
         val sessions: List<PracticeSession>,
         val observations: Map<String, List<SessionVehicleObservation>>,
         val memos: Map<String, SessionMemo?>,
+        val recordingRuns: Map<String, List<VehicleRecordingRun>>,
     )
 
     private companion object {

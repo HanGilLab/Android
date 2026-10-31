@@ -24,6 +24,7 @@ import io.github.hangillab.hangil.core.domain.PracticeSession
 import io.github.hangillab.hangil.core.domain.SessionMemo
 import io.github.hangillab.hangil.core.domain.SessionVehicleObservation
 import io.github.hangillab.hangil.core.domain.VehicleReading
+import io.github.hangillab.hangil.core.domain.VehicleRecordingRun
 import io.github.hangillab.hangil.core.domain.allowsPracticeInteraction
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancelAndJoin
@@ -73,6 +74,13 @@ class SessionHistoryDisclosureMeasureTest {
         )
         val stage = checkNotNull(arguments.getString("measurementStage")) { "기준 또는 비교 단계를 명시해야 합니다" }
         assertTrue("정의한 기준/비교 단계만 실행해야 합니다", stage == "baseline" || stage == "comparison")
+        val measurementSeries = arguments.getString("measurementSeries")
+        val measurementPrefix =
+            when (measurementSeries) {
+                null -> "history-disclosure"
+                "history-recording-runs-tasks-v1" -> "history-disclosure-history-recording-runs-tasks-v1"
+                else -> throw AssertionError("정의한 실험 계열만 실행해야 합니다")
+            }
         val productCommit = checkNotNull(arguments.getString("declaredProductCommit")) { "제품 원본 선언이 필요합니다" }
         val harnessRevision = checkNotNull(arguments.getString("declaredHarnessRevision")) { "계측 원본 선언이 필요합니다" }
         assertTrue("제품 원본은 완전한 SHA여야 합니다", productCommit.matches(Regex("[0-9a-fA-F]{40}")))
@@ -89,9 +97,24 @@ class SessionHistoryDisclosureMeasureTest {
             configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_NO,
         )
         val graph = EntryPointAccessors.fromApplication(context.applicationContext, RecordingTestEntryPoint::class.java)
-        val baselineFile = File(context.cacheDir, "measurements/history-disclosure-baseline.json")
+        val baselineFile = File(context.cacheDir, "measurements/$measurementPrefix-baseline.json")
         val baselineHash = if (stage == "comparison") completedBaselineHash(baselineFile) else null
-        val baseline = if (stage == "comparison") readBaseline(baselineFile).also(::validateBaseline) else null
+        val baseline =
+            if (stage == "comparison") {
+                readBaseline(baselineFile).also {
+                    validateBaseline(it)
+                    assertTrue(
+                        "기준과 비교는 같은 실험 계열이어야 합니다",
+                        if (measurementSeries == null) {
+                            !it.has("measurementSeries")
+                        } else {
+                            it.optString("measurementSeries") == measurementSeries
+                        },
+                    )
+                }
+            } else {
+                null
+            }
         runBlocking {
             val before = snapshot(graph)
             assertTrue("기존 활성 연습이 있으면 계측을 시작하지 않습니다", before.sessions.none { it.isActive })
@@ -116,7 +139,7 @@ class SessionHistoryDisclosureMeasureTest {
                 requireSameJson(baseline.getJSONObject("environment"), environment, "environment")
                 requireSameJson(baseline.getJSONObject("measurementContract"), contract, "measurementContract")
             }
-            val output = File(context.cacheDir, "measurements/history-disclosure-$stage.json")
+            val output = File(context.cacheDir, "measurements/$measurementPrefix-$stage.json")
             reserve(output)
             val warmups = JSONArray()
             val samples = JSONArray()
@@ -145,6 +168,7 @@ class SessionHistoryDisclosureMeasureTest {
                     .put("returnedHome", false)
                     .put("excludedSamples", 0)
                     .put("causalPerformanceClaim", false)
+            if (measurementSeries != null) report.put("measurementSeries", measurementSeries)
             if (baseline != null) {
                 report
                     .put("baselineSha256", baselineHash)
@@ -532,6 +556,14 @@ class SessionHistoryDisclosureMeasureTest {
                 sessions,
                 sessions.associate { it.sessionId to graph.observations().observe(it.sessionId).first() },
                 sessions.associate { it.sessionId to graph.memos().observe(it.sessionId).first() },
+                sessions.associate {
+                    it.sessionId to
+                        graph
+                            .recordingRuns()
+                            .observe(it.sessionId)
+                            .first()
+                            .toList()
+                },
             )
         }
 
@@ -544,6 +576,7 @@ class SessionHistoryDisclosureMeasureTest {
         assertTrue("모든 세션 필드와 저장 생성 순서를 보존해야 합니다", after.sessions == before.sessions)
         assertTrue("모든 관찰 필드와 순서를 보존해야 합니다", after.observations == before.observations)
         assertTrue("모든 메모 원문과 변경 토큰을 보존해야 합니다", after.memos == before.memos)
+        assertTrue("모든 기록 실행 필드와 저장 생성 순서를 보존해야 합니다", after.recordingRuns == before.recordingRuns)
         assertTrue("읽기 계측으로 활성 연습이 생기면 안 됩니다", after.sessions.none { it.isActive })
     }
 
@@ -789,6 +822,15 @@ class SessionHistoryDisclosureMeasureTest {
             .put("preparation", data.preparation?.let(::selectionJson) ?: JSONObject.NULL)
             .put("sessions", JSONArray(data.sessions.map(::sessionJson)))
             .put(
+                "recordingRuns",
+                JSONArray(
+                    data.recordingRuns.map { (sessionId, rows) ->
+                        JSONObject()
+                            .put("sessionId", sessionId)
+                            .put("rows", JSONArray(rows.map(::recordingRunJson)))
+                    },
+                ),
+            ).put(
                 "observations",
                 JSONArray(
                     data.observations.map { (sessionId, rows) ->
@@ -826,6 +868,15 @@ class SessionHistoryDisclosureMeasureTest {
                     },
                 ),
             )
+
+    private fun recordingRunJson(run: VehicleRecordingRun): JSONObject =
+        JSONObject()
+            .put("runId", run.runId)
+            .put("sessionId", run.sessionId)
+            .put("processId", run.processId)
+            .put("startedAtEpochMillis", run.startedAtEpochMillis)
+            .put("endedAtEpochMillis", run.endedAtEpochMillis ?: JSONObject.NULL)
+            .put("status", run.status.name)
 
     private fun selectionJson(selection: PracticeSelection): JSONObject =
         JSONObject()
@@ -873,6 +924,7 @@ class SessionHistoryDisclosureMeasureTest {
         val sessions: List<PracticeSession>,
         val observations: Map<String, List<SessionVehicleObservation>>,
         val memos: Map<String, SessionMemo?>,
+        val recordingRuns: Map<String, List<VehicleRecordingRun>>,
     )
 
     private companion object {
