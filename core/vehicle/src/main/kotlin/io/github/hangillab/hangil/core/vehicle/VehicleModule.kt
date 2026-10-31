@@ -19,7 +19,7 @@ abstract class VehicleModule {
     abstract fun vehicleGateway(implementation: PleosVehicleGateway): VehicleGateway
 
     @Binds
-    abstract fun navigationGateway(implementation: UnconnectedNavigationGateway): NavigationGateway
+    abstract fun navigationGateway(implementation: PleosNavigationGateway): NavigationGateway
 
     @Binds
     abstract fun drivingRestrictions(implementation: AaosDrivingRestrictionsProvider): DrivingRestrictionsProvider

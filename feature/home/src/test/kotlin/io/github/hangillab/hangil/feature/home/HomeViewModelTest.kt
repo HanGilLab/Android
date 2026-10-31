@@ -56,6 +56,10 @@ class HomeViewModelTest {
     private val navigation =
         object : NavigationGateway {
             override val connection = MutableStateFlow(ConnectionState.UNAVAILABLE)
+
+            override suspend fun requestForeground(
+                canDispatch: () -> Boolean,
+            ): io.github.hangillab.hangil.core.domain.NavigationScreenResult = error("Home state tests must not request navigation")
         }
     private val goal = PracticeGoal("goal", "연습 목표", "목표 설명")
     private val task = PracticeTask("task", "오늘의 과제", "과제 설명")

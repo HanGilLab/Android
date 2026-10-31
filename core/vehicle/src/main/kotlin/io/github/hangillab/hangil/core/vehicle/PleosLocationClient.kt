@@ -17,7 +17,7 @@ import java.util.concurrent.atomic.AtomicReference
 internal class PleosLocationClient(
     context: Context,
 ) : LocationClient {
-    private val bindingContext = LocationBindingContext(context)
+    private val bindingContext = SdkBindingContext(context)
     private val sdk = FusedLocation(bindingContext)
     private val handler = Handler(Looper.getMainLooper())
     private val sink = AtomicReference<((LocationReading) -> Unit)?>(null)

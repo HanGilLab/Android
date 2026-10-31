@@ -60,6 +60,7 @@ fun HomeRoute(
                 recordingState = recordingState,
                 onRetryRecording = onRetryRecording,
             )
+            NavigationScreenRoute()
             ParkedButton(
                 onClick = { if (viewModel.canViewHistory()) onHistory() },
                 prominent = false,
