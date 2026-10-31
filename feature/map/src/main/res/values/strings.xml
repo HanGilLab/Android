@@ -30,7 +30,7 @@
   <string name="map_preparation_failed">준비 내용을 불러오지 못했어요.</string>
   <string name="map_preparation_retry">준비 다시 읽기</string>
   <string name="map_return_home">홈으로 돌아가기</string>
-  <string name="map_point_selection_instruction">목록에서 살펴볼 시연 지점을 골라 주세요.</string>
+  <string name="map_point_selection_instruction">지도 번호를 짧게 누르거나 목록에서 시연 지점을 골라 주세요.</string>
   <string name="map_point_selection_pending">선택한 번호를 지도에 표시하고 있어요.</string>
   <string name="map_selected_point">선택한 시연 지점</string>
   <string name="map_selected_point_scope">같은 번호에 테두리를 표시했어요. 장소의 경계 중심이며 출입구, 도로 구간이나 목적지가 아니에요.</string>

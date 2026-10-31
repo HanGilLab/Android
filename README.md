@@ -96,7 +96,7 @@
 | **코스별 마무리 기록 요약** | 저장 당시 목표, 코스, 버전과 표시 정보가 같은 마무리 기록을 모아 과제별 저장 기록 수를 확인합니다. |
 | **같은 코스의 다음 과제 준비** | 최근 마무리한 연습의 목표와 시연 코스를 다시 확인하고 다음 과제 하나를 직접 골라 저장합니다. 선택이나 취소만으로 기존 준비를 바꾸지 않으며 새 연습은 별도로 시작합니다. |
 | **주차 후 사용자 메모** | 최근 마무리한 연습에 짧은 메모를 직접 입력하고 저장, 수정, 명시적으로 지웁니다. 저장 내용은 앱을 다시 열어도 복원하며 미저장 초안과 구분합니다. |
-| **코스별 시연 지도** | 준비한 코스에 맞춰 서울 시청 또는 광화문 주변의 공개 장소 세 곳을 번호로 표시합니다. 목록에서 번호를 고르면 같은 지점의 테두리와 설명을 보여 줍니다. 시연 출처와 지도 출처를 구분하고 실제 이동 경로나 현재 위치로 표현하지 않습니다. |
+| **코스별 시연 지도** | 준비한 코스에 맞춰 서울 시청 또는 광화문 주변의 공개 장소 세 곳을 번호로 표시합니다. 지도 번호를 짧게 누르거나 목록에서 고르면 같은 지점의 테두리와 설명을 보여 줍니다. 시연 출처와 지도 출처를 구분하고 실제 이동 경로나 현재 위치로 표현하지 않습니다. |
 | **주행 중 상세 조작 잠금** | 주차와 UX 허용을 모두 확인해야 상세 조작을 허용합니다. 주행이나 상태 미확인에서는 준비 화면과 지도 조작을 잠급니다. |
 
 <br />
@@ -488,7 +488,7 @@ fun canInteractWithMap(
 
 [reader와 조회 세대의 소유권](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/MapViewModel.kt#L257-L261), [입력 DOWN과 후속 이벤트의 소유권](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/MapInputEpoch.kt#L50-L79)도 같은 경계에서 확인합니다.
 
-[SDK로 전달하기 직전의 실제 touch 진입점](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/ParkedMapView.kt#L173-L217)
+[SDK로 전달하기 직전의 실제 touch 진입점](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/ParkedMapView.kt#L260-L306)
 
 ```kotlin
 private inline fun deliverTouch(
@@ -527,18 +527,20 @@ private inline fun deliverTouch(
         return true
     }
     rememberTouch(event)
+    val deliveredTouch = lastTouch
+    val deliveredEpoch = input.epoch
     return try {
         deliver()
     } finally {
         if (event.actionMasked == MotionEvent.ACTION_UP) {
-            input.endTouch()
-            forgetTouch()
+            input.endTouch(deliveredEpoch, event.downTime, event.deviceId, event.source)
+            if (lastTouch === deliveredTouch) forgetTouch()
         }
     }
 }
 ```
 
-[주행 잠금과 수명 종료에서 공개 SDK 작업 정리](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/ParkedMapView.kt#L370-L394)
+[주행 잠금과 수명 종료에서 공개 SDK 작업 정리](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/ParkedMapView.kt#L459-L483)
 
 ```kotlin
 private fun cancelNativeInput() {

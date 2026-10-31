@@ -116,6 +116,12 @@ fun MapRoute(
                         viewModel,
                         canSelect = clickOwner.first.get(),
                         selectionOwner = clickOwner.first,
+                        onNativeSelect = { pointId, nativeOwner ->
+                            viewModel
+                                .selectPoint(displayedAttempt, displayedRendererToken, preparation.preview, pointId) {
+                                    clickOwner.first.get() && nativeOwner()
+                                }?.let(clickOwner.second::set)
+                        },
                         onSelect = { pointId ->
                             viewModel
                                 .selectPoint(displayedAttempt, displayedRendererToken, preparation.preview, pointId) {
@@ -138,6 +144,7 @@ private fun PreparedMap(
     canSelect: Boolean,
     selectionOwner: Any,
     onSelect: (String) -> Unit,
+    onNativeSelect: (String, () -> Boolean) -> Unit,
 ) {
     val preview = preparation.preview
     val dark = isSystemInDarkTheme()
@@ -184,6 +191,7 @@ private fun PreparedMap(
                     selection = state.pointSelection,
                     canApplySelection = viewModel::canApplyPointSelection,
                     onSelectionApplied = viewModel::onPointSelectionRendered,
+                    onNativeSelect = onNativeSelect,
                     modifier = Modifier.fillMaxSize().testTag("map_view"),
                 )
             }

@@ -380,13 +380,27 @@ class MapInputBoundaryTest {
                                     valid = valid && projectionMatches && insideView
                                 }
                             }
-                            val padding = (40 * view.resources.displayMetrics.density).roundToInt()
                             val bounds =
                                 LatLngBounds
                                     .Builder()
                                     .includes(preview.points.map { LatLng(it.latitude, it.longitude) })
                                     .build()
-                            val fit = CameraUpdateFactory.newLatLngBounds(bounds, padding).getCameraPosition(map)
+                            // 실제 선택 원의 반경과 전체 stroke에 명목5 style px를 더하고 최소40을 유지합니다.
+                            // 확대 글자에서 원 바깥쪽이 잘리지 않도록 같은 값을 화면 density로 변환합니다.
+                            val selection = style?.getLayerAs<CircleLayer>("hangil-course-preview-selection")
+                            val selectionRadius = selection?.circleRadius?.value
+                            val selectionStroke = selection?.circleStrokeWidth?.value
+                            val fit =
+                                if (selection != null && selection.sourceId == SOURCE_ID &&
+                                    selectionRadius != null && selectionRadius.isFinite() && selectionRadius >= 0f &&
+                                    selectionStroke != null && selectionStroke.isFinite() && selectionStroke >= 0f
+                                ) {
+                                    val stylePadding = maxOf(40f, selectionRadius + selectionStroke + 5f)
+                                    val padding = (stylePadding * view.resources.displayMetrics.density).roundToInt()
+                                    CameraUpdateFactory.newLatLngBounds(bounds, padding).getCameraPosition(map)
+                                } else {
+                                    null
+                                }
                             val camera = map.cameraPosition
                             val target = camera.target
                             val fitTarget = fit?.target
