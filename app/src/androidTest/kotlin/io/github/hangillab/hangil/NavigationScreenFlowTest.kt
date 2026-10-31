@@ -394,13 +394,15 @@ class NavigationScreenFlowTest {
     ) {
         val actual = packageNow()
         val observation = lastForegroundObservation
-        File(evidence, "$name-proof.json").writeText(
+        val lifecycle = runCatching { mainState().name }
+        val proof =
             JSONObject()
                 .put("observation_kind", "post_endpoint_diagnostic")
                 .put("preceding_outcome", outcome)
                 .put("observed_elapsed_realtime_ns", SystemClock.elapsedRealtimeNanos())
                 .put("actual_foreground_package", actual ?: JSONObject.NULL)
-                .put("main_lifecycle", mainState().name)
+                .put("main_lifecycle", lifecycle.getOrNull() ?: JSONObject.NULL)
+                .put("main_lifecycle_validation_failure", lifecycle.exceptionOrNull()?.message ?: JSONObject.NULL)
                 .put("focus_count", observation.focusCount ?: JSONObject.NULL)
                 .put("interactive_windows_flag", observation.flagObserved ?: JSONObject.NULL)
                 .put("main_display_known", observation.mainDisplayKnown)
@@ -408,9 +410,56 @@ class NavigationScreenFlowTest {
                 .put("unknown_reason", observation.unknownReason ?: JSONObject.NULL)
                 .put("unknown_samples", foregroundNullSamples)
                 .put("unknown_reasons", JSONObject(foregroundUnknownReasons as Map<*, *>))
-                .toString(2),
-        )
-        capture(name)
+        var writeFailure: Throwable? = null
+        try {
+            File(evidence, "$name-proof.json").writeText(proof.toString(2))
+        } catch (failure: Throwable) {
+            writeFailure = failure
+        }
+        try {
+            capture(name)
+        } catch (failure: Throwable) {
+            val original = writeFailure
+            if (original == null) writeFailure = failure else original.addSuppressed(failure)
+        }
+        writeFailure?.let { throw it }
+    }
+
+    @Test fun recreatedMainStillPreservesDiagnosticJsonAndScreenshot() {
+        val args = InstrumentationRegistry.getArguments()
+        assumeTrue("실제 Main 재생성과 기존 자료 보존을 준비한 실행만 검사합니다", args.getString("manualNativeNavigationDiagnostic") == "true")
+        check(Build.VERSION.SDK_INT == 34 && context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0)
+        val graph = EntryPointAccessors.fromApplication(context.applicationContext, RecordingTestEntryPoint::class.java)
+        val before = snapshot(graph)
+        check(before.sessions.none { it.isActive })
+        prepareForegroundObservation()
+        var primary: Throwable? = null
+        try {
+            compose.activityRule.scenario.recreate()
+            compose.waitForIdle()
+            check(compose.activity !== mainActivity)
+            saveForegroundProof("recreated-main", "MAIN_RECREATED")
+            val proof = JSONObject(File(evidence, "recreated-main-proof.json").readText())
+            check(proof.isNull("main_lifecycle"))
+            check(proof.getString("main_lifecycle_validation_failure") == "MAIN_RECREATED")
+            check(proof.getBoolean("main_display_known"))
+            check(File(evidence, "recreated-main.png").readBytes().take(8) == listOf(137, 80, 78, 71, 13, 10, 26, 10).map { it.toByte() })
+            phase("NAVI_RECREATED_MAIN_DIAGNOSTIC_PRESERVED")
+        } catch (failure: Throwable) {
+            primary = failure
+            throw failure
+        } finally {
+            var cleanupFailure: Throwable? = null
+            listOf<() -> Unit>({ returnToMain() }, { check(before == snapshot(graph)) }).forEach { cleanup ->
+                try {
+                    cleanup()
+                } catch (failure: Throwable) {
+                    val original = primary ?: cleanupFailure
+                    if (original == null) cleanupFailure = failure else original.addSuppressed(failure)
+                }
+            }
+            cleanupFailure?.let { throw it }
+        }
     }
 
     private fun assertPermissionBoundary() {

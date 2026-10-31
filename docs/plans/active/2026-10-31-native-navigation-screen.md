@@ -133,3 +133,10 @@ README의 현재4개는 실제 조작 소유권, 파괴적 원자 삭제, 비동
 
 
 현재 계측 수정 뒤 JDK17 전체 ./scripts/verify.sh의4개 Gradle 단계와 앱 계측 APK 빌드가 통과했다. JUnit XML773개/실패0/오류0/건너뜀0은 cached/up-to-date 포함 가능성이 있는 회귀 집계이며 전환 성공률/성능 수치가 아니다. 현재 README의4사례/각6항목/현재22개 실제 Kotlin 발췌/기존18이미지를 유지했다. 최신 PR의 CI/Codex/병합은 아직 미확인으로 별도 추적한다.
+
+
+## PR66 진단 손실 리뷰 수정
+
+[원래 P2 지적](https://github.com/HanGilLab/Android/pull/66#discussion_r4432530413)은 Main 재생성/파괴 검증이 증거 저장에서도 다시 예외를 던져 JSON/PNG를 모두 잃는 실제 제어 흐름이다. 수명 검증을 runCatching해 null과 별도 failure 필드로 보존하고 JSON 쓰기/PNG 캡처를 독립 시도하며 후속 정리 실패를 원실패에 붙인다. 실제 ActivityScenario.recreate로 옛 Main identity 검증 실패를 발생시킨 최신 native1PASS/skip0에서 MAIN_RECREATED JSON과 PNG header를 외부에서도 확인했다. 실제 SDK 전환1PASS는 a9a8607의 앞선 관련 검증이며 이번에는 진단 실패 경로를 추가 검증한 것이다. 원래7개 timing 원형과 source/APK/hash는 덮어쓰지 않았고 timer/제품 코드 변경도 없다.
+
+수정 뒤 JDK17 전체 verify4단계/앱 계측 빌드가 다시 통과했다. 새 native 뒤 현재13종료/145관찰/메모1/terminal실행15의 전 필드/물리형/순서/sequence/기존권한/환경 exact 일치와 소유 AVD/forward 종료를 확인했다. 원래 스레드의 답글/해결과 새 head 필수 CI/Codex는 아직 별도로 확인한다.
