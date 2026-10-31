@@ -10,7 +10,7 @@
 
 [실제 어댑터](../../core/vehicle/src/main/kotlin/io/github/hangillab/hangil/core/vehicle/PleosNavigationClient.kt)는 화면용 NAVI_CUSTOM_MAP만 선언/확인한다. 현재 이미지에서 normal임을 실제 정의로 확인했고 외부 dangerous grant는 하지 않았다. 다른 플랫폼에서 거부되면 요청하지 않는다. 연결 전용 계측 APK는 기능 권한을 제거한 기존 조건을 유지한다. 경로/경로 검색/정보/위치/취소 API는 호출하지 않는다.
 
-REQUESTED는 void SDK 함수를 호출했다는 결과다. 실제 전면이나 목적지/길안내 성공의 ack가 아니며 이미 전달한 요청을 앱 이탈이 소급 취소한다고 약속하지 않는다. 동기 오류는 확인하지만 해제 뒤의 비동기 오류를 모두 관찰한다고 보장하지 않는다. 호출/정리 오류도 이미 전환이 전달되지 않았음을 뜻하지 않는다. 화면에는 목적지 미전송과 한길 이탈 시 차량 기록 중단을 표시한다.
+REQUESTED는 void SDK 함수를 호출했다는 결과다. 실제 전면이나 목적지/길안내 성공의 ack가 아니며 이미 전달한 요청을 앱 이탈이 소급 취소한다고 약속하지 않는다. 동기 오류는 확인하지만 해제 뒤의 비동기 오류를 모두 관찰한다고 보장하지 않는다. 호출/정리 오류도 이미 전환이 전달되지 않았음을 뜻하지 않는다. 현재 화면은 목적지 미전송을 표시한다. 전면 수집은 한길 이탈 시 중단하며, 이후 연결한 [명시적 배경 차량 기록](background-vehicle-recording.md)을 켠 실행은 별도 수명으로 구분한다.
 
 ## 실제 검증과 한계
 
@@ -64,3 +64,16 @@ README의 기존4개는 그대로 유지했다. 이번 전환은 기존1번/3번
 최종 head7e1ae499b7d2ebbb43c7fb76006a9e7deefef525의 [CI41196869030](https://github.com/HanGilLab/Android/actions/runs/41196869030)/attempt1과 같은 SHA App15368의 quality/test/build/ci-required4개 success, [Codex6542768713](https://github.com/HanGilLab/Android/pull/62#issuecomment-6542768713)의 completed/지적 없음/미해결 없음, native/정식 리뷰0과 active strict/no bypass를 확인했다. 정상 squash mergea5651033fd4ef8110060a6bd5a21d32029d0eee7의 실제 head/tree/parent/noreply와 main ff-only/양쪽 작업 브랜치 정리를 확인했다. 별도 main push41197339886와 이번 문서 PR의 검사는 이 시점에 완료로 기록하지 않으며 PR/Notion/비공개 체크포인트에서 마지막 실제 상태를 관리한다.
 
 Notion readback은19/54/선택3개 제외이며 전체 MAP04/APP05는 미체크다. 활성 안내 보존이라는 원래 계획의 미검증 항목을 남겨 계획을 active에 유지한다. 화면 전환 제품의 반영과 전체 계획/길안내 완료 판정을 구분한다. 이번 문서 변경은 runtime/계측/README/원값을 바꾸지 않는다.
+
+
+## 현재 main의 전면 전환 재검증
+
+기준4838db6436d745e3df5c64aadb1b800adc08e134의 제품 코드는 바꾸지 않았다. 이전 검사의 global root 대신 실제 Main RESUMED에서 확보한 유효 display의 단일 focused window를 읽고 Main이 STARTED 아래인지 함께 확인하도록 [실기 하네스](../../app/src/androidTest/kotlin/io/github/hangillab/hangil/NavigationScreenFlowTest.kt)를 보완했다. 다른 Main 재생성/파괴, 빈 root, 중복 focus와 관찰 오류는 성공 기본값으로 대체하지 않는다. 원래 interactive-windows bit는 다른 flags를 유지한 채 복원하고 schema5 실행 마커까지 자료 대조에 포함한다. 실패 증거는 Main 복귀 정리 전에 남긴다.
+
+같은 debug 제품, JDK17/PleosAPI34/font1.0/라이트, 실제 DDS ONLINE P+UX 허용, 준비1/종료13/관찰145/메모1/terminal 실행15/활성 없음 조건에서 fresh process 뒤2warm+5본을 순서대로 실행했다. 클릭 직전부터 같은 display의 실제 내비 focused package와 Main<STARTED를25초 안에 함께 관찰할 때까지 elapsedRealtimeNanos를 기록했다. 입력/동기화/AX polling을 포함한 관찰 지연이며 SDK 단독 처리나 렌더 완료 시간이 아니다. 준비/복귀/스크롤/캡처는 timer 밖이다.
+
+[7개 정제 원값](measurements/native-navigation-foreground-revalidation.csv) 중 warm2개는 실제 전환을 관찰했다. 본5개 중3개는546.525875/547.059959/589.590625ms에 관찰했고2개는25초 제한 동안 Main RESUMED/전면에 남았다. 실패 latency는 비어 있으며 실제 기다린 elapsed_wait_ns를 별도로 남겼다. 성공3개의 중앙값547.059959ms/min546.525875ms/max589.590625ms는 성공 조건부 기술 통계일 뿐 전체5개 지연 분포나 개선 성과가 아니다. 실패2개를 제외한 값으로 전체5개의 Q1/Q3/IQR을 계산하지 않는다. 본 표본 성공3/실패2/누락0/제외0, warm 성공2/실패0이며 느린 성공을 제외하지 않았다. unknown 관찰10회는 요청 손실 수가 아니다. 변경 후 비교가 없고 캐시/ART/JIT/OS/순서 영향도 미분리여서 개선율을 계산하지 않는다.
+
+비공개 SDK/플랫폼 로그의7개 요청 시간 구간 모두 원격 foreground 처리까지 관찰했고 실제 내비 대상 Activity 시작은 성공5개 구간에서만 관찰했다. per-attempt requestId 직접 조인이나 원격 앱 내부 분기 원인은 확인하지 못했다. local release 뒤 provider callback이 오는 순서는 성공과 실패에 공통이므로 즉시 release나 별도 요청 Job 취소를 원인으로 확정하지 않는다. 전역 예외 중 AppWidget/profile/SystemUI 등의 다른 경로는 이번 Navi 오류로 세지 않는다. 앱의 REQUESTED는 실제 전환 ACK가 아니라는 계약을 유지한다. 지연 추가나 연결 수명 변경을 제품 해결로 꾸미지 않고 원격 foreground 처리 이후의 조건을 부분 미검증으로 남긴다.
+
+추가 기본 라이트 실제 흐름은1PASS/건너뜀0으로 내비 전면+Main STOP, 복귀, 옛 클릭 차단, 실제 D 잠금, P 복귀 자동 요청 없음과 새 명시 요청을 확인했다. 이는 반복 실패2개를 취소하지 않는다. 이번 확대 다크는 미실행이며 PR62의 과거 성공과 구분한다. 전체 MAP04, 기존 활성 안내 보존, 목적지/경유지/길안내와 앱의 연속 위치 기록도 미완료다. 새 데이터/권한/위치 요청 없이 현재13개 종료 연습과 실행15개의 전 필드/물리형/순서/sequence/기존 권한/환경은 외부 fresh snapshot으로 대조한다.
