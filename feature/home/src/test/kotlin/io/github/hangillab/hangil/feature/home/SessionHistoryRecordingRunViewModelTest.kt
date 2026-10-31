@@ -727,6 +727,7 @@ class SessionHistoryRecordingRunViewModelTest {
                 observations,
                 memos,
                 runs,
+                UnexpectedHistoryCourseCompletionRepository,
             )
     }
 

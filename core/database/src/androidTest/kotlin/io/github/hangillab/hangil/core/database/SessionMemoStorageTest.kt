@@ -37,11 +37,16 @@ class SessionMemoStorageTest {
         val migrated =
             Room
                 .databaseBuilder(context, PreparationDatabase::class.java, file.name)
-                .addMigrations(PreparationMigration1To2, PreparationMigration2To3, PreparationMigration3To4, PreparationMigration4To5)
-                .build()
+                .addMigrations(
+                    PreparationMigration1To2,
+                    PreparationMigration2To3,
+                    PreparationMigration3To4,
+                    PreparationMigration4To5,
+                    PreparationMigration5To6,
+                ).build()
         try {
             val sqlite = migrated.openHelper.writableDatabase
-            assertEquals(5, sqlite.version)
+            assertEquals(6, sqlite.version)
             val after = snapshot { query -> sqlite.query(query) }
             for (table in before.keys) {
                 // Compare every original column, physical type and value without exposing them.

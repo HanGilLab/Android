@@ -83,6 +83,7 @@ class SessionHistoryOpeningMeasureTest {
                 "native-navigation-entry-v1" -> "history-opening-native-navigation-entry-v1"
                 "background-recording-entry-v1" -> "history-opening-background-recording-entry-v1"
                 "history-recording-runs-entry-v1" -> "history-opening-history-recording-runs-entry-v1"
+                "manual-course-completion-entry-v1" -> "history-opening-manual-course-completion-entry-v1"
                 else -> throw AssertionError("정의한 실험 계열만 실행해야 합니다")
             }
         val productCommit = checkNotNull(arguments.getString("declaredProductCommit")) { "제품 원본 선언이 필요합니다" }

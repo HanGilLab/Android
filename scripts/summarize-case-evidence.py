@@ -56,6 +56,8 @@ def main():
     root = args.root.resolve()
     cases = {key: read_suite(root, directory, name) for key, directory, name in CASES}
     session_intents = read_suite(root, "feature/home/build/test-results/testDebugUnitTest", "SessionHistoryDeletionViewModelTest")
+    # Nullable manual declarations are part of the exact deletion target and FK cascade.
+    session_declarations = read_suite(root, "core/database/build/test-results/testDebugUnitTest", "RoomCourseCompletionRepositoryTest")
     # The map case now includes native input ownership; this pure suite covers its epoch policy.
     # Opt-in real native Route/MapLibre tests remain separate from these JVM report receipts.
     map_input = read_suite(root, "feature/map/build/test-results/testDebugUnitTest", "MapInputEpochTest")
@@ -66,7 +68,7 @@ def main():
     recording_migration = read_suite(root, "core/database/build/test-results/testDebugUnitTest", "RecordingRunMigrationTest")
     recording_feature = read_suite(root, "feature/home/build/test-results/testDebugUnitTest", "SessionRecordingViewModelTest")
     supporting = {
-        "session": [session_intents],
+        "session": [session_intents, session_declarations],
         "map": [map_input],
         "recording": [recording_repository, recording_commit_boundaries, recording_migration, recording_feature],
     }

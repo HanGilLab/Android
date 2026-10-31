@@ -3,6 +3,7 @@ package io.github.hangillab.hangil.feature.home
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import io.github.hangillab.hangil.core.domain.CourseCompletionRepository
 import io.github.hangillab.hangil.core.domain.DrivingRestrictionsProvider
 import io.github.hangillab.hangil.core.domain.PracticeSession
 import io.github.hangillab.hangil.core.domain.PracticeSessionRepository
@@ -59,11 +60,15 @@ class SessionHistoryViewModel
         observations: VehicleObservationRepository,
         memos: SessionMemoRepository,
         recordingRuns: RecordingRunRepository,
+        courseCompletions: CourseCompletionRepository,
     ) : ViewModel() {
         private val lock = Any()
         private val storedObservations = SessionHistoryObservationReader(lock, observations, ::canRead)
         private val storedMemos = SessionHistoryMemoReader(lock, memos, ::canRead)
         private val storedRecordingRuns = SessionHistoryRecordingRunReader(lock, recordingRuns, ::canRead)
+        private val courseCompletion = SessionHistoryCourseCompletionReader(lock, courseCompletions, ::canRead)
+        private val courseCompletionReads = MutableStateFlow(0L)
+        private var receivedHasActiveSession: Boolean? = null
         private val published = MutableStateFlow<SessionHistoryUiState>(SessionHistoryUiState.Loading)
         private val requests = MutableStateFlow(0L)
         private var reader: Reader? = null
@@ -266,6 +271,56 @@ class SessionHistoryViewModel
                 }
             }
 
+        fun canRevealCourseCompletion(
+            expectedSessionId: String,
+            expectedGeneration: Long,
+        ): Boolean = canRevealStoredObservations(expectedSessionId, expectedGeneration)
+
+        fun observeCourseCompletion(
+            expected: PracticeSession,
+            historyGeneration: Long,
+            canKeepOpen: () -> Boolean,
+        ): Flow<SessionHistoryCourseCompletionUiState> =
+            courseCompletionReads.flatMapLatest {
+                courseCompletion.observe(expected, historyGeneration, canKeepOpen) {
+                    val owner = reader
+                    val query = owner?.query
+                    if (owner == null || query == null ||
+                        selectionSnapshotLocked(expected.sessionId, historyGeneration)?.session != expected
+                    ) {
+                        null
+                    } else {
+                        SessionHistoryCourseCompletionReader.Binding(
+                            isCurrent = {
+                                currentQuery(owner, query) &&
+                                    selectionSnapshotLocked(expected.sessionId, historyGeneration)?.session == expected
+                            },
+                            denyAccess = { if (currentQuery(owner, query)) restartDeniedQueryLocked(owner, query) },
+                            canDeclare = {
+                                receivedHasActiveSession == false &&
+                                    deletion?.phase !in listOf(DeletionPhase.PREPARING, DeletionPhase.CONFIRMING, DeletionPhase.DELETING)
+                            },
+                        )
+                    }
+                }
+            }
+
+        fun canReadCourseCompletion(token: SessionHistoryCourseCompletionUiState.Token): Boolean = courseCompletion.canRead(token)
+
+        fun requestCourseCompletion(token: SessionHistoryCourseCompletionUiState.Token): Boolean = courseCompletion.request(token)
+
+        fun confirmCourseCompletion(
+            token: SessionHistoryCourseCompletionUiState.Token,
+            nonce: Long,
+        ): Boolean = courseCompletion.confirm(token, nonce)
+
+        fun dismissCourseCompletion(
+            token: SessionHistoryCourseCompletionUiState.Token,
+            nonce: Long,
+        ): Boolean = courseCompletion.dismiss(token, nonce)
+
+        fun retryCourseCompletion(token: SessionHistoryCourseCompletionUiState.Token): Boolean = courseCompletion.retry(token)
+
         fun canReadStoredMemo(token: SessionHistoryMemoUiState.Token): Boolean = storedMemos.canRead(token)
 
         fun retryStoredMemo(token: SessionHistoryMemoUiState.Token): Boolean = storedMemos.retry(token)
@@ -301,6 +356,7 @@ class SessionHistoryViewModel
                     invalidateDeletionLocked()
                     val owner = checkNotNull(reader)
                     val query = checkNotNull(owner.query)
+                    courseCompletion.invalidate()
                     val action = DeletionAction(++deletionNonce, owner, query, current.session, current.generation, canKeepOpen)
                     val job =
                         viewModelScope.launch(start = CoroutineStart.LAZY) {
@@ -338,8 +394,10 @@ class SessionHistoryViewModel
 
         fun dismissDeletion(nonce: Long): Boolean =
             synchronized(lock) {
-                if (deletion?.nonce != nonce) return@synchronized false
+                val action = deletion?.takeIf { it.nonce == nonce } ?: return@synchronized false
+                val recoverCourseCompletion = takeCourseCompletionRecoveryLocked(action)
                 invalidateDeletionLocked()
+                if (recoverCourseCompletion) courseCompletionReads.value++
                 true
             }
 
@@ -516,9 +574,19 @@ class SessionHistoryViewModel
             action: DeletionAction,
             reason: SessionDeletionUiState.FailureReason,
         ) {
+            val recoverPreparation = action.phase == DeletionPhase.PREPARING
+            if (reason == SessionDeletionUiState.FailureReason.MISSING) action.courseCompletionRecoveryPending = false
             action.phase = DeletionPhase.FAILED
             action.job = null
             deletionPublished.value = SessionDeletionUiState.Failed(action.nonce, action.session, reason)
+            if (recoverPreparation && takeCourseCompletionRecoveryLocked(action)) courseCompletionReads.value++
+        }
+
+        private fun takeCourseCompletionRecoveryLocked(action: DeletionAction): Boolean {
+            if (!action.courseCompletionRecoveryPending) return false
+            action.courseCompletionRecoveryPending = false
+            return !action.sourceAbsent && action.phase != DeletionPhase.DELETING &&
+                action.phase != DeletionPhase.DELETED && currentDeletionContextLocked(action)
         }
 
         private fun invalidateDeletionLocked() {
@@ -719,6 +787,7 @@ class SessionHistoryViewModel
             publishLocked(SessionHistoryUiState.Loading)
             val snapshot = records.toList()
             validate(snapshot)
+            receivedHasActiveSession = snapshot.any { it.isActive }
             if (!preserveDeletionReceiptLocked(owner, query, snapshot)) invalidateDeletionLocked()
             val finished = snapshot.filterNot { it.isActive }
             ended = finished
@@ -767,6 +836,7 @@ class SessionHistoryViewModel
             storedObservations.invalidate()
             storedMemos.invalidate()
             storedRecordingRuns.invalidate()
+            courseCompletion.invalidate()
             val index = records.indexOfFirst { it.sessionId == selectedId }
             val nextGeneration = nextGenerationLocked()
             published.value =
@@ -786,6 +856,8 @@ class SessionHistoryViewModel
             storedObservations.invalidate(state == SessionHistoryUiState.Locked)
             storedMemos.invalidate(state == SessionHistoryUiState.Locked)
             storedRecordingRuns.invalidate(state == SessionHistoryUiState.Locked)
+            courseCompletion.invalidate(state == SessionHistoryUiState.Locked)
+            receivedHasActiveSession = null
             nextGenerationLocked()
             published.value = state
         }
@@ -830,6 +902,7 @@ class SessionHistoryViewModel
             var target: SessionDeletionTarget? = null
             var job: Job? = null
             var sourceAbsent = false
+            var courseCompletionRecoveryPending = true
         }
 
         private enum class DeletionPhase { PREPARING, CONFIRMING, DELETING, FAILED, DELETED }

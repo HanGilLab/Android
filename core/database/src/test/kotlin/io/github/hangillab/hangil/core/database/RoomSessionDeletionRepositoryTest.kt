@@ -146,7 +146,7 @@ class RoomSessionDeletionRepositoryTest {
                 assertTrue(database.vehicleRecordingRunDao().forSession(source.sessionId).isEmpty())
                 assertEquals(unrelated, snapshot(database, excluding = source.sessionId))
                 assertEquals(schema, schema(database.openHelper.writableDatabase))
-                assertEquals(5, database.openHelper.writableDatabase.version)
+                assertEquals(6, database.openHelper.writableDatabase.version)
                 database.openHelper.writableDatabase
                     .query("PRAGMA foreign_key_check")
                     .use { assertEquals(0, it.count) }
@@ -707,10 +707,19 @@ class RoomSessionDeletionRepositoryTest {
             "vehicle_observation" to "id",
             "session_memo" to "sessionId",
             "vehicle_recording_run" to "runId",
+            "course_completion_declaration" to "sessionId",
             "sqlite_sequence" to "name",
         ).associate { (table, order) ->
             val excludesSession =
-                excluding != null && table in listOf("practice_session", "vehicle_observation", "session_memo", "vehicle_recording_run")
+                excluding != null &&
+                    table in
+                    listOf(
+                        "practice_session",
+                        "vehicle_observation",
+                        "session_memo",
+                        "vehicle_recording_run",
+                        "course_completion_declaration",
+                    )
             val where = if (excludesSession) " WHERE sessionId != ?" else ""
             val args: Array<Any?> = if (excludesSession) arrayOf(excluding) else emptyArray()
             table to sqlite.query("SELECT * FROM $table$where ORDER BY $order", args).use(::readRows)

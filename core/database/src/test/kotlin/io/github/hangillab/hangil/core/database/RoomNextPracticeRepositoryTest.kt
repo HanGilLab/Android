@@ -466,7 +466,7 @@ class RoomNextPracticeRepositoryTest {
                         RoomNextPracticeRepository(database, LocalPracticeCatalog()).saveSelection(seed, target) { true },
                     )
                     assertEquals(expected, tables(database))
-                    assertEquals(5, database.openHelper.readableDatabase.version)
+                    assertEquals(6, database.openHelper.readableDatabase.version)
                 }
             } finally {
                 context.deleteDatabase(name)

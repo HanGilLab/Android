@@ -1467,6 +1467,7 @@ class SessionHistoryViewModelTest {
                 observations,
                 UnexpectedHistoryMemoRepository,
                 UnexpectedHistoryRecordingRunRepository,
+                UnexpectedHistoryCourseCompletionRepository,
             )
     }
 

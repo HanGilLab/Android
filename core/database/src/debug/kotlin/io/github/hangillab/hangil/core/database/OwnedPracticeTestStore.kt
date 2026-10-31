@@ -3,6 +3,7 @@ package io.github.hangillab.hangil.core.database
 import android.content.Context
 import android.content.pm.ApplicationInfo
 import androidx.room.Room
+import io.github.hangillab.hangil.core.domain.CourseCompletionRepository
 import io.github.hangillab.hangil.core.domain.PracticeCatalog
 import io.github.hangillab.hangil.core.domain.PracticeRepository
 import io.github.hangillab.hangil.core.domain.PracticeSessionRepository
@@ -19,17 +20,40 @@ import java.util.UUID
  * fixture values and must create them through these real domain repositories, never from user records.
  */
 class OwnedPracticeTestStore private constructor(
-    private val database: PreparationDatabase,
+    private var database: PreparationDatabase,
     private val reservation: Reservation,
+    private val application: Context,
 ) : Closeable {
     val catalog: PracticeCatalog = LocalPracticeCatalog()
-    val preparation: PracticeRepository = RoomPracticeRepository(database)
-    val sessions: PracticeSessionRepository = RoomPracticeSessionRepository(database, catalog)
-    val observations: VehicleObservationRepository = RoomVehicleObservationRepository(database)
-    val memos: SessionMemoRepository = RoomSessionMemoRepository(database)
-    val deletions: SessionDeletionRepository = RoomSessionDeletionRepository(database)
+    val preparation: PracticeRepository get() = RoomPracticeRepository(database)
+    val sessions: PracticeSessionRepository get() = RoomPracticeSessionRepository(database, catalog)
+    val observations: VehicleObservationRepository get() = RoomVehicleObservationRepository(database)
+    val memos: SessionMemoRepository get() = RoomSessionMemoRepository(database)
+    val deletions: SessionDeletionRepository get() = RoomSessionDeletionRepository(database)
+    val courseCompletions: CourseCompletionRepository get() = RoomCourseCompletionRepository(database)
 
     private var closed = false
+
+    /** Close collectors/writes first and reacquire repositories afterward; names/paths are never accepted. */
+    @Synchronized
+    fun reopen() {
+        check(!closed) { "닫힌 격리 저장소는 다시 열 수 없습니다" }
+        reservation.requireOwnership()
+        database.close()
+        val reopened = openOwned(application, reservation)
+        // Retain the new handle even when opening or its first cleanup fails.
+        database = reopened
+        try {
+            reopened.openHelper.writableDatabase
+        } catch (failure: Throwable) {
+            try {
+                reopened.close()
+            } catch (cleanup: Throwable) {
+                failure.addSuppressed(cleanup)
+            }
+            throw failure
+        }
+    }
 
     /** These diagnostics read only this unique store. They accept no SQL, name or path inputs. */
     @Synchronized
@@ -92,18 +116,10 @@ class OwnedPracticeTestStore private constructor(
             val reservation = Reservation.create(application)
             var database: PreparationDatabase? = null
             try {
-                val opened =
-                    Room
-                        .databaseBuilder(application, PreparationDatabase::class.java, reservation.name)
-                        .addMigrations(
-                            PreparationMigration1To2,
-                            PreparationMigration2To3,
-                            PreparationMigration3To4,
-                            PreparationMigration4To5,
-                        ).build()
+                val opened = openOwned(application, reservation)
                 database = opened
                 opened.openHelper.writableDatabase
-                return OwnedPracticeTestStore(opened, reservation)
+                return OwnedPracticeTestStore(opened, reservation, application)
             } catch (failure: Throwable) {
                 var handleClosed = true
                 try {
@@ -122,6 +138,22 @@ class OwnedPracticeTestStore private constructor(
                 throw failure
             }
         }
+
+        private fun openOwned(
+            application: Context,
+            reservation: Reservation,
+        ): PreparationDatabase {
+            reservation.requireOwnership()
+            return Room
+                .databaseBuilder(application, PreparationDatabase::class.java, reservation.name)
+                .addMigrations(
+                    PreparationMigration1To2,
+                    PreparationMigration2To3,
+                    PreparationMigration3To4,
+                    PreparationMigration4To5,
+                    PreparationMigration5To6,
+                ).build()
+        }
     }
 
     private class Reservation private constructor(
@@ -132,10 +164,14 @@ class OwnedPracticeTestStore private constructor(
         private val marker = File(directory, "$name.owner")
         private val ownedFiles = listOf(name, "$name-wal", "$name-shm", "$name-journal").map { File(directory, it) }
 
-        fun deleteOwnedFiles() {
+        fun requireOwnership() {
             check(marker.canonicalFile == marker.absoluteFile && marker.isFile && marker.readText() == nonce) {
                 "이번 격리 저장소의 소유 확인에 실패했습니다"
             }
+        }
+
+        fun deleteOwnedFiles() {
+            requireOwnership()
             for (file in ownedFiles) {
                 check(file.canonicalFile == file.absoluteFile && file.parentFile == directory) { "격리 파일 경계를 벗어났습니다" }
                 check(!file.exists() || file.delete()) { "소유 격리 파일을 정리하지 못했습니다" }

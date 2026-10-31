@@ -6,4 +6,5 @@ data class SessionDeletionTarget(
     val observationCount: Long,
     val memoVersion: String?,
     val recordingRuns: List<VehicleRecordingRun> = emptyList(),
+    val completionDeclaration: CourseCompletionDeclaration? = null,
 )
