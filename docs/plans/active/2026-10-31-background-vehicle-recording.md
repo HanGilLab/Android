@@ -110,3 +110,11 @@ APP05의 차량 상태 수집은 이 내비 SDK API를 호출하지 않아 독�
 현재 v1 전후 timing은 initial 제품 de6357f까지의 실측이다. 후속 정확성 수정의 최종 앱 성능 비교로 대신하지 않으며 최종 SDK 처리/전면 복귀 성능 개선은 미측정으로 남긴다. 활성 소유 자료가 추가된 현재 입력을 원래11개 종료 입력과 같다고 취급하지 않는다. 성능 향상을 완료하거나 상대 개선율을 만들지 않고 실제 동작/데이터 보존과 별개로 기록한다.
 
 수정 전 targeted controller36개에서 새5개만 실패했고 Recording4/Idle1 기대가 모두 Paused로 덮였다. 기존31개와 수집/구독 단일 소유권 조건은 통과했다. 실제 종료 뒤 관찰 지속과 함께 즉시 재진입 상태 덮어쓰기 가설을 지지한다. 소유권 반환 네 분기에서 background/state를 먼저 정하고 owner 해제를 마지막에 발행하도록 최소 수정했으며, 같은 source/gate/ACK/취소 join/명시 시작 조건과 회귀5개를 유지한다. 전체 검사와 실제 양 테마/복구는 수정 후 다시 판정한다.
+
+## 최종 앱과 전면 창 관찰 경계
+
+정확성 수정 a2cf9e2에서 JDK17 전체 verify/debug/unsigned release와 계측 APK 빌드가 통과했다. 단위 XML765개는 실패/오류/건너뜀0이며 성능 수치가 아니다. 수정된 실제 라이트는 내비 전면/Main STOP/FGS1/새 Room D/P/복귀 D잠금/명시 중지/일반 Recording 복원을 모두 통과했다. 확대 다크의 다음 시도는 내비 시작 뒤 global rootInActiveWindow의 package null로 초기 전면 관찰에서 실패했다. 실제 Main CREATED/FGS1/OPEN 근거와 실패 자료를 보존했으며 이를 앱 복원 실패나 내비 렌더 완료로 해석하지 않는다.
+
+테스트만 Main RESUMED 시점의 실제 display를 확보하고 UiAutomation interactive-windows flag를 읽고 제한적으로 설정한 뒤 해당 display의 정확히 하나인 focused window의 실제 root/package를 관찰하도록 바꿨다. display 미확인/불일치, 다중 focus, root 없음과 flag 실패는 사유가 있는 unknown으로 남기며 예상 package를 대신 넣지 않는다. 원래 flag bit는 다른 flags를 보존해 종료 시 복원한다. focused package는 완성 렌더나 앱 Navi SDK 전환 성공의 증거가 아니다. 기존 Main STOP/Active/OPEN/native FGS/새 D/P/잠금/Recording assertion은 유지했다. 독립 검토에서 구체 결함을 찾지 못했고 JDK17 quality/계측 APK 빌드를 통과했다. 제품 APK hash는 동일하다. 테스트 관찰 범위 수정은 제품 실행 성능을 바꾸지 않아 추가 성능 측정 대상이 아니며 실제 재실행 결과는 별도로 판정한다.
+
+재빌드 전에 원래 모든 필드/물리형/행순서/sequence/권한/설정을 대조했다. 원본과 별도로 소유 활성 연습1개, 그 연습의 관찰58개와 STOPPED8개를 보존했고 소유 AVD를 정지했다. 최종 다크/외부 종료 복구와 최종 자료 보존은 아직 대기다.

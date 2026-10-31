@@ -1,5 +1,6 @@
 package io.github.hangillab.hangil
 
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.app.ActivityManager
 import android.content.ComponentName
 import android.content.Context
@@ -12,6 +13,8 @@ import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import android.util.AtomicFile
+import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.getOrNull
@@ -45,6 +48,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.json.JSONArray
 import org.json.JSONObject
+import org.junit.After
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Rule
@@ -64,6 +68,8 @@ import kotlin.math.abs
  * This is independent Main/FGS/vehicle evidence, not proof that the app's Navi SDK request opens
  * the navigation screen. Instrumentation itself affects process priority: Main STOP plus native
  * FGS plus received SDK snapshots is the claim, not continuous uninstrumented road support.
+ * Foreground evidence comes only from the focused accessibility window on Main's captured display;
+ * it does not prove completed navigation rendering or the app's Navi SDK screen-open success.
  */
 @RunWith(AndroidJUnit4::class)
 class BackgroundVehicleRecordingFlowTest {
@@ -72,11 +78,30 @@ class BackgroundVehicleRecordingFlowTest {
     private val context get() = instrumentation.targetContext
     private val arguments get() = InstrumentationRegistry.getArguments()
     private lateinit var mainActivity: MainActivity
+    private var mainDisplayId: Int? = null
+    private var interactiveWindowsFlagBefore: Boolean? = null
+    private var lastForegroundObservation = ForegroundObservation(null, null, null, false, null, "NOT_OBSERVED")
+    private val foregroundUnknownReasons = linkedMapOf<String, Long>()
 
-    // Accessibility window/package null samples only; never an SDK event-loss count.
+    // Main-display focused accessibility window/package null samples, never SDK event-loss counts.
     private var foregroundNullSamples = 0L
     private val evidence by lazy {
         File(context.cacheDir, "screenshots/native-background-recording-${UUID.randomUUID()}").apply { check(mkdirs()) }
+    }
+
+    @After fun restoreInteractiveWindowsObservationFlag() {
+        val original = interactiveWindowsFlagBefore ?: return
+        val automation = instrumentation.uiAutomation
+        val current = checkNotNull(automation.serviceInfo) { "UiAutomation flag 복원 정보를 읽어야 합니다" }
+        val bit = AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+        val restoredFlags = if (original) current.flags or bit else current.flags and bit.inv()
+        if (restoredFlags != current.flags) {
+            current.flags = restoredFlags
+            automation.serviceInfo = current
+        }
+        val readback = checkNotNull(automation.serviceInfo) { "UiAutomation flag 복원 결과를 읽어야 합니다" }
+        assertTrue("기존 interactive-windows bit를 다른 flags 보존 상태로 복원해야 합니다", (readback.flags and bit != 0) == original)
+        interactiveWindowsFlagBefore = null
     }
 
     @Test fun actualSdkBackgroundRecordingSurvivesRealNavigationAndExplicitStop() =
@@ -298,6 +323,13 @@ class BackgroundVehicleRecordingFlowTest {
                 context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0,
         )
         mainActivity = compose.activity
+        instrumentation.runOnMainSync {
+            assertTrue("실제 Main RESUMED에서 display를 확인해야 합니다", mainActivity.lifecycle.currentState == Lifecycle.State.RESUMED)
+            val display = mainActivity.display
+            mainDisplayId = display?.displayId
+            assertTrue("실제 Main display가 미확인이거나 무효이면 기본 display로 대체하면 안 됩니다", display != null && display.isValid && mainDisplayId != null)
+        }
+        enableInteractiveWindowsObservation()
         val expectedFont = checkNotNull(arguments.getString("expectedFontScale")).toFloat()
         val expectedDark = arguments.getString("expectedDark") == "true"
         val configuration = context.resources.configuration
@@ -327,6 +359,37 @@ class BackgroundVehicleRecordingFlowTest {
                     permissions
             },
         )
+    }
+
+    private fun enableInteractiveWindowsObservation() {
+        val automation = instrumentation.uiAutomation
+        val current = checkNotNull(automation.serviceInfo) { "UiAutomation window 관찰 설정을 읽어야 합니다" }
+        val bit = AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+        val original = current.flags and bit != 0
+        assertTrue("같은 실행의 원래 flag bit를 덮어쓰면 안 됩니다", interactiveWindowsFlagBefore == null)
+        interactiveWindowsFlagBefore = original
+        if (!original) {
+            current.flags = current.flags or bit
+            automation.serviceInfo = current
+        }
+        val readback = checkNotNull(automation.serviceInfo) { "UiAutomation window 관찰 설정 결과를 읽어야 합니다" }
+        assertTrue("focused window 관찰에 필요한 기존 UiAutomation flag bit를 확인해야 합니다", readback.flags and bit != 0)
+        awaitInitialMainForeground()
+    }
+
+    /** Initial Main has no handoff in progress: another known focused package fails immediately. */
+    private fun awaitInitialMainForeground() {
+        val until = SystemClock.elapsedRealtime() + 25_000
+        while (true) {
+            assertTrue("초기 전면 관찰 중 실제 Main은 RESUMED여야 합니다", mainState() == Lifecycle.State.RESUMED)
+            val observed = packageNow()
+            if (observed != null) {
+                assertTrue("실제 Main display의 초기 focused package가 앱이어야 합니다", observed == context.packageName)
+                return
+            }
+            assertTrue("초기 Main focused package가 계속 미확인이면 성공으로 처리하면 안 됩니다", SystemClock.elapsedRealtime() < until)
+            SystemClock.sleep(50)
+        }
     }
 
     private fun graph(): RecordingTestEntryPoint =
@@ -669,12 +732,56 @@ class BackgroundVehicleRecordingFlowTest {
     private fun navigationPackage() = checkNotNull(arguments.getString("expectedNavigationPackage"))
 
     private fun packageNow(): String? {
-        val observed =
-            instrumentation.uiAutomation.rootInActiveWindow
-                ?.packageName
-                ?.toString()
-        if (observed == null) foregroundNullSamples += 1
-        return observed
+        val observation = observeMainDisplayForeground()
+        lastForegroundObservation = observation
+        if (observation.actualPackage == null) {
+            foregroundNullSamples += 1
+            val reason = checkNotNull(observation.unknownReason)
+            foregroundUnknownReasons[reason] = foregroundUnknownReasons.getOrDefault(reason, 0L) + 1
+        }
+        return observation.actualPackage
+    }
+
+    /** No expected package is accepted here: only one focused window's actual root is evidence. */
+    @Suppress("DEPRECATION")
+    private fun observeMainDisplayForeground(): ForegroundObservation {
+        val displayId =
+            mainDisplayId
+                ?: return ForegroundObservation(null, null, null, false, null, "MAIN_DISPLAY_UNKNOWN")
+        var flagObserved: Boolean? = null
+        var focusCount: Int? = null
+        var sameDisplay: Boolean? = null
+        var root: AccessibilityNodeInfo? = null
+        val windowsToRecycle = mutableListOf<AccessibilityWindowInfo>()
+
+        fun unknown(reason: String) = ForegroundObservation(null, focusCount, flagObserved, true, sameDisplay, reason)
+        return try {
+            val automation = instrumentation.uiAutomation
+            val info = automation.serviceInfo ?: return unknown("SERVICE_INFO_UNAVAILABLE")
+            flagObserved = info.flags and AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS != 0
+            if (flagObserved != true) return unknown("INTERACTIVE_WINDOWS_FLAG_DISABLED")
+            val allDisplays = automation.windowsOnAllDisplays
+            for (index in 0 until allDisplays.size()) windowsToRecycle.addAll(allDisplays.valueAt(index))
+            val windows = allDisplays.get(displayId) ?: return unknown("MAIN_DISPLAY_WINDOWS_ABSENT")
+            val focused = windows.filter { it.isFocused }
+            focusCount = focused.size
+            if (windows.any { it.displayId != displayId }) {
+                sameDisplay = false
+                return unknown("DISPLAY_BUCKET_MISMATCH")
+            }
+            if (focused.size != 1) return unknown(if (focused.isEmpty()) "NO_FOCUSED_WINDOW" else "MULTIPLE_FOCUSED_WINDOWS")
+            sameDisplay = true
+            root = focused.single().root
+            val focusedRoot = root ?: return unknown("FOCUSED_ROOT_NULL")
+            val observed = focusedRoot.packageName?.toString() ?: return unknown("FOCUSED_PACKAGE_NULL")
+            if (observed.isBlank()) return unknown("FOCUSED_PACKAGE_EMPTY")
+            ForegroundObservation(observed, focusCount, flagObserved, true, true, null)
+        } catch (_: Exception) {
+            unknown("AX_READ_FAILED")
+        } finally {
+            root?.recycle()
+            windowsToRecycle.forEach { it.recycle() }
+        }
     }
 
     private fun awaitPackage(expected: String) {
@@ -844,13 +951,25 @@ class BackgroundVehicleRecordingFlowTest {
         graph: RecordingTestEntryPoint,
         sessionId: String,
     ) {
+        val actualPackage = packageNow()
+        val observation = lastForegroundObservation
         val proof =
             JSONObject()
                 .put("theme", themeKey())
-                .put("foreground_package", packageNow() ?: JSONObject.NULL)
+                .put("foreground_package", actualPackage ?: JSONObject.NULL)
+                .put("foreground_actual_package", actualPackage ?: JSONObject.NULL)
+                .put("foreground_observation_basis", "AX_FOCUSED_WINDOW_ON_CAPTURED_MAIN_DISPLAY")
+                .put("foreground_focus_count", observation.focusCount ?: JSONObject.NULL)
+                .put("foreground_interactive_windows_flag_observed", observation.flagObserved ?: JSONObject.NULL)
+                .put("foreground_main_display_known", observation.mainDisplayKnown)
+                .put("foreground_same_display", observation.sameDisplay ?: JSONObject.NULL)
+                .put("foreground_unknown_reason", observation.unknownReason ?: JSONObject.NULL)
+                .put("foreground_unknown_reason_counts", JSONObject(foregroundUnknownReasons.toMap()))
                 .put("foreground_null_samples", foregroundNullSamples)
-                .put("foreground_null_sample_scope", "Accessibility window/package observations only; not missing SDK events")
-                .put("main_lifecycle", mainState().name)
+                .put(
+                    "foreground_null_sample_scope",
+                    "Main-display focused accessibility window/package observations only; not missing SDK events",
+                ).put("main_lifecycle", mainState().name)
                 .put("native_service_count", foregroundServices().size)
                 .put("native_foreground_service_count", foregroundServices().count { it.foreground })
                 .put(
@@ -870,7 +989,7 @@ class BackgroundVehicleRecordingFlowTest {
                 .put("navigation_handoff_policy", "system_launcher_for_recording_flow_only")
                 .put(
                     "claim_limit",
-                    "Instrumentation affects process priority; Main STOP, native FGS and actual SDK snapshot receipt only; system launcher handoff does not establish app Navi SDK request success",
+                    "Instrumentation affects process priority; Main STOP, native FGS and actual SDK snapshot receipt only; system launcher handoff does not establish app Navi SDK request success; focused-window package does not establish completed navigation rendering",
                 )
         File(evidence, "$name.json").writeText(proof.toString(2))
     }
@@ -897,6 +1016,15 @@ class BackgroundVehicleRecordingFlowTest {
         )
 
     private fun phase(name: String) = instrumentation.sendStatus(2, Bundle().apply { putString("stream", "$name\n") })
+
+    private data class ForegroundObservation(
+        val actualPackage: String?,
+        val focusCount: Int?,
+        val flagObserved: Boolean?,
+        val mainDisplayKnown: Boolean,
+        val sameDisplay: Boolean?,
+        val unknownReason: String?,
+    )
 
     private data class ExistingData(
         val preparation: PracticeSelection?,
