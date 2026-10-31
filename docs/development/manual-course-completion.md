@@ -1,6 +1,6 @@
 # 선택한 종료 이력의 수동 과정 마무리 선언
 
-선택한 종료 연습에 사용자의 명시적인 과정 마무리 선언을 저장하고 다시 읽는 기능을 연결했다. 아래 계측은 리뷰 전 제품 `a639fc02c2e891527b98d87907a5e10f554006f8`의 전체 자동 검사와 제어 Compose/소유 Room, 실제 Main 읽기 양 테마를 확인했다. 고정 계측 APK의 M0/M1 전후 비교와 최종 원본/환경 보존 및 소유 자원 정리도 완료했다. 성능 향상/동등성/무회귀는 확정하지 않으며 최신 PR 검증/병합은 아직 미완료다. [작업 계획](../plans/active/2026-11-01-manual-course-completion.md)은 active로 유지하며 독립 제품 검증과 전체 APP-08 완료를 구분한다.
+선택한 종료 연습에 사용자의 명시적인 과정 마무리 선언을 저장하고 다시 읽는 기능을 연결했다. PR #69의 삭제 취소/준비 실패 뒤 펼침이 비는 문제까지 수정한 최종 제품과 native 원본은 `d1bd59dc5969ca44b94db976032260cd92d71f79`이며 고정 product-v3/test-v5 APK로 검증했다. 전체 자동 검사, 제어 Compose/소유 Room 및 실제 Main 읽기의 양 테마, 고정 계측 APK의 최종 M0/M1 비교와 원본/환경 보존을 확인했다. 기준 A, 리뷰 전 중간 B1과 수정 후 최종 B2를 구분한다. 성능 향상/동등성/무회귀는 확정하지 않으며 최신 문서 head의 CI/Codex와 정상 병합은 아직 별도 조건이다. [작업 계획](../plans/active/2026-11-01-manual-course-completion.md)은 active로 유지하며 독립 제품 검증과 전체 APP-08 완료를 구분한다.
 
 ## 선택한 최소 정책
 
@@ -53,13 +53,14 @@ Loading, Locked, Unavailable, 실제 부재, 조회/저장 실패와 Ready를 �
 | 앱 debug 빌드 | 통과. 실제 Hilt 연결과 생산 UI/VM 컴파일 확인 |
 | feature 첫 실행 | 테스트 Pair/Flow 타입 추론 오류로 컴파일 실패. 테스트 본문은 미실행 |
 | feature 재실행 | 제네릭 타입만 명시한 뒤 통과. 새 ViewModel/reader 41개 포함, 검증 조건 완화 없음 |
-| 전체 verify / native APK 컴파일 | JDK17 전체4단계와 app/DB 계측 APK 컴파일 통과. 앱 프로젝트 JVM55 suites/865개와 별도 build-logic1 suite/4개 각각 실패/오류/건너뜀0 |
-| 제어 Compose A | 최신9f1950에서4PASS. 실제 Compose와 합성 lifecycle/source/저장소/gate |
-| 소유 Room B | 최신9f1950에서 기본 라이트3PASS, 확대 다크 재시도3PASS. 별도 UUID DB/production 저장소와 실제 Route |
-| 실제 Main C | b179에서 기본 라이트1PASS/확대 다크1PASS. 실제 SDK/생산 Room은 읽기/확인 취소/P-D-P와 선언0 검증 |
-| M0/M1 변경 후 비교 | 각각 전후5warm/30본 완료, 네 보고서 valid와 실패/누락/미실행/제외0. 동일 입력/환경/고정 계측 APK 확인 |
+| 리뷰 지적의 focused JVM | 원래 5개에서 실제 4실패/1통과를 재현하고, 같은 source 바이트로 수정 후 5통과. 이후 전체 feature386개 실패0 |
+| 전체 verify / native APK 컴파일 | 최종 d1bd59의 JDK17 전체4단계와 APK 컴파일 통과. 제품 모듈 JVM57 suites/876개와 별도 build-logic1 suite/4개 각각 실패/오류/건너뜀0 |
+| 제어 Compose A | 최종 d1bd59 첫 실행6PASS. 실제 Compose와 합성 lifecycle/source/저장소/gate |
+| 소유 Room B | 최종 d1bd59 첫 실행 기본 라이트3PASS/확대 다크3PASS. 별도 UUID DB/production 저장소와 실제 Route |
+| 실제 Main C | 최종 d1bd59 첫 실행 기본 라이트1PASS/확대 다크1PASS. 실제 SDK/생산 Room의 읽기/확인 취소/P-D-P와 선언0 검증 |
+| M0/M1 공통 비교 | A/B1/B2 여섯 보고서 각각5warm/30본 완료, 모두 valid와 실패/누락/미실행/제외0. 동일 입력/환경/고정 계측 APK 확인 |
 | 새 저장 M2 | 미측정. 동일한 최초 저장 반복 fixture와 metric 계약 미확정 |
-| 최신 PR CI/Codex / 병합 | 미실행. 최신 동일 head 기준의 별도 조건 |
+| 최신 PR CI/Codex / 병합 | d1bd59 Codex completed/no findings, 원래 P2 답글과 native 해결 확인. CI는 진행 중이었으며 이 문서 갱신 head는 새 확인 필요. 병합은 미완료 |
 
 [feature 타깃 소스](../../feature/home/src/test/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryCourseCompletionViewModelTest.kt)는 cold 조회, 부모/전체 source/활성 unknown, 옛 token/nonce, silent gate와 host 만료, 오류/유한 stream, ACK/Flow 순서와 취소 뒤 저장 원형 재조회를 제어 입력으로 검사한다. 이 타깃 통과를 실제 SDK나 실제 화면 통과로 바꾸지 않는다.
 
@@ -69,13 +70,17 @@ Loading, Locked, Unavailable, 실제 부재, 조회/저장 실패와 Ready를 �
 
 ## 최종 native 결과와 이전 실패의 구분
 
-최신 native 원본은 `9f1950e7fcab80cbf4f0b8b7fe66c3b4a70e4a9b`이고 제품은 고정 product-v2 APK다. [A 제어 Compose](../../app/src/androidTest/kotlin/io/github/hangillab/hangil/ManualCourseCompletionBoundaryTest.kt)4개, [B 소유 실제 Room](../../app/src/androidTest/kotlin/io/github/hangillab/hangil/ManualCourseCompletionRoomFlowTest.kt)기본1.0/라이트3개와 확대1.3/다크 재시도3개가 통과했다. B는 최초 저장, 새 ViewModel과 실제 Room handle 재개방/재열람, 중복 원형과 결과 취소 뒤 복원을 production 저장소/실제 Route에서 검사하며 차량/UX 입력은 합성이다. 생산 앱에서 저장 후 process death/재실행한 검증은 원래 DB 쓰기0 정책상 미실행이다.
+최종 제품/native 원본 `d1bd59dc5969ca44b94db976032260cd92d71f79`의 product-v3/test-v5에서 [A 제어 Compose](../../app/src/androidTest/kotlin/io/github/hangillab/hangil/ManualCourseCompletionBoundaryTest.kt)6개, [B 소유 실제 Room](../../app/src/androidTest/kotlin/io/github/hangillab/hangil/ManualCourseCompletionRoomFlowTest.kt)기본1.0/라이트3개와 확대1.3/다크3개, [C 실제 Main 읽기](../../app/src/androidTest/kotlin/io/github/hangillab/hangil/ManualCourseCompletionFlowTest.kt)라이트/확대 다크 각각1개가 모두 첫 실행에 통과했다. A는 실제 Compose/Activity와 제어 lifecycle/source/저장소/gate의 근거이며 실제 OS PAUSE나 SDK 장애 주입 성공이 아니다.
 
-[C 실제 Main 읽기](../../app/src/androidTest/kotlin/io/github/hangillab/hangil/ManualCourseCompletionFlowTest.kt)는 `b17902bf053f785a0c82c88fa6b894dfc83933f9`에서 라이트/확대 다크 각각1개를 통과했다. 실제 source 이동/재생성, 확인 취소, SDK P+UX와 DDS D-P, 모든 생산 source 및 전체 SQL의 선언0을 확인했다. 최신9f에서도 C 파일/기존 실제 읽기 Harness/제품은 바이트 동일하다. C를 최신9f에서 다시 실행한 것으로 기록하지 않는다.
+B는 별도 UUID Room의 최초 저장, 새 ViewModel과 실제 Room handle 재개방/재열람, 원형/중복과 결과 취소 뒤 복원에 더해, 실제 삭제 준비/취소 뒤 부재/저장된 선언을 다시 읽는 경계를 검사한다. 차량/UX 입력은 합성이다. 생산 앱에서 선언 저장 후 process death/재실행한 검증은 원래 DB 쓰기0 정책상 미실행이다.
+
+C는 실제 Main/SDK/생산 Room에서 삭제 준비와 확인 취소 뒤 같은 펼침의 Absent가 새 읽기로 복원되고, 새 과정 확인창을 열어 다시 취소하는 경계를 추가 확인했다. source 이동/재생성, 실제 SDK P+UX와 DDS P-D-P, 원래 자료 및 생산 선언0도 유지했다. 삭제와 선언의 최종 확인은 어느 쪽도 누르지 않았다. 다크 실행 전 촬영된 내비 화면은 Main 성공 증거가 아니며, 실제 C 본문의 strict Main/focused window 검사와 별도 capture가 통과한 근거를 사용한다.
+
+리뷰 전 B1 제품 a639/product-v2의 A4, B 라이트3/다크 재시도3, C b179의 양 테마 성공도 각 원래 source의 과거 기록으로 보존한다. 그때 C 파일/공용 실제 읽기 Harness/제품이 9f1950에서 바이트 동일했던 확인을 최종 d1bd59의 새 실행과 혼동하지 않는다.
 
 첫 C 라이트는 요청 문구의 한 줄180×34px에서 가로 overflow true/세로 false/ellipsis 없음으로 실패했다. 확인 취소/P-D-P까지 통과한 실행으로 세지 않았다. 요청/확인/취소/재조회 Text를 실제 가용 폭에 가운데 정렬하고 글자/간격을 줄이지 않은 제품에서 같은 원문/가시성/넘침 검사로 양 테마가 통과했다. 이 배치 정합 보완을 성능 향상으로 해석하지 않는다.
 
-초기 A의 dialog footer 스크롤 실패와 이후 실제 host 개입/AX 미확인, 수정 제품 A의3PASS/1mount foreign 실패 두 회, B 다크의2PASS/1초기 host 실패를 각각 보존했다. 최신9f 첫 B 다크도2PASS/1setup 실패로, 실제 Catalog 준비 조건을20초 안에 확인하지 못했다. 동일 APK와 동일 검사로 재시도한3PASS와 원래 실패를 분리한다. 정확한 플랫폼 전환 원인은 미확정이며 제품 저장 실패/성공으로 바꾸지 않는다.
+초기 A의 dialog footer 스크롤 실패와 이후 실제 host 개입/AX 미확인, 수정 제품 A의3PASS/1mount foreign 실패 두 회, B 다크의2PASS/1초기 host 실패를 각각 보존했다. 리뷰 전9f 첫 B 다크도2PASS/1setup 실패로, 실제 Catalog 준비 조건을20초 안에 확인하지 못했다. 동일 APK와 동일 검사로 재시도한3PASS와 원래 실패를 분리한다. 정확한 플랫폼 전환 원인은 미확정이며 제품 저장 실패/성공으로 바꾸지 않는다.
 
 최신 준비 gate는 실제 Catalog RESUMED/유효 display/window focus를 확인한 뒤에만 제어 owner/observer를 만든다. 본문과 확인창의 실제 focused package/같은 display/host 개입/옛 token 검사를 유지하며 알려진 다른 앱은 실패다. 미확인을 기대 package나 정상값으로 채우지 않는다. A의 합성 lifecycle을 실제 OS PAUSE 성공으로 부르지 않는다.
 
@@ -100,26 +105,37 @@ M0는 [고정 진입 하네스](../../app/src/androidTest/kotlin/io/github/hangi
 
 이 값은 기존 공통 흐름의 계측 wall time이다. 클릭 전달, Compose 동기화와 semantics/geometry 검사 비용을 포함한다. 준비/사전 스크롤, SDK/source/자료 검사, JSON/export, 닫기와 프로세스 시작은 기존 계약대로 제외한다. 순수 DB/프레임/GPU/SDK 처리시간이나 신규 선언 조회/쓰기 시간으로 해석하지 않는다. 확대 다크 correctness를 라이트 timing에 합치지 않는다.
 
-비교는 v6의 새 선언 테이블과 UI가 의도한 차이며 원래 v5 자료는 그대로여야 한다. 기준/비교 동안 생산 선언은 0개를 유지한다. v6 적용 뒤 v5 앱으로 돌아가는 downgrade 위험 때문에 이번 실행의 A2는 수행하지 않는다. A2를 맞추려고 원래 DB를 삭제하거나 백업으로 덮어써 버전 왕복하지 않는다. 실제 순서는 A1→B이며 캐시, ART/JIT/프로필, 발열, OS와 시간/순서 효과를 원인별로 분리하지 못한다는 한계를 남긴다.
+비교는 v6의 새 선언 테이블과 UI가 의도한 차이며 원래 v5 자료는 그대로여야 한다. 기준/비교 동안 생산 선언은 0개를 유지한다. v6 적용 뒤 v5 앱으로 돌아가는 downgrade 위험 때문에 이번 실행의 A2는 수행하지 않는다. A2를 맞추려고 원래 DB를 삭제하거나 백업으로 덮어써 버전 왕복하지 않는다. 실제 순서는 A→B1→B2이며 캐시, ART/JIT/프로필, 발열, OS와 시간/순서 효과를 원인별로 분리하지 못한다는 한계를 남긴다.
 
-## 기존 공통 흐름의 최종 전후 결과
+## 기존 공통 흐름의 A/B1/B2 결과
 
-[공개 익명 timing 원값140행](measurements/manual-course-completion-ui-times.csv)에 M0/M1 전후 각각5warm+30본을 보존했다. 네 실제 보고서가 모두 completed/valid이며 실패/누락/미실행/제외0이다. 정확한 정수ns와 파생ms를 보존했고 통계는30본만 사용한다. 사분위는 정렬한 하위15/상위15 각각의 중앙값이며 IQR은 Q3−Q1이다.
+[원래 익명 원값140행](measurements/manual-course-completion-ui-times.csv)은 M0/M1의 기준 A와 리뷰 전 중간 B1이다. [리뷰 수정 후 원값70행](measurements/manual-course-completion-review-fixed-ui-times.csv)은 최종 B2만 추가한다. 두 CSV의 고유 표본은 총210행이며 B2 파일에 A를 복제하거나 새 baseline을 만들지 않았다. 여섯 실제 보고서 모두 completed/valid이고 각각5warm/30본의 실패/누락/미실행/제외0이다. 아래 통계는30본만 사용하며 Q1/Q3는 정렬한 하위15/상위15 각각의 중앙값, IQR은 Q3−Q1이다.
 
 | 지표/단계 | warm/본 | 중앙값 ms | Q1 / Q3 ms | IQR ms | 최소 / 최대 ms | 실패/누락/미실행/제외 |
 |---|---:|---:|---|---:|---|---|
-| M0 변경 전 | 5/30 | 279.446584 | 260.963084 / 307.00525 | 46.042166 | 241.263584 / 662.491709 | 0/0/0/0 |
-| M0 변경 후 | 5/30 | 274.0576875 | 253.070208 / 290.953208 | 37.883 | 236.348875 / 356.42775 | 0/0/0/0 |
-| M1 변경 전 | 5/30 | 168.898625 | 167.479166 / 170.427916 | 2.94875 | 163.258917 / 186.706 | 0/0/0/0 |
-| M1 변경 후 | 5/30 | 169.5672085 | 168.577459 / 171.632833 | 3.055374 | 154.113333 / 193.424583 | 0/0/0/0 |
+| M0 A 기준 | 5/30 | 279.446584 | 260.963084 / 307.00525 | 46.042166 | 241.263584 / 662.491709 | 0/0/0/0 |
+| M0 B1 리뷰 전 중간 | 5/30 | 274.0576875 | 253.070208 / 290.953208 | 37.883 | 236.348875 / 356.42775 | 0/0/0/0 |
+| M0 B2 리뷰 수정 최종 | 5/30 | 274.6634375 | 259.474291 / 293.450625 | 33.976334 | 225.497459 / 376.848917 | 0/0/0/0 |
+| M1 A 기준 | 5/30 | 168.898625 | 167.479166 / 170.427916 | 2.94875 | 163.258917 / 186.706 | 0/0/0/0 |
+| M1 B1 리뷰 전 중간 | 5/30 | 169.5672085 | 168.577459 / 171.632833 | 3.055374 | 154.113333 / 193.424583 | 0/0/0/0 |
+| M1 B2 리뷰 수정 최종 | 5/30 | 169.135604 | 167.047208 / 171.377458 | 4.33025 | 163.587125 / 179.505333 | 0/0/0/0 |
 
-M0 중앙값의 관측 차이는 −5.3888965ms/−1.9284173823%, M1은 +0.6685835ms/+0.3958489893%다. 상대 변화는(후−전)/전이고 백분율은 소수점10자리 반올림이며 양수는 더 긴 시간이다. 두 전후 Q1/Q3 구간은 겹친다. A1→B의 한 순서이고 A2가 없어 캐시/ART/JIT/프로필/발열/OS scheduling/시간과 실행 순서의 영향을 분리하지 못했다. 성능 향상, 인과적 저하, 동등성 또는 무회귀를 확정하지 않는다.
+최종 제품의 주 비교는 A→B2다. B1→B2도 같은 기록 입력을 확인한 뒤 산술 차이만 표시한다.
 
-전후 계측 APK는 고정6f45 원본과 바이트 동일하고 현재 두 하네스 파일의 바이트hash도 유지됐다. 기준 실제 제품 APK는4b 고정 원본, 비교 실제 제품 APK는a639 product-v2 고정 원본과 각각 일치했다. originalData/full fixedSource/catalog/environment와 각 metric의 measurementContract, baseline 원바이트hash 및 비교 보고서의 원본 선언도 일치했다. 제품과 계측 SHA는 외부 실행자의 선언이며 실제 보존 APK/hash 및 원문과 대조한 근거를 별도로 보존한다.
+| 지표/비교 | 중앙값 차이 ms | 상대 변화 |
+|---|---:|---:|
+| M0 A→B2 | -4.7831465 | -1.7116496582% |
+| M1 A→B2 | +0.236979 | +0.1403084247% |
+| M0 B1→B2 | +0.60575 | +0.2210301070% |
+| M1 B1→B2 | -0.4316045 | -0.2545329983% |
 
-CSV140행의 정수ns↔ms, 각5warm/30본과 네 분포는 별도 Decimal 검산에서도 정확히 일치했다. 첫 보조 분석의 잘못된 benchmark 열 선택은 실제M0/M1 스키마로 정정했으며 측정 실패 표본으로 세지 않는다. 원값 CSV를 수정하거나 느린 성공을 제외하지 않았다.
+상대 변화는(후−전)/전이며 백분율은 소수점10자리 반올림이다. 양수는 더 긴 시간이다. 보존한 A→B1의 관측 차이는 M0 −5.3888965ms/−1.9284173823%, M1 +0.6685835ms/+0.3958489893%다. B1을 최종 결과로 바꾸거나 유리한 실행만 선택하지 않았다. 각 전후 Q1/Q3가 겹치고 A→B1→B2의 순차 실행에 A2가 없어 캐시/ART/JIT/프로필/발열/전체 OS 부하와 scheduling/시간 및 순서의 영향을 분리하지 못한다. 성능 향상, 인과적 저하, 동등성 또는 무회귀를 확정하지 않는다.
 
-계측 종료 뒤 원래 v5 모든 행/필드/물리형/순서/sequence와 grants/runtime/font/night/IME/proxy, 두 원형 baseline 바이트가 exact 일치했다. schema6 빈 선언 테이블과 생산 선언0을 유지했고 기존 자료에 쓰지 않았다. UUID 소유DB/marker/sidecar 잔존0, 이번 소유 AVD/forward 종료와 연결 DDS 탭 닫기도 확인했다. 이전 native 종료 점검과 최종 계측 후 보존을 구분한다.
+A는4b 고정 제품, B1은a639 product-v2, 최종 B2는d1bd59 product-v3의 실제 APK가 각 단계의 고정 원본과 일치했다. 세 단계 모두 기준 전에 고정한6f45 계측 APK와 동일한 두 하네스 source 바이트hash를 사용했다. originalData/full fixedSource/catalog/environment, 각 metric의 measurementContract와 baseline 원바이트hash도 일치했고 여섯 실행은 서로 구분된다. source SHA는 외부 실행자의 선언이며 실제 APK/hash와 원형을 대조한 근거를 보존하되 source-to-binary 재현 빌드를 증명했다고 확대하지 않는다.
+
+B1의 보고서/140행 CSV와 baseline 파일은 바이트 동일하게 보존했다. B2/캐시 이동 전에 만든 외부 보존 checkpoint는 리뷰 수정 착수 전의 checkpoint라는 뜻은 아니다. 그 대조 뒤 해당 실행이 소유한 comparison 두 보고서만 이름 이동해 보관했고, 최종 B2를 별도 archive/70행으로 회수했다. 원래 DB와 baseline은 이동/삭제/덮어쓰지 않았다. 원래140행의 정수ns↔ms/표본/네 분포는 독립 Decimal 검산도 통과했다. 첫 보조 분석의 잘못된 benchmark 열 선택은 실제 스키마로 정정한 도구 준비 실패이며 측정 실패 표본으로 세지 않는다.
+
+최종 native와 B2 계측 뒤 원래 v5 모든 행/필드/물리형/순서/sequence와 grants/runtime/font/night/IME/proxy, schema6 빈 선언0 및 두 원형 baseline 바이트의 exact 보존을 각각 확인했다. UUID 소유DB/marker/sidecar 잔존0이며 이번 소유 AVD/forward를 종료하고 연결된 DDS 탭도 닫았다. 원래 자료에 쓰지 않았으며 중간 native 점검과 최종 계측 후 보존을 구분한다.
 
 ## 공개 재현 명령과 필수 프로토콜
 
@@ -130,10 +146,10 @@ java -version
 ./scripts/verify.sh
 ```
 
-아래 비교 예시는 보존된 a639 product-v2 APK와 기준 전에 고정한6f45 test APK를 사용한다. 환경 변수에는 실행자가 검증한 비공개 artifact 경로를 지정한다. 기준/비교에 동일한 계측 APK를 사용하며 현재 native 검사 APK의 빌드 성공으로 대체하지 않는다. 기준은 v5/4b에서 미리 확보한 원형이며 A2를 위해 v5로 되돌리거나 자료를 삭제/덮어쓰지 않는다.
+아래 최종 B2 예시는 보존된 d1bd59 product-v3 APK와 기준 전에 고정한6f45 test APK를 사용한다. 환경 변수에는 실행자가 검증한 비공개 artifact 경로를 지정한다. 기준/비교에 동일한 계측 APK를 사용하며 현재 native 검사 APK의 빌드 성공으로 대체하지 않는다. 기준은 v5/4b에서 미리 확보한 원형이며 A2를 위해 v5로 되돌리거나 자료를 삭제/덮어쓰지 않는다.
 
 ```sh
-adb install -r "$COMPARISON_PRODUCT_APK"
+adb install -r "$REVIEW_FIXED_PRODUCT_APK"
 adb install -r -t "$FROZEN_MEASUREMENT_TEST_APK"
 adb shell am force-stop io.github.hangillab.hangil.debug
 adb shell am instrument -w -r \
@@ -141,7 +157,7 @@ adb shell am instrument -w -r \
   -e manualHistoryOpeningMeasure true \
   -e measurementSeries manual-course-completion-entry-v1 \
   -e measurementStage comparison \
-  -e declaredProductCommit a639fc02c2e891527b98d87907a5e10f554006f8 \
+  -e declaredProductCommit d1bd59dc5969ca44b94db976032260cd92d71f79 \
   -e declaredHarnessRevision 6f45d5a82bf0b48b0bb0a81f4dd04304633faa24 \
   io.github.hangillab.hangil.debug.test/androidx.test.runner.AndroidJUnitRunner
 
@@ -151,12 +167,14 @@ adb shell am instrument -w -r \
   -e manualHistoryDisclosureMeasure true \
   -e measurementSeries manual-course-completion-tasks-v1 \
   -e measurementStage comparison \
-  -e declaredProductCommit a639fc02c2e891527b98d87907a5e10f554006f8 \
+  -e declaredProductCommit d1bd59dc5969ca44b94db976032260cd92d71f79 \
   -e declaredHarnessRevision 6f45d5a82bf0b48b0bb0a81f4dd04304633faa24 \
   io.github.hangillab.hangil.debug.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
-각 클래스는5warm/30본을 내부 고정하며 외부 실행자는 각 metric을 fresh process/Activity에서 시작한다. M0는 같은 source의 history_ready/history_course, M1은 history_summary_scope의 실제 가시성과 Compose idle/재확인까지인 기존20초 endpoint를 유지한다. 새 선언 영역은 접혀 있고 선언 조회/쓰기가 없다. 완료/실패 파일과 AtomicFile sidecar를 덮어쓰지 않으며 기존 결과가 있으면 해당 실행을 중단한다. 반복은 원형을 보존한 별도 소유 실행 환경에서 준비한다.
+고정 하네스는 B2도 measurementStage=comparison으로 작성한다. 먼저 외부의 `baseline-measurements-cache.tar`와 B1 `comparison-measurements-cache.tar`, 원래140행 CSV/두 baseline/제품 및 고정 test APK의 바이트를 대조한다. 앱 cache의 `history-opening-manual-course-completion-entry-v1-comparison.json`과 `history-disclosure-manual-course-completion-tasks-v1-comparison.json` 두 파일만 이 실행 소유임을 확인하고, 동일 바이트의 별도 소유 보관 위치로 이름 이동한 뒤 B2를 수집했다. baseline/사용자 DB는 옮기지 않는다. B2 회수본은 `review-fixed-measurements-cache.tar`로 구분하며, 새 CSV의 after-review-fix 표시는 분석 레이블이지 고정 하네스의 새 namespace가 아니다. 소유/보존을 확인하지 못했거나 완료 파일/sidecar가 남으면 덮어쓰지 않고 실행을 중단한다.
+
+각 클래스는5warm/30본을 내부 고정하며 외부 실행자는 각 metric을 fresh process/Activity에서 시작한다. M0는 같은 source의 history_ready/history_course, M1은 history_summary_scope의 실제 가시성과 Compose idle/재확인까지인 기존20초 endpoint를 유지한다. 새 선언 영역은 접혀 있고 선언 조회/쓰기가 없다. 완료/실패 파일과 AtomicFile sidecar를 덮어쓰지 않으며 기존 결과가 있으면 해당 실행을 중단한다. 반복은 위 원형/소유 보관을 확인한 뒤 별도 실행으로 준비한다.
 
 매 표본과 종료 때 같은 source/입력/환경 및 baseline hash를 대조하고 raw ns/ms, endpoint/성공과 실패/누락/미실행/제외를 함께 회수한다. 원래 v5 자료와 생산 선언0, 권한/설정을 다시 exact 대조하고 이번 소유 자원만 정리한다. 공개 명령은 실행 계약을 설명하며 비공개 fixture와 설치 provenance의 준비를 생략하지 않는다.
 
@@ -168,6 +186,12 @@ M2는 아직 동일 반복 fixture와 metric을 확정하지 않았고 하네스
 
 전체 verify/계측 APK 컴파일과 위 범위의 A/B/C, 실제 네 이미지 검토, M0/M1 실제 비교와 최종 원본/설정/선언0/원형 baseline 보존 및 소유 자원 정리를 확인했다. 최신 PR 동일 head의 필수 CI/Codex, 구체 지적 처리와 정상 병합/동기화/브랜치 정리는 별도 미완료 조건이다. 생산 앱의 선언 저장 후 프로세스 종료/재실행은 원래 DB 쓰기0 정책상 미실행이다. 원문 source/식별자/시각, 설치/환경 자료와 개발 중 이미지는 비공개로 보존하며 active 계획을 미리 completed로 옮기지 않는다.
 
-## PR 리뷰 후 읽기 복원 수정 검증 중
+## PR 리뷰 뒤 삭제 취소와 읽기 복원
 
-삭제 확인 취소/준비 실패에서 새 선언 reader를 다시 연결하지 않아 펼침이 빈 상태로 남는 지적을 수정했다. 선언 읽기 전용 epoch만 갱신하며 기존 토큰/동의는 영구 폐기하고 새 읽기만 복원한다. 기존 부모 query/generation, 다른 펼침과 삭제 실행 중 취소 계약은 유지한다. 원래 재현5개는4개 RED 뒤 동일 source GREEN, 전체 feature386개와 공식 전체 verify는 통과했다. 최신 실제 장치와 B2 계측은 아직 미완료이며 앞선140행은 a639 중간 B1로 보존한다. 수정 후 결과나 최신 리뷰 완료를 앞선 성공으로 대신하지 않는다.
+삭제 요청은 옛 선언 reader와 token/동의를 영구 폐기한다. 리뷰 전에는 같은 source/generation의 펼침 Flow가 유지된 채 reader만 revoked라서 삭제 확인 취소나 준비 실패 뒤 본문이 사라졌다. [최소 수정](../../feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt)은 선언 읽기만의 epoch를 갱신한다. 현재 full source/generation/STARTED host/live P+UX가 맞는 안전한 PREPARING/CONFIRMING 취소와 준비 실패 뒤에만 새 reader/query를 연결한다. Idle/Failed를 먼저 게시하고 새 읽기를 시작하며 옛 저장 의도는 재생하지 않는다. 이미 준비 실패에서 복원한 action의 안내를 나중에 닫아도 새 동의를 다시 폐기하지 않는다.
+
+삭제 작업이 terminal Failed를 발행한 뒤 안내를 명시적으로 닫으면 현재 context에서 새 읽기를 한 번 허용한다. 이는 예외 때 COMMIT 결과를 확정하는 동작이 아니라 현재 저장 원형을 다시 읽는 동작이다. Missing/관찰된 sourceAbsent/Deleted는 재조회하지 않는다. DELETING 중 명시 취소가 job과 commit predicate를 폐기하는 기존 계약은 유지하며, COMMIT/응답이 불확실한 취소에 자동 읽기를 만들지 않는다. 이 경우 기존 부모 이력 결과와 사용자의 명시적인 펼침 재열람으로 돌아간다. 부모 query/generation, 기존 네 펼침 및 저장소 계약을 바꾸지 않았다.
+
+[원래 focused JVM 재현](../../feature/home/src/test/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryCourseCompletionDeletionBoundaryTest.kt)은 실제5개 중4실패/1통과에서 같은 source 바이트의5통과로 바뀌었고 [추가 guard](../../feature/home/src/test/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryCourseCompletionDeletionRecoveryGuardTest.kt)와 기존 취소 검사를 포함한 feature386개가 통과했다. 포맷 전 이 source 동일 GREEN을 확보했고 뒤의 줄바꿈 수정은 기대를 바꾸지 않았다. 최종 d1bd59의 전체 verify와 A6/B 양 테마3/C 양 테마1 및 최종 B2를 위 결과로 구분해 확인했다. [원래 지적 답글](https://github.com/HanGilLab/Android/pull/69#discussion_r4433638300)과 native 해결을 확인했으며 d1bd59 Codex는 completed/no findings였다. CI는 진행 중이었고 이 문서 갱신 head의 필수 CI/Codex와 정상 병합은 다시 확인해야 한다.
+
+fresh process/Activity 조건은 각 metric 전에 앱 프로세스를 외부에서 새로 시작했다는 뜻이며 기기 cold boot를 동일하게 통제했다는 뜻이 아니다. 검증/빌드/AVD 재시작을 사이에 거쳤고 OS/서비스 부하, 장치 uptime과 캐시/컴파일 프로필 동등성은 입증하지 못했다. 같은 기록 입력/계측/가용 영역과 명시한 조건의 관측값으로만 해석한다.
