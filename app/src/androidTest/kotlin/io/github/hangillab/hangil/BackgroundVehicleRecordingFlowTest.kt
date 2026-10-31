@@ -72,6 +72,9 @@ class BackgroundVehicleRecordingFlowTest {
     private val context get() = instrumentation.targetContext
     private val arguments get() = InstrumentationRegistry.getArguments()
     private lateinit var mainActivity: MainActivity
+
+    // Accessibility window/package null samples only; never an SDK event-loss count.
+    private var foregroundNullSamples = 0L
     private val evidence by lazy {
         File(context.cacheDir, "screenshots/native-background-recording-${UUID.randomUUID()}").apply { check(mkdirs()) }
     }
@@ -105,7 +108,7 @@ class BackgroundVehicleRecordingFlowTest {
                 val beforeDrive = observations(graph, source.sessionId).lastOrNull()?.id ?: 0
                 phase("BG_RECORDING_AWAIT_D")
                 awaitStoredGear(graph, source.sessionId, GearPosition.DRIVE, beforeDrive)
-                assertNavigationStillForeground()
+                assertNavigationStillForeground(graph, active)
                 assertActiveOwnership(graph, active)
                 capture("actual-navigation-drive-appended")
                 writeProof("drive-appended-with-navigation", graph, source.sessionId)
@@ -113,7 +116,7 @@ class BackgroundVehicleRecordingFlowTest {
                 val beforePark = observations(graph, source.sessionId).lastOrNull()?.id ?: 0
                 phase("BG_RECORDING_AWAIT_P")
                 awaitStoredGear(graph, source.sessionId, GearPosition.PARK, beforePark)
-                assertNavigationStillForeground()
+                assertNavigationStillForeground(graph, active)
                 assertActiveOwnership(graph, active)
                 capture("actual-navigation-park-appended")
                 writeProof("park-appended-with-navigation", graph, source.sessionId)
@@ -665,10 +668,14 @@ class BackgroundVehicleRecordingFlowTest {
 
     private fun navigationPackage() = checkNotNull(arguments.getString("expectedNavigationPackage"))
 
-    private fun packageNow() =
-        instrumentation.uiAutomation.rootInActiveWindow
-            ?.packageName
-            ?.toString()
+    private fun packageNow(): String? {
+        val observed =
+            instrumentation.uiAutomation.rootInActiveWindow
+                ?.packageName
+                ?.toString()
+        if (observed == null) foregroundNullSamples += 1
+        return observed
+    }
 
     private fun awaitPackage(expected: String) {
         val start = SystemClock.elapsedRealtime()
@@ -712,9 +719,34 @@ class BackgroundVehicleRecordingFlowTest {
         assertTrue("전환 뒤에도 실제 내비 전면이 유지돼야 합니다", packageNow() == navigationPackage())
     }
 
-    private fun assertNavigationStillForeground() {
-        assertTrue("실제 기본 내비 전면을 유지해야 합니다", packageNow() == navigationPackage())
-        assertTrue("내비 전면에서 Main은 STARTED 아래여야 합니다", mainState() < Lifecycle.State.STARTED)
+    /** Unknown accessibility roots are retried, never replaced with the expected package. */
+    private suspend fun assertNavigationStillForeground(
+        graph: RecordingTestEntryPoint,
+        active: BackgroundRecordingState.Active,
+    ) {
+        val expected = navigationPackage()
+        val first = packageNow()
+        if (first != null) {
+            assertTrue("관찰한 실제 전면 package가 지정한 내비여야 합니다", first == expected)
+            assertTrue("내비 전면에서 Main은 STARTED 아래여야 합니다", mainState() < Lifecycle.State.STARTED)
+            assertActiveOwnership(graph, active)
+            return
+        }
+        phase("BG_RECORDING_NAVI_FOREGROUND_NULL_REOBSERVING")
+        withTimeout(20_000) {
+            while (true) {
+                assertTrue("전면 미확인 재관찰 중에도 Main은 STARTED 아래여야 합니다", mainState() < Lifecycle.State.STARTED)
+                assertActiveOwnership(graph, active)
+                delay(100)
+                val observed = packageNow()
+                if (observed != null) {
+                    assertTrue("관찰한 다른 package를 내비 전면으로 대체하면 안 됩니다", observed == expected)
+                    assertTrue("내비 전면 확인 시 Main은 STARTED 아래여야 합니다", mainState() < Lifecycle.State.STARTED)
+                    assertActiveOwnership(graph, active)
+                    return@withTimeout
+                }
+            }
+        }
     }
 
     private fun mainState(): Lifecycle.State {
@@ -815,7 +847,9 @@ class BackgroundVehicleRecordingFlowTest {
         val proof =
             JSONObject()
                 .put("theme", themeKey())
-                .put("foreground_package", packageNow())
+                .put("foreground_package", packageNow() ?: JSONObject.NULL)
+                .put("foreground_null_samples", foregroundNullSamples)
+                .put("foreground_null_sample_scope", "Accessibility window/package observations only; not missing SDK events")
                 .put("main_lifecycle", mainState().name)
                 .put("native_service_count", foregroundServices().size)
                 .put("native_foreground_service_count", foregroundServices().count { it.foreground })
