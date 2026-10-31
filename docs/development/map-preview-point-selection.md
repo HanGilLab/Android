@@ -43,7 +43,7 @@ Q1/Q3는 정렬한30개 중 아래15개와 위15개의 중앙값이며 IQR은 Q3
 
 외부 실행자는 원래 활성 세션 없음과 SQLite 전체 값/자료형/순서/sequence, 권한/runtime/글자/테마 등 설정을 먼저 보존한다. 제품 변경 전 고정 harness로 baseline을 실행하고 완료 원값과 설치 APK를 확인한 뒤 제품을 바꾼다. 같은 원본과 환경에서 comparison을 실행해 baseline hash/contract/catalog/source/environment 일치를 확인한다. 완료 원값을 덮거나 유리한 표본만 새로 고르지 않는다.
 
-별도 실제 선택 시나리오는 `MapPointSelectionFlowTest`의 `manualMapPointSelection=true`, `expectedFontScale=1.0` 또는 `1.3`, `expectedDark=false` 또는 `true`를 명시한다. 원래 준비/기록을 바꾸지 않고 실제 SDK P에서 현재 세 지점, native filter/설명/카메라, 화면 소유권과 외부 DDS D/P를 확인한다. 정상 실행/실패/미실행과 합성 JVM 경계/실제 SDK 결과는 [작업 계획](../plans/active/2026-10-31-map-preview-point-selection.md), PR과 CI에서 구분한다. 독립 UX/SDK 오류 주입과 다른 코스의 실제 UI 실행은 별도 범위다.
+별도 실제 선택 시나리오는 `MapPointSelectionFlowTest`의 `manualMapPointSelection=true`, `expectedFontScale=1.0` 또는 `1.3`, `expectedDark=false` 또는 `true`를 명시한다. 원래 준비/기록을 바꾸지 않고 실제 SDK P에서 현재 세 지점, native filter/설명/카메라, 화면 소유권과 외부 DDS D/P를 확인한다. 정상 실행/실패/미실행과 합성 JVM 경계/실제 SDK 결과는 [작업 계획](../plans/completed/2026-10-31-map-preview-point-selection.md), PR과 CI에서 구분한다. 독립 UX/SDK 오류 주입과 다른 코스의 실제 UI 실행은 별도 범위다.
 
 
 ## 이번 실제 검증과 실패 구분
