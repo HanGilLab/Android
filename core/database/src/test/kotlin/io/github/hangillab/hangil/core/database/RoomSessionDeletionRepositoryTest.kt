@@ -63,6 +63,7 @@ class RoomSessionDeletionRepositoryTest {
                     target.memoVersion,
                 )
                 assertEquals(2, checks)
+                assertEquals(database.vehicleRecordingRunDao().forSession(source.sessionId).map { it.run() }, target.recordingRuns)
                 assertEquals(before, snapshot(database))
             }
         }
@@ -70,10 +71,11 @@ class RoomSessionDeletionRepositoryTest {
     @Test fun `a valid empty observation collection and absent memo remain explicit confirmation values`() =
         runBlocking {
             withDatabase { database ->
-                val source = seed(database, observationCount = 0)
+                val source = seed(database, observationCount = 0, recordingRun = false)
                 val target = ready(RoomSessionDeletionRepository(database).prepare(source) { true })
                 assertEquals(0L, target.observationCount)
                 assertEquals(null, target.memoVersion)
+                assertTrue(target.recordingRuns.isEmpty())
                 assertEquals(SessionDeletionResult.Deleted, RoomSessionDeletionRepository(database).delete(target) { true })
                 assertEquals(null, database.practiceSessionDao().find(source.sessionId))
             }
@@ -141,9 +143,10 @@ class RoomSessionDeletionRepositoryTest {
                 assertEquals(null, database.practiceSessionDao().find(source.sessionId))
                 assertEquals(0L, database.vehicleObservationDao().count(source.sessionId))
                 assertEquals(null, database.sessionMemoDao().find(source.sessionId))
+                assertTrue(database.vehicleRecordingRunDao().forSession(source.sessionId).isEmpty())
                 assertEquals(unrelated, snapshot(database, excluding = source.sessionId))
                 assertEquals(schema, schema(database.openHelper.writableDatabase))
-                assertEquals(4, database.openHelper.writableDatabase.version)
+                assertEquals(5, database.openHelper.writableDatabase.version)
                 database.openHelper.writableDatabase
                     .query("PRAGMA foreign_key_check")
                     .use { assertEquals(0, it.count) }
@@ -310,7 +313,7 @@ class RoomSessionDeletionRepositoryTest {
                 val target = ready(repository.prepare(source) { true })
                 val before = snapshot(database)
                 val sqlite = database.openHelper.writableDatabase
-                for (table in listOf("practice_session", "vehicle_observation", "session_memo")) {
+                for (table in listOf("practice_session", "vehicle_observation", "session_memo", "vehicle_recording_run")) {
                     sqlite.execSQL(
                         "CREATE TRIGGER reject_deletion_fixture AFTER DELETE ON $table " +
                             "BEGIN SELECT RAISE(ABORT, 'fixture delete failure'); END",
@@ -628,6 +631,7 @@ class RoomSessionDeletionRepositoryTest {
         ended: Long? = 2_000,
         observationCount: Int = 2,
         memo: String? = null,
+        recordingRun: Boolean = true,
     ): PracticeSession {
         database.practiceSessionDao().insert(
             PracticeSessionEntity(
@@ -659,6 +663,19 @@ class RoomSessionDeletionRepositoryTest {
         if (memo != null) {
             assertTrue(RoomSessionMemoRepository(database).save(id, memo, null) { true } is SessionMemoWriteResult.Saved)
         }
+        if (recordingRun) {
+            database.vehicleRecordingRunDao().insert(
+                VehicleRecordingRunEntity(
+                    "$id-run",
+                    id,
+                    "process-fixture",
+                    started,
+                    ended,
+                    if (ended == null) "OPEN" else "STOPPED",
+                    if (ended == null) id else null,
+                ),
+            )
+        }
         return checkNotNull(database.practiceSessionDao().find(id)).session()
     }
 
@@ -689,9 +706,11 @@ class RoomSessionDeletionRepositoryTest {
             "practice_session" to "rowId",
             "vehicle_observation" to "id",
             "session_memo" to "sessionId",
+            "vehicle_recording_run" to "runId",
             "sqlite_sequence" to "name",
         ).associate { (table, order) ->
-            val excludesSession = excluding != null && table in listOf("practice_session", "vehicle_observation", "session_memo")
+            val excludesSession =
+                excluding != null && table in listOf("practice_session", "vehicle_observation", "session_memo", "vehicle_recording_run")
             val where = if (excludesSession) " WHERE sessionId != ?" else ""
             val args: Array<Any?> = if (excludesSession) arrayOf(excluding) else emptyArray()
             table to sqlite.query("SELECT * FROM $table$where ORDER BY $order", args).use(::readRows)

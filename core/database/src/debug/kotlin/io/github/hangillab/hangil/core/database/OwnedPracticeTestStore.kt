@@ -95,8 +95,12 @@ class OwnedPracticeTestStore private constructor(
                 val opened =
                     Room
                         .databaseBuilder(application, PreparationDatabase::class.java, reservation.name)
-                        .addMigrations(PreparationMigration1To2, PreparationMigration2To3, PreparationMigration3To4)
-                        .build()
+                        .addMigrations(
+                            PreparationMigration1To2,
+                            PreparationMigration2To3,
+                            PreparationMigration3To4,
+                            PreparationMigration4To5,
+                        ).build()
                 database = opened
                 opened.openHelper.writableDatabase
                 return OwnedPracticeTestStore(opened, reservation)

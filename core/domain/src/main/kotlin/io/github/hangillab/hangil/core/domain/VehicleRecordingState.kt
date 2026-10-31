@@ -1,6 +1,6 @@
-package io.github.hangillab.hangil.feature.home
+package io.github.hangillab.hangil.core.domain
 
-/** Foreground observation activity, not proof of complete SDK event delivery or a saved route. */
+/** Observation activity, not proof of complete SDK event delivery or a saved route. */
 sealed interface VehicleRecordingState {
     data object Paused : VehicleRecordingState
 

@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
   <string name="app_name">한길졸업</string>
+    <string name="background_recording_channel">차량 상태 기록</string>
+    <string name="background_recording_notification_title">차량 상태를 기록하고 있어요</string>
+    <string name="background_recording_notification_body">한길로 돌아가 기록 상태를 확인할 수 있어요.</string>
 </resources>

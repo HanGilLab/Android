@@ -8,6 +8,8 @@ import io.github.hangillab.hangil.core.domain.NextPracticeRepository
 import io.github.hangillab.hangil.core.domain.PracticeCatalog
 import io.github.hangillab.hangil.core.domain.PracticeRepository
 import io.github.hangillab.hangil.core.domain.PracticeSessionRepository
+import io.github.hangillab.hangil.core.domain.RecordingController
+import io.github.hangillab.hangil.core.domain.RecordingRunRepository
 import io.github.hangillab.hangil.core.domain.SessionMemoRepository
 import io.github.hangillab.hangil.core.domain.VehicleGateway
 import io.github.hangillab.hangil.core.domain.VehicleObservationRepository
@@ -19,6 +21,10 @@ interface RecordingTestEntryPoint {
     fun sessions(): PracticeSessionRepository
 
     fun observations(): VehicleObservationRepository
+
+    fun recording(): RecordingController
+
+    fun recordingRuns(): RecordingRunRepository
 
     fun vehicle(): VehicleGateway
 
