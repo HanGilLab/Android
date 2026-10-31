@@ -71,6 +71,8 @@ import io.github.hangillab.hangil.feature.home.R as HomeR
  * Real History Route, ViewModel, lifecycle and native semantics receive synthetic inputs only.
  * This debug catalog host never opens the application graph, SDK, Room or real user data.
  * Silent live changes model a delayed state delivery boundary, not an actual DDS timing trace.
+ * Fresh synthetic D/P notifications are emitted separately after the silent denial assertions;
+ * a value-only return to P is not treated as a delivered SDK recovery event.
  * Passing this test does not prove SDK collection, a physical drive or navigation integration.
  */
 @RunWith(AndroidJUnit4::class)
@@ -265,9 +267,12 @@ class SessionHistoryObservationBoundaryTest {
         fixture: Fixture,
         action: () -> Boolean,
     ) {
+        lateinit var original: SessionHistoryUiState.Ready
+        val beforeOpens = fixture.observations.opens.get()
         compose.runOnIdle {
-            val original = fixture.model.uiState.value
-            assertTrue("옛 Ready 표시가 남은 경계에서 시작해야 합니다", original is SessionHistoryUiState.Ready)
+            val current = fixture.model.uiState.value
+            assertTrue("옛 Ready 표시가 남은 경계에서 시작해야 합니다", current is SessionHistoryUiState.Ready)
+            original = current as SessionHistoryUiState.Ready
             fixture.liveVehicle.setWithoutEmission(parked().copy(gear = VehicleReading.Available(GearPosition.DRIVE)))
             assertFalse("방출하지 않아도 실제 live 값은 D여야 합니다", fixture.model.canRead())
             assertEquals("SDK 표시 지연을 합성한 상태여야 합니다", original, fixture.model.uiState.value)
@@ -277,7 +282,35 @@ class SessionHistoryObservationBoundaryTest {
             fixture.parentProbe.intValue++
         }
         compose.waitForIdle()
-        compose.waitUntil(TIMEOUT) { fixture.model.uiState.value is SessionHistoryUiState.Ready }
+        compose.waitUntil(TIMEOUT) { fixture.observations.active.get() == 0 }
+        compose.runOnIdle {
+            assertFalse(
+                "값만 P로 바꿔도 거부된 옛 원본 세대가 다시 허용되면 안 됩니다",
+                fixture.model.canRevealStoredObservations(original.session.sessionId, original.generation),
+            )
+            action()
+        }
+        compose.waitForIdle()
+        assertObservationDetailsAbsent()
+        assertEquals("새 알림 전 옛 행동은 관찰 조회를 열면 안 됩니다", beforeOpens, fixture.observations.opens.get())
+        assertEquals("거부한 관찰 구독은 정리돼 있어야 합니다", 0, fixture.observations.active.get())
+
+        // The backing StateFlow still holds P. Deliver distinct fixture D and P notifications
+        // in separate idle turns, rather than assuming a silent P value can wake a collector.
+        compose.runOnIdle {
+            fixture.liveVehicle.emitValue(parked().copy(gear = VehicleReading.Available(GearPosition.DRIVE)))
+        }
+        compose.waitForIdle()
+        compose.waitUntil(TIMEOUT) { fixture.model.uiState.value == SessionHistoryUiState.Locked }
+        assertObservationDetailsAbsent()
+        assertEquals("새 합성 D 알림에서도 관찰 구독은 없어야 합니다", 0, fixture.observations.active.get())
+        compose.runOnIdle { fixture.liveVehicle.emitValue(parked()) }
+        compose.waitForIdle()
+        waitReady(fixture, original.session)
+        assertTrue(
+            "새 합성 P 알림은 거부된 세대와 다른 원본 세대를 만들어야 합니다",
+            (fixture.model.uiState.value as SessionHistoryUiState.Ready).generation != original.generation,
+        )
         assertClosed(fixture)
     }
 
@@ -343,6 +376,19 @@ class SessionHistoryObservationBoundaryTest {
                 nodes("review_ready").isEmpty() && nodes("review_failed").isEmpty() &&
                 nodes("review_empty").isEmpty() && nodes("review_loading").isEmpty() && fixture.observations.active.get() == 0
         }
+    }
+
+    private fun assertObservationDetailsAbsent() {
+        listOf(
+            "history_observation_content",
+            "review_ready",
+            "review_failed",
+            "review_empty",
+            "review_loading",
+            "review_previous",
+            "review_next",
+            "review_retry",
+        ).forEach { tag -> assertTrue("거부된 상세 행동은 화면에 남으면 안 됩니다 ($tag)", nodes(tag).isEmpty()) }
     }
 
     private fun invokeFrozen(vararg actions: () -> Boolean) {
@@ -412,6 +458,11 @@ class SessionHistoryObservationBoundaryTest {
 
         fun setWithoutEmission(value: T) {
             liveValue = value
+        }
+
+        fun emitValue(value: T) {
+            liveValue = value
+            emitted.value = value
         }
     }
 
