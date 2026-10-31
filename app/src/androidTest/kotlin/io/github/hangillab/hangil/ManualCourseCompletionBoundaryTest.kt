@@ -11,6 +11,8 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -360,14 +362,25 @@ class ManualCourseCompletionBoundaryTest {
             waitTag("history_course_completion_absent")
         }
 
+        private fun positionedAction(tag: String): SemanticsNodeInteraction {
+            val node = compose.onNodeWithTag(tag, useUnmergedTree = true)
+            // AlertDialog footer actions are already visible and have no scroll parent. The
+            // history body keeps its required real scroll path; a missing scroll action there fails.
+            if (tag != "history_course_completion_confirm" && tag != "history_course_completion_cancel") {
+                node.performScrollTo()
+            }
+            return node.assertIsDisplayed()
+        }
+
         fun touch(tag: String) {
             requireHost()
-            compose.onNodeWithTag(tag, useUnmergedTree = true).performScrollTo().performClick()
+            positionedAction(tag).performClick()
             compose.waitForIdle()
         }
 
         fun action(tag: String): () -> Boolean {
-            compose.onNodeWithTag(tag, useUnmergedTree = true).performScrollTo()
+            requireHost()
+            positionedAction(tag)
             compose.waitForIdle()
             return checkNotNull(
                 nodes(tag)
