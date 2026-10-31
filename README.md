@@ -206,7 +206,7 @@ fun allowsPracticeInteraction(
         vehicle.toDrivingRestrictions(restrictions.uxRestrictionState).allowsDetailedInteraction
 ```
 
-[표시한 원본과 조회 세대를 최신 reader에서 재확인](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L114-L127)
+[표시한 원본과 조회 세대를 최신 reader에서 재확인](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L118-L131)
 
 ```kotlin
 fun canRevealSummary(
@@ -269,7 +269,7 @@ SideEffect {
 
 **해결**
 
-확인 조회에서 종료 세션 전체 스냅샷, 연결 관찰 수, 메모 버전(null 포함)과 기록 실행 구간 전체를 고정했습니다. 명시 확인은 하나의 nonce에 연결하고 최신 P/UX, reader/조회 세대/선택 원본과 STARTED 소유권을 다시 확인합니다. Room 트랜잭션 안에서 같은 스냅샷을 재비교한 뒤 부모 세션을 지우고, 기존 FK CASCADE로 연결 자료를 함께 삭제합니다. 쓰기 전후에 허용 조건과 취소를 확인해 commit 전에 거부되면 연결 삭제도 롤백합니다.
+확인 조회에서 종료 세션 전체 스냅샷, 연결 관찰 수, 메모 버전(null 포함), 기록 실행 구간과 사용자 마무리 선언 전체를 고정했습니다. 명시 확인은 하나의 nonce에 연결하고 최신 P/UX, reader/조회 세대/선택 원본과 STARTED 소유권을 다시 확인합니다. Room 트랜잭션 안에서 같은 스냅샷을 재비교한 뒤 부모 세션을 지우고, 기존 FK CASCADE로 연결 자료를 함께 삭제합니다. 쓰기 전후에 허용 조건과 취소를 확인해 commit 전에 거부되면 연결 삭제도 롤백합니다.
 
 자기 삭제로 행이 사라진 통지는 처리 중인 요청에 연결해 보존하고 저장소의 명시적 결과를 기다립니다. 이미 없음, 진행 중, 변경 충돌과 차단은 완료로 바꾸지 않습니다.
 
@@ -285,7 +285,7 @@ UI 버튼 잠금이나 프로세스 내부 Mutex만으로는 다른 저장 경�
 
 **코드**
 
-[확인 조회에서 고정하는 종료 원본과 연결 자료 버전](core/domain/src/main/kotlin/io/github/hangillab/hangil/core/domain/SessionDeletionTarget.kt#L4-L9)
+[확인 조회에서 고정하는 종료 원본과 연결 자료 버전](core/domain/src/main/kotlin/io/github/hangillab/hangil/core/domain/SessionDeletionTarget.kt#L4-L10)
 
 ```kotlin
 data class SessionDeletionTarget(
@@ -293,10 +293,11 @@ data class SessionDeletionTarget(
     val observationCount: Long,
     val memoVersion: String?,
     val recordingRuns: List<VehicleRecordingRun> = emptyList(),
+    val completionDeclaration: CourseCompletionDeclaration? = null,
 )
 ```
 
-[같은 확인 nonce의 중복 실행과 바뀐 선택을 차단](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L319-L337)
+[같은 확인 nonce의 중복 실행과 바뀐 선택을 차단](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L370-L388)
 
 ```kotlin
 fun confirmDeletion(nonce: Long): Boolean {
@@ -320,7 +321,7 @@ fun confirmDeletion(nonce: Long): Boolean {
 }
 ```
 
-[쓰기 순간의 job, reader/조회/선택과 최신 차량 조건 재확인](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L475-L513)
+[쓰기 순간의 job, reader/조회/선택과 최신 차량 조건 재확인](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L526-L564)
 
 ```kotlin
 private fun canCommitDeletion(
@@ -394,7 +395,7 @@ override suspend fun delete(
     }
 ```
 
-[쓰기 전후 허용 조건과 코루틴 취소 확인](core/database/src/main/kotlin/io/github/hangillab/hangil/core/database/RoomSessionDeletionRepository.kt#L89-L94)
+[쓰기 전후 허용 조건과 코루틴 취소 확인](core/database/src/main/kotlin/io/github/hangillab/hangil/core/database/RoomSessionDeletionRepository.kt#L90-L95)
 
 ```kotlin
 private suspend fun requirePermission(canProceed: () -> Boolean) {
@@ -405,7 +406,7 @@ private suspend fun requirePermission(canProceed: () -> Boolean) {
 }
 ```
 
-[자기 삭제의 행 소실 통지를 결과 도착 전까지 보존](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L531-L547)
+[자기 삭제의 행 소실 통지를 결과 도착 전까지 보존](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L582-L598)
 
 ```kotlin
 private fun preserveDeletionReceiptLocked(
@@ -427,7 +428,7 @@ private fun preserveDeletionReceiptLocked(
 }
 ```
 
-[저장소가 반환한 명시적 삭제 결과에 따른 완료/실패 분기](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L423-L437)
+[저장소가 반환한 명시적 삭제 결과에 따른 완료/실패 분기](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L474-L488)
 
 ```kotlin
 when (result) {

@@ -497,6 +497,7 @@ class SessionDeletionFlowTest {
                                 store.observations,
                                 UnexpectedHistoryMemoRepository,
                                 UnexpectedHistoryRecordingRunRepository,
+                                UnexpectedHistoryCourseCompletionRepository,
                             ) as T
                         }
                     }

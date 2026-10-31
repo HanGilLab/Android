@@ -10,8 +10,9 @@ import androidx.room.RoomDatabase
         VehicleObservationEntity::class,
         SessionMemoEntity::class,
         VehicleRecordingRunEntity::class,
+        CourseCompletionDeclarationEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 internal abstract class PreparationDatabase : RoomDatabase() {
@@ -24,4 +25,6 @@ internal abstract class PreparationDatabase : RoomDatabase() {
     abstract fun sessionMemoDao(): SessionMemoDao
 
     abstract fun vehicleRecordingRunDao(): VehicleRecordingRunDao
+
+    abstract fun courseCompletionDeclarationDao(): CourseCompletionDeclarationDao
 }

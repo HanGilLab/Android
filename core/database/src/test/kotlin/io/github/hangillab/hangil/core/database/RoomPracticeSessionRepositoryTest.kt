@@ -39,8 +39,13 @@ class RoomPracticeSessionRepositoryTest {
     private fun open(name: String) =
         Room
             .databaseBuilder(RuntimeEnvironment.getApplication(), PreparationDatabase::class.java, name)
-            .addMigrations(PreparationMigration1To2, PreparationMigration2To3, PreparationMigration3To4, PreparationMigration4To5)
-            .build()
+            .addMigrations(
+                PreparationMigration1To2,
+                PreparationMigration2To3,
+                PreparationMigration3To4,
+                PreparationMigration4To5,
+                PreparationMigration5To6,
+            ).build()
 
     @Test fun `version one migration preserves preparation and permits new sessions`() =
         runBlocking {
@@ -91,7 +96,7 @@ class RoomPracticeSessionRepositoryTest {
                 val repository = RoomPracticeSessionRepository(it, catalog)
                 assertTrue(repository.observeSessions().first().isEmpty())
                 assertTrue(repository.start(practice, 1_000) { true } is SessionStartResult.Started)
-                assertEquals(5, it.openHelper.writableDatabase.version)
+                assertEquals(6, it.openHelper.writableDatabase.version)
                 assertEquals(null, RoomSessionMemoRepository(it).observe("absent-fixture").first())
             }
         }

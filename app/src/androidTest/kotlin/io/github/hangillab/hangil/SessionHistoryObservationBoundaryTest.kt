@@ -216,6 +216,7 @@ class SessionHistoryObservationBoundaryTest {
                             fixture.observations,
                             UnexpectedHistoryMemoRepository,
                             UnexpectedHistoryRecordingRunRepository,
+                            UnexpectedHistoryCourseCompletionRepository,
                         ) as T
                     }
                 }

@@ -83,7 +83,8 @@ internal class RoomSessionDeletionRepository
             val memo = database.sessionMemoDao().find(session.sessionId)?.memo()
             val observationCount = database.vehicleObservationDao().count(session.sessionId)
             val runs = database.vehicleRecordingRunDao().forSession(session.sessionId).map { it.run() }
-            return SessionDeletionTarget(session, observationCount, memo?.version, runs)
+            val declaration = database.courseCompletionDeclarationDao().find(session.sessionId)?.declaration()
+            return SessionDeletionTarget(session, observationCount, memo?.version, runs, declaration)
         }
 
         private suspend fun requirePermission(canProceed: () -> Boolean) {

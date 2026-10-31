@@ -3,6 +3,7 @@ package io.github.hangillab.hangil
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
+import io.github.hangillab.hangil.core.domain.CourseCompletionRepository
 import io.github.hangillab.hangil.core.domain.DrivingRestrictionsProvider
 import io.github.hangillab.hangil.core.domain.NextPracticeRepository
 import io.github.hangillab.hangil.core.domain.PracticeCatalog
@@ -35,6 +36,8 @@ interface RecordingTestEntryPoint {
     fun catalog(): PracticeCatalog
 
     fun memos(): SessionMemoRepository
+
+    fun courseCompletions(): CourseCompletionRepository
 
     fun restrictions(): DrivingRestrictionsProvider
 }

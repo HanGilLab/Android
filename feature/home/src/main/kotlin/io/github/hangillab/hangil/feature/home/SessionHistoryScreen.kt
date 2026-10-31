@@ -213,6 +213,26 @@ fun SessionHistoryRoute(
                                     }
                                 }
                             },
+                            courseCompletion = {
+                                key(current.session, current.generation, clickOwner.first) {
+                                    val canKeepOpen =
+                                        remember(clickOwner.first, lifecycle) {
+                                            { clickOwner.first.get() && lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) }
+                                        }
+                                    ParkedPanel {
+                                        ParkedDisclosure(
+                                            stringResource(R.string.course_completion_heading),
+                                            {
+                                                canKeepOpen() &&
+                                                    viewModel.canRevealCourseCompletion(current.session.sessionId, current.generation)
+                                            },
+                                            Modifier.testTag("history_course_completion"),
+                                        ) {
+                                            HistoryCourseCompletionRoute(current.session, current.generation, canKeepOpen, viewModel)
+                                        }
+                                    }
+                                }
+                            },
                             onDelete = {
                                 if (clickOwner.first.get() &&
                                     viewModel.requestDeletion(current.session.sessionId, current.generation) { clickOwner.first.get() }
@@ -269,6 +289,7 @@ private fun HistoryRecord(
     observations: @Composable () -> Unit,
     memo: @Composable () -> Unit,
     recordingRuns: @Composable () -> Unit,
+    courseCompletion: @Composable () -> Unit,
     onDelete: () -> Unit,
 ) {
     val session = state.session
@@ -338,6 +359,7 @@ private fun HistoryRecord(
             )
         }
         recordingRuns()
+        courseCompletion()
         ParkedButton(
             onClick = onDelete,
             prominent = false,
@@ -511,6 +533,19 @@ private fun HistoryDeletionContent(
 
 @Composable
 private fun HistoryDeletionTarget(target: SessionDeletionTarget) {
+    Text(
+        stringResource(
+            if (target.completionDeclaration ==
+                null
+            ) {
+                R.string.history_delete_completion_absent
+            } else {
+                R.string.history_delete_completion_present
+            },
+        ),
+        Modifier.testTag("history_delete_completion_status"),
+        style = MaterialTheme.typography.bodyLarge,
+    )
     Text(
         stringResource(R.string.history_delete_observation_count, target.observationCount),
         Modifier.testTag("history_delete_observation_count"),

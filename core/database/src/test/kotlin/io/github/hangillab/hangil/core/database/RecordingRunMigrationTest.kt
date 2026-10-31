@@ -21,10 +21,10 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class RecordingRunMigrationTest {
-    @Test fun `every supported legacy version reaches five without rewriting old values types order or sequences`() =
+    @Test fun `every supported legacy version reaches six without rewriting old values types order or sequences`() =
         runBlocking {
             val context = RuntimeEnvironment.getApplication()
-            for (version in 1..4) {
+            for (version in 1..5) {
                 val name = "recording-migration-fixture-v$version.db"
                 context.deleteDatabase(name)
                 try {
@@ -32,9 +32,10 @@ class RecordingRunMigrationTest {
                     val database = open(name)
                     try {
                         val sqlite = database.openHelper.writableDatabase
-                        assertEquals(5, sqlite.version)
+                        assertEquals(6, sqlite.version)
                         for ((table, original) in before) assertEquals(original, readTable(sqlite, table))
                         assertTrue(RoomRecordingRunRepository(database).observe("active-fixture").first().isEmpty())
+                        assertEquals(null, RoomCourseCompletionRepository(database).observe("finished-fixture").first())
                         sqlite.query("PRAGMA foreign_key_check").use { assertEquals(0, it.count) }
                     } finally {
                         database.close()
@@ -80,8 +81,13 @@ class RecordingRunMigrationTest {
     private fun open(name: String) =
         Room
             .databaseBuilder(RuntimeEnvironment.getApplication(), PreparationDatabase::class.java, name)
-            .addMigrations(PreparationMigration1To2, PreparationMigration2To3, PreparationMigration3To4, PreparationMigration4To5)
-            .build()
+            .addMigrations(
+                PreparationMigration1To2,
+                PreparationMigration2To3,
+                PreparationMigration3To4,
+                PreparationMigration4To5,
+                PreparationMigration5To6,
+            ).build()
 
     private fun createLegacy(
         name: String,
@@ -156,6 +162,14 @@ class RecordingRunMigrationTest {
                             arrayOf("finished-fixture", "Fixture memo", "11111111-1111-4111-8111-111111111111"),
                         )
                     }
+                    if (version >= 5) {
+                        insertRun(db, "preserved-run-first", "finished-fixture", null)
+                        insertRun(db, "preserved-run-second", "finished-fixture", null)
+                        db.execSQL(
+                            "UPDATE vehicle_recording_run SET status = 'INTERRUPTED', endedAtEpochMillis = NULL WHERE runId = ?",
+                            arrayOf("preserved-run-second"),
+                        )
+                    }
                 }
 
                 override fun onUpgrade(
@@ -182,6 +196,7 @@ class RecordingRunMigrationTest {
                     }
                     if (version >= 3) add("vehicle_observation")
                     if (version >= 4) add("session_memo")
+                    if (version >= 5) add("vehicle_recording_run")
                 }
             tables.associateWith { readTable(sqlite, it) }
         }
@@ -256,6 +271,7 @@ class RecordingRunMigrationTest {
                 "practice_session" -> "rowId"
                 "vehicle_observation" -> "id"
                 "session_memo" -> "sessionId"
+                "vehicle_recording_run" -> "rowid"
                 "sqlite_sequence" -> "name"
                 else -> error("Unknown fixture table")
             }

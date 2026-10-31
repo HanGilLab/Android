@@ -261,6 +261,7 @@ class SessionHistoryRecordingRunBoundaryTest {
                                 f.observations,
                                 f.memos,
                                 f.runs,
+                                UnexpectedHistoryCourseCompletionRepository,
                             ) as T
                         }
                     },

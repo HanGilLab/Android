@@ -154,7 +154,7 @@
 
     <string name="history_delete">이 기록 삭제</string>
     <string name="history_delete_title">기록을 삭제할까요?</string>
-    <string name="history_delete_warning">이 연습과 연결된 차량 관찰, 메모를\n이 기기에서 영구 삭제해요. 복구할 수 없어요.</string>
+    <string name="history_delete_warning">이 연습과 연결된 차량 관찰, 메모, 배경 실행과 마무리 선언을\n이 기기에서 영구 삭제해요. 복구할 수 없어요.</string>
     <string name="history_delete_observation_count">저장된 차량 관찰 %1$d개</string>
     <string name="history_delete_memo_present">내가 쓴 메모 있음</string>
     <string name="history_delete_memo_absent">내가 쓴 메모 없음</string>
@@ -213,4 +213,27 @@
     <string name="history_recording_run_interrupted">종료를 확인하지 못한 이전 실행이 있어요.</string>
     <string name="history_recording_run_previous">이전 실행</string>
     <string name="history_recording_run_next">다음 실행</string>
+    <string name="course_completion_heading">과정 마무리</string>
+    <string name="course_completion_source">사용자 마무리 선언</string>
+    <string name="course_completion_scope">선택한 연습에 연결된 마무리 선언이에요. 운전 능력을 인증하는 정보는 아니에요.</string>
+    <string name="course_completion_loading">마무리 선언을 확인하고 있어요…</string>
+    <string name="course_completion_absent">아직 마무리 선언이 없어요.</string>
+    <string name="course_completion_record">과정 마무리로 기록</string>
+    <string name="course_completion_confirm_title">과정 마무리를 기록할까요?</string>
+    <string name="course_completion_confirm_scope">내가 이 과정을 마무리했다는 선언을 남겨요. 운전 능력 인증이 아니며 기존 연습 기록은 그대로 보존해요.</string>
+    <string name="course_completion_cancel">취소</string>
+    <string name="course_completion_saving">마무리 선언을 저장하고 있어요…</string>
+    <string name="course_completion_declared">마무리 선언을 기록했어요.</string>
+    <string name="course_completion_already_declared">이미 기록된 마무리 선언이에요.</string>
+    <string name="course_completion_declared_at">선언 버튼 기록: %1$s</string>
+    <string name="course_completion_not_available">연습과 화면 상태를 확인한 뒤 기록할 수 있어요.</string>
+    <string name="course_completion_active">진행 중인 연습을 마무리한 뒤 기록할 수 있어요.</string>
+    <string name="course_completion_changed">선택한 연습을 다시 확인해 주세요.</string>
+    <string name="course_completion_blocked">주차와 화면 사용 조건을 다시 확인해 주세요.</string>
+    <string name="course_completion_read_failed">마무리 선언을 확인하지 못했어요.</string>
+    <string name="course_completion_write_unconfirmed">저장 결과를 확인하지 못했어요. 기록을 다시 불러와 주세요.</string>
+    <string name="course_completion_invalid_time">선언 시각을 확인하지 못했어요.</string>
+    <string name="course_completion_retry">다시 불러오기</string>
+    <string name="history_delete_completion_present">사용자 마무리 선언 있음</string>
+    <string name="history_delete_completion_absent">사용자 마무리 선언 없음</string>
 </resources>
