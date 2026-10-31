@@ -1,9 +1,11 @@
 package io.github.hangillab.hangil
 
 import android.os.Bundle
+import android.os.SystemClock
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.SemanticsActions
@@ -14,8 +16,12 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.hangillab.hangil.core.designsystem.HanGilTheme
@@ -40,10 +46,12 @@ import java.util.concurrent.atomic.AtomicBoolean
 import io.github.hangillab.hangil.feature.home.R as HomeR
 
 /**
- * Controlled real Compose/lifecycle regression checks with a synthetic controller, source and
- * live gate. No real SDK, service, Room, permission flow or screenshot is used. A true synthetic
- * request result means only that this fixture recorded the call, never native recording success.
- * These checks cover the current implementation; they do not claim a prior RED reproduction.
+ * Real Compose with controlled lifecycle, source, controller and live gate. The real Activity
+ * stays RESUMED; PAUSE/STOP/RESUME policy events come from an explicitly injected LifecycleRegistry,
+ * not successful OS ActivityScenario transitions. Actual Main STOP/return and native FGS receipt
+ * belong to BackgroundVehicleRecordingFlowTest. No real SDK, service, Room, permission flow or
+ * screenshot is used here. A true synthetic request result records a fixture call only, never
+ * native recording success. These checks do not claim a prior RED reproduction.
  */
 @RunWith(AndroidJUnit4::class)
 class BackgroundRecordingBoundaryTest {
@@ -52,17 +60,17 @@ class BackgroundRecordingBoundaryTest {
     @Test fun capturedEnableCannotReplayAcrossPauseResumeAndStop() =
         fixture { f ->
             val paused = clickAction(ENABLE)
-            compose.activityRule.scenario.moveToState(Lifecycle.State.STARTED)
+            moveLifecycle(f, Lifecycle.State.STARTED)
             invoke(paused)
-            compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+            moveLifecycle(f, Lifecycle.State.RESUMED)
             waitTag(ENABLE)
             invoke(paused)
             assertEquals(0, f.controller.requests.size)
 
             val stopped = clickAction(ENABLE)
-            compose.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
+            moveLifecycle(f, Lifecycle.State.CREATED)
             invoke(stopped)
-            compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+            moveLifecycle(f, Lifecycle.State.RESUMED)
             waitTag(ENABLE)
             invoke(stopped)
             assertEquals(0, f.controller.requests.size)
@@ -80,16 +88,16 @@ class BackgroundRecordingBoundaryTest {
             emit(f, BackgroundRecordingState.Active("controlled-lifecycle-run", requireNotNull(f.source.value).sessionId))
             waitTag(STOP)
             val pausedStop = clickAction(STOP)
-            compose.activityRule.scenario.moveToState(Lifecycle.State.STARTED)
+            moveLifecycle(f, Lifecycle.State.STARTED)
             invoke(pausedStop)
-            compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+            moveLifecycle(f, Lifecycle.State.RESUMED)
             waitTag(STOP)
             invoke(pausedStop)
             assertEquals(0, f.controller.stops.size)
             val stoppedStop = clickAction(STOP)
-            compose.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
+            moveLifecycle(f, Lifecycle.State.CREATED)
             invoke(stoppedStop)
-            compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+            moveLifecycle(f, Lifecycle.State.RESUMED)
             waitTag(STOP)
             invoke(stoppedStop)
             assertEquals(0, f.controller.stops.size)
@@ -199,9 +207,9 @@ class BackgroundRecordingBoundaryTest {
             assertTrue(guard(pending))
             assertEquals(1, f.controller.requests.size)
 
-            compose.activityRule.scenario.moveToState(Lifecycle.State.STARTED)
+            moveLifecycle(f, Lifecycle.State.STARTED)
             assertFalse(guard(pending))
-            compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+            moveLifecycle(f, Lifecycle.State.RESUMED)
             waitTag(STOP)
             assertFalse("복귀한 호스트는 이전 canStart에 새 RESUMED 소유권을 빌려주면 안 됩니다", guard(pending))
             assertEquals(1, f.controller.requests.size)
@@ -290,9 +298,9 @@ class BackgroundRecordingBoundaryTest {
                 invoke(oldStop)
                 assertEquals(expectedStops, f.controller.stops.toList())
                 compose.runOnIdle { f.allowed.set(true) }
-                compose.activityRule.scenario.moveToState(Lifecycle.State.STARTED)
+                moveLifecycle(f, Lifecycle.State.STARTED)
                 invoke(oldStop)
-                compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+                moveLifecycle(f, Lifecycle.State.RESUMED)
                 waitTag(STOP)
                 invoke(oldStop)
                 assertEquals("복귀한 호스트는 이전 정리 콜백을 되살리면 안 됩니다", expectedStops, f.controller.stops.toList())
@@ -317,7 +325,17 @@ class BackgroundRecordingBoundaryTest {
         )
         val f = Fixture()
         val activity = compose.activity
+        assertActualHostResumedAndForeground(activity)
+        val hostLeftResumed = AtomicBoolean(false)
+        val hostObserver =
+            LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP || event == Lifecycle.Event.ON_DESTROY) {
+                    hostLeftResumed.set(true)
+                }
+            }
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            activity.lifecycle.addObserver(hostObserver)
+            f.lifecycleOwner.moveTo(Lifecycle.State.RESUMED)
             val factory =
                 object : ViewModelProvider.Factory {
                     override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -332,9 +350,11 @@ class BackgroundRecordingBoundaryTest {
         try {
             compose.setContent {
                 HanGilTheme {
-                    Column(Modifier.verticalScroll(rememberScrollState())) {
-                        if (f.visible.value) {
-                            BackgroundRecordingRoute(source = f.source.value, canPresent = { f.allowed.get() }, viewModel = f.model)
+                    CompositionLocalProvider(LocalLifecycleOwner provides f.lifecycleOwner) {
+                        Column(Modifier.verticalScroll(rememberScrollState())) {
+                            if (f.visible.value) {
+                                BackgroundRecordingRoute(source = f.source.value, canPresent = { f.allowed.get() }, viewModel = f.model)
+                            }
                         }
                     }
                 }
@@ -343,6 +363,8 @@ class BackgroundRecordingBoundaryTest {
             assertEquals(0, f.controller.requests.size)
             assertEquals(0, f.controller.stops.size)
             block(f)
+            assertFalse("controlled 정책 검사 중 실제 Activity가 RESUMED를 벗어나면 환경 조건 실패입니다", hostLeftResumed.get())
+            assertActualHostResumedAndForeground(activity)
             InstrumentationRegistry.getInstrumentation().sendStatus(
                 2,
                 Bundle().apply { putString("stream", "BG_RECORDING_CONTROLLED_BOUNDARY_COMPLETED\n") },
@@ -352,7 +374,10 @@ class BackgroundRecordingBoundaryTest {
             throw failure
         } finally {
             try {
-                compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+                InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                    f.lifecycleOwner.moveTo(Lifecycle.State.DESTROYED)
+                    activity.lifecycle.removeObserver(hostObserver)
+                }
                 compose.runOnIdle { f.visible.value = false }
                 compose.waitForIdle()
             } catch (cleanup: Throwable) {
@@ -360,6 +385,43 @@ class BackgroundRecordingBoundaryTest {
                 if (original == null) throw cleanup else original.addSuppressed(cleanup)
             }
         }
+    }
+
+    /** Moves only the route's supplied policy lifecycle on the main thread. */
+    private fun moveLifecycle(
+        f: Fixture,
+        state: Lifecycle.State,
+    ) {
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            f.lifecycleOwner.moveTo(state)
+            assertEquals("명시적 controlled lifecycle 전이를 실제로 적용해야 합니다", state, f.lifecycleOwner.lifecycle.currentState)
+        }
+        compose.waitForIdle()
+    }
+
+    private fun assertActualHostResumedAndForeground(activity: ComponentCatalogActivity) {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val expectedPackage = instrumentation.targetContext.packageName
+        val until = SystemClock.elapsedRealtime() + 20_000
+        var resumed = false
+        while (SystemClock.elapsedRealtime() < until) {
+            instrumentation.runOnMainSync { resumed = activity.lifecycle.currentState == Lifecycle.State.RESUMED }
+            if (resumed && instrumentation.uiAutomation.rootInActiveWindow
+                    ?.packageName
+                    ?.toString() == expectedPackage
+            ) {
+                return
+            }
+            SystemClock.sleep(50)
+        }
+        assertTrue("실제 Compose host가 RESUMED여야 controlled lifecycle을 검사할 수 있습니다", resumed)
+        assertEquals(
+            "실제 Compose host가 전면에 있어야 합니다",
+            expectedPackage,
+            instrumentation.uiAutomation.rootInActiveWindow
+                ?.packageName
+                ?.toString(),
+        )
     }
 
     private fun emit(
@@ -404,7 +466,17 @@ class BackgroundRecordingBoundaryTest {
         val visible = mutableStateOf(true)
         val allowed = AtomicBoolean(true)
         val controller = SyntheticController()
+        val lifecycleOwner = ControlledLifecycleOwner()
         lateinit var model: BackgroundRecordingViewModel
+    }
+
+    private class ControlledLifecycleOwner : LifecycleOwner {
+        private val registry = LifecycleRegistry(this)
+        override val lifecycle: Lifecycle get() = registry
+
+        fun moveTo(state: Lifecycle.State) {
+            registry.currentState = state
+        }
     }
 
     private class SyntheticController : RecordingController {
