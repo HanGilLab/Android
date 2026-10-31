@@ -28,10 +28,10 @@ import java.util.concurrent.atomic.AtomicInteger
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
-class LocationBindingContextTest {
+class SdkBindingContextTest {
     @Test fun `false bind releases its dispatcher and never forwards callbacks`() {
         val platform = TrackingContext().apply { bindResult = false }
-        val boundary = LocationBindingContext(platform)
+        val boundary = SdkBindingContext(platform)
         val sdk = CountingConnection()
         assertFalse(boundary.bindService(Intent(), sdk, Context.BIND_AUTO_CREATE))
         assertEquals(1, platform.unbinds.get())
@@ -45,7 +45,7 @@ class LocationBindingContextTest {
     @Test fun `throwing bind releases the allocated dispatcher and preserves the exception`() {
         val rejected = SecurityException("bind rejected")
         val platform = TrackingContext().apply { bindFailure = rejected }
-        val boundary = LocationBindingContext(platform)
+        val boundary = SdkBindingContext(platform)
         val sdk = CountingConnection()
         assertSame(rejected, assertThrows(SecurityException::class.java) { boundary.bindService(Intent(), sdk, 0) })
         assertEquals(1, platform.unbinds.get())
@@ -57,7 +57,7 @@ class LocationBindingContextTest {
 
     @Test fun `close blocks future platform binds and all late connection callbacks`() {
         val platform = TrackingContext()
-        val boundary = LocationBindingContext(platform)
+        val boundary = SdkBindingContext(platform)
         val sdk = CountingConnection()
         assertTrue(boundary.bindService(Intent(), sdk, 0))
         val proxy = platform.connections.single()
@@ -80,7 +80,7 @@ class LocationBindingContextTest {
 
     @Test fun `a rebound SDK connection gets a new proxy and the previous proxy stays inactive`() {
         val platform = TrackingContext()
-        val boundary = LocationBindingContext(platform)
+        val boundary = SdkBindingContext(platform)
         val sdk = CountingConnection()
         assertTrue(boundary.bindService(Intent(), sdk, 0))
         val previous = platform.connections.single()
@@ -102,7 +102,7 @@ class LocationBindingContextTest {
                 bindResult = false
                 onBind = { it.onServiceConnected(COMPONENT, Binder()) }
             }
-        val boundary = LocationBindingContext(platform)
+        val boundary = SdkBindingContext(platform)
         val sdk = CountingConnection()
         assertFalse(boundary.bindService(Intent(), sdk, 0))
         assertEquals(0, sdk.connected)
@@ -111,7 +111,7 @@ class LocationBindingContextTest {
 
     @Test fun `a synchronous callback is delivered only after its bind succeeds`() {
         val platform = TrackingContext().apply { onBind = { it.onServiceConnected(COMPONENT, Binder()) } }
-        val boundary = LocationBindingContext(platform)
+        val boundary = SdkBindingContext(platform)
         val sdk = CountingConnection()
         assertTrue(boundary.bindService(Intent(), sdk, 0))
         assertEquals(1, sdk.connected)
@@ -121,7 +121,7 @@ class LocationBindingContextTest {
     @Test fun `cleanup failures remain observable while callbacks and later binds stay blocked`() {
         val failure = IllegalStateException("unbind failed")
         val platform = TrackingContext()
-        val boundary = LocationBindingContext(platform)
+        val boundary = SdkBindingContext(platform)
         val sdk = CountingConnection()
         assertTrue(boundary.bindService(Intent(), sdk, 0))
         platform.unbindFailure = failure
@@ -136,7 +136,7 @@ class LocationBindingContextTest {
 
     @Test fun `an already released dispatcher is the only tolerated unbind failure`() {
         val platform = TrackingContext()
-        val boundary = LocationBindingContext(platform)
+        val boundary = SdkBindingContext(platform)
         val sdk = CountingConnection()
         assertTrue(boundary.bindService(Intent(), sdk, 0))
         platform.registered.clear()
@@ -156,7 +156,7 @@ class LocationBindingContextTest {
                     check(release.await(10, TimeUnit.SECONDS))
                 }
             }
-        val boundary = LocationBindingContext(platform)
+        val boundary = SdkBindingContext(platform)
         val sdk = CountingConnection()
         val workers = Executors.newFixedThreadPool(2)
         try {

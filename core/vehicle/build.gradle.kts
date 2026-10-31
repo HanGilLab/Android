@@ -19,7 +19,7 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test)
     testImplementation(libs.robolectric)
-    androidTestImplementation(libs.pleos.naviHelper)
+    implementation(libs.pleos.naviHelper)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.junit)
 }

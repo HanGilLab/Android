@@ -3,6 +3,7 @@
   <uses-permission android:name="pleos.car.permission.CAR_DRIVE" />
   <uses-permission android:name="pleos.car.permission.CAR_LIGHTS" />
   <uses-permission android:name="pleos.car.permission.FUSED_LOCATION" />
+  <uses-permission android:name="pleos.car.permission.NAVI_CUSTOM_MAP" />
   <application>
     <uses-library android:name="android.car" android:required="false" />
   </application>

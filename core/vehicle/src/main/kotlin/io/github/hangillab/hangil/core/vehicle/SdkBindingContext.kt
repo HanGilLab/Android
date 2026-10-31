@@ -9,11 +9,11 @@ import android.os.IBinder
 import java.util.IdentityHashMap
 
 /**
- * FusedLocation 1.1.3 does not retain/cancel its internal binding retry Job on release.
+ * FusedLocation and NaviHelper requests share this per-instance platform ownership boundary.
  * This per-instance context closes the platform binding boundary without claiming to cancel that Job.
  * The SDK's three-argument bind/unbind calls are serialized with close and use owned connection proxies.
  */
-internal class LocationBindingContext(
+internal class SdkBindingContext(
     context: Context,
 ) : ContextWrapper(context.applicationContext) {
     private val lock = Any()
@@ -41,7 +41,7 @@ internal class LocationBindingContext(
                     try {
                         unbind(binding)
                     } catch (cleanup: Exception) {
-                        throw IllegalStateException("Location binding cleanup failed", failure).also { it.addSuppressed(cleanup) }
+                        throw IllegalStateException("SDK binding cleanup failed", failure).also { it.addSuppressed(cleanup) }
                     }
                     throw failure
                 }
