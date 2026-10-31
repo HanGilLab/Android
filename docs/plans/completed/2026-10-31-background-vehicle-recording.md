@@ -1,6 +1,6 @@
 # 내비 전면 중 차량 기록과 중단 표시
 
-- 상태: 최신 리뷰 경계 수정/전체/실제 재검증과 환경 복원 완료, 최종 문서 PR 검사와 병합 대기
+- 상태: 완료, 제품 PR64 병합과 main/브랜치/Notion 정리 확인
 - 요구사항: APP-05의 차량 상태 기록 유지/중단 표시. 위치/경로/실제 도로 검증과 기존 활성 안내 보존은 포함하지 않는다.
 
 ## 목표와 범위
@@ -20,7 +20,7 @@ run marker를 schema5의 별도 FK 자료로 저장한다. OPEN, 정상 중단, 
 - [x] JDK17 verify와 변경 단위/실제 SQLite/제어 native, 실제 Pleos 기본과 확대 다크의 내비 전면 SDK 기록/복귀/종료, 강제 프로세스 종료 뒤 중단 미확인과 명시 재개를 구분해 확인한다.
 - [x] 기준과 비교의 같은 입력/계측/조건 원값/표본/분포/실패/제외를 보존하고 새 수집의 SDK 속도 향상으로 바꾸지 않는다.
 - [x] README4개와 새 근거를 비교해 근거 있는 사례만 교체하고 지정 여섯 항목/실제 펼침 코드/브랜드/기존 화면을 유지한다. 새 공개 사진은 만들지 않는다.
-- [ ] 최신 PR 필수 CI/Codex/관련 실제 검증/미해결/정책 뒤 정상 병합하고 실제 head/tree/main ff-only/브랜치 정리와 Notion readback을 확인한다.
+- [x] 최신 PR 필수 CI/Codex/관련 실제 검증/미해결/정책 뒤 정상 병합하고 실제 head/tree/main ff-only/브랜치 정리와 Notion readback을 확인한다.
 
 ## 구현 단계
 
@@ -160,3 +160,13 @@ APP05의 차량 상태 수집은 이 내비 SDK API를 호출하지 않아 독�
 별도 최종 manifest의 새4개 역할은 light/dark/interrupted/recovery다. 이전 기준12세션/106관찰/11run의 원형/물리형/순서와 나머지 모든 자료를 유지했고 후속 종료1/관찰39/run4(3STOPPED+1INTERRUPTED/null)만 추가했다. 두 시작 실패는 marker0이라 실패 run으로 늘리지 않았다. native 캐시/실제 복사DB/FK/무결성/정확sequence/예상 물리형을 exact 대조했다. 검증 도구의 briefingVersion 정수 기대형 누락은 도구 수정 후 같은 원자료/기대 개수로 다시 통과했다. 기존 완료 캐시도 byte-exact이며 모든 원래 권한/runtime/화면/IME/proxy와 새 DB 재조회까지 확인하고 소유 AVD/forward/DDS 탭만 정리했다. 저장 행/검사 수는 성능 값이 아니다.
 
 원래 comment4432064183/4432064188 두 스레드를 새로 읽어 의미 수정/추가 지적/기존 답글 없음을 확인한 뒤9fbf4d2와 실제 RED/GREEN/전체/실기 근거를 한국어로 답했다. 답글4432317031과 두 번째 성공 ID, 원문 ID/수정 시각/분리 thread ID/commit/검증/실제 Resolve는 ignored checkpoint에 구분했다. 각 답글 뒤 전체 스레드를 재조회하고 native 해결을 표시했으며 두 스레드 실제 resolved를 재확인했다. 최신9fbf4d2 Codex는 completed/새 지적 없음이지만 최종 문서 commit의 필수 CI/리뷰와 정상 병합/Notion은 아직 별도 대기다.
+
+## 완료 판정과 남은 전체 요구사항
+
+[제품 PR64](https://github.com/HanGilLab/Android/pull/64)의 최종 head45d1b7d131b6058747a2798c139b37eb2e29bd82는 [필수 CI41217346830](https://github.com/HanGilLab/Android/actions/runs/41217346830)/attempt1/App15368의 quality/test/build/ci-required4개와 [Codex6544539301](https://github.com/HanGilLab/Android/pull/64#issuecomment-6544539301)의 exact-head completed/지적 없음, 두 원래 스레드 해결/미해결0 및 active strict/no bypass 정책을 확인해 정상 squash 병합했다. 실행 중 리뷰를 승인으로 바꾸거나 예외 병합하지 않았다.
+
+실제 mergedc59573278ba6ef881e8375036967f377db4063d의 head/tree/parent와 noreply를 대조했다. 추가 commit/미커밋 변경 없음 뒤 main ff-only 동기화와 해당 로컬/원격 브랜치 정리를 마쳤다. 병합 main의 별도 [push CI41217927612](https://github.com/HanGilLab/Android/actions/runs/41217927612)/attempt1/동일 SHA/App15368 필수4개도 모두 success다.
+
+Notion은 실제 제품/리뷰 수정/원래 실패/최신 실제 실기/원본 보존/병합 상태를 반영하고 readback을 확인했다. 필수19/54, 선택3개 제외와 전체 APP05 미체크를 유지한다. 이 계획의 차량 기록/중단 표시 범위만 완료다. APP04 위치/실제 경로와 MAP04 목적지/경유지/길안내/기존 활성 안내 보존, 현재 앱 Navi SDK 요청의 실제 전면 전환 미확인과 legacy PR1/8/10 원래 head 최종 리뷰 미확인은 별도로 남긴다. 이미 완료한 이력 정리/저장소 공개 절차를 반복하지 않는다.
+
+이 마지막 변경은 완료 계획의 active→completed 이동과 개발 문서 링크 수정이다. 제품 소스와 실행 경로를 바꾸지 않아 성능 측정 대상이 아니며 diff/상대 링크/공개 콘텐츠/기존 case 집계와 새 PR의 필수 CI/최신 Codex로 확인한다. 이 정리 PR 자체의 진행 중 검사/리뷰를 미리 완료로 기록하지 않는다.
