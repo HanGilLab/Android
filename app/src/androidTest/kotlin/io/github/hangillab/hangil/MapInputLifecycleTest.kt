@@ -25,6 +25,7 @@ import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModel
@@ -96,6 +97,105 @@ import org.maplibre.android.R as MapSdkR
 @RunWith(AndroidJUnit4::class)
 class MapInputLifecycleTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentCatalogActivity>()
+
+    /** Synthetic P/UX and preparation with the real second catalog preview, Route and MapLibre. */
+    @Test fun secondCatalogPreviewChoicesMatchNativeCurrentSource() =
+        withMap { fixture, initial ->
+            val original = checkNotNull(fixture.repository.values.value)
+            val catalog = LocalPracticeCatalog()
+            val secondCourse =
+                checkNotNull(
+                    catalog.courses.firstOrNull { it.id != original.courseId && it.mapPreview?.points?.size == 3 },
+                )
+            val secondPreview = checkNotNull(secondCourse.mapPreview)
+            val secondGoal = catalog.goals.first { it.id in secondCourse.goalIds }
+            val secondTask = secondCourse.tasks.first()
+            val secondSelection =
+                PracticeSelection(
+                    secondGoal.id,
+                    secondCourse.id,
+                    secondCourse.version,
+                    secondCourse.briefingVersion,
+                    secondTask.id,
+                )
+            assertTrue("두 번째 실제 카탈로그 preview여야 합니다", secondPreview != fixture.preview && secondPreview.points.size == 3)
+            try {
+                compose.runOnIdle { fixture.repository.values.value = secondSelection }
+                compose.mainClock.advanceTimeByFrame()
+                compose.waitForIdle()
+                compose.waitUntil(90_000) {
+                    val current = fixture.model.uiState.value
+                    val preparation = current.preparation as? MapPreparationState.Ready
+                    current.load == MapLoadState.READY && current.rendererToken > 0 && preparation != null &&
+                        preparation.prepared.course.id == secondCourse.id && preparation.preview == secondPreview
+                }
+                waitMapReady()
+                compose.onNodeWithTag("map_view", useUnmergedTree = true).performScrollTo()
+                compose.waitForIdle()
+                val second = awaitPreview(secondPreview)
+                assertTrue("다른 source는 실제 새 native View로 표시돼야 합니다", second.view !== initial.view)
+                val currentPreparation = fixture.model.uiState.value.preparation as MapPreparationState.Ready
+                assertTrue(
+                    "두 번째 카탈로그 source의 목표/과제를 그대로 유지해야 합니다",
+                    currentPreparation.prepared.goal.id == secondGoal.id && currentPreparation.prepared.task.id == secondTask.id,
+                )
+                for ((index, point) in secondPreview.points.withIndex()) {
+                    val choiceTag = "map_point_$index"
+                    compose.onNodeWithTag(choiceTag, useUnmergedTree = true).performScrollTo()
+                    compose.waitForIdle()
+                    compose.onNodeWithTag(choiceTag, useUnmergedTree = true).performClick()
+                    compose.mainClock.advanceTimeByFrame()
+                    compose.waitForIdle()
+                    compose.waitUntil(30_000) {
+                        fixture.model.uiState.value.pointSelection
+                            ?.let { it.pointId == point.id && it.rendered } == true &&
+                            nodes("map_selected_point_title")
+                                .singleOrNull()
+                                ?.config
+                                ?.getOrNull(SemanticsProperties.Text)
+                                ?.any { it.text == point.title } == true && nodes("map_selection_pending").isEmpty()
+                    }
+                    compose.onNodeWithTag("map_view", useUnmergedTree = true).performScrollTo()
+                    compose.mainClock.advanceTimeByFrame()
+                    compose.waitForIdle()
+                    val currentNative = awaitPreview(secondPreview)
+                    val sameView = currentNative.view === second.view
+                    val unchangedCamera = sameCamera(second.camera, currentNative.camera)
+                    assertTrue("각 선택은 같은 부착 native View에 적용돼야 합니다", sameView)
+                    assertTrue("선택은 두 번째 preview의 초기 camera를 바꾸면 안 됩니다", unchangedCamera)
+                    val readback = CompletableDeferred<Boolean>()
+                    onMain {
+                        val view = second.view
+                        assertTrue("현재 붙어 있는 같은 View에서만 JNI를 읽습니다", view.isAttachedToWindow && currentMapViewOnMain() === view)
+                        view.getMapAsync { map ->
+                            try {
+                                assertTrue("두 번째 preview JNI는 Main에서만 확인합니다", Looper.myLooper() == Looper.getMainLooper())
+                                assertTrue("SDK callback 직전에도 같은 View여야 합니다", view.isAttachedToWindow && currentMapViewOnMain() === view)
+                                val layer = map.style?.getLayerAs<CircleLayer>("hangil-course-preview-selection")
+                                val expected = Expression.eq(Expression.get("point_id"), Expression.literal(point.id))
+                                readback.complete(
+                                    layer != null && layer.sourceId == SOURCE_ID &&
+                                        layer.filter?.toArray()?.contentDeepEquals(expected.toArray()) == true,
+                                )
+                            } catch (failure: Throwable) {
+                                readback.completeExceptionally(failure)
+                            }
+                        }
+                    }
+                    val filterMatches = withTimeout(5_000) { readback.await() }
+                    pointChoiceTrace(
+                        "SECOND_PREVIEW_POINT_$index",
+                        "sameView" to sameView,
+                        "sameCamera" to unchangedCamera,
+                        "boundFilter" to filterMatches,
+                    )
+                    assertTrue("현재 bound 필터는 바로 선택한 두 번째 preview 지점의 정확한 식이어야 합니다", filterMatches)
+                }
+            } finally {
+                // Only the in-memory synthetic selection changes; the original Room/SDK is never read.
+                onMain { fixture.repository.values.value = original }
+            }
+        }
 
     /**
      * A direct public SDK setter/readback probe, not evidence that product selection applied.

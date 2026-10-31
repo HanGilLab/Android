@@ -354,10 +354,15 @@ class MapPointSelectionFlowTest {
         purpose: String,
     ): NativeReadback =
         withTimeout(30_000) {
+            val readbackStarted = android.os.SystemClock.elapsedRealtime()
             val call = nativeCallSequence.incrementAndGet()
             var iteration = 0
             var found: NativeReadback? = null
             while (found == null) {
+                // Main-thread JNI delivery alone does not advance Compose's auto-advance test clock.
+                // Drain pending composition/AndroidView updates before the strict native readback.
+                compose.waitForIdle()
+                assertTrue("Compose idle도 native30초 한도에 포함합니다", android.os.SystemClock.elapsedRealtime() - readbackStarted <= 30_000)
                 val diagnostic =
                     JSONObject()
                         .put("call", call)
@@ -585,6 +590,7 @@ class MapPointSelectionFlowTest {
                     }
                 }
                 found = withTimeout(5_000) { result.await() }
+                assertTrue("응답 승인도 native30초 한도 안이어야 합니다", android.os.SystemClock.elapsedRealtime() - readbackStarted <= 30_000)
                 lastNativeSnapshot.get()?.let { snapshot ->
                     if (nativeLoopHistory.size >= 12) nativeLoopHistory.removeFirst()
                     nativeLoopHistory.addLast(snapshot)
