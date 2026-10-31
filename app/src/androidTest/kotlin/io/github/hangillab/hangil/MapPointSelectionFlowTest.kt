@@ -49,6 +49,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.json.JSONArray
 import org.json.JSONObject
+import org.json.JSONTokener
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Rule
@@ -63,6 +64,8 @@ import org.maplibre.android.style.sources.GeoJsonSource
 import org.maplibre.geojson.Point
 import java.io.File
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor
@@ -79,6 +82,9 @@ import io.github.hangillab.hangil.feature.map.R as MapR
 @RunWith(AndroidJUnit4::class)
 class MapPointSelectionFlowTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
+    private val nativeCallSequence = AtomicInteger(0)
+    private val lastNativeSnapshot = AtomicReference<String?>(null)
+    private val nativeLoopHistory = ArrayDeque<String>()
 
     @Test fun fixedPointChoicesMatchNativeHighlightAndDiscardSelectionAtEveryOwnerBoundary() {
         assumeTrue(
@@ -129,7 +135,7 @@ class MapPointSelectionFlowTest {
                     } else {
                         bringIntoView("map_point_$index")
                     }
-                    val beforeClick = awaitNative(preview, previousId, initial.view)
+                    val beforeClick = awaitNative(preview, previousId, initial.view, "before_list_click")
                     assertTrue("목록 스크롤이 camera를 바꾸면 안 됩니다", sameCamera(initial.camera, beforeClick.camera))
                     val condition =
                         JSONObject()
@@ -160,7 +166,7 @@ class MapPointSelectionFlowTest {
                     capture(directory, "point-$index-map", "map_view")
                     assertTrue(
                         "캡처를 위한 스크롤도 camera를 바꾸면 안 됩니다",
-                        sameCamera(initial.camera, awaitNative(preview, point.id, initial.view).camera),
+                        sameCamera(initial.camera, awaitNative(preview, point.id, initial.view, "after_capture_scroll").camera),
                     )
                     previousId = point.id
                 }
@@ -192,7 +198,7 @@ class MapPointSelectionFlowTest {
                 compose.waitForIdle()
                 assertNoSelectionDetails()
                 preview.points.forEachIndexed { index, point -> assertChoice(index, point.title, selected = false) }
-                awaitNative(preview, null, resumed.view)
+                awaitNative(preview, null, resumed.view, "after_captured_stop_action")
                 touch("map_point_2")
                 awaitSelection(preview, 2, resumed.view)
                 assertPreserved(graph, before)
@@ -274,7 +280,7 @@ class MapPointSelectionFlowTest {
         assertTrue("네 번째 선택을 만들어서는 안 됩니다", nodes("map_point_3").isEmpty())
         assertNoSelectionDetails()
         bringIntoView("map_view")
-        return awaitNative(preview, null)
+        return awaitNative(preview, null, purpose = "initial_unselected_owner")
     }
 
     private suspend fun awaitSelection(
@@ -283,7 +289,7 @@ class MapPointSelectionFlowTest {
         expectedView: MapView,
     ): NativeReadback {
         val point = preview.points[index]
-        val readback = awaitNative(preview, point.id, expectedView)
+        val readback = awaitNative(preview, point.id, expectedView, "after_list_click")
         compose.waitUntil(20_000) {
             nodes("map_selected_point_title").singleOrNull()?.let { point.title in nodeTexts(it) } == true &&
                 nodes("map_selection_pending").isEmpty() &&
@@ -345,72 +351,201 @@ class MapPointSelectionFlowTest {
         preview: CourseMapPreview,
         selectedId: String?,
         expectedView: MapView? = null,
+        purpose: String,
     ): NativeReadback =
         withTimeout(30_000) {
+            val call = nativeCallSequence.incrementAndGet()
+            var iteration = 0
             var found: NativeReadback? = null
             while (found == null) {
+                val diagnostic =
+                    JSONObject()
+                        .put("call", call)
+                        .put("iteration", ++iteration)
+                        .put("purpose", purpose)
+                        .put("expectedSelectionPresent", selectedId != null)
+                        .put("expectedPointIndex", selectedId?.let { id -> preview.points.indexOfFirst { it.id == id } } ?: JSONObject.NULL)
+                        .put("viewIdentityPinned", expectedView != null)
+
+                fun publish(stage: String) {
+                    diagnostic.put("stage", stage)
+                    lastNativeSnapshot.set(diagnostic.toString())
+                }
+                publish("before_main_view_query")
                 val result = CompletableDeferred<NativeReadback?>()
                 InstrumentationRegistry.getInstrumentation().runOnMainSync {
                     try {
                         val view = currentMapViewOnMain()
+                        diagnostic
+                            .put("currentViewPresent", view != null)
+                            .put("currentViewPositiveSize", view != null && view.width > 0 && view.height > 0)
+                        publish("main_view_queried")
                         if (view == null || view.width <= 0 || view.height <= 0) {
                             result.complete(null)
                         } else {
+                            diagnostic.put(
+                                "viewMatchesPinnedIdentity",
+                                if (expectedView == null) JSONObject.NULL else view === expectedView,
+                            )
+                            publish("before_map_callback")
                             if (expectedView != null) assertTrue("선택은 같은 부착 native View에 전달돼야 합니다", view === expectedView)
                             view.getMapAsync { map ->
                                 try {
-                                    assertTrue("native readback은 UI 스레드에서만 합니다", Looper.myLooper() == Looper.getMainLooper())
-                                    if (!view.isAttachedToWindow || currentMapViewOnMain() !== view) {
+                                    val mainThread = Looper.myLooper() == Looper.getMainLooper()
+                                    val attached = view.isAttachedToWindow
+                                    val current = currentMapViewOnMain() === view
+                                    diagnostic
+                                        .put("callbackOnMain", mainThread)
+                                        .put("callbackViewAttached", attached)
+                                        .put("callbackViewIsCurrent", current)
+                                    publish("map_callback_received")
+                                    assertTrue("native readback은 UI 스레드에서만 합니다", mainThread)
+                                    if (!attached || !current) {
                                         result.complete(null)
                                     } else {
                                         val style = map.style
                                         val source = style?.getSource(SOURCE_ID) as? GeoJsonSource
-                                        val circles = style?.getLayer(CIRCLES_ID) as? CircleLayer
-                                        val numbers = style?.getLayer(NUMBERS_ID) as? SymbolLayer
-                                        val selected = style?.getLayer(SELECTION_ID) as? CircleLayer
+                                        // In 13.5 getLayer prefers Java layers added during creation, while
+                                        // getLayerAs always asks NativeMap.getLayer, matching the product setter.
+                                        // The cache-preferring wrapper is diagnostic only, never the selection oracle.
+                                        val circles = style?.getLayerAs<CircleLayer>(CIRCLES_ID)
+                                        val numbers = style?.getLayerAs<SymbolLayer>(NUMBERS_ID)
+                                        val selected = style?.getLayerAs<CircleLayer>(SELECTION_ID)
+                                        val legacySelection = style?.getLayer(SELECTION_ID) as? CircleLayer
                                         val expectedFilter =
                                             if (selectedId == null) {
                                                 Expression.literal(false)
                                             } else {
                                                 Expression.eq(Expression.get("point_id"), Expression.literal(selectedId))
                                             }
+                                        val loaded = style?.isFullyLoaded == true
+                                        val uriMatches = style?.uri == expectedStyle()
+                                        val circleSourceMatches = circles?.sourceId == SOURCE_ID
+                                        val numberSourceMatches = numbers?.sourceId == SOURCE_ID
+                                        val selectionSourceMatches = selected?.sourceId == SOURCE_ID
+                                        val circleVisible = circles != null && circles.visibility.value != "none"
+                                        val numberVisible = numbers != null && numbers.visibility.value != "none"
+                                        val selectionVisible = selected != null && selected.visibility.value != "none"
+                                        val actualFilter = selected?.filter?.toString()
+                                        val legacyFilterRead = runCatching { legacySelection?.filter?.toString() }
+                                        val legacyFilter = legacyFilterRead.getOrNull()
+                                        val expectedFilterText = expectedFilter.toString()
+                                        val filterMatches = actualFilter == expectedFilterText
+                                        val actualCanonical = sanitizedFilter(actualFilter, preview)
+                                        val expectedCanonical = sanitizedFilter(expectedFilterText, preview)
+                                        diagnostic
+                                            .put("layerGetterPath", "typed_getLayerAs_current_native")
+                                            .put("sourceGetterPath", "getSource_cache_preferring_wrapper_with_native_query")
+                                            .put("legacyCachePreferringSelectionPresent", legacySelection != null)
+                                            .put(
+                                                "legacyAndNativeSelectionSameJavaObject",
+                                                legacySelection != null && legacySelection === selected,
+                                            ).put("legacyFilterReadAvailable", legacyFilter != null)
+                                            .put(
+                                                "legacyFilterReadFailureClass",
+                                                legacyFilterRead.exceptionOrNull()?.javaClass?.simpleName ?: JSONObject.NULL,
+                                            ).put("legacyFilterCanonicalRedacted", sanitizedFilter(legacyFilter, preview))
+                                            .put(
+                                                "legacyFilterMatchesExpected",
+                                                legacyFilter?.let { it == expectedFilterText } ?: JSONObject.NULL,
+                                            ).put(
+                                                "legacyAndNativeFilterRawEqual",
+                                                if (legacyFilter == null || actualFilter == null) {
+                                                    JSONObject.NULL
+                                                } else {
+                                                    legacyFilter == actualFilter
+                                                },
+                                            )
+                                        diagnostic
+                                            .put("stylePresent", style != null)
+                                            .put("styleFullyLoaded", loaded)
+                                            .put("styleUriMatchesExpected", uriMatches)
+                                            .put("sourcePresent", source != null)
+                                            .put("circleLayerPresent", circles != null)
+                                            .put("numberLayerPresent", numbers != null)
+                                            .put("selectionLayerPresent", selected != null)
+                                            .put("circleSourceMatches", circleSourceMatches)
+                                            .put("numberSourceMatches", numberSourceMatches)
+                                            .put("selectionSourceMatches", selectionSourceMatches)
+                                            .put("circleLayerVisible", circleVisible)
+                                            .put("numberLayerVisible", numberVisible)
+                                            .put("selectionLayerVisible", selectionVisible)
+                                            .put("filterReadAvailable", actualFilter != null)
+                                            .put("filterRawStringEqual", filterMatches)
+                                            .put("filterActualCanonicalRedacted", actualCanonical)
+                                            .put("filterExpectedCanonicalRedacted", expectedCanonical)
+                                            .put(
+                                                "filterSanitizedCanonicalEqual",
+                                                actualCanonical.toString() == expectedCanonical.toString(),
+                                            )
                                         var valid =
-                                            style != null && style.isFullyLoaded && style.uri == expectedStyle() && source != null &&
+                                            style != null && loaded && uriMatches && source != null &&
                                                 circles != null && numbers != null && selected != null &&
-                                                circles.sourceId == SOURCE_ID &&
-                                                numbers.sourceId == SOURCE_ID &&
-                                                selected.sourceId == SOURCE_ID &&
-                                                circles.visibility.value != "none" && numbers.visibility.value != "none" &&
-                                                selected.visibility.value != "none" &&
-                                                selected.filter?.toString() == expectedFilter.toString()
+                                                circleSourceMatches && numberSourceMatches && selectionSourceMatches &&
+                                                circleVisible && numberVisible && selectionVisible && filterMatches
+                                        diagnostic.put("predicateAfterLayers", valid)
+                                        publish("layer_filter_predicate_complete")
                                         val features = source?.querySourceFeatures(null).orEmpty()
-                                        valid = valid &&
-                                            features.map { it.getStringProperty("point_id") }.toSet() ==
-                                            preview.points.map { it.id }.toSet()
-                                        for (feature in features) {
+                                        val foundIds = features.map { it.getStringProperty("point_id") }.toSet()
+                                        val expectedIds = preview.points.map { it.id }.toSet()
+                                        val idsMatch = foundIds == expectedIds
+                                        diagnostic
+                                            .put("sourceFeatureQueryCompleted", source != null)
+                                            .put("sourceFeatureCount", if (source == null) JSONObject.NULL else features.size)
+                                            .put("distinctFeatureIdCount", if (source == null) JSONObject.NULL else foundIds.size)
+                                            .put("expectedDistinctPointCount", expectedIds.size)
+                                            .put("featureIdsMatch", idsMatch)
+                                        valid = valid && idsMatch
+                                        val featureChecks = JSONArray()
+                                        diagnostic.put("featureChecks", featureChecks).put("predicateAfterFeatureIds", valid)
+                                        publish("feature_ids_complete")
+                                        for ((ordinal, feature) in features.withIndex()) {
                                             val index = preview.points.indexOfFirst { it.id == feature.getStringProperty("point_id") }
+                                            val check = JSONObject().put("ordinal", ordinal).put("idRecognized", index >= 0)
+                                            featureChecks.put(check)
+                                            publish("before_feature_metadata")
                                             if (index < 0) {
                                                 valid = false
                                                 break
                                             }
                                             val point = preview.points[index]
                                             val geometry = feature.geometry() as? Point
-                                            valid = valid && geometry != null &&
-                                                feature.getStringProperty("title") == point.title &&
-                                                feature.getStringProperty("preview_id") == preview.id &&
-                                                feature.getNumberProperty("preview_version").toDouble() == preview.version.toDouble() &&
-                                                feature.getNumberProperty("order").toDouble() == (index + 1).toDouble()
+                                            val titleMatches = feature.getStringProperty("title") == point.title
+                                            val previewMatches = feature.getStringProperty("preview_id") == preview.id
+                                            val versionMatches =
+                                                feature.getNumberProperty("preview_version").toDouble() == preview.version.toDouble()
+                                            val orderMatches = feature.getNumberProperty("order").toDouble() == (index + 1).toDouble()
+                                            check
+                                                .put("expectedPointIndex", index)
+                                                .put("geometryIsPoint", geometry != null)
+                                                .put("titleMatches", titleMatches)
+                                                .put("previewIdMatches", previewMatches)
+                                                .put("previewVersionMatches", versionMatches)
+                                                .put("orderMatches", orderMatches)
+                                            valid = valid && geometry != null && titleMatches && previewMatches &&
+                                                versionMatches && orderMatches
+                                            publish("feature_metadata_complete")
                                             if (geometry != null) {
                                                 val actual =
                                                     map.projection.toScreenLocation(
                                                         LatLng(geometry.latitude(), geometry.longitude()),
                                                     )
                                                 val expected = map.projection.toScreenLocation(LatLng(point.latitude, point.longitude))
-                                                valid = valid && abs(actual.x - expected.x) <= 1f && abs(actual.y - expected.y) <= 1f
+                                                val xMatches = abs(actual.x - expected.x) <= 1f
+                                                val yMatches = abs(actual.y - expected.y) <= 1f
+                                                check.put("projectionXWithinOnePixel", xMatches).put("projectionYWithinOnePixel", yMatches)
+                                                valid = valid && xMatches && yMatches
                                             }
+                                            check.put("accumulatedPredicate", valid)
+                                            publish("feature_projection_complete")
                                         }
                                         val camera = map.cameraPosition
                                         val target = camera.target
+                                        diagnostic
+                                            .put("cameraTargetPresent", target != null)
+                                            .put("nativePredicateSatisfied", valid)
+                                            .put("readbackAccepted", valid && target != null)
+                                        publish("native_predicate_complete")
                                         if (valid && target != null) {
                                             val visible = Rect()
                                             val intersects = view.getGlobalVisibleRect(visible) && !visible.isEmpty
@@ -437,19 +572,57 @@ class MapPointSelectionFlowTest {
                                         }
                                     }
                                 } catch (failure: Throwable) {
+                                    diagnostic.put("failureClass", failure.javaClass.simpleName)
+                                    publish("map_callback_exception")
                                     result.completeExceptionally(failure)
                                 }
                             }
                         }
                     } catch (failure: Throwable) {
+                        diagnostic.put("failureClass", failure.javaClass.simpleName)
+                        publish("main_view_query_exception")
                         result.completeExceptionally(failure)
                     }
                 }
                 found = withTimeout(5_000) { result.await() }
+                lastNativeSnapshot.get()?.let { snapshot ->
+                    if (nativeLoopHistory.size >= 12) nativeLoopHistory.removeFirst()
+                    nativeLoopHistory.addLast(snapshot)
+                }
                 if (found == null) delay(100)
             }
             checkNotNull(found)
         }
+
+    /** Keep filter grammar, booleans and logical point indexes; redact every data-bearing string/number. */
+    private fun sanitizedFilter(
+        value: String?,
+        preview: CourseMapPreview,
+    ): Any {
+        if (value == null) return JSONObject.NULL
+
+        fun redact(input: Any?): Any =
+            when (input) {
+                is JSONArray -> JSONArray().apply { for (index in 0 until input.length()) put(redact(input.get(index))) }
+                is JSONObject -> JSONObject().put("unexpectedObjectShape", true)
+                is Boolean -> input
+                is Number -> "<number>"
+                is String ->
+                    when (input) {
+                        "==", "get", "point_id", "literal", "any", "all", "!", "in", "has", "match", "case" -> input
+                        else -> {
+                            val index = preview.points.indexOfFirst { it.id == input }
+                            if (index >= 0) "<point-index-$index>" else "<redacted-string>"
+                        }
+                    }
+                else -> JSONObject.NULL
+            }
+        return try {
+            redact(JSONTokener(value).nextValue())
+        } catch (_: Exception) {
+            JSONObject().put("canonicalParseFailed", true)
+        }
+    }
 
     /** Full pixels remain private; JSON contains no visible text, source identity, times or location. */
     private fun preserveFailure(
@@ -467,6 +640,8 @@ class MapPointSelectionFlowTest {
                     .put("foregroundPackageMatches", JSONObject.NULL)
                     .put("screenshotCaptured", false)
                     .put("semanticsInspectionComplete", false)
+                    .put("lastNativeReadback", lastNativeSnapshot.get()?.let(::JSONObject) ?: JSONObject.NULL)
+                    .put("recentNativeLoopSnapshots", JSONArray(nativeLoopHistory.map(::JSONObject)))
             try {
                 val foreground =
                     instrumentation.uiAutomation.rootInActiveWindow

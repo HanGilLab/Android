@@ -61,3 +61,10 @@ MAP-03 실제 도로 구간 선택과 MAP-02 전체, 기존 독립 UX/SDK 오류
 - 동일 조건 비교 완료: 4a34b6b 제품/고정75b37af harness, 중앙값 변화 -5.2546665ms(-0.287425%). 두 IQR 약130ms와 겹치는 분포/순차 실행 편향으로 성능 향상을 확정하지 않는다. 원값과 재현/한계는 [선택 연결과 측정](../../development/map-preview-point-selection.md)에 기록했다.
 
 - 최초 최종 format/전체 verify는 새 native 검사 한 줄 if의 ktlint wrapping 오류로 실패했다. 계측 APK 컴파일은 별도로 통과했지만 전체 성공으로 계산하지 않았다. 해당 구문을 여러 줄로 정리한 뒤 set-e로 단계별 중단을 보장해 공식 전체 검사를 다시 실행한다.
+
+- 수정 뒤 JDK17 공식 전체 verify의4단계/42 suites567개/실패/오류/건너뜀0/debug/unsigned release와 계측 APK가 통과했다. 이전 검사 cache/up-to-date 포함이며 신규26개VM+2개필터 검사는 실제로 실행했다.
+- 실제 기본1.0/라이트 첫 실행은 첫 지점 선택 뒤 native readback30초 timeout으로 실패했다. DDS 단계 전이며 차량 전환은 실행하지 않았다. 실패 직전 실제 foreground 일치/map_ready1/선택 설명1/pending0과 private PNG를 보존했다. native 강조/검사 가정 중 어느 원인인지 미확정이며 이 실행을 성공으로 계산하지 않는다. 제품 predicate를 완화하지 않고 상세 native 진단을 보강해 원인을 확인한다.
+
+- 별도 제어 native RED를 실제 재현했다: 같은 Activity/STARTED/코스/preview에서 synthetic 과제만 변경하고 실제 새 View/attempt/token을 확인했다. 옛 Semantics OnClick 실행 전 선택 없음이었으나 실행 뒤 선택/설명이 생겨 엄격 assertion이 실패했다. 실제 SDK/사람 입력이 아닌 합성 준비와 실제 Route/MapLibre의 경계 재현이다. 원인은 onSelect 내부의 delegated state getter가 호출 시 최신 tuple을 읽는 것이었고, callback 구성 전에 plain displayedAttempt/displayedRendererToken을 고정하도록 수정했다. keyed 노드만으로 이 getter 재평가를 막는다고 가정하지 않는다. GREEN과 새 최종 제품 비교는 후속이다.
+
+- 최종 비교를 한 번 더 수행하도록 계획을 갱신한다. 4a34b6b의 첫 비교35개는 성공한 별도 제품 관찰값으로 원형/해시와 공개 timing을 모두 보존한다. plain tuple 캡처 수정 제품은 아직 측정하지 않았다. 고정75b37af의 계측 파일을 그대로 사용하고 baseline은 변경하지 않는다. 완료된 첫 comparison cache는 소유 archive의 새 이름으로 byte 그대로 옮겨 원값을 덮지 않으며, 최종 제품의 새 comparison을 같은 기본1.0/라이트/실제P+UX/원래자료/새process/5+30/캐시삭제없음 조건으로 수집한다. 첫 비교와 최종 비교는 다른 제품이며 어느 쪽 표본도 유리하게 제외하지 않는다. 추가 실행 순서/캐시/발열 편향을 한계로 남긴다. 최종 소스와 APK를 별도 기록하고 마지막 제품 측정 전에는 기존 측정의 성능 향상을 주장하지 않는다.

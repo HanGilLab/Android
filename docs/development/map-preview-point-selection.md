@@ -4,7 +4,7 @@
 
 준비한 현재 코스의 고정 시연 지점 목록을 선택하면 같은 point_id에 native 테두리를 적용하고 같은 지점의 설명을 보여 준다. 최초 진입에는 선택이 없다. native style filter를 적용한 응답 뒤에만 선택 표시와 설명을 확정한다. 이 응답은 GPU나 특정 프레임의 완료 측정이 아니다.
 
-각 목록 노드는 attempt, renderer token, preview 전체와 STARTED 소유자별 key를 가지며, callback은 해당 값을 고정한다. 현재 reader/query와 READY, 최신 실제 P와 UX 허용, 살아 있는 host를 선택/적용/응답마다 확인한다. native 입력에서 거부를 처음 읽어도 해당 선택을 폐기한다. 다른 지점을 빠르게 선택하면 새 nonce가 이전 적용과 응답을 거부한다. 로딩, 오류, 재시도, 준비 교체, 화면 이탈, STOP과 재생성에서 선택을 저장하거나 복원하지 않는다.
+각 목록 노드는 attempt, renderer token, preview 전체와 STARTED 소유자별 key를 가지며, callback은 해당 값을 고정한다. Compose delegated State를 callback 안에서 다시 읽지 않고 구성 시 plain 값으로 읽어 캡처한다. 같은 preview의 과제만 변경된 경우도 이전 tuple을 새 렌더로 바꾸지 않는다. 현재 reader/query와 READY, 최신 실제 P와 UX 허용, 살아 있는 host를 선택/적용/응답마다 확인한다. native 입력에서 거부를 처음 읽어도 해당 선택을 폐기한다. 다른 지점을 빠르게 선택하면 새 nonce가 이전 적용과 응답을 거부한다. 로딩, 오류, 재시도, 준비 교체, 화면 이탈, STOP과 재생성에서 선택을 저장하거나 복원하지 않는다.
 
 강조 레이어는 기존 source와 좌표/순서/출처를 그대로 사용하고 filter만 바꾼다. 카메라를 움직이지 않고 지도가 일부 또는 전부 화면 밖에 있어도 포커스를 별도로 요구하지 않는다. 실제 완전 비노출/부분 노출 여부는 수동 실행에서 관찰한 조건만 근거로 쓴다.
 

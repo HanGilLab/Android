@@ -54,6 +54,9 @@ fun MapRoute(
     viewModel: MapViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    // Read the delegated State now: a saved action must never fetch a replacement tuple later.
+    val displayedAttempt = state.attempt
+    val displayedRendererToken = state.rendererToken
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     var startedOwner by remember(viewModel, lifecycle) { mutableStateOf(AtomicBoolean(false) to AtomicLong(0)) }
     DisposableEffect(viewModel, lifecycle) {
@@ -115,7 +118,7 @@ fun MapRoute(
                         selectionOwner = clickOwner.first,
                         onSelect = { pointId ->
                             viewModel
-                                .selectPoint(state.attempt, state.rendererToken, preparation.preview, pointId) {
+                                .selectPoint(displayedAttempt, displayedRendererToken, preparation.preview, pointId) {
                                     clickOwner.first.get()
                                 }?.let(clickOwner.second::set)
                         },

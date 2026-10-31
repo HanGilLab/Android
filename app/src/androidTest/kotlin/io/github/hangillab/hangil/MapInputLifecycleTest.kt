@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.Instrumentation
 import android.content.Intent
 import android.content.res.Configuration
+import android.os.Bundle
 import android.os.Looper
 import android.os.SystemClock
 import android.view.InputDevice
@@ -18,6 +19,9 @@ import android.widget.AdapterView
 import android.widget.ListView
 import android.widget.TextView
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -42,6 +46,7 @@ import io.github.hangillab.hangil.core.domain.VehicleGateway
 import io.github.hangillab.hangil.core.domain.VehicleReading
 import io.github.hangillab.hangil.core.domain.VehicleState
 import io.github.hangillab.hangil.feature.map.MapLoadState
+import io.github.hangillab.hangil.feature.map.MapPreparationState
 import io.github.hangillab.hangil.feature.map.MapRoute
 import io.github.hangillab.hangil.feature.map.MapViewModel
 import kotlinx.coroutines.CompletableDeferred
@@ -66,6 +71,8 @@ import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.geometry.LatLngBounds
 import org.maplibre.android.maps.MapView
+import org.maplibre.android.maps.Style
+import org.maplibre.android.style.expressions.Expression
 import org.maplibre.android.style.layers.CircleLayer
 import org.maplibre.android.style.layers.SymbolLayer
 import org.maplibre.android.style.sources.GeoJsonSource
@@ -89,6 +96,296 @@ import org.maplibre.android.R as MapSdkR
 @RunWith(AndroidJUnit4::class)
 class MapInputLifecycleTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentCatalogActivity>()
+
+    /**
+     * A direct public SDK setter/readback probe, not evidence that product selection applied.
+     * getLayer's Java cache is reported separately from live getLayerAs JNI lookups.
+     * All retained SDK wrappers are accessed only in Main callbacks of this same attached View.
+     */
+    @Test fun nativeSelectionLayerFilterSetterRoundTripsOnTheBoundStyleSdkProbe() =
+        withMap { fixture, initial ->
+            val view = initial.view
+            var probe: SelectionFilterProbe? = null
+            try {
+                val immediate = CompletableDeferred<List<Pair<String, Boolean>>>()
+                onMain {
+                    assertTrue("probe는 살아 있는 같은 native View에서만 시작합니다", view.isAttachedToWindow && currentMapViewOnMain() === view)
+                    view.getMapAsync { map ->
+                        try {
+                            assertTrue("SDK setter는 Main에서만 호출합니다", Looper.myLooper() == Looper.getMainLooper())
+                            assertTrue("SDK callback에서도 같은 View여야 합니다", view.isAttachedToWindow && currentMapViewOnMain() === view)
+                            val style = checkNotNull(map.style)
+                            val layer = checkNotNull(style.getLayerAs<CircleLayer>("hangil-course-preview-selection"))
+                            assertEquals("현재 고정 지점 source만 검사합니다", SOURCE_ID, layer.sourceId)
+                            val original = checkNotNull(layer.filter)
+                            assertTrue(
+                                "직접 setter의 기준은 실제 null 선택의 false 필터여야 합니다",
+                                original.toArray().contentDeepEquals(arrayOf<Any>("literal", false)),
+                            )
+                            assertTrue("생산 선택을 실행한 결과로 취급하면 안 됩니다", fixture.model.uiState.value.pointSelection == null)
+                            val expected =
+                                Expression.eq(
+                                    Expression.get("point_id"),
+                                    Expression.literal(
+                                        fixture.preview.points
+                                            .first()
+                                            .id,
+                                    ),
+                                )
+                            val saved = SelectionFilterProbe(style, layer, original, expected)
+                            probe = saved
+                            layer.setFilter(expected)
+                            immediate.complete(selectionFilterProbeReadback(saved, checkNotNull(map.style)))
+                        } catch (failure: Throwable) {
+                            immediate.completeExceptionally(failure)
+                        }
+                    }
+                }
+                val first = withTimeout(5_000) { immediate.await() }
+                pointChoiceTrace("SDK_FILTER_IMMEDIATE", *first.toTypedArray())
+                delay(500)
+                val delayed = CompletableDeferred<List<Pair<String, Boolean>>>()
+                onMain {
+                    assertTrue("500ms 뒤에도 같은 부착 View만 조회합니다", view.isAttachedToWindow && currentMapViewOnMain() === view)
+                    view.getMapAsync { map ->
+                        try {
+                            assertTrue("지연 SDK readback은 Main에서만 합니다", Looper.myLooper() == Looper.getMainLooper())
+                            assertTrue("지연 callback 직전에도 같은 View여야 합니다", view.isAttachedToWindow && currentMapViewOnMain() === view)
+                            delayed.complete(selectionFilterProbeReadback(checkNotNull(probe), checkNotNull(map.style)))
+                        } catch (failure: Throwable) {
+                            delayed.completeExceptionally(failure)
+                        }
+                    }
+                }
+                val later = withTimeout(5_000) { delayed.await() }
+                pointChoiceTrace("SDK_FILTER_AFTER_500MS", *later.toTypedArray())
+                val nativeKeys = setOf("sameObject", "sameStyleNative", "freshStyleNative", "nativeSources")
+                val firstNative = nativeKeys.all { key -> first.singleOrNull { it.first == key }?.second == true }
+                val laterNative = nativeKeys.all { key -> later.singleOrNull { it.first == key }?.second == true }
+                assertTrue("직접 setter 직후 실제 bound getter는 null/false가 아닌 정확한 식이어야 합니다", firstNative)
+                assertTrue("500ms 뒤 실제 bound getter도 같은 정확한 식이어야 합니다", laterNative)
+                assertTrue("직접 SDK probe는 생산 VM 선택 성공을 만들면 안 됩니다", fixture.model.uiState.value.pointSelection == null)
+            } finally {
+                val saved = probe
+                if (saved != null) {
+                    val restored = CompletableDeferred<Boolean>()
+                    onMain {
+                        assertTrue("원래 필터 복원도 같은 살아 있는 View에서만 합니다", view.isAttachedToWindow && currentMapViewOnMain() === view)
+                        view.getMapAsync { map ->
+                            try {
+                                assertTrue("필터 복원은 Main에서만 합니다", Looper.myLooper() == Looper.getMainLooper())
+                                assertTrue("복원 callback에서도 같은 View여야 합니다", view.isAttachedToWindow && currentMapViewOnMain() === view)
+                                val style = checkNotNull(map.style)
+                                assertTrue("다른 style에 이전 필터를 적용하면 안 됩니다", style === saved.style)
+                                val layer = checkNotNull(style.getLayerAs<CircleLayer>("hangil-course-preview-selection"))
+                                assertEquals(SOURCE_ID, layer.sourceId)
+                                layer.setFilter(saved.original)
+                                restored.complete(layer.filter?.toArray()?.contentDeepEquals(saved.original.toArray()) == true)
+                            } catch (failure: Throwable) {
+                                restored.completeExceptionally(failure)
+                            }
+                        }
+                    }
+                    val originalRestored = withTimeout(5_000) { restored.await() }
+                    pointChoiceTrace("SDK_FILTER_RESTORED", "originalFilter" to originalRestored)
+                    assertTrue("probe가 바꾼 원래 false 필터를 실제 bound layer에 복원해야 합니다", originalRestored)
+                }
+            }
+        }
+
+    private fun selectionFilterProbeReadback(
+        probe: SelectionFilterProbe,
+        freshStyle: Style,
+    ): List<Pair<String, Boolean>> {
+        assertTrue("모든 SDK layer getter는 Main에서만 읽습니다", Looper.myLooper() == Looper.getMainLooper())
+        val sameStyleNative = probe.style.getLayerAs<CircleLayer>("hangil-course-preview-selection")
+        val freshStyleNative = freshStyle.getLayerAs<CircleLayer>("hangil-course-preview-selection")
+        val sameStyleCached = probe.style.getLayer("hangil-course-preview-selection") as? CircleLayer
+        val freshStyleCached = freshStyle.getLayer("hangil-course-preview-selection") as? CircleLayer
+
+        fun matches(layer: CircleLayer?): Boolean = layer?.filter?.toArray()?.contentDeepEquals(probe.expected.toArray()) == true
+        return listOf(
+            "sameObject" to matches(probe.layer),
+            "sameStyleNative" to matches(sameStyleNative),
+            "freshStyleNative" to matches(freshStyleNative),
+            "sameStyleCached" to matches(sameStyleCached),
+            "freshStyleCached" to matches(freshStyleCached),
+            "nativeSources" to (
+                probe.layer.sourceId == SOURCE_ID && sameStyleNative?.sourceId == SOURCE_ID &&
+                    freshStyleNative?.sourceId == SOURCE_ID
+            ),
+            "sameStyleInstance" to (freshStyle === probe.style),
+        )
+    }
+
+    private data class SelectionFilterProbe(
+        val style: Style,
+        val layer: CircleLayer,
+        val original: Expression,
+        val expected: Expression,
+    )
+
+    @Test fun stalePointChoiceCannotBorrowAnotherTaskOfTheSamePreview() =
+        withMap { fixture, initial ->
+            val original = checkNotNull(fixture.repository.values.value)
+            val oldState = fixture.model.uiState.value
+            val oldPreparation = oldState.preparation as MapPreparationState.Ready
+            assertTrue("초기 renderer tuple은 실제 READY여야 합니다", oldState.load == MapLoadState.READY && oldState.rendererToken > 0)
+            val otherTask =
+                checkNotNull(
+                    oldPreparation.prepared.course.tasks
+                        .firstOrNull { it.id != original.taskId },
+                )
+            assertTrue("같은 실제 카탈로그 코스의 다른 과제로만 source를 바꿉니다", otherTask.id.isNotBlank())
+            assertTrue("초기 native source와 표시 source가 같아야 합니다", oldPreparation.preview == fixture.preview)
+            assertTrue("새 선택 없이 옛 callback만 검사해야 합니다", oldState.pointSelection == null)
+            val activity = compose.activity
+            assertTrue("초기 host는 실제 STARTED여야 합니다", activity.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED))
+            compose.onNodeWithTag("map_point_0", useUnmergedTree = true).performScrollTo()
+            compose.waitForIdle()
+            val oldAction =
+                checkNotNull(
+                    nodes("map_point_0")
+                        .single()
+                        .config
+                        .getOrNull(SemanticsActions.OnClick)
+                        ?.action,
+                )
+            val changed = original.copy(taskId = otherTask.id)
+            try {
+                compose.runOnIdle { fixture.repository.values.value = changed }
+                compose.waitUntil(90_000) {
+                    val current = fixture.model.uiState.value
+                    val ready = current.preparation as? MapPreparationState.Ready
+                    ready?.prepared?.task?.id == otherTask.id && current.load == MapLoadState.READY &&
+                        current.attempt != oldState.attempt && current.rendererToken > 0 &&
+                        current.rendererToken != oldState.rendererToken
+                }
+                waitMapReady()
+                compose.onNodeWithTag("map_view", useUnmergedTree = true).performScrollTo()
+                val replacement = awaitPreview(fixture.preview)
+                val current = fixture.model.uiState.value
+                val ready = current.preparation as MapPreparationState.Ready
+                val sameActivity = compose.activity === activity
+                val started = activity.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+                val sameCourse = ready.prepared.course == oldPreparation.prepared.course
+                val samePreview = ready.preview == oldPreparation.preview
+                val newView = replacement.view !== initial.view
+                val newAttempt = current.attempt != oldState.attempt
+                val newToken = current.rendererToken != oldState.rendererToken && current.rendererToken > 0
+                val changedTask = ready.prepared.task.id == otherTask.id && ready.prepared.task.id != oldPreparation.prepared.task.id
+                pointChoiceTrace(
+                    "BEFORE_OLD_ACTION",
+                    "sameActivity" to sameActivity,
+                    "started" to started,
+                    "sameCourse" to sameCourse,
+                    "samePreview" to samePreview,
+                    "newView" to newView,
+                    "newAttempt" to newAttempt,
+                    "newToken" to newToken,
+                    "changedTask" to changedTask,
+                    "noChoice" to (current.pointSelection == null),
+                )
+                assertTrue("같은 Activity/STARTED에서만 callback source 교체를 검사합니다", sameActivity && started)
+                assertTrue("같은 코스/preview의 다른 과제여야 합니다", sameCourse && samePreview && changedTask)
+                assertTrue("새 renderer tuple과 실제 native View를 먼저 확인해야 합니다", newAttempt && newToken && newView)
+                assertTrue("옛 action 전에 선택은 없어야 합니다", current.pointSelection == null)
+                assertTrue(
+                    "옛 action 전에 설명/pending은 없어야 합니다",
+                    nodes("map_selected_point").isEmpty() && nodes("map_selection_pending").isEmpty(),
+                )
+                compose.runOnIdle { oldAction.invoke() }
+                compose.waitForIdle()
+                val noChoice = fixture.model.uiState.value.pointSelection == null
+                val noDetail = nodes("map_selected_point").isEmpty()
+                val noPending = nodes("map_selection_pending").isEmpty()
+                pointChoiceTrace(
+                    "AFTER_OLD_ACTION",
+                    "sameActivity" to (compose.activity === activity),
+                    "started" to activity.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED),
+                    "noChoice" to noChoice,
+                    "noDetail" to noDetail,
+                    "noPending" to noPending,
+                )
+                assertTrue("옛 semantics callback은 새 과제의 renderer를 빌려 선택하면 안 됩니다", noChoice)
+                assertTrue("옛 callback에서 선택 설명이나 pending을 만들면 안 됩니다", noDetail && noPending)
+
+                // Positive control follows the stale-action assertions; returning true is not success.
+                compose.onNodeWithTag("map_point_0", useUnmergedTree = true).performScrollTo()
+                compose.waitForIdle()
+                val freshAction =
+                    checkNotNull(
+                        nodes("map_point_0")
+                            .single()
+                            .config
+                            .getOrNull(SemanticsActions.OnClick)
+                            ?.action,
+                    )
+                compose.runOnIdle { freshAction.invoke() }
+                compose.onNodeWithTag("map_view", useUnmergedTree = true).performScrollTo()
+                val expectedPoint = ready.preview.points.first()
+                compose.waitUntil(30_000) {
+                    fixture.model.uiState.value.pointSelection
+                        ?.let { it.pointId == expectedPoint.id && it.rendered } == true &&
+                        nodes("map_selected_point_title")
+                            .singleOrNull()
+                            ?.config
+                            ?.getOrNull(SemanticsProperties.Text)
+                            ?.any { it.text == expectedPoint.title } == true && nodes("map_selection_pending").isEmpty()
+                }
+                val readback = CompletableDeferred<Boolean>()
+                onMain {
+                    val view = replacement.view
+                    assertTrue("새 선택의 native 확인은 살아 있는 같은 View에서만 합니다", view.isAttachedToWindow && currentMapViewOnMain() === view)
+                    view.getMapAsync { map ->
+                        try {
+                            assertTrue("native 필터는 Main에서만 읽습니다", Looper.myLooper() == Looper.getMainLooper())
+                            val layer = map.style?.getLayer("hangil-course-preview-selection") as? CircleLayer
+                            val filter = layer?.filter?.toArray()
+                            val literalFalse = filter != null && filter.size == 2 && filter[0] == "literal" && filter[1] == false
+                            readback.complete(
+                                view.isAttachedToWindow && currentMapViewOnMain() === view && layer?.sourceId == SOURCE_ID &&
+                                    filter != null && !literalFalse,
+                            )
+                        } catch (_: Throwable) {
+                            readback.completeExceptionally(AssertionError("새 선택의 native source/filter readback이 실패했습니다"))
+                        }
+                    }
+                }
+                val nativeAccepted = withTimeout(5_000) { readback.await() }
+                val applied = fixture.model.uiState.value.pointSelection
+                val rendered = applied?.pointId == expectedPoint.id && applied.rendered
+                val matchingTitle =
+                    nodes("map_selected_point_title")
+                        .singleOrNull()
+                        ?.config
+                        ?.getOrNull(SemanticsProperties.Text)
+                        ?.any { it.text == expectedPoint.title } == true
+                pointChoiceTrace(
+                    "FRESH_ACTION",
+                    "rendered" to rendered,
+                    "matchingTitle" to matchingTitle,
+                    "nativeAccepted" to nativeAccepted,
+                )
+                assertTrue("새 callback은 현재 source의 비어 있지 않은 native 선택 필터로 연결돼야 합니다", nativeAccepted)
+                assertTrue("양성 대조의 현재 모델과 실제 설명이 같은 지점이어야 합니다", rendered && matchingTitle)
+            } finally {
+                // This changes only the synthetic in-memory fixture, never the original Room graph.
+                onMain { fixture.repository.values.value = original }
+            }
+        }
+
+    private fun pointChoiceTrace(
+        stage: String,
+        vararg flags: Pair<String, Boolean>,
+    ) {
+        InstrumentationRegistry.getInstrumentation().sendStatus(
+            2,
+            Bundle().apply {
+                putString("stream", "POINT_CHOICE_" + stage + " " + flags.joinToString(" ") { (key, value) -> "$key=$value" } + "\n")
+            },
+        )
+    }
 
     @Test fun freshParkedPanAndPinchChangeTheRealNativeCamera() =
         withMap { _, initial ->
@@ -403,7 +700,7 @@ class MapInputLifecycleTest {
             model = ViewModelProvider(compose.activity, factory)[MapViewModel::class.java]
         }
         val shown = mutableStateOf(true)
-        val fixture = Fixture(model, vehicleState, preview)
+        val fixture = Fixture(model, vehicleState, preview, repository)
         var primaryFailure: Throwable? = null
         try {
             compose.setContent { HanGilTheme { if (shown.value) MapRoute(onClose = {}, viewModel = model) } }
@@ -672,6 +969,7 @@ class MapInputLifecycleTest {
         val model: MapViewModel,
         val vehicleState: SilentLiveState<VehicleState>,
         val preview: CourseMapPreview,
+        val repository: FixturePreparation,
     )
 
     private suspend fun dispatchHorizontalPan(view: MapView) {
