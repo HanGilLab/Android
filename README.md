@@ -486,7 +486,7 @@ fun canInteractWithMap(
 }
 ```
 
-[reader와 조회 세대의 소유권](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/MapViewModel.kt#L158-L162), [입력 DOWN과 후속 이벤트의 소유권](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/MapInputEpoch.kt#L257-L261)도 같은 경계에서 확인합니다.
+[reader와 조회 세대의 소유권](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/MapViewModel.kt#L257-L261), [입력 DOWN과 후속 이벤트의 소유권](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/MapInputEpoch.kt#L50-L79)도 같은 경계에서 확인합니다.
 
 [SDK로 전달하기 직전의 실제 touch 진입점](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/ParkedMapView.kt#L173-L217)
 
