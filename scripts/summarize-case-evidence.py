@@ -12,7 +12,7 @@ CASES = (
     ("parking", "core/domain/build/test-results/test", "DrivingRestrictionsTest"),
     ("session", "core/database/build/test-results/testDebugUnitTest", "RoomSessionDeletionRepositoryTest"),
     ("map", "feature/map/build/test-results/testDebugUnitTest", "MapViewModelTest"),
-    ("observation", "core/database/build/test-results/testDebugUnitTest", "RoomVehicleObservationRepositoryTest"),
+    ("recording", "core/domain/build/test-results/test", "PracticeRecordingControllerTest"),
 )
 
 
@@ -59,11 +59,43 @@ def main():
     # The map case now includes native input ownership; this pure suite covers its epoch policy.
     # Opt-in real native Route/MapLibre tests remain separate from these JVM report receipts.
     map_input = read_suite(root, "feature/map/build/test-results/testDebugUnitTest", "MapInputEpochTest")
-    # Migration is separate from the observation repository's regression suite.
-    migration = read_suite(root, "core/database/build/test-results/testDebugUnitTest", "VehicleObservationMigrationTest")
-    output = {"cases": cases, "case_supporting_suites": {"session": [session_intents], "map": [map_input]}, "observation_migration": migration, "scope": "Existing JUnit results only; timestamps may precede this invocation. SessionDeletionFlowTest, SessionDeletionSdkFlowTest, MapInputBoundaryTest and MapInputLifecycleTest native runs are tracked separately. Not SDK collection or performance evidence."}
+    # The recording case spans one controller, durable run ownership and the feature adapter.
+    # These JVM receipts do not establish native service or actual SDK collection success.
+    recording_repository = read_suite(root, "core/database/build/test-results/testDebugUnitTest", "RoomRecordingRunRepositoryTest")
+    recording_commit_boundaries = read_suite(root, "core/database/build/test-results/testDebugUnitTest", "RecordingControllerPersistenceBoundaryTest")
+    recording_migration = read_suite(root, "core/database/build/test-results/testDebugUnitTest", "RecordingRunMigrationTest")
+    recording_feature = read_suite(root, "feature/home/build/test-results/testDebugUnitTest", "SessionRecordingViewModelTest")
+    supporting = {
+        "session": [session_intents],
+        "map": [map_input],
+        "recording": [recording_repository, recording_commit_boundaries, recording_migration, recording_feature],
+    }
+    # Preserve the replaced observation case's regressions without adding a fifth README case.
+    legacy_observation = read_suite(root, "core/database/build/test-results/testDebugUnitTest", "RoomVehicleObservationRepositoryTest")
+    legacy_migration = read_suite(root, "core/database/build/test-results/testDebugUnitTest", "VehicleObservationMigrationTest")
+    legacy_supporting = {"observation": [legacy_observation, legacy_migration]}
+    output = {
+        "cases": cases,
+        "case_supporting_suites": supporting,
+        "legacy_regression_supporting_suites": legacy_supporting,
+        "scope": (
+            "Existing JUnit XML receipts only; reported timestamps may precede this invocation, and cached/up-to-date results "
+            "are not fresh runs. No combined test total is computed. Controlled BackgroundRecordingBoundaryTest uses real "
+            "Compose with a synthetic LifecycleRegistry, source, controller and gate; it does not prove OS Activity "
+            "transitions, actual SDK receipt or native foreground-service success. Actual BackgroundVehicleRecordingFlowTest "
+            "Main STOP/native FGS/SDK and external process interruption/recovery runs are opt-in and tracked separately, "
+            "including failed and intentionally aborted attempts. Its system-launcher navigation handoff does not prove "
+            "the app Navi SDK request succeeds. SessionDeletionFlowTest, SessionDeletionSdkFlowTest, MapInputBoundaryTest "
+            "and MapInputLifecycleTest native runs are also tracked separately. Not SDK collection, performance or driver-outcome evidence."
+        ),
+    }
     print(json.dumps(output, ensure_ascii=False, indent=2))
-    return 0 if all(row["status"] == "PASSED" for row in [*cases.values(), session_intents, map_input, migration]) else 1
+    required = [
+        *cases.values(),
+        *(suite for suites in supporting.values() for suite in suites),
+        *(suite for suites in legacy_supporting.values() for suite in suites),
+    ]
+    return 0 if all(row["status"] == "PASSED" for row in required) else 1
 
 
 if __name__ == "__main__":

@@ -409,14 +409,24 @@ class BackgroundVehicleRecordingFlowTest {
         }
         val before = snapshot(graph)
         assertTrue("원래 활성 연습이 있으면 소유 연습을 만들지 않습니다", before.sessions.none { it.isActive })
-        assertTrue("보존 대상 원래 준비와 11개 종료 연습이 있어야 합니다", before.preparation != null && before.sessions.size == 11)
-        assertTrue(
-            "보존 대상 원래 관찰 17개와 메모 1개를 먼저 확인해야 합니다",
-            before.observations.values.sumOf { it.size } == 17 && before.memos.values.count { it != null } == 1,
-        )
+        if (evidenceRound() == "review-followup-v1") {
+            val prior = JSONObject(File(context.cacheDir, "background-vehicle-recording-owner.json").readText())
+            assertTrue(
+                "완료된 이전 검증 원형만 후속 기준으로 사용할 수 있습니다",
+                prior.optString("producer") == PRODUCER && prior.optString("phase") == "completed",
+            )
+            assertOriginalRowsPreserved(graph, JSONObject().put("baseline", prior.getJSONObject("owned_final_snapshot")))
+        } else {
+            assertTrue("보존 대상 원래 준비와 11개 종료 연습이 있어야 합니다", before.preparation != null && before.sessions.size == 11)
+            assertTrue(
+                "보존 대상 원래 관찰 17개와 메모 1개를 먼저 확인해야 합니다",
+                before.observations.values.sumOf { it.size } == 17 && before.memos.values.count { it != null } == 1,
+            )
+        }
         val owner =
             JSONObject()
                 .put("producer", PRODUCER)
+                .put("evidence_round", evidenceRound())
                 .put("phase", "creating_session")
                 .put("baseline", snapshotJson(before))
                 .put("owned_run_ids", JSONArray())
@@ -698,11 +708,28 @@ class BackgroundVehicleRecordingFlowTest {
         }
     }
 
-    private fun ownerFile() = File(context.cacheDir, "background-vehicle-recording-owner.json")
+    private fun evidenceRound(): String {
+        val round = arguments.getString("backgroundRecordingEvidenceRound") ?: "initial"
+        assertTrue("명시된 독립 검증 회차만 사용할 수 있습니다", round == "initial" || round == "review-followup-v1")
+        return round
+    }
+
+    private fun ownerFile() =
+        File(
+            context.cacheDir,
+            if (evidenceRound() ==
+                "initial"
+            ) {
+                "background-vehicle-recording-owner.json"
+            } else {
+                "background-recording-review-followup-owner.json"
+            },
+        )
 
     private fun readOwner(): JSONObject =
         JSONObject(ownerFile().readText()).also {
             assertTrue("같은 native 검사의 private 소유 marker만 재사용합니다", it.optString("producer") == PRODUCER)
+            assertTrue("다른 회차의 소유 영수증을 재사용하면 안 됩니다", it.optString("evidence_round", "initial") == evidenceRound())
         }
 
     private fun writeOwner(owner: JSONObject) {
@@ -956,6 +983,7 @@ class BackgroundVehicleRecordingFlowTest {
         val proof =
             JSONObject()
                 .put("theme", themeKey())
+                .put("evidence_round", evidenceRound())
                 .put("foreground_package", actualPackage ?: JSONObject.NULL)
                 .put("foreground_actual_package", actualPackage ?: JSONObject.NULL)
                 .put("foreground_observation_basis", "AX_FOCUSED_WINDOW_ON_CAPTURED_MAIN_DISPLAY")

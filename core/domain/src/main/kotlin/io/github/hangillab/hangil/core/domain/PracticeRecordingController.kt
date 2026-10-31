@@ -278,14 +278,23 @@ class PracticeRecordingController(
                     requestEnd(request, End(RecordingRunStatus.FAILED, BackgroundRecordingState.Reason.RECOVERY, knownEnd = false))
                     return@withLock
                 }
+                val preparingContext = currentCoroutineContext()
                 val result =
-                    runRepository.open(request.source, request.runId, processId, clock.millis()) {
-                        isStarting(request) && allowsStart(request.canStart)
+                    withContext(NonCancellable) {
+                        preparingContext.ensureActive()
+                        runRepository
+                            .open(request.source, request.runId, processId, clock.millis()) {
+                                preparingContext.ensureActive()
+                                isStarting(request) && allowsStart(request.canStart)
+                            }.also { opened ->
+                                // Cleanup joins preparation, so a committed row cannot lose its receipt at cancellation.
+                                if (opened is RecordingRunOpenResult.Opened) {
+                                    synchronized(guard) { request.opened = true }
+                                }
+                            }
                     }
                 when (result) {
                     is RecordingRunOpenResult.Opened -> {
-                        // Cleanup waits for this job, including an open that finishes during cancellation.
-                        synchronized(guard) { request.opened = true }
                         if (result.run.runId != request.runId || result.run.sessionId != request.source.sessionId ||
                             result.run.processId != processId || result.run.status != RecordingRunStatus.OPEN
                         ) {
@@ -317,7 +326,7 @@ class PracticeRecordingController(
                         return@withLock
                     }
                 }
-                currentCoroutineContext().ensureActive()
+                preparingContext.ensureActive()
                 if (!isStarting(request) || !allowsStart(request.canStart)) {
                     requestEnd(request, End(RecordingRunStatus.FAILED, BackgroundRecordingState.Reason.BLOCKED, knownEnd = true))
                     return@withLock
@@ -381,16 +390,21 @@ class PracticeRecordingController(
                     .collectLatest { sessionId ->
                         currentState.value = VehicleRecordingState.Recording
                         try {
-                            val reason = recordingReason(recorder.record(sessionId))
-                            requestEnd(
-                                request,
-                                End(
-                                    RecordingRunStatus.FAILED,
-                                    backgroundReason(reason),
-                                    knownEnd = true,
-                                    recordingReason = reason,
-                                ),
-                            )
+                            val result = recorder.record(sessionId)
+                            if (result is VehicleObservationRecordingResult.FinishedSession) {
+                                requestEnd(request, End(RecordingRunStatus.STOPPED, null, knownEnd = true, optOut = true))
+                            } else {
+                                val reason = recordingReason(result)
+                                requestEnd(
+                                    request,
+                                    End(
+                                        RecordingRunStatus.FAILED,
+                                        backgroundReason(reason),
+                                        knownEnd = true,
+                                        recordingReason = reason,
+                                    ),
+                                )
+                            }
                         } catch (cancelled: CancellationException) {
                             if (currentCoroutineContext().isActive) {
                                 requestEnd(

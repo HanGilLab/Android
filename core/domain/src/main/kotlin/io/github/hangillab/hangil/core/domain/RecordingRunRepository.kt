@@ -8,7 +8,9 @@ interface RecordingRunRepository {
 
     /**
      * Open only for the exact active source, with at most one OPEN run per session. The pure host
-     * permission gate is checked before and after the write; denial or cancellation rolls it back.
+     * permission gate is checked before and after the write; denial or cancellation observed before
+     * commit rolls it back. Callers must retain an already committed open receipt across result
+     * delivery cancellation so they can close that exact run without dispatching the service.
      * Run identities are never reused. Invalid identities and storage errors propagate.
      */
     suspend fun open(

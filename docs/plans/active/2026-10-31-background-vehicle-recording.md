@@ -1,6 +1,6 @@
 # 내비 전면 중 차량 기록과 중단 표시
 
-- 상태: 진행 중, 변경 전 계획과 기준 계측 지원 고정
+- 상태: a2cf9e2 실기와 환경 복원 완료, 최신 리뷰의 두 경계 수정/최종 재검증 진행
 - 요구사항: APP-05의 차량 상태 기록 유지/중단 표시. 위치/경로/실제 도로 검증과 기존 활성 안내 보존은 포함하지 않는다.
 
 ## 목표와 범위
@@ -13,13 +13,13 @@ run marker를 schema5의 별도 FK 자료로 저장한다. OPEN, 정상 중단, 
 
 ## 완료 조건
 
-- [ ] 기존 전면 동작 유지, P+UX/표시한 세션 snapshot/RESUMED 호스트/요청 token을 확인한 명시 enable만 FGS로 전환한다. 거부/이탈/옛 intent/다른 세션은 새 실행을 빌리지 않는다.
+- [x] 기존 전면 동작 유지, P+UX/표시한 세션 snapshot/RESUMED 호스트/요청 token을 확인한 명시 enable만 FGS로 전환한다. 거부/이탈/옛 intent/다른 세션은 새 실행을 빌리지 않는다.
 - [ ] 단일 소유권과 cancel/join으로 화면/서비스 중복 수집을 막고, 종료/교체/읽기 실패/사용자 중단 뒤 늦은 append나 자동 BG 재시도가 없다.
-- [ ] foreground 승격 성공 뒤만 서비스 수집하며 START_NOT_STICKY, 적절한 알림, 현재 실행/실패/중단 미확인과 실제 SDK/앱 관찰 범위를 표시한다. 실제 DDS D를 기록하되 상세 입력은 계속 잠근다.
-- [ ] v4 기존 모든 행/물리형/순서/sequence를 보존하고 FK/실제 타입/업데이트 소유권/취소 rollback/삭제 CAS를 검증한다. null end를 정확한 공백 시간이나0으로 바꾸지 않는다.
+- [x] foreground 승격 성공 뒤만 서비스 수집하며 START_NOT_STICKY, 적절한 알림, 현재 실행/실패/중단 미확인과 실제 SDK/앱 관찰 범위를 표시한다. 실제 DDS D를 기록하되 상세 입력은 계속 잠근다.
+- [x] v4 기존 모든 행/물리형/순서/sequence를 보존하고 FK/실제 타입/업데이트 소유권/취소 rollback/삭제 CAS를 검증한다. null end를 정확한 공백 시간이나0으로 바꾸지 않는다.
 - [ ] JDK17 verify와 변경 단위/실제 SQLite/제어 native, 실제 Pleos 기본과 확대 다크의 내비 전면 SDK 기록/복귀/종료, 강제 프로세스 종료 뒤 중단 미확인과 명시 재개를 구분해 확인한다.
-- [ ] 기준과 비교의 같은 입력/계측/조건 원값/표본/분포/실패/제외를 보존하고 새 수집의 SDK 속도 향상으로 바꾸지 않는다.
-- [ ] README4개와 새 근거를 비교해 근거 있는 사례만 교체하고 지정 여섯 항목/실제 펼침 코드/브랜드/기존 화면을 유지한다. 새 공개 사진은 만들지 않는다.
+- [x] 기준과 비교의 같은 입력/계측/조건 원값/표본/분포/실패/제외를 보존하고 새 수집의 SDK 속도 향상으로 바꾸지 않는다.
+- [x] README4개와 새 근거를 비교해 근거 있는 사례만 교체하고 지정 여섯 항목/실제 펼침 코드/브랜드/기존 화면을 유지한다. 새 공개 사진은 만들지 않는다.
 - [ ] 최신 PR 필수 CI/Codex/관련 실제 검증/미해결/정책 뒤 정상 병합하고 실제 head/tree/main ff-only/브랜치 정리와 Notion readback을 확인한다.
 
 ## 구현 단계
@@ -118,3 +118,33 @@ APP05의 차량 상태 수집은 이 내비 SDK API를 호출하지 않아 독�
 테스트만 Main RESUMED 시점의 실제 display를 확보하고 UiAutomation interactive-windows flag를 읽고 제한적으로 설정한 뒤 해당 display의 정확히 하나인 focused window의 실제 root/package를 관찰하도록 바꿨다. display 미확인/불일치, 다중 focus, root 없음과 flag 실패는 사유가 있는 unknown으로 남기며 예상 package를 대신 넣지 않는다. 원래 flag bit는 다른 flags를 보존해 종료 시 복원한다. focused package는 완성 렌더나 앱 Navi SDK 전환 성공의 증거가 아니다. 기존 Main STOP/Active/OPEN/native FGS/새 D/P/잠금/Recording assertion은 유지했다. 독립 검토에서 구체 결함을 찾지 못했고 JDK17 quality/계측 APK 빌드를 통과했다. 제품 APK hash는 동일하다. 테스트 관찰 범위 수정은 제품 실행 성능을 바꾸지 않아 추가 성능 측정 대상이 아니며 실제 재실행 결과는 별도로 판정한다.
 
 재빌드 전에 원래 모든 필드/물리형/행순서/sequence/권한/설정을 대조했다. 원본과 별도로 소유 활성 연습1개, 그 연습의 관찰58개와 STOPPED8개를 보존했고 소유 AVD를 정지했다. 최종 다크/외부 종료 복구와 최종 자료 보존은 아직 대기다.
+
+## 최종 실제 검증과 보존
+
+같은 a2cf9e2 제품 APK에서 final 라이트는 fixed-test, 확대 다크는2d77775의 display-test로 각각 전체 실제 시나리오를 통과했다. 같은 run/process/source, Main STOP, 양쪽 실제 내비 전면 package(다크만 Main display focused 관찰), FGS1/Active/OPEN과 해당 run에서 새로 추가된 실제 CONNECTED D/P 관찰을 독립 대조했다. 복귀 D잠금/명시 STOPPED/서비스0/같은 연습 유지/일반 Recording도 확인했다. 누적 completed_themes나 구 runtime 라이트를 최종 증거로 쓰지 않았다. 두 test APK는 서로 다르며 root의 당시 설치 hash 대조와 종료 후 현재 제품/test hash 재조회 근거를 구분했다.
+
+첫 interrupt는 초기 known-other 전면 조건에서 실패해 새 run을 만들지 않았다. Main을 명시적으로 다시 열고 같은 소유 자료/서비스 부재를 확인해 재실행했다. READY의 OPEN/FGS1을 부모가 확인한 뒤 Main 전면에서 해당 앱만 force-stop해 실제 instrumentation abort/서비스 부재를 확인했다. 원 driver는 부모 receipt가 쓰이기 전에 읽어 FileNotFoundError가 났다. 실패 로그를 보존하고 같은 READY/abort/완료된 부모 receipt를 사후 읽기 전용으로 대조했다. 이 준비 fixture는 JUnit PASS가 아니며 같은 종료를 반복하지 않았다.
+
+별도 fresh-process recover는 실제1개 PASS다. 이전 run/시작/nonce/source가 같은 INTERRUPTED/null, 자동 새 run/FGS 없음, 새 ID/새 process nonce의 명시 enable→STOPPED, 이전 중단과 다른 실행 보존, 소유 연습만 종료/최종Idle/Disabled/FGS0를 확인했다. native 캐시와 최종 SQLite 전 필드/물리형/순서/sequence/원형을 별도로 대조했다. 원본 준비1/종료11/관찰17/메모1 모두 보존, 소유 종료1/관찰89/run11(10STOPPED+1INTERRUPTED/null)만 추가됐다. 추가7개 역할은 실패5/구 runtime 검증1/수동 진단1이며 최종 light/dark/interrupted/recovery와 분리했다. 최초 fixture 실패는 새 marker가 없어 run 수를 늘리지 않았다. 개수는 정확성/보존 근거이며 성능 수치가 아니다.
+
+명시 manifest의 offline exact PASS 후 최종 expectation을 별도 checkpoint로 고정했다. 원래 grants/runtime/font/night/IME/proxy와 새 SQLite 복사를 다시 exact 대조하고 소유 AVD/forward/임시 DDS 탭만 정리했다. 원본 checkpoint를 덮지 않았고 기존 자료/실패 run/소유 연습을 삭제하지 않았다. 실제 기본/확대 다크 캡처의 출처/미확인/잠금 문구와 버튼 도달을 확인했으며 공개 사진은 추가하지 않았다.
+
+## README 사례 선정 결과
+
+기존4번은 SQLite 묵시적 변환을 차단한 저장 경계의 근거다. 새4번은 내비 전면의 SDK 저장과 복귀 화면 상태가 갈라지는 실제 영향을 확인하고, 저장 행/서비스/화면/marker를 분리해 원인을 즉시 재진입 쓰기 순서로 좁혔다. 지연이나 무조건 Recording 대입 대신 소유권 반환을 마지막에 발행한 판단, 단일 recorder의 잠금/취소 join, native ACK와 프로세스 손실의 미확인을 실제 양 테마/복구로 설명한다. 비동기 상태 전이/OS 서비스/데이터 경계를 함께 다룬 판단의 근거가 기존4번보다 강해 교체한다. 최신성/코드량/검사 총수를 이유로 쓰지 않는다. 기존1/2/3 내용과 순서, 정확히4개/여섯 항목/연속 실제 코드/유효 링크/브랜드/기존 이미지18개를 유지한다. 교체한 과거 관찰/마이그레이션 회귀는 집계 도구의 legacy 보조로 계속 검사한다.
+
+최종 상태 순서 수정과 SDK 처리의 같은 조건 성능 전후 값은 미측정이다. 초기v1은 de6357까지의 과거 관찰로 유지하고 최종 성능 향상으로 사용하지 않는다. README/집계 문서 배치는 앱 실행 성능과 무관해 추가 실측 대상이 아니며 코드/링크/종료 조건/공개 콘텐츠와 JDK17 verify로 검증한다. 최신 PR CI/Codex/정책과 병합/Notion은 별도 완료 조건으로 남긴다.
+
+## 최신 Codex 지적과 수정 전 계획
+
+최신2d77775의 Codex completed는 미해결P2 두 개를 포함했다. 이전 지적 없음 상태를 최신 승인으로 사용하지 않고 병합을 보류한다. 원래 리뷰/comment4432064183은 Room open COMMIT 뒤 호출자 결과 전달 전에 취소되면 request.opened가false로 남아 명시 중지 뒤에도 OPEN slot이잔존할 수 있다고 지적했다. comment4432064188은 저장소가 같은 고정 세션의 FinishedSession을 먼저 반환하고 세션 Flow 갱신이 늦으면 정상 종료를 FAILED로 고정한다고 지적했다. 실제 종료/취소 순서 경계를 targeted회귀로 먼저 실패 재현한다.
+
+첫 가설은 open과 commit acknowledgement 사이 prompt cancellation이다. 원래 준비 context의 취소/허용 gate는 commit 전후까지 유지하고, commit 결과와 소유 영수증 기록만 취소에 유실되지 않게 보호한 뒤 service dispatch 전 원 context를 다시 검사한다. commit 전 취소 rollback과 commit 후 자기 run 정리를 구분하고 다른 run/source는 건드리지 않는다. 둘째 가설은 append의 FinishedSession이라는 authoritative 종료가 지연된 세션 Flow보다 먼저 도착하는 순서다. 이 경우만 정상 STOPPED/명시 배경 소유권 반환으로 분기하고 Missing/Invalid/Write/SourceChanged의 오류 경계는 유지한다.
+
+이는 정확성 수정이며 속도 병목을 관찰한 것이 아니다. 제어 dispatcher/가짜 저장소와 JUnit 시간을 성능으로 쓰지 않으며 최종 앱의 같은 입력/조건 성능 전후 값은 미측정이다. a2cf9e2 실제 성공을 후속 제품 검증으로 대신하지 않는다. 앞선 검사 소유 연습은 이미 종료됐고 원형을 보존했다. 후속 실기는 별도 명시 namespace의 소유 캐시/새 검사 연습만 사용하며 이전 최종 자료/권한/설정 전체를 기준으로 보존하고 양 테마/중단 복구를 재검증한다.
+
+후속 domain RED는42개 중 정확히 새2개만 실패했고 오류/건너뜀0, 나머지40개 통과다. COMMIT 결과 dispatch 취소는 STOPPED 대신 OPEN, FinishedSession 선행은 STOPPED 대신 FAILED로 재현했다. 원 prepare context를 캡처하고 open 결과+opened 게시만 NonCancellable로 보호하며 canCommit에서 원 context 취소/isStarting/현재 gate를 계속 확인했다. 보호 밖에서 원 context를 확인한 뒤만 dispatch한다. FinishedSession만 기존 정상 SessionEnded와 같은 STOPPED/knownEnd/optOut으로 정리한다. 원래 실패 cleanup과 state-before-owner를 유지했다. 같은42개 GREEN을 확인했으며 첫 GREEN 문법 컴파일 실패도 별도 보존했다.
+
+실제 Room 경계2개는 COMMIT 뒤 adapter 결과 전달 지연, 실제 finish COMMIT 뒤 controller 통지 지연을 각각 제어한다. 수정 패치를 정확히 백업한 뒤 committed 원형 controller로 순차 실행해2개 모두 AssertionError RED(오류/건너뜀0)를 확인하고 패치를 원형 그대로 복원했다. 첫 경우 실제 OPEN 잔존, 둘째 실제 FAILED 저장을 대조한다. 이는 실제 Room와 production adapter를 쓰지만 내부 특정 dispatcher 결함이나 실제 SDK/FGS 재현으로 과장하지 않는다. 같은 테스트 GREEN과 전체 verify/native APK/후속 실제 양 테마/외부 종료 복구를 새 제품에서 다시 확인한다. 원본 기록의 cancellation 계약도 commit 전 rollback과 commit 후 영수증 보존으로 명확히 구분했다.
+
+후속 실제 Room2개 GREEN(실패/오류/건너뜀0)과 JDK17 전체 verify/debug/unsigned release/native APK 빌드를 통과했다. 독립 읽기 검토에서도 원 context 취소 gate/dispatch 보호 밖/cleanup failure/state-before-owner/이전 캐시 불변과 새 소유1개 제한에 새 구체 결함을 찾지 못했다. 새 제품 APK와 test APK를 immutable hash로 고정했고 실제 후속 회차는 아직 미실행이다. 앞선 a2cf9e2 성공은 그 revision으로 명시하고 최신 성공으로 대신 쓰지 않는다.

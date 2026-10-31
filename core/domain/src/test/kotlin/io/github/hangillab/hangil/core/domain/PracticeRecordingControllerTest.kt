@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
@@ -31,6 +32,203 @@ import java.time.ZoneOffset
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class PracticeRecordingControllerTest {
+    @Test
+    fun `cancel at committed open result dispatch still closes the exact row and permits a fresh request`() =
+        runTest {
+            val f = Fixture(backgroundScope)
+            val committed = CompletableDeferred<Unit>()
+            val returnGate = CompletableDeferred<Unit>()
+            val transaction = StandardTestDispatcher(testScheduler, "committed-open-return")
+            val controller = f.controller()
+            f.deliverOpened = { result ->
+                withContext(transaction) {
+                    committed.complete(Unit)
+                    returnGate.await()
+                    assertTrue(controller.stopBackground("run-1"))
+                    result
+                }
+            }
+            assertTrue(controller.requestBackground(session()) { true })
+            runCurrent()
+            assertTrue(committed.isCompleted)
+            assertEquals(
+                RecordingRunStatus.OPEN,
+                f.rows.value
+                    .single()
+                    .status,
+            )
+            returnGate.complete(Unit)
+            runCurrent()
+            assertEquals(
+                "A committed row must be closed even when cancellation discards the open result",
+                RecordingRunStatus.STOPPED,
+                f.rows.value
+                    .single()
+                    .status,
+            )
+            assertEquals(BackgroundRecordingState.Disabled, controller.background.value)
+            assertTrue(f.starts.isEmpty())
+            assertTrue(f.stops.isEmpty())
+            assertTrue(f.attempts.isEmpty())
+            f.deliverOpened = { it }
+            assertTrue(controller.requestBackground(session()) { true })
+            runCurrent()
+            assertEquals(BackgroundRecordingState.Starting("run-2", "session-a"), controller.background.value)
+            assertEquals(listOf("run-1", "run-2"), f.rows.value.map { it.runId })
+            assertEquals(listOf("run-2" to "session-a"), f.starts)
+            controller.startFailed("run-2")
+            runCurrent()
+        }
+
+    @Test
+    fun `original preparation cancellation before commit stays visible inside protected open`() =
+        runTest {
+            val f = Fixture(backgroundScope)
+            val entered = CompletableDeferred<Unit>()
+            val commitGate = CompletableDeferred<Unit>()
+            f.beforeOpenCommit = {
+                entered.complete(Unit)
+                commitGate.await()
+            }
+            val controller = f.controller()
+            assertTrue(controller.requestBackground(session()) { true })
+            runCurrent()
+            assertTrue(entered.isCompleted)
+            assertTrue(controller.stopBackground("run-1"))
+            runCurrent()
+            commitGate.complete(Unit)
+            runCurrent()
+            assertTrue("Cancellation before commit must not leave an OPEN row", f.rows.value.isEmpty())
+            assertTrue(f.starts.isEmpty())
+            assertTrue(f.stops.isEmpty())
+            assertTrue(f.attempts.isEmpty())
+            assertEquals(BackgroundRecordingState.Disabled, controller.background.value)
+            f.beforeOpenCommit = {}
+            assertTrue(controller.requestBackground(session()) { true })
+            runCurrent()
+            assertEquals(BackgroundRecordingState.Starting("run-2", "session-a"), controller.background.value)
+            controller.startFailed("run-2")
+            runCurrent()
+        }
+
+    @Test
+    fun `live start gate denial before commit creates no marker or service and allows an explicit retry`() =
+        runTest {
+            val f = Fixture(backgroundScope)
+            val entered = CompletableDeferred<Unit>()
+            val commitGate = CompletableDeferred<Unit>()
+            var allowed = true
+            f.beforeOpenCommit = {
+                entered.complete(Unit)
+                commitGate.await()
+            }
+            val controller = f.controller()
+            assertTrue(controller.requestBackground(session()) { allowed })
+            runCurrent()
+            assertTrue(entered.isCompleted)
+            allowed = false
+            commitGate.complete(Unit)
+            runCurrent()
+            assertEquals(BackgroundRecordingState.Reason.BLOCKED, f.failure(controller))
+            assertTrue(f.rows.value.isEmpty())
+            assertTrue(f.starts.isEmpty())
+            assertTrue(f.attempts.isEmpty())
+            allowed = true
+            f.beforeOpenCommit = {}
+            assertTrue(controller.requestBackground(session()) { allowed })
+            runCurrent()
+            assertEquals(BackgroundRecordingState.Starting("run-2", "session-a"), controller.background.value)
+            controller.startFailed("run-2")
+            runCurrent()
+        }
+
+    @Test
+    fun `open failure before commit is typed and never dispatches a service`() =
+        runTest {
+            val f = Fixture(backgroundScope)
+            f.beforeOpenCommit = { throw IOException("controlled precommit failure") }
+            val controller = f.controller()
+            assertTrue(controller.requestBackground(session()) { true })
+            runCurrent()
+            assertEquals(BackgroundRecordingState.Reason.OPEN, f.failure(controller))
+            assertTrue(f.rows.value.isEmpty())
+            assertTrue(f.starts.isEmpty())
+            assertTrue(f.stops.isEmpty())
+            assertTrue(f.attempts.isEmpty())
+            f.beforeOpenCommit = {}
+            assertTrue(controller.requestBackground(session()) { true })
+            runCurrent()
+            assertEquals(BackgroundRecordingState.Starting("run-2", "session-a"), controller.background.value)
+            controller.startFailed("run-2")
+            runCurrent()
+        }
+
+    @Test
+    fun `append finished receipt arriving before session notification stops normally without retaining an owner`() =
+        runTest {
+            val f = Fixture(backgroundScope)
+            f.append = { VehicleObservationAppendResult.FinishedSession }
+            val controller = f.controller()
+            assertTrue(controller.requestBackground(session()) { true })
+            runCurrent()
+            val service = backgroundScope.launch { controller.recordInService("run-1", "session-a") }
+            runCurrent()
+            service.join()
+            assertEquals(
+                "FinishedSession is an authoritative end receipt even before observeSessions catches up",
+                RecordingRunStatus.STOPPED,
+                f.rows.value
+                    .single()
+                    .status,
+            )
+            assertEquals(BackgroundRecordingState.Disabled, controller.background.value)
+            assertEquals(listOf("run-1"), f.stops)
+            assertTrue(f.saved.isEmpty())
+            f.sessions.value = listOf(session().copy(endedAtEpochMillis = 150))
+            runCurrent()
+            assertEquals(BackgroundRecordingState.Disabled, controller.background.value)
+            f.sessions.value = listOf(session("session-b"), session().copy(endedAtEpochMillis = 150))
+            f.append = { VehicleObservationAppendResult.Appended(f.attempts.size.toLong()) }
+            assertTrue(controller.requestBackground(session("session-b")) { true })
+            runCurrent()
+            val next = backgroundScope.launch { controller.recordInService("run-2", "session-b") }
+            runCurrent()
+            assertEquals(BackgroundRecordingState.Active("run-2", "session-b"), controller.background.value)
+            assertEquals(listOf("session-b"), f.saved.map { it.first })
+            assertTrue(controller.stopBackground("run-2"))
+            runCurrent()
+            next.join()
+        }
+
+    @Test
+    fun `missing session and invalid observation time remain failed background receipts`() =
+        runTest {
+            listOf(
+                VehicleObservationAppendResult.MissingSession to BackgroundRecordingState.Reason.SESSION_READ,
+                VehicleObservationAppendResult.InvalidTime to BackgroundRecordingState.Reason.INVALID_TIME,
+            ).forEach { (result, expectedReason) ->
+                val f = Fixture(backgroundScope)
+                f.append = { result }
+                val controller = f.controller()
+                assertTrue(controller.requestBackground(session()) { true })
+                runCurrent()
+                val service = backgroundScope.launch { controller.recordInService("run-1", "session-a") }
+                runCurrent()
+                service.join()
+                assertEquals(
+                    RecordingRunStatus.FAILED,
+                    f.rows.value
+                        .single()
+                        .status,
+                )
+                assertEquals(expectedReason, f.failure(controller))
+                assertEquals("run-1", (controller.background.value as BackgroundRecordingState.Failed).runId)
+                assertTrue(f.saved.isEmpty())
+                assertTrue(controller.stopBackground("run-1"))
+                runCurrent()
+            }
+        }
+
     @Test
     fun `immediate foreground host stays recording after explicit background stop releases ownership`() =
         runTest {
@@ -1129,6 +1327,8 @@ class PracticeRecordingControllerTest {
         var append: suspend (
             VehicleObservation,
         ) -> VehicleObservationAppendResult = { VehicleObservationAppendResult.Appended(attempts.size.toLong()) }
+        var beforeOpenCommit: suspend () -> Unit = {}
+        var deliverOpened: suspend (RecordingRunOpenResult.Opened) -> RecordingRunOpenResult = { it }
         var afterOpen: () -> Unit = {}
         var onStart: (String, String) -> Unit = { _, _ -> }
         var beforeFinish: suspend () -> Unit = {}
@@ -1193,9 +1393,11 @@ class PracticeRecordingControllerTest {
                         return RecordingRunOpenResult.AlreadyOpen
                     }
                     val row = VehicleRecordingRun(runId, source.sessionId, processId, startedAtEpochMillis, null, RecordingRunStatus.OPEN)
+                    beforeOpenCommit()
+                    if (!canCommit()) return RecordingRunOpenResult.Blocked
                     rows.value += row
                     afterOpen()
-                    return RecordingRunOpenResult.Opened(row)
+                    return deliverOpened(RecordingRunOpenResult.Opened(row))
                 }
 
                 override suspend fun finish(

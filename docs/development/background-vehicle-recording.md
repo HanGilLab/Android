@@ -1,8 +1,10 @@
 # 내비 전면 중 차량 상태 기록과 중단 표시
 
-APP-05의 차량 상태 기록 유지와 중단 표시를 연결한 부분 구현이다. 기본은 활성 연습과 앱 화면의 STARTED 수명에 따른 기존 수집이다. 주차와 UX 허용이 모두 확인된 상태에서 사용자가 명시적으로 켠 경우에만 foreground service가 같은 연습의 차량 관찰을 소유한다. 위치, 실제 주행 경로, 목적지 전달, 길안내와 차량 제어는 추가하지 않는다.
+APP-05의 차량 상태 기록 유지와 중단 표시를 연결한 구현이다. a2cf9e2의 양 테마와 Main 전면 프로세스 중단/복구, 최종 DB exact 대조와 환경 복원을 확인했다. 최신 리뷰에서 추가 지적된 경계는 후속 수정/재검증 전까지 미해결로 유지한다. 기본은 활성 연습과 앱 화면의 STARTED 수명에 따른 기존 수집이다. 주차와 UX 허용이 모두 확인된 상태에서 사용자가 명시적으로 켠 경우에만 foreground service가 같은 연습의 차량 관찰을 소유한다. 위치, 실제 주행 경로, 목적지 전달, 길안내와 차량 제어는 추가하지 않는다.
 
-제품 `de6357ff94d49bc1a88fbdbda7ea1a86b0612894`의 전체 자동 검사, debug/unsigned release와 계측 APK 빌드, 기존 이력 진입의 변경 전후 계측을 마쳤다. 제어 native 정책은 같은 v2 APK의5개 batch 본문과1개 단독 실행으로 확인했으나 전체 batch 성공은 아니다. 실제 Pleos의 서비스 승격과 명시적 켜기/끄기는 부분 확인했다. 앱의 내비 버튼을 통한 전면 전환은 이번 시도에서 실패했으며, 독립적인 시스템 launcher 전환 이후 수집과 프로세스 중단 복구 시나리오는 미실행이다. 구현과 빌드 성공을 플랫폼 지원이나 APP-05 전체 완료로 계산하지 않는다. 실행 결과, 최초 실패와 최신 PR/리뷰 조건은 [작업 계획](../plans/active/2026-10-31-background-vehicle-recording.md)에 구분해 기록한다.
+앞선 실제 앱 검증의 제품 기준은 `a2cf9e2`다. 최신 리뷰의 두 추가 경계는 후속 수정 코드와 별도로 재검증한다. 이전 제품 `de6357ff94d49bc1a88fbdbda7ea1a86b0612894`에서 실제 시스템 내비 전환 중 수집을 확인했고, 뒤이은 다크 실행에서 수집 재개와 Paused 표시가 갈라지는 상태 덮어쓰기를 발견했다. 즉시 전면 재진입을 재현한 뒤 상태를 먼저 준비하고 소유권을 마지막에 반환하는 최소 수정을 적용했다. 수정 제품의 전체 자동 검사는765개 통과했고 실제 기본 라이트와 확대 다크의 전체 흐름도 각각 통과했다. 초기 AX 전면 미확인 실패는 보존했으며, 최종 다크는 실제 Main display의 focused window를 관찰하는 `2d77775` test 하네스로 통과했다. 이어 Main 전면에서 의도적으로 프로세스를 종료한 실제 abort와 fresh process 복구를 분리해 확인했다. 소유 검증 캐시는 completed이며 최종 DB exact 대조와 환경 복원을 확인했다.
+
+초기 v1 변경 전후 계측은 `de6357ff94d49bc1a88fbdbda7ea1a86b0612894`까지의 자료이며 최종 제품 성능의 근거가 아니다. 구현과 빌드, 이번 실제 흐름의 성공을 플랫폼의 일반 지원이나 APP-04 위치/경로와 MAP-04 길안내까지 충족한 APP-05 전체 완료로 계산하지 않는다. 실행 결과, 최초 실패와 최신 PR/리뷰 조건은 [작업 계획](../plans/active/2026-10-31-background-vehicle-recording.md)에 구분해 기록한다.
 
 ## 수집 소유권과 화면 경계
 
@@ -14,13 +16,23 @@ APP-05의 차량 상태 기록 유지와 중단 표시를 연결한 부분 구�
 
 배경 기록 중지는 해당 run만 정리하며 연습 자체를 종료하지 않는다. 원래 세션 source를 더 읽지 못해도 남아 있는 소유 run의 정리 상태와 정확한 중지 token을 유지한다. 이 경우 새 시작은 제공하지 않는다. 실행 실패 중 일반 전면 재시도를 숨은 배경 재개로 사용하지 않으며 새 명시 동작을 요구한다.
 
+## 일반 전면 재진입과 상태 쓰기 순서
+
+구형 `de6357ff94d49bc1a88fbdbda7ea1a86b0612894`의 뒤이은 실제 다크 실행에서는 내비 전면 중 SDK D/P가 저장됐고 Main STOP과 복귀 후 D 상세 잠금도 확인됐다. 명시적 기록 끄기 뒤 run은 STOPPED, 백그라운드 상태는 Disabled, native FGS는0개, 실제 Main은 RESUMED였다. 그런데 일반 기록 상태가 Recording으로 바뀌지 않고15초 대기 뒤에도 Paused여서 실행은 실패했다. 끄기 뒤에도 새 SDK 관찰 행이 존재해 수집 재개 자체보다 표시 상태가 덮이는 문제로 좁혔다. 이 실패는 앞선 AX 미확인과 별개로 보존한다.
+
+`owner` StateFlow에 `null`을 먼저 쓰면 일반 전면 수집자가 즉시 재진입해 Recording 또는 Idle을 발행할 수 있었다. 기존 종료 흐름은 그 뒤에 Paused를 기록해 새 수집자의 상태를 다시 덮었다. 같은 스레드의 재진입은 `synchronized`만으로 차단되지 않는다. controller36개 항목에서 기존31개는 통과했지만 새 즉시 재진입5개는 모두 실패했다. 기대한4개 Recording과1개 Idle이 Paused로 남아 실제 관찰과 같은 순서 문제를 재현했다.
+
+수정은 [PracticeRecordingController](../../core/domain/src/main/kotlin/io/github/hangillab/hangil/core/domain/PracticeRecordingController.kt)의 소유권 반환4개 분기에서 백그라운드 상태와 일반 상태를 먼저 준비하고 `owner.value = null`을 마지막으로 옮긴 것이다. 이미 정리된 run의 명시적 끄기와 종료 정리의 각 반환 경로에 같은 순서를 적용했다. 다음 전면 수집자가 재진입해 발행한 상태를 이전 실행의 후속 쓰기가 덮지 않게 하며 Recording을 무조건 정상값으로 넣지 않는다. 활성 연습이 없을 때 Idle을 고르는 기존 수집자의 책임도 유지한다.
+
+수정 제품 `a2cf9e2`에서 전체 자동 검사는765개 통과했다. 실제 기본 라이트와 확대 다크에서는 일반 전면 Recording 재개까지 각각 전체 흐름을 통과했다. 최종 다크는 display-scoped `2d77775` test 하네스의 결과다. Main 전면 프로세스 중단 뒤 별도 복구도 통과했지만 이 revision의 최종 DB exact 대조와 환경 복원을 확인했다. 자동 검사의 RED/GREEN, 실제 흐름 성공과 최종 보존/복구 완료 판정을 구분한다. 이 수정의 SDK 처리나 상태 전이 성능은 동일 조건의 전후 실측을 확보하지 않았다.
+
 ## 네이티브 서비스 선택과 한계
 
 [VehicleRecordingService](../../app/src/main/kotlin/io/github/hangillab/hangil/VehicleRecordingService.kt)는 네이티브 승격과 서비스 수명만 담당한다. 현재 Starting 상태의 run/세션과 같은 intent만 받고, 알림을 구성해 `startForeground()`가 성공한 뒤 controller의 `recordInService()`를 호출한다. 중복 intent나 옛 intent가 이미 실행 중인 소유권을 바꾸지 않는다. 시작/승격 실패와 시간 초과를 실패로 전달하며 `START_NOT_STICKY`로 자동 서비스 재시작을 요청하지 않는다.
 
 서비스는 [manifest](../../app/src/main/AndroidManifest.xml)에 `exported=false`, `foregroundServiceType=specialUse`와 사용 목적 subtype을 명시했다. Android의 [FGS 종류](https://developer.android.com/develop/background-work/services/fgs/service-types), [시작과 승격](https://developer.android.com/develop/background-work/services/fgs/launch), [사용자의 앱 종료](https://developer.android.com/develop/background-work/services/fgs/handle-user-stopping)를 작업 계획의 근거로 사용했다. 차량 IPC가 connectedDevice의 외부 장치 용도에 해당한다고 확인되지 않아 해당 종류를 선택하기 위한 더미 권한을 넣지 않았다. specialUse가 이 기능에 적합하다는 판단은 구현 선택이며 Pleos 또는 스토어의 승인 근거가 아니다.
 
-추가 선언은 normal `FOREGROUND_SERVICE`와 `FOREGROUND_SERVICE_SPECIAL_USE`다. `POST_NOTIFICATIONS`, 위치와 다른 dangerous 권한은 새로 요청하지 않는다. [알림 권한](https://developer.android.com/develop/ui/compose/notifications/notification-permission)과 FGS 실행, 실제 알림 표시를 구분한다. 현재 검증 대상인 Pleos API34에서 실제 서비스 승격은 부분 확인했지만 내비 전면 전환/SDK 저장 결과까지 확보한 지원 성공으로 기록하지 않는다. 작업 계획에서 읽은 [Pleos Vehicle 안내](https://document.pleos.ai/en/docs/pleos-only/connect-sdk-pleos/Vehicle/intro)만으로 백그라운드 수집이 보장된다고 해석하지 않는다.
+추가 선언은 normal `FOREGROUND_SERVICE`와 `FOREGROUND_SERVICE_SPECIAL_USE`다. `POST_NOTIFICATIONS`, 위치와 다른 dangerous 권한은 새로 요청하지 않는다. [알림 권한](https://developer.android.com/develop/ui/compose/notifications/notification-permission)과 FGS 실행, 실제 알림 표시를 구분한다. 현재 검증 대상인 Pleos API34에서 시스템 launcher로 연 실제 내비 전면, Main STOP과 같은 service run의 새 SDK D/P 저장은 기본 라이트와 확대 다크에서 확인했다. 프로세스 중단/복구는 별도의 Main 전면 종료 조건에서 확인했다. 내비 전면에서 프로세스를 종료했다고 주장하지 않으며 플랫폼의 일반 지원이나 최종 자료/환경 확인까지 마친 전체 완료로 일반화하지 않는다. 작업 계획에서 읽은 [Pleos Vehicle 안내](https://document.pleos.ai/en/docs/pleos-only/connect-sdk-pleos/Vehicle/intro)만으로 백그라운드 수집이 보장된다고 해석하지 않는다.
 
 FGS는 모든 SDK callback이나 물리 동작의 보존을 보장하지 않는다. 기존 [VehicleObservation](../../core/domain/src/main/kotlin/io/github/hangillab/hangil/core/domain/VehicleObservation.kt)은 앱에서 관찰한 SDK 상태 스냅샷이다. StateFlow의 생략된 중간 상태나 동일 상태, 놓친 이벤트 수를 추정하지 않으며 앱 관찰 시각을 SDK 이벤트 시각이나 실제 출발/도착 시각으로 바꾸지 않는다. 실제 도로, 목적지/경유지/안내 경로와 기존 활성 길안내의 보존은 이번 검증 범위가 아니다.
 
@@ -44,6 +56,8 @@ FGS는 모든 SDK callback이나 물리 동작의 보존을 보장하지 않는�
 run은 세션의 FK CASCADE 자식이다. [종료 기록 삭제](../../core/database/src/main/kotlin/io/github/hangillab/hangil/core/database/RoomSessionDeletionRepository.kt)의 확인 스냅샷에 순서가 있는 전체 run 목록을 포함한다. 확인 이후 종료 상태가 바뀌거나 새 marker가 생기면 이전 확인으로 지우지 않는다. 삭제 뒤 늦은 종료/복구는 update-only이므로 자식이나 세션을 되살리지 않는다. run이 없는 이전 기록의 빈 목록은 명시적으로 비교하는 정상 상태다.
 
 ## 기존 이력 진입의 변경 전후 관찰
+
+이 절은 고정 `background-recording-entry-v1`로 초기 구현을 비교한 역사적 계측이다. 변경 후 제품은 `de6357ff94d49bc1a88fbdbda7ea1a86b0612894`까지이며, 이후 상태 순서를 수정한 `a2cf9e2`나 후속 관찰 하네스는 측정 대상에 포함하지 않았다. 아래 원값과 통계는 그대로 보존하며 최종 앱 성능, 이번 결함 수정의 개선율이나 무회귀를 입증하는 자료로 차용하지 않는다.
 
 속도 병목을 관찰한 최적화가 아니다. 내비 중 새 수집에는 동등한 변경 전 기능이 없어 수집 속도의 개선율을 만들지 않는다. 코드 변경 전에 계획과 기준값을 확보하고, 배경 기록을 켜지 않은 기존 이력 진입에서 관찰되는 차이만 비교했다. 두 단계의 같은 입력과 endpoint, 고정 source/catalog/environment/measurement contract를 대조했다.
 
@@ -72,33 +86,68 @@ IQR 분포가 겹치며 데이터/Tile/DB/코드 캐시를 지우지 않았다. 
 
 | 항목 | 현재 확인 상태 |
 |---|---|
-| 제품 전체 자동 검사와 debug/unsigned release | 통과 |
-| 제품 계측 APK와 제어 harness v2 | 빌드 통과. 시스템 내비 handoff를 적용한 후속 actual harness는 빌드 중 |
-| 변경 전/후 이력 진입 계측 | 각5회 워밍업/30본 실행 성공. 실패/누락/제외0 |
-| 최초 ActivityScenario 제어 native | 최초6개는5통과/1실패. 실패 항목 단독1개 통과. 전체 재실행6개는4통과/2실패 |
-| 명시적 LifecycleRegistry 제어 native v2 | batch5개 본문 통과/1개 본문 진입 전 Activity 시작 실패. 같은 APK의 해당 항목 단독1개 통과. 여섯 정책은5+1로 확인했으나 단일 전체 batch 성공은 아님 |
-| 실제 기본 라이트 자동 FGS 시도 |2회 모두 native FGS 하나/Active/OPEN까지 확인. 앱 내비 버튼 입력 뒤 Main이 전면에 남아 두 흐름 모두 실패 |
-| 실제 수동 native UI | FGS 켜기/끄기 확인. 세 번째 진단 run은 STOPPED. 완전히 보이는 앱 내비 버튼을 직접 터치해 REQUESTED 표시를 확인했으나 Main 전면 유지 |
-| 시스템 launcher handoff 뒤 내비 전면/Main STOP 중 SDK D/P 추가 저장 | 미실행. 독립적인 차량 기록 범위의 후속 harness 준비 중 |
-| 실제 기본 라이트/확대 다크의 전체 내비/복귀/주행 잠금/명시 중지 | 미완료. 위 부분 확인과 실패를 전체 성공으로 세지 않음 |
-| 외부 프로세스 종료 뒤 INTERRUPTED/null와 자동 배경 재개 없음 | 미실행 |
-| 중간 자료 보존과 환경 복구 | 원래 schema5 기준의 모든 기존 행과 설정을 대조하고, 같은 소유 활성 세션 하나와 STOPPED 진단 run3개를 구분해 보존 확인. 소유 AVD 정지 후 후속 harness 빌드 중 |
-| 전체 시나리오 종료 뒤 최종 자료 보존 | 미실행. 소유 연습의 종료/중단 복구와 실제 추가 자료를 포함한 최종 대조는 별도 |
+| 현재 제품과 최종 다크 계측 기준 | 제품 `a2cf9e2`, 최종 display-scoped test 하네스 `2d77775` |
+| 수정 전 즉시 전면 재진입 | controller36개 중 기존31개 통과, 새5개 실패.4개 Recording과1개 Idle 기대가 Paused로 남음 |
+| 수정 후 전체 자동 검사와 debug/unsigned release |765개 통과. 해당 제품의 자동 검사와 빌드 성공이며 실제 흐름과 최종 보존/환경 확인을 구분 |
+| 초기 변경 전/후 이력 진입 v1 계측 | `de6357ff94d49bc1a88fbdbda7ea1a86b0612894`까지 각5회 워밍업/30본 성공. 최종 앱이나 상태 순서 수정의 성능 증거가 아님 |
+| 최초 ActivityScenario 제어 native | 최초6개는5통과/1실패. 해당 항목 단독1개 통과. 전체 재실행6개는4통과/2실패 |
+| 명시적 LifecycleRegistry 제어 native v2 | batch5개 본문 통과/1개 본문 진입 전 Activity 시작 실패. 같은 APK의 해당 항목 단독1개 통과. 단일 전체 batch 성공은 아님 |
+| 구형 제품의 앱 Navi API 전면 전환 | 자동2회 실패. 수동으로 REQUESTED 표시를 확인했지만 Main 전면 유지. 실제 전환 성공과 원인은 미확인 |
+| 구형 제품의 시스템 launcher 기본 라이트 | 실제 내비 전면과 Main STOP, FGS 단일 소유, 새 Room SDK D/P, 복귀와 D 잠금, 명시적 중지의 전체 흐름1회 통과 |
+| 구형 제품의 다크 AX 전면 관찰 | D 행 저장 뒤 AX root/package 미확인으로 실패. Main STOP과 FGS/Active/OPEN은 별도 확인했지만 전체 성공으로 세지 않음 |
+| 구형 제품의 뒤이은 다크 상태 덮어쓰기 | D/P 저장과 복귀, D 잠금, STOPPED/Disabled/FGS 종료 이후 일반 상태 Paused로 실패. 끄기 뒤 SDK 행도 있어 실제 수집과 표시가 갈라짐 |
+| 수정 제품의 최종 기본 라이트 | 실제 전체 흐름 통과. 새 SDK D/P 저장과 일반 전면 Recording 재개 포함 |
+| 수정 제품의 display-scoped 이전 다크 시도 | 초기 AX 전면 확인이25초 동안 미확인이어서 실패. 이 원형은 최종 재실행 성공과 별도로 보존 |
+| 수정 제품의 최종 확대 다크 | `display-fixed-flow-dark` 실제 전체 흐름 통과. Main display의 실제 focused package, Main STOP, 같은 FGS/OPEN, 새 SDK D/P, 복귀와 D 잠금, 명시적 중지와 Recording 재개 확인 |
+| 첫 실제 interruption 준비 | 초기 전면 조건 실패. 새 run은 생성되지 않음 |
+| interruption 재시도 | READY 이후 Main 전면에서 부모 실행기가 명시적 force-stop. 실제 instrumentation abort이며 JUnit PASS가 아님 |
+| fresh process recovery | 별도 실행 OK1과 RECOVERY_COMPLETED. 이전 OPEN의 INTERRUPTED/null, 자동 배경 재개 없음, 새 명시적 시작/중지와 소유 연습의 최종 종료 확인 |
+| runner receipt 경합 | 부모 receipt 파일 생성 전에 원 runner가 읽어 FileNotFound. 원로그 보존 후 사후 읽기 전용 대조로 reconcile했으며 프로세스를 다시 종료하지 않음 |
+| 실행 소유 자료의 현재 기록 | owner completed, 소유 run11개는 STOPPED10개와 INTERRUPTED/null1개, 추가 관찰89개. 실패와 진단 run을 삭제하거나 최종 성공 run으로 바꾸지 않음 |
+| 최종 원본 exact 대조와 환경 복원 | 원래 준비/종료11/관찰17/메모1 전 필드/물리형/순서/sequence와 소유 추가를 분리해 exact 대조 PASS. 원래 권한/설정 재조회와 소유 도구 정리 완료 |
 
-최초 ActivityScenario 제어 실행의 foreign source/폐기 시나리오는 재표시 대기 중 실제 호스트 STOPPED가 관찰됐고 finally의 RESUMED 전환도 성립하지 않았다. 같은 APK에서 그 항목만 다시 실행했을 때는 통과했다. 원래 전체6개를 다시 실행했을 때는 STARTED 요청 미성립과 foreign stop 조회 직후 노드 소실로2개가 실패했다. 연속 상태 근거가 충분하지 않아 환경, UX 또는 제품 원인 중 하나로 확정하지 않는다. 재시도 통과가 최초 실패를 지우지 않으며 이를 확정된 제품 RED/GREEN 재현으로 제시하지 않는다.
+### 제어 정책과 실제 OS 수명의 구분
 
-[BackgroundRecordingBoundaryTest](../../app/src/androidTest/kotlin/io/github/hangillab/hangil/BackgroundRecordingBoundaryTest.kt)의 v2는 `manualBackgroundRecordingBoundary=true`에서 실제 Compose와 명시적으로 주입한 synthetic LifecycleRegistry/source/controller/허용 gate의 정책을 검사한다. 기존 여섯 항목의 옛 token 거부, source/gate 변경, 폐기와 정확한 run 조건은 유지했다. 실제 Activity는 초기 RESUMED와 전면을 확인하고 검사 도중 PAUSE/STOP/DESTROY가 발생하면 환경 조건 실패로 처리한다. PAUSE/STOP/RESUME 정책 입력은 주입한 registry를 움직이며 실제 OS ActivityScenario 전환 성공으로 주장하지 않는다. 실제 SDK, 서비스와 Room은 이 검사에서 사용하지 않는다.
+최초 ActivityScenario 제어 실행의 foreign source/폐기 시나리오는 재표시 대기 중 실제 호스트 STOPPED가 관찰됐고 finally의 RESUMED 전환도 성립하지 않았다. 같은 APK의 해당 항목 단독 실행은 통과했다. 원래 전체6개를 다시 실행했을 때는 STARTED 요청 미성립과 foreign stop 조회 직후 노드 소실로2개가 실패했다. 최초 실패 시점을 포함한 연속 window/lifecycle 자료가 충분하지 않아 환경, UX 또는 제품 원인 중 하나로 확정하지 않는다. 사후 내비 focus나 cleanup STOPPED만으로 원인을 단정하지 않으며 재시도 통과가 최초 실패를 지우지 않는다.
 
-v2 batch의 표시 receipt 항목은 `ActivityScenarioRule.before`의 `launchInternal` 시작 상태 확인에서 실패해 본문에 진입하지 못했다. 같은 v2 APK의 해당 항목 단독 실행은 통과했다. 따라서 여섯 제어 정책의 근거는5개 batch 본문과1개 단독 실행이며 단일 batch 전체 통과가 아니다. 실제 Activity 시작의 반복성 한계와 앞선 실패는 남겨 둔다. 이 harness 범위 변경은 제품 APK, 완료된 비교 계측의 frozen 소스나 원값을 바꾸지 않았다.
+[BackgroundRecordingBoundaryTest](../../app/src/androidTest/kotlin/io/github/hangillab/hangil/BackgroundRecordingBoundaryTest.kt)의 v2는 `manualBackgroundRecordingBoundary=true`에서 실제 Compose와 명시적으로 주입한 synthetic LifecycleRegistry/source/controller/허용 gate의 정책을 검사한다. 기존 여섯 항목의 옛 token 거부, source/gate 변경, 폐기와 정확한 run 조건을 유지한다. 실제 Activity는 초기 RESUMED와 전면을 확인하고 도중 PAUSE/STOP/DESTROY가 발생하면 환경 조건 실패로 처리한다. PAUSE/STOP/RESUME 정책 입력은 주입한 registry를 움직이며 실제 OS ActivityScenario 전환 성공으로 주장하지 않는다. 실제 SDK, 서비스와 Room은 이 검사에서 사용하지 않는다.
 
-실제 기본 라이트의 두 자동 시도는 같은 소유 연습에서 native FGS 하나, controller Active와 OPEN marker를 확인한 뒤 앱 내비 버튼을 입력했으나 Main이 전면에 남아 실패했다. 실패 정리에서 두 run은 STOPPED로 보존했으며 소유 연습은 활성 상태로 유지했다. 별도의 실제 native UI 조작으로 FGS 켜기/끄기를 확인한 세 번째 run도 STOPPED다. 이들 terminal marker를 성공한 내비 수집 run으로 바꾸지 않는다. 완전히 보이는 앱 내비 버튼의 직접 터치에서도 REQUESTED가 표시됐으나 Main 전면이 유지돼, 이번 실행에서 앱 Navi API의 실제 전면 전환 성공은 미확인이다. REQUESTED만으로 전면 전환을 판단하지 않으며 원인도 확정하지 않는다.
+v2 batch의 표시 receipt 항목은 `ActivityScenarioRule.before`의 `launchInternal` 시작 상태 확인에서 실패해 본문에 진입하지 못했다. 같은 v2 APK의 해당 항목 단독 실행은 통과했다. 따라서 제어 정책의 근거는5개 batch 본문과1개 단독 실행이며 단일 batch 전체 통과가 아니다. 실제 Activity 시작의 반복성 한계와 앞선 실패는 남겨 둔다. 이 test-only 범위 변경은 초기 v1 비교 계측의 frozen 소스나 원값을 바꾸지 않았다.
 
-[BackgroundVehicleRecordingFlowTest](../../app/src/androidTest/kotlin/io/github/hangillab/hangil/BackgroundVehicleRecordingFlowTest.kt)의 후속 actual harness는 APP-05 차량 기록 범위를 독립 검증하기 위해 실제 내비 앱의 OS launcher intent로 handoff하도록 변경했다. `expectedNavigationPackage` 인자의 실제 대상과 조회한 intent의 package/component가 같은지 검증한 뒤 요청한다. 이 방식의 실제 수행은 아직 미실행이다. 이후 실제 내비 전면 패키지, Main STOP, native FGS와 같은 OPEN 소유권, Room의 실제 SDK D/P 추가 저장, 한길 복귀 후 상세 잠금과 복구 assertion은 그대로 요구한다. 이 별도 경로를 MAP-04의 앱 Navi API 성공, 목적지 전달이나 길안내 성공의 증거로 사용하지 않는다.
+### 실제 전환, 저장과 표시 상태의 구분
 
-재현에는 `manualBackgroundRecording=true`와 `backgroundRecordingStage=flow|interrupt|recover`, 실제 확인한 `expectedNavigationPackage`, `expectedFontScale=1.0/expectedDark=false` 또는 `1.3/true`, `measurementComparisonCompleted=true`가 필요하다. opt-in 미지정에 따른 skip은 성공이 아니다. DDS 전환 이후 같은 세션에 추가된 SDK 관찰을 확인해야 하며 UI 상태 문자열만으로 저장 성공을 판단하지 않는다. 계측은 프로세스 우선순위에 영향을 줄 수 있어 자연스러운 백그라운드 생존이나 모든 OS 종료 정책의 보장으로 일반화하지 않는다.
+구형 제품의 기본 라이트 자동2회는 같은 소유 연습에서 FGS 하나, controller Active와 OPEN을 확인한 뒤 앱 내비 버튼을 입력했으나 Main이 전면에 남아 실패했다. 정리한 두 run과 수동 FGS 켜기/끄기의 진단 run은 STOPPED로 보존했다. 완전히 보이는 버튼의 실제 터치에서도 REQUESTED가 표시됐지만 Main 전면이 유지됐다. REQUESTED는 실제 전면 전환이나 렌더 완료의 증거가 아니며 이 결과의 원인도 확정하지 않는다.
 
-외부 프로세스 종료 준비 메서드는 실제 실행을 중간에서 종료하도록 만든 fixture다. 의도적인 instrumentation abort를 JUnit 통과나 정상 완료로 세지 않는다. 원형을 보존하고 fresh process의 별도 복구 시나리오에서 INTERRUPTED/null, 새 run 자동 생성 없음, 새 명시 시작/중지와 소유 연습 종료를 확인해야 한다.
+APP-05 차량 기록은 이 앱 Navi API 호출에 기술적으로 의존하지 않아 [BackgroundVehicleRecordingFlowTest](../../app/src/androidTest/kotlin/io/github/hangillab/hangil/BackgroundVehicleRecordingFlowTest.kt)는 별도로 실제 내비 앱을 OS launcher intent로 연다. 외부에서 이미 확인한 `expectedNavigationPackage`와 `expectedNavigationComponent`를 명시하고 component 형식, package 일치와 내부 class 경계를 확인한다. 설치와 exported 접근은 실제 OS dispatch가 판정한다. 제품의 package queries나 권한을 확대하지 않았으며 임의 대상을 허용하는 fallback도 두지 않는다. 이 실제 시스템 handoff 결과를 MAP-04 앱 Navi API, 목적지 전달이나 길안내 성공으로 사용하지 않는다.
 
-원본 준비/종료 세션/관찰/메모와 의도한 설치 차이, 실제 검사를 위해 추가한 소유 세션/관찰/run을 분리한다. 현재 중간 대조에서 보존한 활성 소유 연습과 진단 run을 임의로 삭제하거나 새 것으로 교체하지 않는다. 최종 SQLite의 모든 값/자료형/순서/sequence, FK와 무결성, grants/runtime/font/night/IME/proxy를 다시 대조해야 한다. 원문 DB, 식별자, 개인 경로, 내비 화면과 플랫폼 로그는 비공개로 보존한다. 결과를 확보한 단계만 작업 계획과 이 문서에 반영하고 원래 환경을 복구한 뒤 실행이 소유한 AVD/forward/임시 탭만 정리한다.
+시스템 handoff 이후 구형 기본 라이트는 전체 흐름을 통과했다. 구형 다크의 한 시도는 실제 D 행 저장 뒤 AX 전면 package가 미확인이어서 실패했고, 별도 다크 시도에서는 D/P 저장, Main 복귀와 D 잠금, 명시적 중지가 진행된 뒤 일반 기록 표시가 Paused로 남았다. 후자의 실제 수집/표시 불일치가 state-first/owner-last 수정으로 이어졌다. 서로 다른 실패를 통합하거나 앞선 terminal marker를 성공한 최종 run으로 바꾸지 않는다.
 
-현재는 실제 내비 전면 수집과 프로세스 복구의 전체 근거가 아직 없어 README의 기존 네 사례와 순서를 유지한다. 실제 근거가 확보되면 새 비동기 소유권/영속 미확인 경계가 기존 네 사례보다 기술 판단과 사용자 영향을 더 잘 입증하는지 비교해 교체 이유를 계획에 남긴다. 최신성이나 검사 개수만으로 교체하지 않는다. 공개용 스크린샷이나 빈 자리표시자는 만들지 않았다. 이 문서의 작성과 배치는 앱 실행 경로를 바꾸지 않아 추가 성능 측정 대상이 아니며 링크, 원값 대조와 공개 콘텐츠로 검증한다.
+수정 제품 `a2cf9e2`의 기본 라이트는 일반 전면 Recording 재개까지 통과했다. 이후 다크의 초기 AX 전면 미확인 시도도 실패로 보존하며, 빈 root만으로 실제 내비가 전면이 아니었다거나 SDK 수집이 실패했다고 단정하지 않는다. 사후 WindowManager의 내비 focus를 실행 중 성공으로 대신하지 않았다. 후속 `2d77775` test 하네스의 `display-fixed-flow-dark`는 실제 Main display에서 focused package를 확인하고 전체 흐름을 통과했다. 최종 양 테마에서는 같은 소유 연습에 새 SDK D/P 관찰이 저장됐고, 실제 내비 전면/Main STOP과 FGS/OPEN, 복귀 후 D 잠금, 명시적 중지와 일반 Recording 재개를 확인했다. 이 양 테마의 수집 결과와 별도의 프로세스 중단/복구 결과를 구분한다.
+
+### 현재 test-only 전면 관찰
+
+현재 소스는 `rootInActiveWindow`의 display가 불분명한 값을 실제 Main 전면으로 채택하지 않는다. `assertEnvironment`에서 실제 Main이 RESUMED인 main thread에서 유효한 display를 확보하며 null을 기본 display0으로 바꾸지 않는다. UiAutomation의 기존 `FLAG_RETRIEVE_INTERACTIVE_WINDOWS` bit를 저장하고 필요할 때만 켠 뒤 readback으로 확인한다. `@After`에서는 그때의 다른 flags를 보존하면서 원래 bit만 복원하고 확인한다. 앱 권한이나 제품 서비스 설정을 추가하지 않는다.
+
+관찰은 `windowsOnAllDisplays`의 고정한 Main display bucket에서 각 window의 display 일치를 확인하고, focused window가 정확히 하나일 때 그 실제 root의 package만 읽는다. SYSTEM/IME window를 버리고 expected 앱을 찾지 않으며 `isActive`만으로 focus를 대신하지 않는다. window 부재, null root/package, 복수 focus, display 모순과 API 읽기 실패는 사유가 있는 unknown이다. 기대 package를 기본값으로 채우지 않는다.
+
+D/P 뒤 전면 유지 확인에서 실제 다른 nonnull package는 즉시 실패한다. null 관찰만 기존20초 한도와100ms 간격으로 재관찰하며 매회 실제 Main의 STARTED 미만 상태와 같은 Active/OPEN, native FGS 단일 소유를 확인한다. expected package가 실제 관찰된 경우만 해당 전면 조건을 통과한다. deadline까지 unknown이면 실패로 남긴다. 전송 자체가 막히는 문제와 UI 관찰 unknown도 구분한다.
+
+private proof는 AX focused-window basis, 실제 package의 명시적 JSON null, focus 수, flag 관찰값, Main display 확인 여부와 display 일치, unknown 사유와 표본 수를 남긴다. 이 수치는 UI 관찰의 미확인 표본이며 SDK 이벤트 누락 수가 아니다. 현재 방식에 WindowManager shell fallback은 추가하지 않았다. focused package 관찰만으로 내비 화면의 렌더 완성이나 앱 Navi SDK 성공을 주장하지 않는다. 소스 반영만으로 성공을 계산하지 않았으며 이 관찰 방식의 실제 최종 다크 전체 실행은 통과했다. 그 결과도 내비 렌더 완성이나 MAP-04 앱 Navi API 성공으로 확대하지 않는다.
+
+### Main 전면 프로세스 중단과 복구
+
+첫 interruption 준비는 초기 실제 전면 조건에서 실패해 새 run을 만들지 않았다. 재시도는 실제 Main 전면에서 OPEN/Active/FGS와 READY를 확인한 뒤 부모 실행기가 명시적으로 force-stop했다. 이 실행은 의도한 실제 instrumentation abort이며 JUnit 통과나 정상 종료가 아니다. 내비 전면에서 종료한 실험으로 서술하지 않는다.
+
+원 runner가 부모 receipt 파일이 생성되기 전에 읽어 FileNotFound로 끝난 별도 경합도 원로그에 보존했다. 사후 읽기 전용 대조로 이미 수행된 종료와 receipt를 reconcile했으며 같은 프로세스를 다시 종료하지 않았다. 이 orchestration 실패를 앱 복구 실패나 JUnit PASS로 바꾸지 않는다.
+
+fresh process의 별도 recovery는 OK1과 RECOVERY_COMPLETED로 끝났다. 이전 OPEN은 INTERRUPTED와 `null` 종료 시각으로 남았고 자동 배경 재개나 새 run 자동 생성은 없었다. 새 명시적 시작과 중지, 소유 연습의 최종 UI 종료를 확인했으며 과거 중단 marker는 보존했다. 현재 owner는 completed이고 실행 소유 run11개는 STOPPED10개와 INTERRUPTED/null1개이며 추가 관찰89개가 기록됐다. 이 flow와 marker 확인은 최종 오프라인 DB exact 대조나 전체 환경 복원 확인을 대신하지 않는다.
+
+### 재현과 최종 완료 조건
+
+재현에는 `manualBackgroundRecording=true`, `backgroundRecordingStage=flow|interrupt|recover`, 외부에서 실제 확인한 `expectedNavigationPackage`와 `expectedNavigationComponent`, `expectedFontScale=1.0/expectedDark=false` 또는 `1.3/true`, `measurementComparisonCompleted=true`가 필요하다. opt-in 미지정에 따른 skip은 성공이 아니다. DDS 전환 이후 같은 소유 세션에 새로 저장된 실제 SDK D/P 관찰과 출처를 확인해야 하며 UI 문자열만으로 저장 성공을 판단하지 않는다. 실제 Main STOP, 같은 OPEN과 native FGS, 복귀 후 D 상세 잠금, 명시적 중지와 일반 Recording 재개 조건도 유지한다.
+
+외부 프로세스 종료 준비 메서드는 실제 실행을 중간에서 종료하도록 만든 fixture다. 의도적인 instrumentation abort를 JUnit 통과나 정상 완료로 세지 않는다. 원형을 보존하고 fresh process의 별도 복구 시나리오에서 INTERRUPTED/null, 새 run 자동 생성 없음, 새 명시 시작/중지와 소유 연습의 최종 종료를 확인해야 한다. 계측은 프로세스 우선순위에 영향을 줄 수 있어 자연스러운 백그라운드 생존이나 모든 OS 종료 정책의 보장으로 일반화하지 않는다.
+
+원래 준비/종료 세션/관찰/메모와 의도한 설치 차이, 실제 실행을 위해 추가한 소유 세션/관찰/run을 분리한다. 소유 연습은 recovery 마지막 UI 단계에서 종료됐으며 owner completed와 run11개, 추가 관찰89개의 근거를 보존한다. 이들을 임의로 삭제하거나 새 세션으로 교체하지 않는다. 최종 SQLite의 원본 전 필드/물리형/행순서와 허용한 소유 추가에 따른 정확한 sequence 증가, FK와 무결성은 명시적인 역할별 manifest로 오프라인 exact 대조를 통과했다. 원본 준비1/종료11/관찰17/메모1과 소유 종료 연습1/추가 관찰89/실행11을 분리했다. 실행은10 STOPPED와 종료 시각 null의1 INTERRUPTED이며 실패5/구 runtime 성공1/수동 진단1을 최종 native 성공과 합치지 않았다. grants/runtime/font/night/IME/proxy도 복원 후 새 DB 복사와 재대조를 통과했다. 이 개수는 정확성과 보존 근거이며 성능 수치가 아니다. 원문 DB, 식별자, 개인 경로, 내비 화면과 플랫폼 로그는 비공개로 보존한다. 결과를 확보한 단계만 작업 계획과 이 문서에 반영하고 원래 환경을 복구한 뒤 실행이 소유한 AVD/forward/임시 탭만 정리한다.
+
+실제 수집/표시 상태 경합의 수정과 최종 양 테마, Main 전면 중단/복구 근거를 확보했다. 최종 DB exact 대조와 환경 복원을 확인했고 소유 AVD/forward/DDS 임시 탭만 정리했다. README는 실제 수집/표시 상태 경합의 새 사례로 기존4번을 교체하고 나머지 사례와 순서를 유지한다. 실제 사용 영향, Coroutine 즉시 재진입과 소유권 반환, 서비스와 영속 미확인 경계를 함께 설명하는 근거가 기존 단일 SQLite 물리형 사례보다 강하다고 판단한 이유를 계획에 기록했다. 최신성이나 검사 개수만으로 교체하지 않는다. 공개용 스크린샷이나 빈 자리표시자는 만들지 않았다. 이 문서의 작성과 배치는 앱 실행 경로를 바꾸지 않아 추가 성능 측정 대상이 아니며 링크, 초기 원값 대조와 공개 콘텐츠로 검증한다.
