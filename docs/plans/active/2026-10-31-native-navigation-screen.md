@@ -103,3 +103,40 @@ Notion의 해당 MAP04 기록을 현재 main 링크/실제 병합/검증/미검�
 README의 인증 없는 실제 PR 브랜치 렌더에서4사례/17펼침 Kotlin/기존18이미지 로드/1280px 가로 넘침 없음을 확인했고17개 발췌와 소스가 일치했다. 코드/단위/계측/권한/README/70원값은 이 문서 정리에서 바꾸지 않는다. 문서의 상태 배치는 앱 실행 성능과 무관해 새 측정 적용 제외이며 링크/공개 콘텐츠/필수 CI와 리뷰로 검증한다.
 
 전체 계획은 완료로 옮기지 않는다.4번째 완료 조건의 앱 자료/기존 권한/설정 보존은 확인했지만 변경 전 활성 목적지/안내 상태를 확보하지 않아 그 보존은 미검증이다. 내비 내부 DB/기존 활성 안내/타일 렌더/길안내 성공을 보장하지 않는다. 이번 전면 요청 구현은 목적지/경로/정보/위치/취소 API와 분리되며 해당 미검증을 화면 전환의 전체 실패나 다른 독립 제품 구현의 일괄 차단으로 해석하지 않는다. 향후 실제 활성 안내 조건의 보존 검증은 별도로 설계하고 MAP04의 목적지/경유지/안내 및 APP05 내비 중 수집은 기존 미완료 범위를 따른다.
+
+## 현재 main의 실제 전환 재검증 계획 (추가 실행)
+
+기준4838db6436d745e3df5c64aadb1b800adc08e134는 PR62의 과거 실제 전환 성공과 PR64의 REQUESTED 뒤 Main 전면 유지 관찰이 공존한다. 기존 Foreground SDK 요청이 지금 실제 Main display에서 내비 전면 전환으로 이어지는지 먼저 확인한다. 기존 앱/SDK 호출을 다른 launcher로 대체하지 않으며 새 위치/경로/정보/취소 API나 권한은 추가하지 않는다. 기존 legacy 리뷰 미확인이나 전체 MAP01 미체크를 이 독립 범위의 일괄 차단으로 사용하지 않는다.
+
+정적 근거: 공식3.0.5 sources/배포 bytecode의 화면 요청은 별도 요청 coroutine Job이 아닌 직접 호출 경로이며 AIDL FLAG_ONEWAY로 반환한다. 따라서 즉시 release가 request Job을 취소한다는 가설은 기각하고 반환을 원격 처리/실제 전면 ACK로 쓰지 않는다. binder 공백의 SDK queue/해제와 로그만 남기는 RemoteException, 앱의 동기 오류 확인 뒤 즉시 해제는 조사 지점이며 실제 누락의 원인으로 아직 확정하지 않는다. 오류 전용 listener에 화면 성공 ACK는 없다.
+
+제품 코드 변경 전에 검증용 observer를 실제 Main RESUMED에서 확보한 유효 display의 단일 focused window로 한정한다. 초기 실제 Main, 요청 뒤 실제 내비/Main STOP, 복귀와 D/P 잠금, 원래 자료를 대조한다. rootInActiveWindow의 다른 display/빈 값과 실제 package를 구분하고 예상값 대입은 하지 않는다. interactive-windows flag는 종료 때 원래 bit만 복원한다. 이 준비는 계측 관찰 변경이며 제품 실행 성능 개선이 아니다.
+
+성능/관찰 계획: 기준 제품은 위 main과 동일한 debug 앱, JDK17/PleosAPI34/font1.0/라이트/현재 사용자/준비1/종료13/관찰145/메모1/terminal run15/활성 없음/같은 catalog/실제 P+UX 허용이다. 기존 소유 자료까지 전 필드/물리형/순서/sequence/권한/설정을 보존한다. 각 fresh process 뒤 같은 프로세스의2warm+5본 요청을 실행한다. 스크롤/화면 준비/복귀/캡처/원본 대조는 timer 밖, 클릭 직전→같은 Main display의 실제 내비 focused package와 Main<STARTED endpoint까지 elapsedRealtimeNanos/ns(ms유도)를 기록한다. 입력/관찰/동기화 비용을 포함하며 SDK 단독 처리나 프레임/운전자 시간이 아니다.
+
+표본은 성공/다른 package/unknown/거부/timeout을 구분하며25초는 검사 제한이다. 실제 전면에 도달하지 못한 표본의 latency는null이고 대기 시간을 성공 지연값으로 넣지 않는다. 느린 성공 표본은 제외하지 않고 모든 warm/main 순서와 원값/성공/실패/누락/제외를 보존한다. 같은 조건의 변경 후 표본이 없거나 실패로 전후 latency 비교가 성립하지 않으면 성능 향상으로 확정하지 않는다. 5본의 중앙값/Q1/Q3/IQR/min/max는 관찰 기술 통계이며 안정적인 p95/동등성/무회귀를 주장하지 않는다. 데이터/Tile/DB/ART/JIT/OS/열/네트워크 캐시를 지우지 않고 순서 영향을 한계로 남긴다. 실제 위치나 지도 원문 화면/SDK/창 로그는 ignored 비공개에만 둔다.
+
+제품 수정은 실제 재현과 원인 증거 뒤 최소 범위로 선택한다. 같은 요청의 callback/해제 수명을 변경한다면 원래 RESUMED/P+UX/source gate와 취소/단절/옛 클릭/자동 재요청 금지를 유지한다. 실패가 플랫폼/관찰 조건에만 묶이거나 원인을 확인하지 못하면 부분 차단으로 기록하고 독립 제품 연결을 선택한다. 이번 조사로 과거 PR62 성공을 취소하거나 현재 REQUESTED만 성공으로 올리지 않는다. README 기존4개보다 강한 원인/판단/실제 결과를 확보하기 전에는 사례/순서를 보존하고 새 공개 사진을 만들지 않는다.
+
+
+## 재검증의 관찰 결과와 다음 경계
+
+제품4838db/동일9fbf4d 실행 소스는 그대로다. 계측 준비 중 존재하지 않는 모듈 Spotless 작업명2회로 Gradle이 실행 전 실패했고 저장소 루트 spotlessApply로 정정했다. 사전 검토에서 timer 전 상태 읽기, endpoint와 사후 진단 분리, 늦은 endpoint, 현재 Main identity/파괴, 실패 뒤 제품 결과 분류를 보완한 뒤 JDK17 계측 APK 빌드가 통과했다. 검토 전 APK와 이후 APK/source hash는 비공개로 각각 보존했으며 준비물을 실행 성과로 세지 않는다.
+
+기준2warm/5본은 모두 절차를 실행했지만 실제 전환은 warm2/본3개만 성공하고 본2개는 Main 전면에 남았다. JUnit 절차 PASS와 SDK 전환 성공을 구분한다. 실패 latency는null, 원값/실제 대기/unknown/사후 REQUESTED 문구를 보존했다. [정제 원값](../../development/measurements/native-navigation-foreground-revalidation.csv)의 성공 본3개 중앙값547.059959ms/min546.525875/max589.590625와 실패2개는 변경 전 관찰이며 비교/개선율이 아니다. 누락/제외0, 관찰 unknown10개도 SDK 손실 수로 바꾸지 않는다.
+
+실패2개를 포함한7개 시간 구간은 원격 foreground 수신까지 이어졌지만 성공5개 구간에서만 Activity START를 확인했다. requestId 직접 조인과 원격 onForeground 이후 내부 분기는 미확인이다. 성공/실패에 공통인 release/callback 순서만으로 앱 해제 수명이나 별도 SDK Job을 원인으로 선언하지 않는다. 무관한 시스템 예외는 Navi 오류에서 제외했다. 임의 delay/상시 binding/launcher fallback 제품 변경을 하지 않는다.
+
+현재 Main display를 쓰는 별도 실제 라이트 흐름1PASS/skip0에서 SDK 내비 전면/Main STOP/복귀/옛 클릭/실제 DDS D 잠금/P 복귀 자동 요청 없음/새 요청과 schema5 domain 자료 보존을 확인했다. 확대 다크는 이번 미실행으로 과거 PR62와 분리한다. 원래 전 필드/물리형/순서/sequence/기존 권한/환경의 fresh exact 일치, 소유 AVD/forward 종료와 DDS 탭 닫기를 확인했다. 이번 전면 관찰만으로 타일/활성 안내 보존/목적지/전체 MAP04를 완료하지 않는다. 현재 자료와 설정의 fresh exact 보존 뒤 소유 AVD/forward/DDS 탭을 정리하고 전체 verify/최신 PR 검사/리뷰는 별도로 확인한다.
+
+README의 현재4개는 실제 조작 소유권, 파괴적 원자 삭제, 비동기 지도 렌더 소유권, 재진입 상태 발행 순서의 원인과 제품 해결을 설명한다. 이번 원격 전환의 원인을 확정/수정하지 못한 관찰만으로 그 사례보다 구현 판단을 더 강하게 입증하지 못해4개/순서/6항목/실제 펼침 코드/기존18이미지를 보존한다. 실제 성능 향상이나 새 화면을 추가하지 않는다. 위치/내비 API에 독립적인 저장된 배경 실행의 이력 연결은 별도 계획/기준 측정 뒤 진행하며 이 부분 미검증을 전체 개발 대기로 확대하지 않는다.
+
+
+현재 계측 수정 뒤 JDK17 전체 ./scripts/verify.sh의4개 Gradle 단계와 앱 계측 APK 빌드가 통과했다. JUnit XML773개/실패0/오류0/건너뜀0은 cached/up-to-date 포함 가능성이 있는 회귀 집계이며 전환 성공률/성능 수치가 아니다. 현재 README의4사례/각6항목/현재22개 실제 Kotlin 발췌/기존18이미지를 유지했다. 최신 PR의 CI/Codex/병합은 아직 미확인으로 별도 추적한다.
+
+
+## PR66 진단 손실 리뷰 수정
+
+[원래 P2 지적](https://github.com/HanGilLab/Android/pull/66#discussion_r4432530413)은 Main 재생성/파괴 검증이 증거 저장에서도 다시 예외를 던져 JSON/PNG를 모두 잃는 실제 제어 흐름이다. 수명 검증을 runCatching해 null과 별도 failure 필드로 보존하고 JSON 쓰기/PNG 캡처를 독립 시도하며 후속 정리 실패를 원실패에 붙인다. 실제 ActivityScenario.recreate로 옛 Main identity 검증 실패를 발생시킨 최신 native1PASS/skip0에서 MAIN_RECREATED JSON과 PNG header를 외부에서도 확인했다. 실제 SDK 전환1PASS는 a9a8607의 앞선 관련 검증이며 이번에는 진단 실패 경로를 추가 검증한 것이다. 원래7개 timing 원형과 source/APK/hash는 덮어쓰지 않았고 timer/제품 코드 변경도 없다.
+
+수정 뒤 JDK17 전체 verify4단계/앱 계측 빌드가 다시 통과했다. 새 native 뒤 현재13종료/145관찰/메모1/terminal실행15의 전 필드/물리형/순서/sequence/기존권한/환경 exact 일치와 소유 AVD/forward 종료를 확인했다. 원래 스레드의 답글/해결과 새 head 필수 CI/Codex는 아직 별도로 확인한다.
