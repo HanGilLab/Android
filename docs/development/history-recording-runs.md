@@ -1,6 +1,6 @@
 # 지난 연습의 저장된 배경 기록 실행
 
-종료한 연습 이력에 ‘배경 기록 실행’ 영역을 별도로 연결했다. 선택한 연습에 실제 저장된 실행 목록, 상태와 앱의 마커 시각을 읽는다. 최종 제품 `c226c569ab963939d54b992e5e039a041fb4cc18`에서 자동 검사, 제어 Compose 경계, 실제 Main/SDK/Room의 기본 라이트와 확대 다크, 기존 흐름의 전후 계측 및 새 영역의 변경 후 계측을 완료했다. 최신 PR의 CI/Codex와 병합 판정은 별도 미완료 조건이며 [작업 계획](../plans/active/2026-11-01-history-recording-runs.md)은 active로 유지한다.
+종료한 연습 이력에 ‘배경 기록 실행’ 영역을 별도로 연결했다. 선택한 연습에 실제 저장된 실행 목록, 상태와 앱의 마커 시각을 읽는다. 최종 제품 `c226c569ab963939d54b992e5e039a041fb4cc18`에서 자동 검사, 제어 Compose 경계, 실제 Main/SDK/Room의 기본 라이트와 확대 다크, 기존 흐름의 전후 계측 및 새 영역의 변경 후 계측을 완료했다. [PR #67](https://github.com/HanGilLab/Android/pull/67)의 최신 커밋 CI/Codex와 관련 검증을 확인해 정상 병합했고, 실제 main 동기화와 작업 브랜치 정리를 마쳤다. [완료 계획](../plans/completed/2026-11-01-history-recording-runs.md)에 이 독립 구현 범위의 근거를 기록한다.
 
 ## 제품 공백과 읽기 범위
 
@@ -86,7 +86,7 @@ M0 중앙값의 관측 차이는 −2.4249795ms/−0.88373573%, M1은 +0.7143125
 
 M2에는 변경 전 대응 행동이 없다. 변경 전을 0으로 두거나 이전 실패 대기 시간을 기준값으로 삼지 않으며 전후 개선율도 계산하지 않는다. 788.235563ms는 위에 정의한 새 동작의 계측 후 특성이다. M0/M1과 다른 endpoint이므로 세 값의 차이를 조회 오버헤드나 가속으로 해석하지 않는다.
 
-## 재현 전제와 남은 완료 조건
+## 재현 전제와 남은 제품 범위
 
 외부 실행자가 원래 DB 전체/물리형/순서/sequence, 권한/runtime과 설정을 먼저 보존하고 활성 연습/FGS 없음, 실제 Main 전면과 SDK P+UX를 확인해야 한다. 원형 baseline, 실패 보고서와 AtomicFile sidecar를 덮어쓰지 않는다. 원문 fixture, 식별자, 환경/로그와 개발 중 이미지는 공개하지 않는다.
 
@@ -96,4 +96,4 @@ M2에는 변경 전 대응 행동이 없다. 변경 전을 0으로 두거나 이
 - 제어 경계: manualHistoryRecordingRunBoundary=true. 실제 Compose와 제어 lifecycle/source/저장소/gate의 범위로 표시한다.
 - M2: manualHistoryRecordingRunMeasure=true, measurementStage=after, expectedFontScale=1.0/expectedDark=false와 실제 완전 product/harness SHA. 종료 표식은 HISTORY_RECORDING_RUN_M2_AFTER_COMPLETED.
 
-로컬 제품/계측/보존 검증은 끝났지만 최신 PR의 CI/Codex, 구체적인 리뷰 지적 처리와 정상 병합/동기화/브랜치 정리는 아직 별도 조건이다. 계획을 completed로 옮기지 않는다. APP-05/APP-06 전체, Navigation API 전면 전환의 모든 성공, 실행별 관찰 소속, 연속 수집과 실제 위치/도로 구간의 미검증도 유지한다.
+로컬 제품/계측/보존 검증과 최신 PR67의 CI/Codex, 정상 병합/동기화/작업 브랜치 정리를 완료했다. 이 계획은 저장 실행 마커의 독립 읽기 연결 범위만 완료로 옮겼다. APP-05/APP-06 전체, Navigation API 전면 전환의 모든 성공, 실행별 관찰 소속, 연속 수집과 실제 위치/도로 구간의 미검증도 유지한다.
