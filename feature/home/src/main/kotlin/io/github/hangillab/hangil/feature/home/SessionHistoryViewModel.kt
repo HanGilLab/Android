@@ -12,7 +12,9 @@ import io.github.hangillab.hangil.core.domain.SessionDeletionRepository
 import io.github.hangillab.hangil.core.domain.SessionDeletionResult
 import io.github.hangillab.hangil.core.domain.SessionDeletionTarget
 import io.github.hangillab.hangil.core.domain.VehicleGateway
+import io.github.hangillab.hangil.core.domain.VehicleObservationRepository
 import io.github.hangillab.hangil.core.domain.allowsPracticeInteraction
+import io.github.hangillab.hangil.feature.home.SessionHistoryObservationUiState.Token
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -52,8 +54,10 @@ class SessionHistoryViewModel
         private val restrictions: DrivingRestrictionsProvider,
         private val sessions: PracticeSessionRepository,
         private val deletions: SessionDeletionRepository,
+        observations: VehicleObservationRepository,
     ) : ViewModel() {
         private val lock = Any()
+        private val storedObservations = SessionHistoryObservationReader(lock, observations, ::canRead)
         private val published = MutableStateFlow<SessionHistoryUiState>(SessionHistoryUiState.Loading)
         private val requests = MutableStateFlow(0L)
         private var reader: Reader? = null
@@ -115,6 +119,62 @@ class SessionHistoryViewModel
                     current.session.sessionId == expectedSessionId && current.generation == expectedGeneration &&
                     records.getOrNull(current.index) == current.session && current.summary.source == current.session
             }
+
+        /** A rejected old detail opening cannot borrow a new P context after observing denial. */
+        fun canRevealStoredObservations(
+            expectedSessionId: String,
+            expectedGeneration: Long,
+        ): Boolean =
+            synchronized(lock) {
+                val owner = reader ?: return@synchronized false
+                val query = owner.query ?: return@synchronized false
+                if (selectionSnapshotLocked(expectedSessionId, expectedGeneration) == null) return@synchronized false
+                if (!canRead()) {
+                    restartDeniedQueryLocked(owner, query)
+                    return@synchronized false
+                }
+                true
+            }
+
+        fun observeStoredObservations(
+            expected: PracticeSession,
+            historyGeneration: Long,
+            canKeepOpen: () -> Boolean,
+        ): Flow<SessionHistoryObservationUiState> =
+            storedObservations.observe(expected, historyGeneration, canKeepOpen) {
+                val owner = reader
+                val query = owner?.query
+                if (owner == null || query == null || selectionSnapshotLocked(expected.sessionId, historyGeneration)?.session != expected) {
+                    null
+                } else {
+                    SessionHistoryObservationReader.Binding(
+                        isCurrent = {
+                            currentQuery(owner, query) &&
+                                selectionSnapshotLocked(expected.sessionId, historyGeneration)?.session == expected
+                        },
+                        denyAccess = {
+                            if (currentQuery(owner, query)) restartDeniedQueryLocked(owner, query)
+                        },
+                    )
+                }
+            }
+
+        fun canReadStoredObservations(token: Token): Boolean = storedObservations.canRead(token)
+
+        fun previousStoredObservation(
+            token: Token,
+            expectedRowId: Long,
+        ): Boolean = storedObservations.previous(token, expectedRowId)
+
+        fun nextStoredObservation(
+            token: Token,
+            expectedRowId: Long,
+        ): Boolean = storedObservations.next(token, expectedRowId)
+
+        fun retryStoredObservations(
+            token: Token,
+            expectedRowId: Long?,
+        ): Boolean = storedObservations.retry(token, expectedRowId)
 
         /** No additional database read exists until a visible, source-bound request is accepted. */
         fun requestDeletion(
@@ -338,9 +398,18 @@ class SessionHistoryViewModel
             expectedSessionId: String,
             expectedGeneration: Long,
         ): SessionHistoryUiState.Ready? {
+            if (!canRead()) return null
+            return selectionSnapshotLocked(expectedSessionId, expectedGeneration)
+        }
+
+        /** Same received source check, without conflating a denied live value with an expired source. */
+        private fun selectionSnapshotLocked(
+            expectedSessionId: String,
+            expectedGeneration: Long,
+        ): SessionHistoryUiState.Ready? {
             val owner = reader ?: return null
             val query = owner.query ?: return null
-            if (!currentQuery(owner, query) || !canRead() || selectionLost || selectedId != expectedSessionId) return null
+            if (!currentQuery(owner, query) || selectionLost || selectedId != expectedSessionId) return null
             val current = published.value as? SessionHistoryUiState.Ready ?: return null
             val records = ended ?: return null
             return current.takeIf {
@@ -455,7 +524,7 @@ class SessionHistoryViewModel
             flow {
                 emitAll(
                     combine(vehicle.state, restrictions.restrictions) { currentVehicle, currentRestrictions ->
-                        if (allowsPracticeInteraction(currentVehicle, currentRestrictions)) Access.Allowed else Access.Locked
+                        if (allowsPracticeInteraction(currentVehicle, currentRestrictions) && canRead()) Access.Allowed else Access.Locked
                     },
                 )
             }.distinctUntilChanged()
@@ -601,6 +670,7 @@ class SessionHistoryViewModel
         }
 
         private fun publishSelectionLocked(records: List<PracticeSession>) {
+            storedObservations.invalidate()
             val index = records.indexOfFirst { it.sessionId == selectedId }
             val nextGeneration = nextGenerationLocked()
             published.value =
@@ -617,6 +687,7 @@ class SessionHistoryViewModel
         }
 
         private fun publishLocked(state: SessionHistoryUiState) {
+            storedObservations.invalidate(state == SessionHistoryUiState.Locked)
             nextGenerationLocked()
             published.value = state
         }

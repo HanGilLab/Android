@@ -17,8 +17,12 @@ import io.github.hangillab.hangil.core.domain.SessionDeletionTarget
 import io.github.hangillab.hangil.core.domain.SessionFinishResult
 import io.github.hangillab.hangil.core.domain.SessionStartResult
 import io.github.hangillab.hangil.core.domain.SessionTaskCount
+import io.github.hangillab.hangil.core.domain.SessionVehicleObservation
 import io.github.hangillab.hangil.core.domain.UxRestrictionState
 import io.github.hangillab.hangil.core.domain.VehicleGateway
+import io.github.hangillab.hangil.core.domain.VehicleObservation
+import io.github.hangillab.hangil.core.domain.VehicleObservationAppendResult
+import io.github.hangillab.hangil.core.domain.VehicleObservationRepository
 import io.github.hangillab.hangil.core.domain.VehicleReading
 import io.github.hangillab.hangil.core.domain.VehicleState
 import kotlinx.coroutines.CancellationException
@@ -1444,7 +1448,17 @@ class SessionHistoryViewModelTest {
                     canCommit: () -> Boolean,
                 ): SessionDeletionResult = error("Deletion is outside this read-only fixture")
             }
-        val model = SessionHistoryViewModel(vehicle, restrictions, repository, deletions)
+        val observations =
+            object : VehicleObservationRepository {
+                override fun observe(sessionId: String): Flow<List<SessionVehicleObservation>> =
+                    error("Stored observation queries are outside this fixture")
+
+                override suspend fun append(
+                    sessionId: String,
+                    observation: VehicleObservation,
+                ): VehicleObservationAppendResult = error("Stored observation writes are outside this fixture")
+            }
+        val model = SessionHistoryViewModel(vehicle, restrictions, repository, deletions, observations)
     }
 
     private class FakeRepository(

@@ -143,6 +143,33 @@ fun SessionHistoryRoute(
                             onNewer = { viewModel.newer(current.session.sessionId, current.generation) },
                             onOlder = { viewModel.older(current.session.sessionId, current.generation) },
                             canRevealSummary = { viewModel.canRevealSummary(current.session.sessionId, current.generation) },
+                            observations = {
+                                key(current.session, current.generation, clickOwner.first) {
+                                    val canKeepOpen =
+                                        remember(clickOwner.first, lifecycle) {
+                                            {
+                                                clickOwner.first.get() && lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+                                            }
+                                        }
+                                    ParkedPanel {
+                                        ParkedDisclosure(
+                                            stringResource(R.string.review_title),
+                                            {
+                                                canKeepOpen() &&
+                                                    viewModel.canRevealStoredObservations(current.session.sessionId, current.generation)
+                                            },
+                                            Modifier.testTag("history_observations"),
+                                        ) {
+                                            HistoryStoredObservationRoute(
+                                                current.session,
+                                                current.generation,
+                                                canKeepOpen,
+                                                viewModel,
+                                            )
+                                        }
+                                    }
+                                }
+                            },
                             onDelete = {
                                 if (clickOwner.first.get() &&
                                     viewModel.requestDeletion(current.session.sessionId, current.generation) { clickOwner.first.get() }
@@ -196,6 +223,7 @@ private fun HistoryRecord(
     onNewer: () -> Unit,
     onOlder: () -> Unit,
     canRevealSummary: () -> Boolean,
+    observations: @Composable () -> Unit,
     onDelete: () -> Unit,
 ) {
     val session = state.session
@@ -249,6 +277,7 @@ private fun HistoryRecord(
             )
             Text(session.taskTitle, Modifier.testTag("history_task"), style = MaterialTheme.typography.titleLarge)
         }
+        observations()
         HistoryCourseSummary(state, canRevealSummary)
         ParkedPanel {
             Text(
