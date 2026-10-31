@@ -1,11 +1,11 @@
 # 선택한 지난 연습의 저장 차량 관찰 열람
 
-- 상태: 로컬 구현과 검증 완료, 최신 PR 미생성/검사와 리뷰 대기
+- 상태: 완료. 제품 PR58의 검사/리뷰/정상 병합/브랜치 정리/Notion 확인 완료. main push CI도 확인했으며 이번 종료 문서 PR의 검사는 별도 후속.
 - 요구사항: 출품 체크리스트 APP-06/APP-08의 독립적인 저장 기록 열람 연결. 지도 구간 복습, 과정 완료와 전체 항목은 미완료 유지.
 
 ## 목표와 범위
 
-지난 연습에서 사용자가 고른 종료 기록의 저장 차량 관찰을 펼쳐 읽는다. 현재 이력은 과거 기록을 고를 수 있지만 제목, 과정 요약, 시각과 삭제만 제공하고, 차량 관찰은 홈의 가장 최근 종료 기록에서만 읽을 수 있다. 기존 Room의 sessionId 조회와 같은 출처/미확인/미지원/오류 표시를 재사용한다. 위치, 지도, 내비, 쓰기, DB 스키마와 권한은 바꾸지 않는다. 최신 기록 전용 경로는 그 계약을 유지한다.
+지난 연습에서 사용자가 고른 종료 기록의 저장 차량 관찰을 펼쳐 읽는다. 변경 전 이력은 과거 기록을 고를 수 있지만 제목, 과정 요약, 시각과 삭제만 제공하고, 차량 관찰은 홈의 가장 최근 종료 기록에서만 읽을 수 있다. 기존 Room의 sessionId 조회와 같은 출처/미확인/미지원/오류 표시를 재사용한다. 위치, 지도, 내비, 쓰기, DB 스키마와 권한은 바꾸지 않는다. 최신 기록 전용 경로는 그 계약을 유지한다.
 
 ## 완료 조건
 
@@ -15,7 +15,7 @@
 - [x] JDK17 전체 verify, 변경 경계, 실제 기본 라이트/확대 다크와 DDS D-P를 확인한다. 제어 입력/격리 Room과 실제 원래 SDK 저장 기록을 구분하고 데이터/설정을 보존한다.
 - [x] 같은 고정 이력 진입 절차의 변경 전후 원값/분포/실패/제외와 한계를 기록한다.
 - [x] README의 기존 4개와 새 근거를 비교해 근거가 강한 경우에만 교체하며 정확히4개와 현재 코드/링크를 유지한다.
-- [ ] 최신 PR CI/Codex/수동 검증/정책을 확인해 정상 병합하고 실제 병합/끝커밋/main ff-only/브랜치 정리와 Notion readback을 확인한다.
+- [x] 제품 PR58의 동일 최종 head CI/Codex/수동 검증/정책을 확인해 정상 병합했고 실제 병합/끝 커밋/main ff-only/브랜치 정리와 Notion readback을 확인했다.
 
 ## 구현 단계
 
@@ -50,7 +50,7 @@
 | 고정 지원과 변경 전 계측 | 통과 | 제품016245c/지원4dbea6c4c6fc59cf846870f5bcaefd38c031b4e1, 실제 SDK P+UX/원래 자료, 5warm30표본/실패누락제외0 |
 | ./scripts/verify.sh | 최종 전체4단계 통과 | JDK17.0.21+9, 45suites654개 실패/오류/건너뜀0, debug/unsigned release 및 계측 APK 통과. cache/up-to-date 포함 |
 | 관련 제어/실제 SDK 시나리오 | 최종 제어4개와 실제 두 테마 각각1개 PASS/건너뜀0 | 제어 입력의 합성 P/UX/자료와 실제 Main/SDK/Room의 원래9개 종료/15개 관찰을 구분. 초기 실패와 전면 복구 기록은 아래에 별도 보존 |
-| 최신 PR CI/Codex | 미생성 | 같은 최신 head에서 확인 |
+| 제품 PR58 CI/Codex/병합 | 동일 최종 head 통과, 정상 병합 완료 | head966f7c1의 App15368 pull_request run41172554771/attempt1 CI4개 success, Codex 댓글6539543593 completed/지적 없음. 실제 병합4bc702622cbccdd7e8de0b391f48167f3cbe4917 |
 
 ## README 사례 비교
 
@@ -115,8 +115,19 @@ README 기능 표에는 실제 이력에서 선택한 종료 기록의 저장 �
 
 비교 실행 뒤 외부 helper의 설정 복원, snapshot-after 대조와 종료가 모두 exit0이었다. 원래 모든 table/row/field/물리 자료형/순서/sequence/grants/runtime/font/night/IME/proxy가 정확히 보존됐으며 이번 소유 AVD만 정상 종료했다. 소유 forward 제거와 DDS 브라우저 탭 닫기도 완료했다. 비공개 run-state의 original_environment_restored/owned_avd_forward_stopped/owned_dds_tabs_closed가 모두 true이며, 각 실제 계측의 domain 자료 대조와 이 외부 최종 원본 대조를 구분한다.
 
-최신 PR은 아직 미생성이며 동일 head의 필수 CI/Codex, 실제 병합/끝 커밋/main ff-only 동기화/브랜치 정리와 Notion readback은 후속이다. 로컬 기능 검증 완료를 PR 승인이나 전체 APP-06/APP-08 완료로 기록하지 않는다. 계획은 병합 후 별도 종료 작업에서 completed로 이동한다.
+제품 PR58의 동일 최종 head 필수 CI/Codex, 실제 병합/끝 커밋/main ff-only 동기화/로컬과 원격 브랜치 정리 및 Notion readback을 확인했다. 제품 PR의 완료를 전체 APP-06/APP-08 완료로 확대하지 않는다. 이 계획은 completed로 이동한다. 병합 main의 별도 push CI도 통과했으며 이번 종료 문서 PR의 필수 검사/Codex 리뷰는 별도 후속으로 확인한다.
 
 ## 이미지 원본 재확인
 
 확대 다크 홈 복귀의 축소 미리보기에서 일부 문구가 비어 보였지만, 같은 해시의 원본 크기 이미지와 별도 검토, 실제 PNG 픽셀에서 출처 배지와 관찰 문구가 모두 존재함을 확인했다. 제품 결함이나 수정 성과로 기록하지 않는다. 이미 시작한 같은 제품652/하네스5eb의 추가 다크 시나리오도1PASS/건너뜀0으로 마쳤으며 새 비공개 PNG5개를 따로 보존했다. 추가 홈 PNG는 최초 원본과 바이트가 완전히 같았다. 추가 실행은 새 성능 표본이 아니며 앞선70개 timing에 섞지 않았다. 원래 모든 자료/권한/설정을 다시 대조하고 소유 AVD/forward/DDS 탭을 종료했다.
+
+
+## 제품 PR58 병합과 종료 확인
+
+- [PR58](https://github.com/HanGilLab/Android/pull/58)의 실제 최종 head는 `966f7c1f41731c7644d8234aa313f429203b153e`다. 같은 head의 Codex 댓글 `6539543593`은 completed/지적 없음이며 native review 스레드와 별도 formal review는 각각0개였다. 대기나 리뷰 부재를 formal 승인으로 바꾸어 기록하지 않았다.
+- GitHub App15368의 실제 `pull_request` 실행 `41172554771`/attempt1에서 필수 CI4개가 success였다. 병합 직전 최신 상태를 다시 확인해 정상 gate를 충족했으며 보호 규칙을 우회하지 않았다.
+- 실제 병합 커밋은 `4bc702622cbccdd7e8de0b391f48167f3cbe4917`이다. 최종 head와 병합 tree의 동일함, parent016245c 및 noreply 작성자 정보를 확인했다. main을 ff-only로 동기화하고 해당 로컬/원격 작업 브랜치를 정리했다.
+- Notion의 APP06 과거 열람 설명을 main 반영 상태로 갱신하고 readback했다. 필수19/54와 선택3개 제외를 유지하며 APP06/APP08 전체는 미체크다. 지도 복습, 실제 도로/위치/내비와 독립 UX의 미완료 조건은 그대로다.
+- 실제 GitHub README 브라우저 렌더에서 대표 사례4개, 펼친 실제 Kotlin17개, 이미지18개가 모두 로드됨을 확인했다. 1280px 폭에서 가로 넘침이 없으며 기존 사례를 보존한 판단과 이미지 원본 재확인 기록은 앞 절과 같다.
+- 병합 main4bc7026의 실제 [push/main CI](https://github.com/HanGilLab/Android/actions/runs/41172920062) run41172920062/attempt1과 같은 SHA의 App15368 필수4개가 모두 success임을 별도로 확인했다. 이 문서 작성 시점에 종료 문서 PR의 최신 필수 CI/Codex는 후속이며 제품 PR58이나 main의 결과로 대신하지 않는다.
+- 이번 계획 이동/상태/상대 링크 정리는 앱 런타임 성능과 무관하므로 별도 성능 측정에서 제외한다. 종료 문서는 JDK17 quality의 공개 콘텐츠/포맷/모듈 경계/Lint를 통과했다. 상대 링크, 가운데점/민감 정보 노출 없음과 제품/계측 소스/README/CSV 불변을 독립 검토했다. 이 문서 작성 시점에 종료 문서 PR 자체의 최신 CI/Codex/병합은 후속이며 최종 결과는 해당 PR과 Notion에 관리한다.

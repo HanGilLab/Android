@@ -1,6 +1,6 @@
 # 선택한 지난 연습의 저장 차량 관찰
 
-이 문서는 로컬 구현과 검증이 끝난 독립 읽기 경계, 실제 측정과 재현 조건을 기록한다. 제품65221b4의 실제 두 테마와 최종 제어 검증은 통과했으며 최신 PR은 아직 미생성이다. 로컬 기능 검증을 PR의 필수 CI/Codex 또는 병합 완료로 대신하지 않는다. 작업 기준은 [계획](../plans/active/2026-10-31-history-stored-observations.md)이다.
+이 문서는 로컬 구현과 검증이 끝난 독립 읽기 경계, 실제 측정과 재현 조건을 기록한다. 제품65221b4의 실제 두 테마와 최종 제어 검증이 통과했고, 제품 PR58도 동일 최종 head의 필수 CI/Codex를 확인해 정상 병합했다. 병합 main의 별도 push CI도 확인했으며 이번 종료 문서 PR의 검사는 별도 후속으로 구분한다. 작업 기준은 [계획](../plans/completed/2026-10-31-history-stored-observations.md)이다.
 
 ## 실제 제품 공백과 선택한 범위
 
@@ -83,8 +83,17 @@ JVM의 동시성/터미널/오염 입력, 제어 native의 합성 무방출/선�
 6. 제어 경계는 [SessionHistoryObservationBoundaryTest](../../app/src/androidTest/kotlin/io/github/hangillab/hangil/SessionHistoryObservationBoundaryTest.kt)의3개 메서드에 `manualHistoryObservationBoundary=true`를 사용한다. 기존 [SessionHistoryDisclosureBoundaryTest.staleDisclosureCallbackCannotExpandAfterSilentLiveDOrRememberDeniedIntent](../../app/src/androidTest/kotlin/io/github/hangillab/hangil/SessionHistoryDisclosureBoundaryTest.kt)는 `manualHistoryDisclosureBoundary=true`다. 합성 소스/가드/실패를 명시하며 실제 원래 Room 자료나 차량 SDK 장애 재현으로 부르지 않는다.
 7. 최종 domain 자료와 외부 SQLite/sequence/권한/설정을 각각 대조하고 복원한다. 원형/실패/비공개 캡처를 보존한 뒤 이번 소유 AVD/forward/DDS만 정리한다. 이 문서는 새 권한이나 데이터 삭제를 승인하지 않는다.
 
-기능 검증은 완료됐지만 최신 PR은 아직 미생성이며 동일 최종 head 필수 CI/Codex와 정상 병합/브랜치 정리/Notion readback은 후속이다. APP-06/APP-08 전체, 지도 복습/실제 도로/위치 연속/내비 수집과 독립 UX 오류 주입의 미완료는 유지한다.
+기능 검증과 제품 PR58의 동일 최종 head 필수 CI/Codex, 정상 병합/브랜치 정리/Notion readback을 완료했다. 병합 main의 별도 push CI도 통과했고 이번 종료 문서 PR의 검사는 아직 별도 확인 대상이다. APP-06/APP-08 전체, 지도 복습/실제 도로/위치 연속/내비 수집과 독립 UX 오류 주입의 미완료는 유지한다.
 
 ## 이미지 원본 재확인
 
 확대 다크 홈 복귀의 축소 미리보기에서 일부 문구가 비어 보였지만, 같은 해시의 원본 크기 이미지와 별도 검토, 실제 PNG 픽셀에서 출처 배지와 관찰 문구가 모두 존재함을 확인했다. 제품 결함이나 수정 성과로 기록하지 않는다. 이미 시작한 같은 제품652/하네스5eb의 추가 다크 시나리오도1PASS/건너뜀0으로 마쳤으며 새 비공개 PNG5개를 따로 보존했다. 추가 홈 PNG는 최초 원본과 바이트가 완전히 같았다. 추가 실행은 새 성능 표본이 아니며 앞선70개 timing에 섞지 않았다. 원래 모든 자료/권한/설정을 다시 대조하고 소유 AVD/forward/DDS 탭을 종료했다.
+
+
+## 제품 PR58의 실제 종료 기록
+
+[PR58](https://github.com/HanGilLab/Android/pull/58)의 실제 최종 head는 `966f7c1f41731c7644d8234aa313f429203b153e`다. Codex 댓글 `6539543593`이 completed/지적 없음이며 native review 스레드/별도 formal review는 각각0개다. GitHub App15368의 실제 `pull_request` run `41172554771`/attempt1에서 필수 CI4개가 success였고 최신 동일 head gate를 재확인해 보호 규칙 우회 없이 정상 병합했다.
+
+실제 병합 커밋은 `4bc702622cbccdd7e8de0b391f48167f3cbe4917`이다. head/병합 tree 동일, parent016245c와 noreply를 확인하고 main ff-only 동기화 및 로컬/원격 작업 브랜치 정리를 마쳤다. Notion 갱신 후 readback은 필수19/54, 선택3개 제외이며 APP06/APP08 전체는 미체크다. 실제 GitHub README의4개 사례/17개 펼친 코드/18개 이미지 로드와1280px 폭의 가로 넘침 없음을 확인했다. 성능 향상 미확정과 기존 네 사례 보존, 이미지 원본 재확인 근거는 변경하지 않는다.
+
+병합 main4bc7026의 실제 [push/main CI](https://github.com/HanGilLab/Android/actions/runs/41172920062) run41172920062/attempt1과 같은 SHA의 App15368 필수4개 success를 별도로 확인했다. 이 종료 문서 작성 시점에 종료 문서 PR의 CI/Codex는 별도 후속이다. 최종 결과는 해당 PR과 Notion에 관리한다. 종료 문서의 JDK17 quality, 상대 링크, 공개 콘텐츠와 제품/계측 소스/README/CSV 불변 확인은 통과했다. 종료 문서 PR의 검사를 제품 PR58이나 main의 완료로 대신하거나 과거 실패/미실행 기록을 지우지 않는다.
