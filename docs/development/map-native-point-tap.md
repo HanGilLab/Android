@@ -103,7 +103,7 @@ Q1/Q3는 정렬한 본 표본 30개 중 하위 15개와 상위 15개 각각의 �
 
 두 단계에서 runtime originalData, fixedSource, catalog, environment와 measurementContract가 정확히 같고 완료 baseline 원형이 바뀌지 않았음을 확인했다. 그렇더라도 순차 실행의 타일/네트워크/ART/JIT/발열/OS와 설치 순서 영향까지 같다고 증명한 것은 아니다. 분포 이동은 추가 조사할 관찰 근거이며, 이 한 쌍만으로 앱 코드에 의한 인과 저하, 성능 향상, 동등성이나 무회귀를 확정하지 않는다. outline 여유의 RED/GREEN도 이 성능 수치를 대신하지 않는다.
 
-첫 비교는 기준→제품 구현→관련 검증→최종의 순차 실행이며 표본별로 교차 배치한 paired 측정이 아니다. [전체140개 timing 원값](measurements/map-point-tap-entry-ui-times.csv)은 B1/F1의 첫70행을 byte 그대로 보존하고 B2/F2의70행을 `baseline_repeat`/`comparison_repeat` stage로 append한 기록이다. 각 stage는 워밍업5개와 본 표본30개를 구분한다. 첫 실행을 낮은 재측정 값으로 대체하거나 네 series를 합쳐 첫 결과를 숨기지 않는다.
+첫 비교는 기준→제품 구현→관련 검증→최종의 순차 실행이며 표본별로 교차 배치한 paired 측정이 아니다. [전체140개 timing 원값](measurements/map-point-tap-entry-ui-times.csv)은 B1/F1의 첫70개 원값과 행 순서를 보존하고 B2/F2의70행을 `baseline_repeat`/`comparison_repeat` stage로 append한 기록이다. 각 stage는 워밍업5개와 본 표본30개를 구분한다. CSV 줄 끝은 저장소 정책의 LF에 맞췄으며 정규화 전후의 모든 수치와 순서가 같음을 대조했다. 첫 실행을 낮은 재측정 값으로 대체하거나 네 series를 합쳐 첫 결과를 숨기지 않는다.
 
 완료 기준 원문은 앱의 비공개 cache 상대 경로 `measurements/map-point-tap-entry-baseline.json`, 비교는 `measurements/map-point-tap-entry-comparison.json`에 별도 저장한다. 원문에는 고정 입력/전체 domain snapshot/환경/설치 APK hash가 포함되므로 공개하지 않는다. 기존 파일이나 `.bak`/`.new` sidecar가 있으면 덮어쓰지 않는다. 비교는 완료된 같은 kind/contract의 기준을 읽어 원본 자료, source, catalog와 환경의 동일성을 확인하고, 실행 뒤 기준 파일 SHA가 그대로인지 다시 확인한다. 각 표본의 원값, 실패/누락/미실행/제외와 실제 설치된 제품/계측 APK SHA를 보존한다. SHA 인자는 외부 실행자의 선언이며 기기에서 소스 커밋을 자동 증명한 것으로 기록하지 않는다.
 
