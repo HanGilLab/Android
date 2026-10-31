@@ -13,7 +13,7 @@ interface SessionDeletionRepository {
 
     /**
      * Revalidates the entire target, including an absent memo version, and deletes only that finished
-     * session with its observations and memo atomically. Recheck permission before and after the
+     * session with its observations, memo and exact recording-run snapshots atomically. Recheck permission before and after the
      * deletion and roll back when denied or cancelled. Missing is distinct from a successful delete.
      * Other sessions and the current preparation must remain unchanged. Storage errors propagate.
      */

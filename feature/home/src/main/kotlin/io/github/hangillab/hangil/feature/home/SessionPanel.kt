@@ -22,6 +22,7 @@ import io.github.hangillab.hangil.core.designsystem.ParkedPanel
 import io.github.hangillab.hangil.core.domain.CourseReviewStatus
 import io.github.hangillab.hangil.core.domain.PracticeSession
 import io.github.hangillab.hangil.core.domain.Preparation
+import io.github.hangillab.hangil.core.domain.VehicleRecordingState
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -38,6 +39,11 @@ internal fun SessionRoute(
     viewModel: SessionViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val backgroundViewModel: BackgroundRecordingViewModel = hiltViewModel()
+    val displayed = state
+    val background by backgroundViewModel.state.collectAsStateWithLifecycle()
+    val ownedBackgroundFailure =
+        (background.background as? io.github.hangillab.hangil.core.domain.BackgroundRecordingState.Failed)?.runId != null
     if (state.allowsInteraction) {
         SessionPanel(
             state,
@@ -51,6 +57,14 @@ internal fun SessionRoute(
             canPrepare,
             recordingState,
             onRetryRecording,
+            allowRecordingRetry = !ownedBackgroundFailure,
+            backgroundContent = {
+                BackgroundRecordingRoute(
+                    displayed.active,
+                    { viewModel.canExpandGuide(displayed.nextStep, displayed.active) },
+                    backgroundViewModel,
+                )
+            },
         )
     }
 }
@@ -68,6 +82,8 @@ internal fun SessionPanel(
     canPrepare: Boolean,
     recordingState: VehicleRecordingState,
     onRetryRecording: () -> Unit,
+    allowRecordingRetry: Boolean = true,
+    backgroundContent: @Composable () -> Unit = {},
 ) {
     if (!state.allowsInteraction) return
     val outdated = (state.preparation as? PreparationLoadState.Loaded)?.preparation == Preparation.Outdated
@@ -124,7 +140,7 @@ internal fun SessionPanel(
                     )
                     Text(active.courseTitle, Modifier.testTag("session_course"), style = MaterialTheme.typography.headlineSmall)
                     if (active.courseReviewStatus == CourseReviewStatus.DEMO) ParkedBadge(stringResource(R.string.demo_course))
-                    VehicleRecordingStatus(recordingState, onRetryRecording)
+                    VehicleRecordingStatus(recordingState, onRetryRecording, allowRecordingRetry)
                     ParkedButton(
                         onClick = {
                             onFinish(active.sessionId)
@@ -216,6 +232,7 @@ internal fun SessionPanel(
             }
         }
     }
+    backgroundContent()
     LatestSessionPanel(state, onPrepareNext, canExpandRecent)
 }
 
@@ -223,6 +240,7 @@ internal fun SessionPanel(
 private fun VehicleRecordingStatus(
     state: VehicleRecordingState,
     onRetry: () -> Unit,
+    allowRetry: Boolean,
 ) {
     Text(
         stringResource(
@@ -237,7 +255,7 @@ private fun VehicleRecordingStatus(
         style = MaterialTheme.typography.bodyLarge,
         color = if (state is VehicleRecordingState.Failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
     )
-    if (state is VehicleRecordingState.Failed) {
+    if (state is VehicleRecordingState.Failed && allowRetry) {
         TextButton(
             onClick = onRetry,
             modifier = Modifier.heightIn(min = HanGilDimensions.secondaryActionMinHeight).testTag("vehicle_recording_retry"),

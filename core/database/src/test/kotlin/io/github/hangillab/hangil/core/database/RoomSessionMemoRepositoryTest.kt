@@ -331,7 +331,7 @@ class RoomSessionMemoRepositoryTest {
             fun open() =
                 Room
                     .databaseBuilder(context, PreparationDatabase::class.java, name)
-                    .addMigrations(PreparationMigration1To2, PreparationMigration2To3, PreparationMigration3To4)
+                    .addMigrations(PreparationMigration1To2, PreparationMigration2To3, PreparationMigration3To4, PreparationMigration4To5)
                     .build()
             try {
                 val expected =

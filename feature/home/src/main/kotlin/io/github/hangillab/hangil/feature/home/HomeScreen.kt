@@ -32,6 +32,7 @@ import io.github.hangillab.hangil.core.designsystem.ParkedPage
 import io.github.hangillab.hangil.core.designsystem.ParkedPanel
 import io.github.hangillab.hangil.core.domain.Preparation
 import io.github.hangillab.hangil.core.domain.PreparedPractice
+import io.github.hangillab.hangil.core.domain.VehicleRecordingState
 
 @Composable
 fun HomeRoute(

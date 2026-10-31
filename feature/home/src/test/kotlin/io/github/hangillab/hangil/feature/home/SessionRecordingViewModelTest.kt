@@ -6,10 +6,14 @@ import io.github.hangillab.hangil.core.domain.DrivingRestrictions
 import io.github.hangillab.hangil.core.domain.DrivingRestrictionsProvider
 import io.github.hangillab.hangil.core.domain.GearPosition
 import io.github.hangillab.hangil.core.domain.ParkingState
+import io.github.hangillab.hangil.core.domain.PracticeRecordingController
 import io.github.hangillab.hangil.core.domain.PracticeSelection
 import io.github.hangillab.hangil.core.domain.PracticeSession
 import io.github.hangillab.hangil.core.domain.PracticeSessionRepository
 import io.github.hangillab.hangil.core.domain.PreparedPractice
+import io.github.hangillab.hangil.core.domain.RecordingRunOpenResult
+import io.github.hangillab.hangil.core.domain.RecordingRunRepository
+import io.github.hangillab.hangil.core.domain.RecordingRunStatus
 import io.github.hangillab.hangil.core.domain.SessionFinishResult
 import io.github.hangillab.hangil.core.domain.SessionStartResult
 import io.github.hangillab.hangil.core.domain.SessionVehicleObservation
@@ -20,9 +24,12 @@ import io.github.hangillab.hangil.core.domain.VehicleObservationAppendResult
 import io.github.hangillab.hangil.core.domain.VehicleObservationRepository
 import io.github.hangillab.hangil.core.domain.VehicleObservationSource
 import io.github.hangillab.hangil.core.domain.VehicleReading
+import io.github.hangillab.hangil.core.domain.VehicleRecordingRun
+import io.github.hangillab.hangil.core.domain.VehicleRecordingState
 import io.github.hangillab.hangil.core.domain.VehicleState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.awaitCancellation
@@ -53,7 +60,7 @@ class SessionRecordingViewModelTest {
     @Test
     fun `no active session is idle without subscribing to vehicle snapshots or needing UI observers`() =
         runTest {
-            val f = Fixture()
+            val f = Fixture(backgroundScope)
             val model = f.model()
             assertEquals(VehicleRecordingState.Paused, model.state.value)
             val host = backgroundScope.launch { model.recordWhileStarted() }
@@ -70,7 +77,7 @@ class SessionRecordingViewModelTest {
     @Test
     fun `foreground active session records unknown and driving states independently of parking and UI collection`() =
         runTest {
-            val f = Fixture()
+            val f = Fixture(backgroundScope)
             f.records.value = listOf(session())
             f.vehicle.state.value = VehicleState()
             f.restrictions.restrictions.value = DrivingRestrictions()
@@ -106,7 +113,7 @@ class SessionRecordingViewModelTest {
     @Test
     fun `same active id metadata changes do not restart or duplicate the initial snapshot`() =
         runTest {
-            val f = Fixture()
+            val f = Fixture(backgroundScope)
             f.records.value = listOf(session())
             val model = f.model()
             val host = backgroundScope.launch { model.recordWhileStarted() }
@@ -122,7 +129,7 @@ class SessionRecordingViewModelTest {
     @Test
     fun `session replacement waits for cancelled pending write cleanup before recording the new id`() =
         runTest {
-            val f = Fixture()
+            val f = Fixture(backgroundScope)
             f.records.value = listOf(session())
             val cleanup = CompletableDeferred<Unit>()
             var cancellationEntered = false
@@ -158,7 +165,7 @@ class SessionRecordingViewModelTest {
     @Test
     fun `finishing a session cancels collection even without another vehicle update`() =
         runTest {
-            val f = Fixture()
+            val f = Fixture(backgroundScope)
             f.records.value = listOf(session())
             val model = f.model()
             val host = backgroundScope.launch { model.recordWhileStarted() }
@@ -176,7 +183,7 @@ class SessionRecordingViewModelTest {
     @Test
     fun `STOP cancels collection and a new foreground lifetime records only its latest initial state`() =
         runTest {
-            val f = Fixture()
+            val f = Fixture(backgroundScope)
             f.records.value = listOf(session())
             val model = f.model()
             val first = backgroundScope.launch { model.recordWhileStarted() }
@@ -198,7 +205,7 @@ class SessionRecordingViewModelTest {
     @Test
     fun `overlapping lifecycle hosts are serialized and a waiting cancelled host cannot pause the owner`() =
         runTest {
-            val f = Fixture()
+            val f = Fixture(backgroundScope)
             f.records.value = listOf(session())
             val model = f.model()
             val first = backgroundScope.launch { model.recordWhileStarted() }
@@ -224,7 +231,7 @@ class SessionRecordingViewModelTest {
     @Test
     fun `write failure remains failed across hot SDK updates and retries only after explicit parked retry`() =
         runTest {
-            val f = Fixture()
+            val f = Fixture(backgroundScope)
             f.records.value = listOf(session())
             f.append = { throw IOException("private fixture detail") }
             val model = f.model()
@@ -250,7 +257,7 @@ class SessionRecordingViewModelTest {
     @Test
     fun `failed session read does not resubscribe until explicit retry and does not imply no active session`() =
         runTest {
-            val f = Fixture()
+            val f = Fixture(backgroundScope)
             f.records.value = listOf(session())
             var failRead = true
             f.source = {
@@ -278,7 +285,7 @@ class SessionRecordingViewModelTest {
     @Test
     fun `session stream failure cancels an active vehicle subscription and is exposed as read failure`() =
         runTest {
-            val f = Fixture()
+            val f = Fixture(backgroundScope)
             val fail = CompletableDeferred<Unit>()
             f.source = {
                 flow {
@@ -304,7 +311,7 @@ class SessionRecordingViewModelTest {
     @Test
     fun `cancelling a pending append propagates STOP without showing failure or leaving detached writes`() =
         runTest {
-            val f = Fixture()
+            val f = Fixture(backgroundScope)
             f.records.value = listOf(session())
             val release = CompletableDeferred<Unit>()
             var cancelled = false
@@ -334,7 +341,7 @@ class SessionRecordingViewModelTest {
     @Test
     fun `retry rejects eight unsafe live combinations before permitting confirmed park and UX clear`() =
         runTest {
-            val f = Fixture()
+            val f = Fixture(backgroundScope)
             f.records.value = listOf(session())
             f.append = { throw IOException("fixture") }
             val model = f.model()
@@ -375,7 +382,7 @@ class SessionRecordingViewModelTest {
                 VehicleObservationAppendResult.FinishedSession to VehicleRecordingState.Reason.SESSION_FINISHED,
                 VehicleObservationAppendResult.InvalidTime to VehicleRecordingState.Reason.INVALID_TIME,
             ).forEach { (result, reason) ->
-                val f = Fixture()
+                val f = Fixture(backgroundScope)
                 f.records.value = listOf(session())
                 f.append = { result }
                 val model = f.model()
@@ -394,7 +401,7 @@ class SessionRecordingViewModelTest {
     @Test
     fun `a new foreground lifetime may retry a failed run even while detailed interaction stays locked`() =
         runTest {
-            val f = Fixture()
+            val f = Fixture(backgroundScope)
             f.records.value = listOf(session())
             f.append = { throw IOException("fixture") }
             val model = f.model()
@@ -420,7 +427,7 @@ class SessionRecordingViewModelTest {
     @Test
     fun `clock failure is displayed without leaking the exception and does not append a fabricated time`() =
         runTest {
-            val f = Fixture()
+            val f = Fixture(backgroundScope)
             f.records.value = listOf(session())
             val clock =
                 object : Clock() {
@@ -448,7 +455,7 @@ class SessionRecordingViewModelTest {
                 { flowOf(listOf(session(), session("session-b"))) },
                 { flowOf(emptyList()) },
             ).forEach { source ->
-                val f = Fixture()
+                val f = Fixture(backgroundScope)
                 f.source = source
                 val model = f.model()
                 val host = backgroundScope.launch { model.recordWhileStarted() }
@@ -462,7 +469,7 @@ class SessionRecordingViewModelTest {
     @Test
     fun `independent append cancellation leaves a live host failed and retryable instead of recording`() =
         runTest {
-            val f = Fixture()
+            val f = Fixture(backgroundScope)
             f.records.value = listOf(session())
             f.append = { throw CancellationException("fixture internal append cancellation") }
             val model = f.model()
@@ -486,7 +493,7 @@ class SessionRecordingViewModelTest {
     @Test
     fun `append local timeout leaves a live host failed and retryable without an automatic restart`() =
         runTest {
-            val f = Fixture()
+            val f = Fixture(backgroundScope)
             f.records.value = listOf(session())
             f.append = { withTimeout(1L) { awaitCancellation() } }
             val model = f.model()
@@ -510,7 +517,7 @@ class SessionRecordingViewModelTest {
     @Test
     fun `independent clock cancellation never leaves recording visible after the subscription has stopped`() =
         runTest {
-            val f = Fixture()
+            val f = Fixture(backgroundScope)
             f.records.value = listOf(session())
             var failClock = true
             val clock =
@@ -542,7 +549,7 @@ class SessionRecordingViewModelTest {
     @Test
     fun `independent session read cancellation cancels recording and leaves the live host retryable`() =
         runTest {
-            val f = Fixture()
+            val f = Fixture(backgroundScope)
             val cancelRead = CompletableDeferred<Unit>()
             f.source = {
                 flow {
@@ -572,7 +579,7 @@ class SessionRecordingViewModelTest {
     @Test
     fun `finite active session flow stops the child recorder and reports failed monitoring without waiting forever`() =
         runTest {
-            val f = Fixture()
+            val f = Fixture(backgroundScope)
             f.source = { flowOf(listOf(session())) }
             val model = f.model()
             val host = backgroundScope.launch { model.recordWhileStarted() }
@@ -595,7 +602,9 @@ class SessionRecordingViewModelTest {
             host.cancelAndJoin()
         }
 
-    private class Fixture {
+    private class Fixture(
+        private val scope: CoroutineScope,
+    ) {
         val vehicle = FakeVehicle()
         val restrictions = FakeRestrictions()
         val records = MutableStateFlow<List<PracticeSession>>(emptyList())
@@ -648,8 +657,44 @@ class SessionRecordingViewModelTest {
                 }
             }
 
+        private val runs =
+            object : RecordingRunRepository {
+                override fun observe(sessionId: String): Flow<List<VehicleRecordingRun>> = MutableStateFlow(emptyList())
+
+                override suspend fun open(
+                    source: PracticeSession,
+                    runId: String,
+                    processId: String,
+                    startedAtEpochMillis: Long,
+                    canCommit: () -> Boolean,
+                ): RecordingRunOpenResult = error("not used")
+
+                override suspend fun finish(
+                    runId: String,
+                    processId: String,
+                    status: RecordingRunStatus,
+                    endedAtEpochMillis: Long?,
+                ): Boolean = error("not used")
+
+                override suspend fun recoverInterrupted(processId: String) = Unit
+            }
+
         fun model(clock: Clock = Clock.fixed(Instant.ofEpochMilli(123L), ZoneOffset.UTC)) =
-            SessionRecordingViewModel(vehicle, sessions, observations, restrictions, clock)
+            SessionRecordingViewModel(
+                PracticeRecordingController(
+                    vehicle,
+                    sessions,
+                    observations,
+                    restrictions,
+                    runs,
+                    clock,
+                    scope,
+                    { "unused-run" },
+                    "test-process",
+                    { _, _ -> error("not used") },
+                    { error("not used") },
+                ),
+            )
     }
 
     private class FakeVehicle : VehicleGateway {
