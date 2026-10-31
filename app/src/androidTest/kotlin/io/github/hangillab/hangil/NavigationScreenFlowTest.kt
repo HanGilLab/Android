@@ -89,7 +89,7 @@ class NavigationScreenFlowTest {
             capture("main-before-request")
             val old = clickAction()
             compose.onNodeWithTag("navigation_screen_open").performScrollTo().performClick()
-            awaitPackage(expectedNavigationPackage)
+            awaitStableNavigation(expectedNavigationPackage)
             capture("actual-navigation-first")
             phase("NAVI_SCREEN_ACTUAL_FOREGROUND_OBSERVED")
             returnToMain()
@@ -127,7 +127,7 @@ class NavigationScreenFlowTest {
             compose.waitForIdle()
             assertTrue("옛 P 클릭은 새 P 호스트를 빌리면 안 됩니다", packageNow() == context.packageName)
             compose.onNodeWithTag("navigation_screen_open").performScrollTo().performClick()
-            awaitPackage(expectedNavigationPackage)
+            awaitStableNavigation(expectedNavigationPackage)
             capture("actual-navigation-fresh-request")
             returnToMain()
             waitTag("navigation_screen_open")
@@ -213,6 +213,15 @@ class NavigationScreenFlowTest {
         val start = SystemClock.elapsedRealtime()
         while (packageNow() != expected && SystemClock.elapsedRealtime() - start < 25_000) SystemClock.sleep(50)
         assertTrue("실제 전면 패키지가 요청한 앱이어야 합니다", packageNow() == expected)
+    }
+
+    private fun awaitStableNavigation(expected: String) {
+        awaitPackage(expected)
+        // Accessibility can change before the compositor presents the new window.
+        // This settling wait is outside every performance measurement.
+        instrumentation.uiAutomation.waitForIdle(1_000, 10_000)
+        SystemClock.sleep(1_000)
+        assertTrue("전환 뒤에도 실제 내비 전면이 유지돼야 합니다", packageNow() == expected)
     }
 
     private fun returnToMain() {
