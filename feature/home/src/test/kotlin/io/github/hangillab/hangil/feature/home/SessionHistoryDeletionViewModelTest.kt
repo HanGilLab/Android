@@ -753,6 +753,7 @@ class SessionHistoryDeletionViewModelTest {
                 deletions,
                 observations,
                 UnexpectedHistoryMemoRepository,
+                UnexpectedHistoryRecordingRunRepository,
             )
 
         init {

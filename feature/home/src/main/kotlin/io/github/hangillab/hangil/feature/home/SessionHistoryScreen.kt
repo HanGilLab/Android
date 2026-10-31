@@ -193,6 +193,26 @@ fun SessionHistoryRoute(
                                     }
                                 }
                             },
+                            recordingRuns = {
+                                key(current.session, current.generation, clickOwner.first) {
+                                    val canKeepOpen =
+                                        remember(clickOwner.first, lifecycle) {
+                                            { clickOwner.first.get() && lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) }
+                                        }
+                                    ParkedPanel {
+                                        ParkedDisclosure(
+                                            stringResource(R.string.history_recording_runs_title),
+                                            {
+                                                canKeepOpen() &&
+                                                    viewModel.canRevealStoredRecordingRuns(current.session.sessionId, current.generation)
+                                            },
+                                            Modifier.testTag("history_recording_runs"),
+                                        ) {
+                                            HistoryStoredRecordingRunsRoute(current.session, current.generation, canKeepOpen, viewModel)
+                                        }
+                                    }
+                                }
+                            },
                             onDelete = {
                                 if (clickOwner.first.get() &&
                                     viewModel.requestDeletion(current.session.sessionId, current.generation) { clickOwner.first.get() }
@@ -248,6 +268,7 @@ private fun HistoryRecord(
     canRevealSummary: () -> Boolean,
     observations: @Composable () -> Unit,
     memo: @Composable () -> Unit,
+    recordingRuns: @Composable () -> Unit,
     onDelete: () -> Unit,
 ) {
     val session = state.session
@@ -316,6 +337,7 @@ private fun HistoryRecord(
                 style = MaterialTheme.typography.bodyLarge,
             )
         }
+        recordingRuns()
         ParkedButton(
             onClick = onDelete,
             prominent = false,
