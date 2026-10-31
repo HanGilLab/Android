@@ -11,6 +11,7 @@ import io.github.hangillab.hangil.core.domain.SessionDeletionPreparation
 import io.github.hangillab.hangil.core.domain.SessionDeletionRepository
 import io.github.hangillab.hangil.core.domain.SessionDeletionResult
 import io.github.hangillab.hangil.core.domain.SessionDeletionTarget
+import io.github.hangillab.hangil.core.domain.SessionMemoRepository
 import io.github.hangillab.hangil.core.domain.VehicleGateway
 import io.github.hangillab.hangil.core.domain.VehicleObservationRepository
 import io.github.hangillab.hangil.core.domain.allowsPracticeInteraction
@@ -55,9 +56,11 @@ class SessionHistoryViewModel
         private val sessions: PracticeSessionRepository,
         private val deletions: SessionDeletionRepository,
         observations: VehicleObservationRepository,
+        memos: SessionMemoRepository,
     ) : ViewModel() {
         private val lock = Any()
         private val storedObservations = SessionHistoryObservationReader(lock, observations, ::canRead)
+        private val storedMemos = SessionHistoryMemoReader(lock, memos, ::canRead)
         private val published = MutableStateFlow<SessionHistoryUiState>(SessionHistoryUiState.Loading)
         private val requests = MutableStateFlow(0L)
         private var reader: Reader? = null
@@ -175,6 +178,38 @@ class SessionHistoryViewModel
             token: Token,
             expectedRowId: Long?,
         ): Boolean = storedObservations.retry(token, expectedRowId)
+
+        fun canRevealStoredMemo(
+            expectedSessionId: String,
+            expectedGeneration: Long,
+        ): Boolean = canRevealStoredObservations(expectedSessionId, expectedGeneration)
+
+        fun observeStoredMemo(
+            expected: PracticeSession,
+            historyGeneration: Long,
+            canKeepOpen: () -> Boolean,
+        ): Flow<SessionHistoryMemoUiState> =
+            storedMemos.observe(expected, historyGeneration, canKeepOpen) {
+                val owner = reader
+                val query = owner?.query
+                if (owner == null || query == null || selectionSnapshotLocked(expected.sessionId, historyGeneration)?.session != expected) {
+                    null
+                } else {
+                    SessionHistoryMemoReader.Binding(
+                        isCurrent = {
+                            currentQuery(owner, query) &&
+                                selectionSnapshotLocked(expected.sessionId, historyGeneration)?.session == expected
+                        },
+                        denyAccess = {
+                            if (currentQuery(owner, query)) restartDeniedQueryLocked(owner, query)
+                        },
+                    )
+                }
+            }
+
+        fun canReadStoredMemo(token: SessionHistoryMemoUiState.Token): Boolean = storedMemos.canRead(token)
+
+        fun retryStoredMemo(token: SessionHistoryMemoUiState.Token): Boolean = storedMemos.retry(token)
 
         /** No additional database read exists until a visible, source-bound request is accepted. */
         fun requestDeletion(
@@ -671,6 +706,7 @@ class SessionHistoryViewModel
 
         private fun publishSelectionLocked(records: List<PracticeSession>) {
             storedObservations.invalidate()
+            storedMemos.invalidate()
             val index = records.indexOfFirst { it.sessionId == selectedId }
             val nextGeneration = nextGenerationLocked()
             published.value =
@@ -688,6 +724,7 @@ class SessionHistoryViewModel
 
         private fun publishLocked(state: SessionHistoryUiState) {
             storedObservations.invalidate(state == SessionHistoryUiState.Locked)
+            storedMemos.invalidate(state == SessionHistoryUiState.Locked)
             nextGenerationLocked()
             published.value = state
         }

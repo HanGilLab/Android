@@ -679,6 +679,7 @@ class SessionHistoryObservationViewModelTest {
                 sessions,
                 deletions,
                 observations,
+                UnexpectedHistoryMemoRepository,
             )
     }
 

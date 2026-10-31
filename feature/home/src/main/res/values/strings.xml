@@ -170,4 +170,5 @@
     <string name="history_delete_blocked">주차와 화면 사용 조건을 다시 확인해 주세요.</string>
     <string name="history_delete_prepare_failed">연결 자료를 확인하지 못했어요. 다시 시도해 주세요.</string>
     <string name="history_delete_failed">삭제하지 못했어요. 기록을 다시 확인해 주세요.</string>
+    <string name="history_memo_empty">이 연습에 저장한 메모가 없어요.</string>
 </resources>
