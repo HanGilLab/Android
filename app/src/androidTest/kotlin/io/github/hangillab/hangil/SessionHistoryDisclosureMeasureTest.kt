@@ -79,6 +79,7 @@ class SessionHistoryDisclosureMeasureTest {
             when (measurementSeries) {
                 null -> "history-disclosure"
                 "history-recording-runs-tasks-v1" -> "history-disclosure-history-recording-runs-tasks-v1"
+                "manual-course-completion-tasks-v1" -> "history-disclosure-manual-course-completion-tasks-v1"
                 else -> throw AssertionError("정의한 실험 계열만 실행해야 합니다")
             }
         val productCommit = checkNotNull(arguments.getString("declaredProductCommit")) { "제품 원본 선언이 필요합니다" }
