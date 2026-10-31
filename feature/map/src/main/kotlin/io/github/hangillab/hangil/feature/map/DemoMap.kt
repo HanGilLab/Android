@@ -46,6 +46,9 @@ internal fun DemoMap(
     inputChanges: Flow<Unit>,
     onRendered: (Int, Long) -> Unit,
     onFailed: (Int, Long) -> Unit,
+    selection: MapPointSelection?,
+    canApplySelection: (Int, Long, Long) -> Boolean,
+    onSelectionApplied: (Int, Long, Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -73,6 +76,7 @@ internal fun DemoMap(
                 onFailed = { onFailed(attempt, token) },
             )
         }
+    val selectionApplier = remember(result) { MapPointSelectionApplier() }
     val view = result.getOrNull()
     LaunchedEffect(result) { if (result.isFailure) onFailed(attempt, token) }
     if (view == null) return
@@ -104,6 +108,16 @@ internal fun DemoMap(
         update = {
             it.contentDescription = contentDescription
             it.recheckInput()
+            selectionApplier.apply(
+                it,
+                selection,
+                canApply = { nonce ->
+                    active.get() && owner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) &&
+                        canApplySelection(attempt, token, nonce)
+                },
+                onApplied = { nonce -> onSelectionApplied(attempt, token, nonce) },
+                onFailed = { onFailed(attempt, token) },
+            )
         },
     )
 }

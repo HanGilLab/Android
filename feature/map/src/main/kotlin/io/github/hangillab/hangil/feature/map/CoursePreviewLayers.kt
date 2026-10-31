@@ -25,6 +25,7 @@ import org.maplibre.geojson.Point
 internal object CoursePreviewLayers {
     const val SOURCE = "hangil-course-preview-points"
     private const val CIRCLES = "hangil-course-preview-circles"
+    const val SELECTION = "hangil-course-preview-selection"
     private const val NUMBERS = "hangil-course-preview-numbers"
 
     fun features(preview: CourseMapPreview): FeatureCollection =
@@ -59,6 +60,16 @@ internal object CoursePreviewLayers {
             ),
         )
         style.addLayer(
+            CircleLayer(SELECTION, SOURCE)
+                .withProperties(
+                    circleRadius(textSize + 11f),
+                    org.maplibre.android.style.layers.PropertyFactory
+                        .circleOpacity(0f),
+                    circleStrokeColor(fill),
+                    circleStrokeWidth(4f),
+                ).withFilter(selectionFilter(null)),
+        )
+        style.addLayer(
             SymbolLayer(NUMBERS, SOURCE).withProperties(
                 textField(Expression.toString(get("order"))),
                 textFont(arrayOf("Noto Sans Regular")),
@@ -68,5 +79,17 @@ internal object CoursePreviewLayers {
                 textIgnorePlacement(true),
             ),
         )
+    }
+
+    fun selectionFilter(pointId: String?): Expression =
+        if (pointId == null) Expression.literal(false) else Expression.eq(get("point_id"), Expression.literal(pointId))
+
+    fun select(
+        style: Style,
+        pointId: String?,
+    ) {
+        val layer = checkNotNull(style.getLayerAs<CircleLayer>(SELECTION)) { "Missing fixed preview selection layer" }
+        check(layer.sourceId == SOURCE) { "Wrong fixed preview selection source" }
+        layer.setFilter(selectionFilter(pointId))
     }
 }

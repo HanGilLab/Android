@@ -10,6 +10,8 @@ data class MapUiState(
     val attempt: Int = 0,
     val load: MapLoadState = MapLoadState.LOADING,
     val preparation: MapPreparationState = MapPreparationState.Loading,
+    val rendererToken: Long = 0,
+    val pointSelection: MapPointSelection? = null,
 ) {
     val allowsDetailedInteraction: Boolean get() = allowsPracticeInteraction(vehicle, restrictions)
 }

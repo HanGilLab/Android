@@ -3,6 +3,7 @@ package io.github.hangillab.hangil.feature.map
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import io.github.hangillab.hangil.core.domain.CourseMapPreview
 import io.github.hangillab.hangil.core.domain.DrivingRestrictionsProvider
 import io.github.hangillab.hangil.core.domain.PracticeCatalog
 import io.github.hangillab.hangil.core.domain.PracticeRepository
@@ -48,6 +49,7 @@ class MapViewModel
     ) : ViewModel() {
         private val render = MutableStateFlow(MapRenderAttempt())
         private val tokens = AtomicLong()
+        private val selectionNonces = AtomicLong()
         private val readerIds = AtomicLong()
         private val reader = AtomicReference<Reader?>()
         private val preparationRetry = MutableStateFlow(0L)
@@ -74,7 +76,15 @@ class MapViewModel
                             render,
                             preparation,
                         ) { vehicle, restrictions, attempt, _ ->
-                            MapUiState(vehicle, restrictions, attempt.id, attempt.load, attempt.preparation)
+                            MapUiState(
+                                vehicle,
+                                restrictions,
+                                attempt.id,
+                                attempt.load,
+                                attempt.preparation,
+                                attempt.token,
+                                attempt.pointSelection,
+                            )
                         },
                     )
                 } finally {
@@ -91,8 +101,14 @@ class MapViewModel
                 if (!ownsPreparation(current) || current.id != attempt || current.load == MapLoadState.FAILED) return null
                 if (!allowsInteraction()) {
                     // A rejected first composition must expose retry even if D/P receipts conflate.
-                    if (render.compareAndSet(current, current.copy(token = 0, load = MapLoadState.FAILED))) return null
-                } else if (render.compareAndSet(current, current.copy(token = token, load = MapLoadState.LOADING))) {
+                    if (render.compareAndSet(
+                            current,
+                            current.copy(token = 0, load = MapLoadState.FAILED, pointSelection = null),
+                        )
+                    ) {
+                        return null
+                    }
+                } else if (render.compareAndSet(current, current.copy(token = token, load = MapLoadState.LOADING, pointSelection = null))) {
                     return token
                 }
             }
@@ -105,8 +121,79 @@ class MapViewModel
         ): Boolean {
             if (token <= 0) return false
             val current = render.value
+            val choice = current.pointSelection
+            if (choice != null && (!allowsInteraction() || !choice.canPresent())) {
+                render.compareAndSet(current, current.copy(pointSelection = null))
+                return false
+            }
             return current.id == attempt && current.token == token && current.load == MapLoadState.READY &&
                 canRender(current) && render.value === current
+        }
+
+        /** Fixed list callbacks cannot borrow a replacement renderer, preview or host lifetime. */
+        fun selectPoint(
+            attempt: Int,
+            token: Long,
+            preview: CourseMapPreview,
+            pointId: String,
+            canPresent: () -> Boolean,
+        ): Long? {
+            val current = render.value
+            val existing = current.pointSelection
+            if (existing != null && (!allowsInteraction() || !existing.canPresent())) {
+                render.compareAndSet(current, current.copy(pointSelection = null))
+                return null
+            }
+            val ready = current.preparation as? MapPreparationState.Ready ?: return null
+            if (!canInteractWithMap(attempt, token) || !canPresent() || ready.preview != preview ||
+                preview.points.none { it.id == pointId }
+            ) {
+                return null
+            }
+            val choice = MapPointSelection(pointId, selectionNonces.incrementAndGet(), canPresent = canPresent)
+            if (!canPresent() || !canInteractWithMap(attempt, token)) return null
+            return if (render.compareAndSet(current, current.copy(pointSelection = choice))) choice.nonce else null
+        }
+
+        /** Rejection discards this exact intent so a later silent D/P or STOP/START cannot revive it. */
+        fun canApplyPointSelection(
+            attempt: Int,
+            token: Long,
+            nonce: Long,
+        ): Boolean {
+            val current = render.value
+            if (current.id != attempt || current.token != token || token <= 0) return false
+            val choice = current.pointSelection
+            if ((choice?.nonce ?: 0L) != nonce) return false
+            if (!canInteractWithMap(attempt, token) || (choice != null && !choice.canPresent())) {
+                if (choice != null) render.compareAndSet(current, current.copy(pointSelection = null))
+                return false
+            }
+            return render.value === current
+        }
+
+        /** Receipt means native style filter applied, not a GPU/frame or performance measurement. */
+        fun onPointSelectionRendered(
+            attempt: Int,
+            token: Long,
+            nonce: Long,
+        ) {
+            if (nonce <= 0 || !canApplyPointSelection(attempt, token, nonce)) return
+            render.update {
+                val choice = it.pointSelection
+                if (it.id == attempt && it.token == token && choice?.nonce == nonce &&
+                    canRender(it) && it.load == MapLoadState.READY && choice.canPresent()
+                ) {
+                    it.copy(pointSelection = choice.copy(rendered = true))
+                } else {
+                    it
+                }
+            }
+        }
+
+        fun dismissPointSelection(nonce: Long) {
+            if (nonce <= 0) return
+            render.update { if (it.pointSelection?.nonce == nonce) it.copy(pointSelection = null) else it }
         }
 
         /** Wake cancellation for received changes without waiting for the displayed Compose state. */
@@ -133,14 +220,26 @@ class MapViewModel
         ) {
             if (token <= 0) return
             render.update {
-                if (canRender(it) && it.id == attempt && it.token == token) it.copy(load = MapLoadState.FAILED) else it
+                if (canRender(it) && it.id == attempt &&
+                    it.token == token
+                ) {
+                    it.copy(load = MapLoadState.FAILED, pointSelection = null)
+                } else {
+                    it
+                }
             }
         }
 
         fun retry() {
             val expected = render.value
             render.update {
-                if (it == expected && canRender(it)) it.copy(id = it.id + 1, token = 0, load = MapLoadState.LOADING) else it
+                if (it == expected &&
+                    canRender(it)
+                ) {
+                    it.copy(id = it.id + 1, token = 0, load = MapLoadState.LOADING, pointSelection = null)
+                } else {
+                    it
+                }
             }
         }
 
