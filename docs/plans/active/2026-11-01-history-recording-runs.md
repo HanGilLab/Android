@@ -199,3 +199,9 @@ README의4사례/내용/순서/지정6항목/22개 실제 코드/18개 기존 �
 
 
 포맷 재시도는 같은 길이 경계2곳에서 계속 실패했다. 동일하게 캐시된 ktlint1.7.1로 비공개 복사본의 자동 정리 결과/미해결 위치를 확인하고 그 서식을 실제 두 계측 파일에 반영했다. 규칙/config/예외 억제는 바꾸지 않았으며 기존 Gradle spotlessApply의 strict 재검증은 실제 통과했다. frozen M0/M1은 동일 hash이고 제품 로직/기준 원값/계측 timer는 바뀌지 않았다. 이 상태에서 전체 verify/AndroidTest 컴파일/native와 변경 후 비교를 이어간다.
+
+
+초기 전체 verify4단계와 계측 APK 빌드, JUnit809/실패0/오류0/건너뜀0(cached/up-to-date 포함 가능), 실제 Compose 제어 native6PASS/skip0을 확인했다. 첫 실제 라이트는 assertEnvironment의 같은 display focused package 미확인으로 본문/원본 snapshot 읽기 전 중단됐다. 이 실패를 제품/SDK 오류나 성공으로 확정하지 않는다. 당시 guard가 body 밖이라 해당 cache 캡처도 없었음을 별도로 남기며 instrumentation 원형을 보존했다. 초기 AX null만 최대25초/실제 Main RESUMED/유효 같은 display에서 기다리고 알려진 다른 package는 실패시키는 setup 관찰을 추가했다. setup/input 단계 실패도 outer catch에서 비공개 진단/PNG를 독립 저장한다. 기대값 대입/기본 display 대체/제품/timer/frozen M0/M1 변경은 없다. 변경 후 비교/M2는 아직 미실행이다.
+
+
+초기 창 setup 보완의 quality는 통과했으나 계측 컴파일에서 추가한 SystemClock import 누락으로 실패했다. Android 표준 시계 import를 보완하고 같은 계측 APK 빌드를 다시 수행하며, 실패 원형을 남긴다. 제품과 frozen M0/M1은 동일하다.

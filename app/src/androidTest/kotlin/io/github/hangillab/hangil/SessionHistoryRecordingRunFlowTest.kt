@@ -7,6 +7,7 @@ import android.graphics.Bitmap
 import android.graphics.Rect
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.view.Display
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
@@ -215,6 +216,11 @@ class SessionHistoryRecordingRunFlowTest {
             failure: Throwable,
         ) {
             primary = failure
+            try {
+                h.capture("outer-failure-current-app", null)
+            } catch (capture: Throwable) {
+                failure.addSuppressed(capture)
+            }
             throw failure
         } finally {
             try {
@@ -287,7 +293,29 @@ class SessionHistoryRecordingRunFlowTest {
                 "실제 window flag readback이 필요합니다",
                 instrument.uiAutomation.serviceInfo.flags and AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS != 0,
             )
-            requireForeground()
+            awaitInitialMainForeground()
+        }
+
+        private fun awaitInitialMainForeground() {
+            val deadline = SystemClock.elapsedRealtimeNanos() + 25_000_000_000L
+            while (SystemClock.elapsedRealtimeNanos() < deadline) {
+                var validResumed = false
+                instrument.runOnMainSync {
+                    val current = compose.activity
+                    val display = current.display
+                    validResumed = current.lifecycle.currentState == Lifecycle.State.RESUMED &&
+                        display != null && display.isValid && display.displayId == mainDisplay
+                }
+                assertTrue("초기 Main은 유효한 같은 display에서 RESUMED여야 합니다", validResumed)
+                val actual = actualPackage()
+                if (actual != null) {
+                    assertTrue("초기 실제 전면이 다른 앱이면 성공으로 대체하지 않습니다", actual == instrument.targetContext.packageName)
+                    assertTrue("초기 전면 관찰도 제한 시간 안에 끝나야 합니다", SystemClock.elapsedRealtimeNanos() < deadline)
+                    return
+                }
+                SystemClock.sleep(50)
+            }
+            throw AssertionError("초기 Main focused 창을 제한 시간 안에 확인하지 못했습니다")
         }
 
         internal fun restoreAutomationFlag() {
