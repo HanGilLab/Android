@@ -33,8 +33,12 @@ import io.github.hangillab.hangil.core.domain.SessionDeletionResult
 import io.github.hangillab.hangil.core.domain.SessionDeletionTarget
 import io.github.hangillab.hangil.core.domain.SessionFinishResult
 import io.github.hangillab.hangil.core.domain.SessionStartResult
+import io.github.hangillab.hangil.core.domain.SessionVehicleObservation
 import io.github.hangillab.hangil.core.domain.UxRestrictionState
 import io.github.hangillab.hangil.core.domain.VehicleGateway
+import io.github.hangillab.hangil.core.domain.VehicleObservation
+import io.github.hangillab.hangil.core.domain.VehicleObservationAppendResult
+import io.github.hangillab.hangil.core.domain.VehicleObservationRepository
 import io.github.hangillab.hangil.core.domain.VehicleReading
 import io.github.hangillab.hangil.core.domain.VehicleState
 import io.github.hangillab.hangil.feature.home.SessionHistoryRoute
@@ -93,6 +97,16 @@ class SessionHistoryDisclosureBoundaryTest {
                     canCommit: () -> Boolean,
                 ): SessionDeletionResult = error("Deletion is outside this read-only fixture")
             }
+        val observations =
+            object : VehicleObservationRepository {
+                override fun observe(sessionId: String): Flow<List<SessionVehicleObservation>> =
+                    error("Stored observation queries are outside this fixture")
+
+                override suspend fun append(
+                    sessionId: String,
+                    observation: VehicleObservation,
+                ): VehicleObservationAppendResult = error("Stored observation writes are outside this fixture")
+            }
         lateinit var model: SessionHistoryViewModel
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
             val factory =
@@ -100,7 +114,7 @@ class SessionHistoryDisclosureBoundaryTest {
                     override fun <T : ViewModel> create(modelClass: Class<T>): T {
                         assertTrue("실제 History ViewModel만 직접 생성해야 합니다", modelClass == SessionHistoryViewModel::class.java)
                         @Suppress("UNCHECKED_CAST")
-                        return SessionHistoryViewModel(vehicle, restrictions, repository, deletions) as T
+                        return SessionHistoryViewModel(vehicle, restrictions, repository, deletions, observations) as T
                     }
                 }
             model = ViewModelProvider(compose.activity, factory)[SessionHistoryViewModel::class.java]

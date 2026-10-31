@@ -203,7 +203,7 @@ fun allowsPracticeInteraction(
         vehicle.toDrivingRestrictions(restrictions.uxRestrictionState).allowsDetailedInteraction
 ```
 
-[표시한 원본과 조회 세대를 최신 reader에서 재확인](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L104-L117)
+[표시한 원본과 조회 세대를 최신 reader에서 재확인](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L108-L121)
 
 ```kotlin
 fun canRevealSummary(
@@ -292,7 +292,7 @@ data class SessionDeletionTarget(
 )
 ```
 
-[같은 확인 nonce의 중복 실행과 바뀐 선택을 차단](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L165-L183)
+[같은 확인 nonce의 중복 실행과 바뀐 선택을 차단](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L225-L243)
 
 ```kotlin
 fun confirmDeletion(nonce: Long): Boolean {
@@ -316,7 +316,7 @@ fun confirmDeletion(nonce: Long): Boolean {
 }
 ```
 
-[쓰기 순간의 job, reader/조회/선택과 최신 차량 조건 재확인](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L321-L350)
+[쓰기 순간의 job, reader/조회/선택과 최신 차량 조건 재확인](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L381-L419)
 
 ```kotlin
 private fun canCommitDeletion(
@@ -339,9 +339,18 @@ private fun currentSelectionLocked(
     expectedSessionId: String,
     expectedGeneration: Long,
 ): SessionHistoryUiState.Ready? {
+    if (!canRead()) return null
+    return selectionSnapshotLocked(expectedSessionId, expectedGeneration)
+}
+
+/** Same received source check, without conflating a denied live value with an expired source. */
+private fun selectionSnapshotLocked(
+    expectedSessionId: String,
+    expectedGeneration: Long,
+): SessionHistoryUiState.Ready? {
     val owner = reader ?: return null
     val query = owner.query ?: return null
-    if (!currentQuery(owner, query) || !canRead() || selectionLost || selectedId != expectedSessionId) return null
+    if (!currentQuery(owner, query) || selectionLost || selectedId != expectedSessionId) return null
     val current = published.value as? SessionHistoryUiState.Ready ?: return null
     val records = ended ?: return null
     return current.takeIf {
@@ -392,7 +401,7 @@ private suspend fun requirePermission(canProceed: () -> Boolean) {
 }
 ```
 
-[자기 삭제의 행 소실 통지를 결과 도착 전까지 보존](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L368-L384)
+[자기 삭제의 행 소실 통지를 결과 도착 전까지 보존](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L437-L453)
 
 ```kotlin
 private fun preserveDeletionReceiptLocked(
@@ -414,7 +423,7 @@ private fun preserveDeletionReceiptLocked(
 }
 ```
 
-[저장소가 반환한 명시적 삭제 결과에 따른 완료/실패 분기](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L269-L283)
+[저장소가 반환한 명시적 삭제 결과에 따른 완료/실패 분기](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L329-L343)
 
 ```kotlin
 when (result) {
