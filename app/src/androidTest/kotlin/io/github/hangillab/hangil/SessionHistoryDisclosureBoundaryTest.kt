@@ -114,7 +114,14 @@ class SessionHistoryDisclosureBoundaryTest {
                     override fun <T : ViewModel> create(modelClass: Class<T>): T {
                         assertTrue("실제 History ViewModel만 직접 생성해야 합니다", modelClass == SessionHistoryViewModel::class.java)
                         @Suppress("UNCHECKED_CAST")
-                        return SessionHistoryViewModel(vehicle, restrictions, repository, deletions, observations) as T
+                        return SessionHistoryViewModel(
+                            vehicle,
+                            restrictions,
+                            repository,
+                            deletions,
+                            observations,
+                            UnexpectedHistoryMemoRepository,
+                        ) as T
                     }
                 }
             model = ViewModelProvider(compose.activity, factory)[SessionHistoryViewModel::class.java]

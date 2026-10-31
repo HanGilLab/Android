@@ -214,6 +214,7 @@ class SessionHistoryObservationBoundaryTest {
                             fixture.sessions,
                             fixture.deletions,
                             fixture.observations,
+                            UnexpectedHistoryMemoRepository,
                         ) as T
                     }
                 }

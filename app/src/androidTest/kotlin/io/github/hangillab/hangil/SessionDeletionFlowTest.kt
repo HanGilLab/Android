@@ -489,7 +489,14 @@ class SessionDeletionFlowTest {
                         override fun <T : ViewModel> create(modelClass: Class<T>): T {
                             assertTrue("실제 History ViewModel만 생성해야 합니다", modelClass == SessionHistoryViewModel::class.java)
                             @Suppress("UNCHECKED_CAST")
-                            return SessionHistoryViewModel(vehicle, restrictions, sessions, deletions, store.observations) as T
+                            return SessionHistoryViewModel(
+                                vehicle,
+                                restrictions,
+                                sessions,
+                                deletions,
+                                store.observations,
+                                UnexpectedHistoryMemoRepository,
+                            ) as T
                         }
                     }
                 model = ViewModelProvider(activity, factory)[SessionHistoryViewModel::class.java]

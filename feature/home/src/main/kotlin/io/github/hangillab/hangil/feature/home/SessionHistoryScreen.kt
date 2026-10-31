@@ -170,6 +170,29 @@ fun SessionHistoryRoute(
                                     }
                                 }
                             },
+                            memo = {
+                                key(current.session, current.generation, clickOwner.first) {
+                                    val canKeepOpen =
+                                        remember(clickOwner.first, lifecycle) {
+                                            { clickOwner.first.get() && lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) }
+                                        }
+                                    ParkedPanel {
+                                        ParkedDisclosure(
+                                            stringResource(R.string.memo_heading),
+                                            {
+                                                canKeepOpen() &&
+                                                    viewModel.canRevealStoredMemo(
+                                                        current.session.sessionId,
+                                                        current.generation,
+                                                    )
+                                            },
+                                            Modifier.testTag("history_memo"),
+                                        ) {
+                                            HistoryStoredMemoRoute(current.session, current.generation, canKeepOpen, viewModel)
+                                        }
+                                    }
+                                }
+                            },
                             onDelete = {
                                 if (clickOwner.first.get() &&
                                     viewModel.requestDeletion(current.session.sessionId, current.generation) { clickOwner.first.get() }
@@ -224,6 +247,7 @@ private fun HistoryRecord(
     onOlder: () -> Unit,
     canRevealSummary: () -> Boolean,
     observations: @Composable () -> Unit,
+    memo: @Composable () -> Unit,
     onDelete: () -> Unit,
 ) {
     val session = state.session
@@ -278,6 +302,7 @@ private fun HistoryRecord(
             Text(session.taskTitle, Modifier.testTag("history_task"), style = MaterialTheme.typography.titleLarge)
         }
         observations()
+        memo()
         HistoryCourseSummary(state, canRevealSummary)
         ParkedPanel {
             Text(
