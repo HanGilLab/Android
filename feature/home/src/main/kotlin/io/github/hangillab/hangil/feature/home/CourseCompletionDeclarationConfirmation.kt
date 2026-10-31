@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import io.github.hangillab.hangil.core.designsystem.HanGilDimensions
 import io.github.hangillab.hangil.core.designsystem.HanGilSpacing
@@ -90,7 +91,14 @@ internal fun CourseCompletionDeclarationConfirmation(
                 onClick = confirm,
                 enabled = !saving,
                 modifier = Modifier.fillMaxWidth().testTag("history_course_completion_confirm").frozenObservationClick(confirm, !saving),
-            ) { Text(stringResource(R.string.course_completion_record), style = MaterialTheme.typography.titleMedium) }
+            ) {
+                Text(
+                    stringResource(R.string.course_completion_record),
+                    Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.titleMedium,
+                )
+            }
         },
         dismissButton = {
             TextButton(
@@ -104,7 +112,12 @@ internal fun CourseCompletionDeclarationConfirmation(
                         ).testTag("history_course_completion_cancel")
                         .frozenObservationClick(dismiss, !saving),
             ) {
-                Text(stringResource(R.string.course_completion_cancel), style = MaterialTheme.typography.titleMedium)
+                Text(
+                    stringResource(R.string.course_completion_cancel),
+                    Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.titleMedium,
+                )
             }
         },
     )

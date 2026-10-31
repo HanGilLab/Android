@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.hangillab.hangil.core.designsystem.HanGilDimensions
 import io.github.hangillab.hangil.core.designsystem.HanGilSpacing
@@ -92,7 +93,14 @@ internal fun HistoryCourseCompletionRoute(
                             .fillMaxWidth()
                             .testTag("history_course_completion_request")
                             .frozenObservationClick(request, displayed.canDeclare),
-                ) { Text(stringResource(R.string.course_completion_record), style = MaterialTheme.typography.titleMedium) }
+                ) {
+                    Text(
+                        stringResource(R.string.course_completion_record),
+                        Modifier.fillMaxWidth(),
+                        textAlign = TextAlign.Center,
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                }
             }
             is SessionHistoryCourseCompletionUiState.Confirming ->
                 CourseCompletionDeclarationConfirmation(
@@ -115,10 +123,18 @@ internal fun HistoryCourseCompletionRoute(
                     onClick = retry,
                     modifier =
                         Modifier
+                            .fillMaxWidth()
                             .heightIn(min = HanGilDimensions.secondaryActionMinHeight)
                             .testTag("history_course_completion_retry")
                             .frozenObservationClick(retry),
-                ) { Text(stringResource(R.string.course_completion_retry), style = MaterialTheme.typography.titleMedium) }
+                ) {
+                    Text(
+                        stringResource(R.string.course_completion_retry),
+                        Modifier.fillMaxWidth(),
+                        textAlign = TextAlign.Center,
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                }
             }
         }
         Text(
