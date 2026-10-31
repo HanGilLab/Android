@@ -636,13 +636,29 @@ class SessionHistoryRecordingRunFlowTest {
                 val layouts = mutableListOf<TextLayoutResult>()
                 val getter = checkNotNull(node.config.getOrNull(SemanticsActions.GetTextLayoutResult)?.action)
                 assertTrue("실제 text layout을 읽어야 합니다", getter(layouts) && layouts.isNotEmpty())
-                assertTrue(
-                    "새 실행 문구가 잘리면 안 됩니다",
+                val fits =
                     layouts.all { layout ->
-                        !layout.hasVisualOverflow &&
-                            (0 until layout.lineCount).none(layout::isLineEllipsized)
-                    },
-                )
+                        !layout.hasVisualOverflow && (0 until layout.lineCount).none(layout::isLineEllipsized)
+                    }
+                if (!fits) {
+                    val failure = AssertionError("새 실행 문구가 잘리면 안 됩니다: $tag")
+                    runCatching {
+                        val rows =
+                            layouts.map { layout ->
+                                JSONObject()
+                                    .put("width_px", layout.size.width)
+                                    .put("height_px", layout.size.height)
+                                    .put("line_count", layout.lineCount)
+                                    .put("overflow_width", layout.didOverflowWidth)
+                                    .put("overflow_height", layout.didOverflowHeight)
+                                    .put("ellipsis_lines", JSONArray((0 until layout.lineCount).filter(layout::isLineEllipsized)))
+                            }
+                        File(evidence, "text-layout-failure.json").writeText(
+                            JSONObject().put("tag", tag).put("layouts", JSONArray(rows)).toString(2),
+                        )
+                    }.exceptionOrNull()?.let(failure::addSuppressed)
+                    throw failure
+                }
             }
         }
 

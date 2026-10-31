@@ -13,10 +13,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.github.hangillab.hangil.core.designsystem.HanGilDimensions
 import io.github.hangillab.hangil.core.designsystem.HanGilSpacing
-import io.github.hangillab.hangil.core.designsystem.ParkedBadge
 import io.github.hangillab.hangil.core.designsystem.ParkedButton
 import io.github.hangillab.hangil.core.domain.RecordingRunStatus
 
@@ -29,18 +29,24 @@ internal fun StoredRecordingRunContent(
 ) {
     val run = state.run
     Column(Modifier.fillMaxWidth().testTag("history_recording_run_ready"), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.lg)) {
-        Column(Modifier.testTag("history_recording_run_source")) { ParkedBadge(stringResource(R.string.history_recording_run_source)) }
+        Text(
+            stringResource(R.string.history_recording_run_source),
+            Modifier.fillMaxWidth().testTag("history_recording_run_source"),
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.primary,
+        )
         if (state.hasInterrupted) {
             Text(
                 stringResource(R.string.history_recording_run_interrupted),
-                Modifier.testTag("history_recording_run_interrupted"),
+                Modifier.fillMaxWidth().testTag("history_recording_run_interrupted"),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.error,
             )
         }
         Text(
             stringResource(R.string.history_recording_run_position, state.index + 1, state.runs.size),
-            Modifier.testTag("history_recording_run_position"),
+            Modifier.fillMaxWidth().testTag("history_recording_run_position"),
             style = MaterialTheme.typography.bodyLarge,
         )
         Text(
@@ -52,18 +58,18 @@ internal fun StoredRecordingRunContent(
                     RecordingRunStatus.OPEN -> R.string.history_recording_run_open
                 },
             ),
-            Modifier.testTag("history_recording_run_status"),
+            Modifier.fillMaxWidth().testTag("history_recording_run_status"),
             style = MaterialTheme.typography.titleLarge,
         )
         Text(
             stringResource(R.string.history_recording_run_started, displayTime(run.startedAtEpochMillis)),
-            Modifier.testTag("history_recording_run_started"),
+            Modifier.fillMaxWidth().testTag("history_recording_run_started"),
             style = MaterialTheme.typography.bodyLarge,
         )
         Text(
             run.endedAtEpochMillis?.let { stringResource(R.string.history_recording_run_ended, displayTime(it)) }
                 ?: stringResource(R.string.history_recording_run_ended_unknown),
-            Modifier.testTag("history_recording_run_ended"),
+            Modifier.fillMaxWidth().testTag("history_recording_run_ended"),
             style = MaterialTheme.typography.bodyLarge,
         )
         RecordingRunNavigation(state.canPrevious, state.canNext, onPrevious, onNext)

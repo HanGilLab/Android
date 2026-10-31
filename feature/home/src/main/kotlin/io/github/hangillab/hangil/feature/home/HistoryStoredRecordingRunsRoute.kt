@@ -43,26 +43,26 @@ internal fun HistoryStoredRecordingRunsRoute(
             is SessionHistoryRecordingRunUiState.Loading ->
                 Text(
                     stringResource(R.string.history_recording_run_loading),
-                    Modifier.testTag("history_recording_run_loading"),
+                    Modifier.fillMaxWidth().testTag("history_recording_run_loading"),
                     style = MaterialTheme.typography.bodyLarge,
                 )
             is SessionHistoryRecordingRunUiState.Locked -> Unit
             is SessionHistoryRecordingRunUiState.Unavailable ->
                 Text(
                     stringResource(R.string.history_recording_run_changed),
-                    Modifier.testTag("history_recording_run_unavailable"),
+                    Modifier.fillMaxWidth().testTag("history_recording_run_unavailable"),
                     style = MaterialTheme.typography.bodyLarge,
                 )
             is SessionHistoryRecordingRunUiState.Empty ->
                 Text(
                     stringResource(R.string.history_recording_run_empty),
-                    Modifier.testTag("history_recording_run_empty"),
+                    Modifier.fillMaxWidth().testTag("history_recording_run_empty"),
                     style = MaterialTheme.typography.bodyLarge,
                 )
             is SessionHistoryRecordingRunUiState.Failed -> {
                 Text(
                     stringResource(R.string.history_recording_run_failed),
-                    Modifier.testTag("history_recording_run_failed"),
+                    Modifier.fillMaxWidth().testTag("history_recording_run_failed"),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.error,
                 )
@@ -85,7 +85,7 @@ internal fun HistoryStoredRecordingRunsRoute(
         }
         Text(
             stringResource(R.string.history_recording_run_scope),
-            Modifier.testTag("history_recording_run_scope"),
+            Modifier.fillMaxWidth().testTag("history_recording_run_scope"),
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
