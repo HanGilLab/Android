@@ -1,6 +1,6 @@
 # 지난 연습의 배경 기록 실행 근거 연결
 
-- 상태: 진행 중. 최종 제품 c226의 전체 verify/native APK, 제어 Compose 6개, 실제 라이트/확대 다크와 M0/M1 비교 및 after-only M2, 원본/환경 보존과 소유 실행 정리를 완료했다. 최신 PR67의 CI/Codex, 리뷰 지적 처리와 정상 병합/정리는 별도 미완료 조건이다. 계획은 active로 유지한다.
+- 상태: 구현 범위 완료. 최종 제품 c226의 자동 검사/실제 검증/계측/보존 뒤 PR67의 최신 c12aa89 CI와 Codex를 확인해 정상 병합했다. 실제 main 반영과 양쪽 브랜치 정리를 확인했다. 전체 APP-05/APP-06과 내비/위치/도로 구간은 별도 미완료다.
 - 요구사항: APP-05 저장 실행 근거를 APP-06의 종료한 연습 이력에 연결하는 독립 읽기 범위
 - 관련 근거: [최종 개발 문서](../../development/history-recording-runs.md), [배경 차량 기록 계약](../../development/background-vehicle-recording.md), [선택한 지난 연습의 저장 차량 관찰](../../development/history-stored-observations.md)
 - 시작 제품: `4838db6436d745e3df5c64aadb1b800adc08e134`, 고정 M0/M1 하네스 `9855a6c65fbfec3f8cd5c336f104a912ded6e17e`. root가 실제 설치 APK/hash와 원본 manifest를 고정했다. 구현 담당은 Git이나 기기를 조작하지 않았다.
@@ -52,7 +52,7 @@ SDK 관찰은 sessionId만 갖고 runId를 갖지 않는다. 실행 시각 사�
 - [x] 관련 JVM/Room 계약과 제어 Compose 경계를 확인하고 실제 Main/SDK gate/Room의 기본 1.0 라이트 및 확대 1.3 다크에서 표시, 스크롤, D/P 잠금과 새 펼침을 확인한다.
 - [x] 동일 하네스와 fixture로 변경 후 M0/M1을 측정하고 M2는 변경 후 특성으로 별도 기록한다. 원값과 실패를 보존하고 성능 향상/동등성은 근거가 있을 때만 판단한다.
 - [x] 기존 준비, 세션, 관찰, 메모, 실행과 sequence/물리형, 권한/runtime/설정을 외부 exact 대조로 보존한다. 이번 작업은 읽기만 하며 실제 자료를 새 fixture로 교체하지 않는다.
-- [ ] JDK17 전체 verify, 관련 실제 검증과 최신 PR 리뷰를 완료하고 결과와 미확인 범위를 기록한다. root가 병합 및 전체 완료를 별도로 판정한다.
+- [x] JDK17 전체 verify, 관련 실제 검증과 최신 PR 리뷰를 완료하고 결과와 미확인 범위를 기록한다. root가 병합 및 이 독립 구현 범위의 완료를 별도로 판정했다.
 
 ## 구현 단계
 
@@ -252,7 +252,18 @@ A1→B 순차 비교이며 A2 재측정은 하지 않았다. OS scheduling/캐�
 
 - [x] 로컬 구현, 전체 자동 검사, 최종 제어/실제 양테마와 M0/M1/M2, 원본/환경 exact 보존 및 소유 실행 정리.
 - [x] 실제 분포/원값/실패 이력과 미확인 의미를 공개 개발 문서에 기록. 원문/식별자/개인 환경/개발 중 이미지는 비공개로 유지.
-- [ ] PR67 최신 동일head의 필수 CI/Codex와 새 구체 지적을 확인하고 필요한 수정/영향 검증을 완료.
-- [ ] 정상 병합 뒤 main ff-only 동기화, 보존해야 할 변경 확인과 브랜치 정리를 수행하고 root가 전체 완료 및 completed 이동을 판정.
+- [x] PR67 최신 동일head의 필수 CI/Codex와 새 구체 지적을 확인하고 필요한 수정/영향 검증을 완료.
+- [x] 정상 병합 뒤 main ff-only 동기화, 추가 변경 부재 확인과 해당 로컬/원격 브랜치 정리를 수행하고 root가 이 독립 구현 범위의 완료 및 completed 이동을 판정.
 
 APP-05/APP-06 전체, Navigation API의 모든 전면 전환, 실행별 SDK 관찰 귀속/연속성, 실제 위치와 도로 구간은 이번 독립 읽기 결과로 완료 처리하지 않는다.
+
+
+## 실제 리뷰, 병합과 완료 범위
+
+[PR #67](https://github.com/HanGilLab/Android/pull/67)의 최신 head `c12aa89e53234acec430421686815bae851f6b1d`는 제품/계측 트리가 검증한 c226과 같고 문서/README/익명 CSV만 추가했다. JDK17 quality와 공개 콘텐츠/상대 링크/README4사례/지정6항목/22펼친 실제 코드/18기존 이미지 대조를 통과했다. 실제 GitHub 1280px 렌더에서4사례/22펼친 Kotlin 블록/17화면 이미지 로드와 가로넘침 없음, 새 기능 문장을 확인했다. 기존 브랜드 이미지까지 포함한18개 source 참조는 유지한다. 문서 변경은 앱 실행 성능과 무관해 추가 성능 측정 대상이 아니며 실제 제품/계측 실행을 문서 커밋에서 반복한 것으로 쓰지 않는다.
+
+같은 head의 [pull_request CI41231362996](https://github.com/HanGilLab/Android/actions/runs/41231362996)/attempt1/App15368의 quality/test/build/ci-required4개가 success였고 [Codex6547023302](https://github.com/HanGilLab/Android/pull/67#issuecomment-6547023302)는 같은 head completed/지적 없음이었다. 전체 inline thread와 정식 review는0개였다. active strict/no bypass/선형 이력/스레드 해결 정책, base main과 끝 head를 확인해 정상 squash 병합했다. 실제 merge `ce7501758ecb2423c0ae271b7698fc756d89d414`의 head/tree/parent/noreply를 대조하고 추가 변경이 없는 상태에서 main ff-only, 원격 자동삭제/prune과 해당 로컬 브랜치 삭제를 완료했다.
+
+병합 main `ce7501758ecb2423c0ae271b7698fc756d89d414`의 별도 [push CI41231726299](https://github.com/HanGilLab/Android/actions/runs/41231726299)/attempt1과 동일 SHA/App15368의 quality/test/build/ci-required4개도 모두 success로 확인했다.
+
+이번 완료는 저장 실행 마커의 독립 읽기 연결과 그 검증 범위다. 필수 체크리스트 전체19/54와 선택3 제외의 의미를 바꾸지 않으며 APP-05/APP-06 전체/실제 도로 구간/연속 위치, 내비 요청의 간헐 머무름과 기존 PR1/8/10 original 최종 리뷰 미확인은 유지한다. 원래 리뷰를 새 정리 SHA로 바꾸어 승인으로 기록하지 않는다.
