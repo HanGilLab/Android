@@ -140,3 +140,10 @@ README의 현재4개는 실제 조작 소유권, 파괴적 원자 삭제, 비동
 [원래 P2 지적](https://github.com/HanGilLab/Android/pull/66#discussion_r4432530413)은 Main 재생성/파괴 검증이 증거 저장에서도 다시 예외를 던져 JSON/PNG를 모두 잃는 실제 제어 흐름이다. 수명 검증을 runCatching해 null과 별도 failure 필드로 보존하고 JSON 쓰기/PNG 캡처를 독립 시도하며 후속 정리 실패를 원실패에 붙인다. 실제 ActivityScenario.recreate로 옛 Main identity 검증 실패를 발생시킨 최신 native1PASS/skip0에서 MAIN_RECREATED JSON과 PNG header를 외부에서도 확인했다. 실제 SDK 전환1PASS는 a9a8607의 앞선 관련 검증이며 이번에는 진단 실패 경로를 추가 검증한 것이다. 원래7개 timing 원형과 source/APK/hash는 덮어쓰지 않았고 timer/제품 코드 변경도 없다.
 
 수정 뒤 JDK17 전체 verify4단계/앱 계측 빌드가 다시 통과했다. 새 native 뒤 현재13종료/145관찰/메모1/terminal실행15의 전 필드/물리형/순서/sequence/기존권한/환경 exact 일치와 소유 AVD/forward 종료를 확인했다. 원래 스레드의 답글/해결과 새 head 필수 CI/Codex는 아직 별도로 확인한다.
+
+
+## PR66 실제 병합과 로컬 정리
+
+수정 head9fb290796b97770d957add8d3a9c4f7ae3ee52c2의 [CI41223164299](https://github.com/HanGilLab/Android/actions/runs/41223164299)/attempt1/App15368 필수4개 success, [Codex6546434149](https://github.com/HanGilLab/Android/pull/66#issuecomment-6546434149) completed/새 지적 없음과 원래 P2의 [한국어 해결 답글4432561990](https://github.com/HanGilLab/Android/pull/66#discussion_r4432561990)/실제 native 해결 상태를 확인했다. 스레드 해결을 PR 승인으로 바꾸지 않고 정식 리뷰의 변경 요청 없음과 active strict/no bypass 정책도 별도로 대조했다. 정상 squash merge7e5a8e1671f1c89b4dff8d6cb0b2e101eca56548의 실제 head/tree/parent/noreply와 [main push CI41223641478](https://github.com/HanGilLab/Android/actions/runs/41223641478)/attempt1/동일 SHA 필수4개 success를 확인했다.
+
+독립 이력 구현의 소유 변경을 먼저 커밋으로 보존한 뒤 clean 상태에서 main ff-only 동기화, 정확한 병합 끝 커밋의 로컬/원격 작업 브랜치 정리와 fetch prune을 완료했다. 이후 새 이력 브랜치의 미공개 소유 커밋만 현재 main 위로 rebase했고 원본 main/PR/리뷰 이력은 재작성하지 않았다. Notion MAP04는 반복 실패2개와 원격 내부 원인/활성 안내/목적지/길안내 미검증을 유지하며 필수19/54/선택3제외를 readback했다. 계획 전체는 active다.

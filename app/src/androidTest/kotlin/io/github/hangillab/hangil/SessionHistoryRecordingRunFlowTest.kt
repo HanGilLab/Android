@@ -76,7 +76,10 @@ class SessionHistoryRecordingRunFlowTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
 
     @Test fun savedRunHistoryRemainsReadOnlyAcrossSelectionRecreationAndDrivingLock() {
-        assumeTrue("실제 원본 보존과 DDS 복구를 준비한 실행만 검사합니다", InstrumentationRegistry.getArguments().getString("manualHistoryRecordingRunFlow") == "true")
+        assumeTrue(
+            "실제 원본 보존과 DDS 복구를 준비한 실행만 검사합니다",
+            InstrumentationRegistry.getArguments().getString("manualHistoryRecordingRunFlow") == "true",
+        )
         val h = Harness(compose)
         var primary: Throwable? = null
         try {
@@ -86,9 +89,25 @@ class SessionHistoryRecordingRunFlowTest {
                 h.assertFrozenBaseline(before, exactTheme = false)
                 val ended = before.sessions.filterNot { it.isActive }
                 val latestRuns = before.recordingRuns.getValue(ended.first().sessionId)
-                assertTrue("고정 source에 실제 STOPPED와 미확인 종료 근거가 필요합니다", latestRuns.any { it.status == RecordingRunStatus.STOPPED } && latestRuns.any { it.status == RecordingRunStatus.INTERRUPTED && it.endedAtEpochMillis == null })
-                assertTrue("구형 무마커 자료와 SDK 관찰의 공존 source가 필요합니다", ended.any { before.recordingRuns.getValue(it.sessionId).isEmpty() && before.observations.getValue(it.sessionId).isNotEmpty() })
-                val sdkObserver = launch { combine(h.graph.vehicle().state, h.graph.restrictions().restrictions) { vehicle, restrictions -> vehicle to restrictions }.collect {} }
+                assertTrue(
+                    "고정 source에 실제 STOPPED와 미확인 종료 근거가 필요합니다",
+                    latestRuns.any { it.status == RecordingRunStatus.STOPPED } &&
+                        latestRuns.any { it.status == RecordingRunStatus.INTERRUPTED && it.endedAtEpochMillis == null },
+                )
+                assertTrue(
+                    "구형 무마커 자료와 SDK 관찰의 공존 source가 필요합니다",
+                    ended.any {
+                        before.recordingRuns.getValue(it.sessionId).isEmpty() &&
+                            before.observations.getValue(it.sessionId).isNotEmpty()
+                    },
+                )
+                val sdkObserver =
+                    launch {
+                        combine(h.graph.vehicle().state, h.graph.restrictions().restrictions) { vehicle, restrictions ->
+                            vehicle to
+                                restrictions
+                        }.collect {}
+                    }
                 var bodyFailure: Throwable? = null
                 try {
                     h.awaitAllowed()
@@ -96,18 +115,29 @@ class SessionHistoryRecordingRunFlowTest {
                     for ((index, source) in ended.withIndex()) {
                         if (index > 0) h.touch("history_older")
                         h.assertSource(source, index, ended.size)
-                        listOf("history_observations", "history_summary_tasks", "history_memo", "history_recording_runs").forEach(h::assertCollapsed)
+                        listOf(
+                            "history_observations",
+                            "history_summary_tasks",
+                            "history_memo",
+                            "history_recording_runs",
+                        ).forEach(h::assertCollapsed)
                         h.touch("history_recording_runs")
                         val runs = before.recordingRuns.getValue(source.sessionId)
                         h.assertEveryRun(runs)
-                        h.capture("stored-run-history-$index", if (runs.isEmpty()) "history_recording_run_empty" else "history_recording_run_status")
+                        h.capture(
+                            "stored-run-history-$index",
+                            if (runs.isEmpty()) "history_recording_run_empty" else "history_recording_run_status",
+                        )
                         h.touch("history_recording_runs")
                         h.assertCollapsed("history_recording_runs")
                         if (runs.isEmpty() && before.observations.getValue(source.sessionId).isNotEmpty()) {
                             h.touch("history_observations")
                             val rows = before.observations.getValue(source.sessionId)
                             h.assertText("review_source", h.text(HomeR.string.review_source))
-                            h.assertText("review_observed_at", h.text(HomeR.string.review_observed_at, h.displayTime(rows.last().observation.observedAtEpochMillis)))
+                            h.assertText(
+                                "review_observed_at",
+                                h.text(HomeR.string.review_observed_at, h.displayTime(rows.last().observation.observedAtEpochMillis)),
+                            )
                             h.touch("history_observations")
                         }
                         h.assertPreserved(h.graph, before)
@@ -143,48 +173,100 @@ class SessionHistoryRecordingRunFlowTest {
                     h.assertBaselineUnchanged()
                 } catch (failure: Throwable) {
                     bodyFailure = failure
-                    try { h.capture("failure-current-app", null) } catch (capture: Throwable) { failure.addSuppressed(capture) }
+                    try {
+                        h.capture("failure-current-app", null)
+                    } catch (capture: Throwable) {
+                        failure.addSuppressed(capture)
+                    }
                     throw failure
                 } finally {
                     var cleanupFailure: Throwable? = null
+
                     fun preserveCleanup(problem: Throwable) {
                         val first = cleanupFailure
-                        if (first == null) cleanupFailure = problem else if (first !== problem) first.addSuppressed(problem)
+                        if (first == null) {
+                            cleanupFailure = problem
+                        } else if (first !== problem) {
+                            first.addSuppressed(problem)
+                        }
                         bodyFailure?.let { if (it !== problem) it.addSuppressed(problem) }
                     }
                     withContext(NonCancellable) {
-                        try { sdkObserver.cancelAndJoin() } catch (cleanup: Throwable) { preserveCleanup(cleanup) }
-                        try { h.assertPreserved(h.graph, before) } catch (cleanup: Throwable) { preserveCleanup(cleanup) }
-                        try { h.assertBaselineUnchanged() } catch (cleanup: Throwable) { preserveCleanup(cleanup) }
+                        try {
+                            sdkObserver.cancelAndJoin()
+                        } catch (cleanup: Throwable) {
+                            preserveCleanup(cleanup)
+                        }
+                        try {
+                            h.assertPreserved(h.graph, before)
+                        } catch (cleanup: Throwable) {
+                            preserveCleanup(cleanup)
+                        }
+                        try {
+                            h.assertBaselineUnchanged()
+                        } catch (cleanup: Throwable) {
+                            preserveCleanup(cleanup)
+                        }
                     }
                     if (bodyFailure == null) cleanupFailure?.let { throw it }
                 }
             }
-        } catch (failure: Throwable) { primary = failure; throw failure }
-        finally { try { h.restoreAutomationFlag() } catch (cleanup: Throwable) { if (primary == null) throw cleanup else primary.addSuppressed(cleanup) } }
+        } catch (
+            failure: Throwable,
+        ) {
+            primary = failure
+            throw failure
+        } finally {
+            try {
+                h.restoreAutomationFlag()
+            } catch (cleanup: Throwable) {
+                if (primary ==
+                    null
+                ) {
+                    throw cleanup
+                } else {
+                    primary.addSuppressed(cleanup)
+                }
+            }
+        }
         h.phase("HISTORY_RECORDING_RUN_COMPLETED")
     }
 
     /** Shared real read-only inputs and UI checks for this flow and the after-only M2 test. */
-    internal class Harness(internal val compose: AndroidComposeTestRule<ActivityScenarioRule<MainActivity>, MainActivity>) {
+    internal class Harness(
+        internal val compose: AndroidComposeTestRule<ActivityScenarioRule<MainActivity>, MainActivity>,
+    ) {
         internal val instrument = InstrumentationRegistry.getInstrumentation()
-        internal val graph = EntryPointAccessors.fromApplication(instrument.targetContext.applicationContext, RecordingTestEntryPoint::class.java)
+        internal val graph =
+            EntryPointAccessors.fromApplication(
+                instrument.targetContext.applicationContext,
+                RecordingTestEntryPoint::class.java,
+            )
         private val baselineHashes = linkedMapOf<File, String>()
         private val baselineProvenance = JSONObject()
         private var originalInteractiveFlag: Boolean? = null
         private var mainDisplay: Int? = null
-        private val evidence by lazy { File(instrument.targetContext.cacheDir, "screenshots/history-recording-runs-${UUID.randomUUID()}").apply { check(mkdirs()) } }
+        private val evidence by lazy {
+            File(instrument.targetContext.cacheDir, "screenshots/history-recording-runs-${UUID.randomUUID()}").apply { check(mkdirs()) }
+        }
 
         internal fun assertEnvironment() {
             val args = InstrumentationRegistry.getArguments()
-            assertTrue("명시한 debug/API34 환경이 필요합니다", instrument.targetContext.packageName == "io.github.hangillab.hangil.debug" && Build.VERSION.SDK_INT == 34)
+            assertTrue(
+                "명시한 debug/API34 환경이 필요합니다",
+                instrument.targetContext.packageName == "io.github.hangillab.hangil.debug" && Build.VERSION.SDK_INT == 34,
+            )
             val font = args.getString("expectedFontScale")
             val dark = args.getString("expectedDark")
             assertTrue("기본/확대 글꼴을 명시해야 합니다", font == "1.0" || font == "1.3")
             assertTrue("테마를 명시해야 합니다", dark == "false" || dark == "true")
             val config = compose.activity.resources.configuration
             assertTrue("실제 글꼴이 일치해야 합니다", abs(config.fontScale - checkNotNull(font).toFloat()) <= 0.01f)
-            assertTrue("실제 테마가 일치해야 합니다", config.uiMode and Configuration.UI_MODE_NIGHT_MASK == if (dark == "true") Configuration.UI_MODE_NIGHT_YES else Configuration.UI_MODE_NIGHT_NO)
+            assertTrue(
+                "실제 테마가 일치해야 합니다",
+                config.uiMode and Configuration.UI_MODE_NIGHT_MASK ==
+                    if (dark == "true") Configuration.UI_MODE_NIGHT_YES else Configuration.UI_MODE_NIGHT_NO,
+            )
             instrument.runOnMainSync {
                 assertTrue("실제 Main RESUMED가 필요합니다", compose.activity.lifecycle.currentState == Lifecycle.State.RESUMED)
                 val display = checkNotNull(compose.activity.display)
@@ -194,20 +276,38 @@ class SessionHistoryRecordingRunFlowTest {
                 mainDisplay = actual
             }
             val info = instrument.uiAutomation.serviceInfo
-            if (originalInteractiveFlag == null) originalInteractiveFlag = info.flags and AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS != 0
+            if (originalInteractiveFlag ==
+                null
+            ) {
+                originalInteractiveFlag = info.flags and AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS != 0
+            }
             info.flags = info.flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
             instrument.uiAutomation.serviceInfo = info
-            assertTrue("실제 window flag readback이 필요합니다", instrument.uiAutomation.serviceInfo.flags and AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS != 0)
+            assertTrue(
+                "실제 window flag readback이 필요합니다",
+                instrument.uiAutomation.serviceInfo.flags and AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS != 0,
+            )
             requireForeground()
         }
+
         internal fun restoreAutomationFlag() {
             val original = originalInteractiveFlag ?: return
             val info = instrument.uiAutomation.serviceInfo
-            info.flags = if (original) info.flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS else info.flags and AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS.inv()
+            info.flags =
+                if (original) {
+                    info.flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+                } else {
+                    info.flags and
+                        AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS.inv()
+                }
             instrument.uiAutomation.serviceInfo = info
-            assertTrue("원래 window flag bit를 복원해야 합니다", (instrument.uiAutomation.serviceInfo.flags and AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS != 0) == original)
+            assertTrue(
+                "원래 window flag bit를 복원해야 합니다",
+                (instrument.uiAutomation.serviceInfo.flags and AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS != 0) == original,
+            )
             originalInteractiveFlag = null
         }
+
         internal fun actualPackage(): String? {
             val display = mainDisplay ?: return null
             val allDisplays = instrument.uiAutomation.windowsOnAllDisplays
@@ -227,6 +327,7 @@ class SessionHistoryRecordingRunFlowTest {
                 observedWindows.forEach { it.recycle() }
             }
         }
+
         internal fun requireForeground() {
             var resumed = false
             var sameValidDisplay = false
@@ -238,55 +339,124 @@ class SessionHistoryRecordingRunFlowTest {
             assertTrue("현재 Main RESUMED와 유효한 동일 display가 필요합니다", resumed && sameValidDisplay)
             assertTrue("같은 Main display의 focused app을 실제로 확인해야 합니다", actualPackage() == instrument.targetContext.packageName)
         }
-        internal suspend fun awaitAllowed() = withTimeout(90_000) {
-            combine(graph.vehicle().state, graph.restrictions().restrictions) { vehicle, restrictions -> allowsPracticeInteraction(vehicle, restrictions) }.first { it }
-            assertTrue("현재 SDK P+UX 허용이어야 합니다", liveAllowed())
-            requireForeground()
-        }
-        internal suspend fun awaitDrive() = withTimeout(90_000) {
-            graph.vehicle().state.first { it.connection == ConnectionState.CONNECTED && (it.gear as? VehicleReading.Available)?.value == GearPosition.DRIVE }
-            assertTrue("현재 실제 D는 잠겨야 합니다", !liveAllowed())
-        }
+
+        internal suspend fun awaitAllowed() =
+            withTimeout(90_000) {
+                combine(
+                    graph.vehicle().state,
+                    graph.restrictions().restrictions,
+                ) { vehicle, restrictions -> allowsPracticeInteraction(vehicle, restrictions) }.first {
+                    it
+                }
+                assertTrue("현재 SDK P+UX 허용이어야 합니다", liveAllowed())
+                requireForeground()
+            }
+
+        internal suspend fun awaitDrive() =
+            withTimeout(90_000) {
+                graph.vehicle().state.first {
+                    it.connection == ConnectionState.CONNECTED &&
+                        (it.gear as? VehicleReading.Available)?.value == GearPosition.DRIVE
+                }
+                assertTrue("현재 실제 D는 잠겨야 합니다", !liveAllowed())
+            }
+
         internal fun liveAllowed() = allowsPracticeInteraction(graph.vehicle().state.value, graph.restrictions().restrictions.value)
 
-        internal fun assertFrozenBaseline(data: ExistingData, exactTheme: Boolean) {
+        internal fun assertFrozenBaseline(
+            data: ExistingData,
+            exactTheme: Boolean,
+        ) {
             assertTrue("활성 연습이 없는 읽기 fixture여야 합니다", data.sessions.none { it.isActive })
             val source = checkNotNull(data.sessions.firstOrNull { !it.isActive })
-            val names = listOf("history-opening-history-recording-runs-entry-v1" to "history-recording-runs-entry-v1", "history-disclosure-history-recording-runs-tasks-v1" to "history-recording-runs-tasks-v1")
+            val names =
+                listOf(
+                    "history-opening-history-recording-runs-entry-v1" to "history-recording-runs-entry-v1",
+                    "history-disclosure-history-recording-runs-tasks-v1" to "history-recording-runs-tasks-v1",
+                )
             var frozenProduct: String? = null
             var frozenHarness: String? = null
             for ((prefix, series) in names) {
                 val file = File(instrument.targetContext.cacheDir, "measurements/$prefix-baseline.json")
                 check(file.isFile && !File(file.path + ".bak").exists() && !File(file.path + ".new").exists()) { "완료 기준 원문이 필요합니다" }
                 val baseline = JSONObject(file.readText())
-                assertTrue("같은 완료 기준 계열이어야 합니다", baseline.getInt("schema") == 1 && baseline.getString("measurementStage") == "baseline" && baseline.getString("measurementSeries") == series && baseline.getString("status") == "completed" && baseline.getBoolean("preservedOriginalData") && baseline.getBoolean("returnedHome") && baseline.getInt("excludedSamples") == 0)
+                assertTrue(
+                    "같은 완료 기준 계열이어야 합니다",
+                    baseline.getInt("schema") == 1 && baseline.getString("measurementStage") == "baseline" &&
+                        baseline.getString("measurementSeries") == series &&
+                        baseline.getString("status") == "completed" &&
+                        baseline.getBoolean("preservedOriginalData") &&
+                        baseline.getBoolean("returnedHome") &&
+                        baseline.getInt("excludedSamples") == 0,
+                )
                 val product = baseline.getString("declaredProductCommit")
                 val harness = baseline.getString("declaredHarnessRevision")
                 assertTrue("고정 기준 원본 선언이 완전해야 합니다", product.matches(Regex("[0-9a-f]{40}")) && harness.matches(Regex("[0-9a-f]{40}")))
-                assertTrue("M0/M1은 같은 동결 제품/하네스 원본이어야 합니다", (frozenProduct == null || frozenProduct == product) && (frozenHarness == null || frozenHarness == harness))
+                assertTrue(
+                    "M0/M1은 같은 동결 제품/하네스 원본이어야 합니다",
+                    (frozenProduct == null || frozenProduct == product) && (frozenHarness == null || frozenHarness == harness),
+                )
                 assertTrue("동일 반복의 기준이어야 합니다", baseline.getInt("plannedWarmups") == 5 && baseline.getInt("plannedSamples") == 30)
                 frozenProduct = product
                 frozenHarness = harness
-                baselineProvenance.put(file.name, JSONObject().put("declaredProductCommit", product).put("declaredHarnessRevision", harness).put("sha256", sha256(file)))
+                baselineProvenance.put(
+                    file.name,
+                    JSONObject().put("declaredProductCommit", product).put("declaredHarnessRevision", harness).put("sha256", sha256(file)),
+                )
                 for ((key, count) in listOf("warmups" to 5, "samples" to 30)) {
                     val values = baseline.getJSONArray(key)
-                    assertTrue("기준 원값이 빠지면 안 됩니다", values.length() == count && (0 until count).all { values.getJSONObject(it).getString("status") == "success" })
+                    assertTrue(
+                        "기준 원값이 빠지면 안 됩니다",
+                        values.length() == count && (0 until count).all { values.getJSONObject(it).getString("status") == "success" },
+                    )
                 }
                 requireSameJson(baseline.getJSONObject("originalData"), dataJson(data), "originalData")
                 requireSameJson(baseline.getJSONObject("fixedSource"), sessionJson(source), "fixedSource")
                 requireSameJson(baseline.getJSONObject("catalog"), catalogJson(graph), "catalog")
                 val expected = baseline.getJSONObject("environment")
                 val actual = environmentJson()
-                if (exactTheme) requireSameJson(expected, actual, "environment") else {
-                    for (key in listOf("sdkInt", "release", "buildFingerprint", "abis", "screenWidthDp", "screenHeightDp", "densityDpi", "locale", "timeZone", "debuggable", "productPackage")) requireSameJson(expected.get(key), actual.get(key), "environment-$key")
+                if (exactTheme) {
+                    requireSameJson(expected, actual, "environment")
+                } else {
+                    for (key in listOf(
+                        "sdkInt",
+                        "release",
+                        "buildFingerprint",
+                        "abis",
+                        "screenWidthDp",
+                        "screenHeightDp",
+                        "densityDpi",
+                        "locale",
+                        "timeZone",
+                        "debuggable",
+                        "productPackage",
+                    )) {
+                        requireSameJson(expected.get(key), actual.get(key), "environment-$key")
+                    }
                 }
                 baselineHashes[file] = sha256(file)
             }
         }
-        internal fun baselineHashesJson() = JSONObject().also { json -> baselineHashes.forEach { (file, hash) -> json.put(file.name, hash) } }
+
+        internal fun baselineHashesJson() =
+            JSONObject().also { json -> baselineHashes.forEach { (file, hash) -> json.put(file.name, hash) } }
+
         internal fun baselineProvenanceJson() = JSONObject(baselineProvenance.toString())
-        internal fun assertBaselineUnchanged() { baselineHashes.forEach { (file, hash) -> assertTrue("완료 기준 파일을 변경하면 안 됩니다", sha256(file) == hash) } }
-        internal fun assertSource(source: PracticeSession, index: Int, count: Int) {
+
+        internal fun assertBaselineUnchanged() {
+            baselineHashes.forEach { (file, hash) ->
+                assertTrue(
+                    "완료 기준 파일을 변경하면 안 됩니다",
+                    sha256(file) == hash,
+                )
+            }
+        }
+
+        internal fun assertSource(
+            source: PracticeSession,
+            index: Int,
+            count: Int,
+        ) {
             assertText("history_course", source.courseTitle)
             assertText("history_goal", source.goalTitle)
             assertText("history_task", source.taskTitle)
@@ -294,6 +464,7 @@ class SessionHistoryRecordingRunFlowTest {
             assertText("history_started", text(HomeR.string.session_started_at, displayTime(source.startedAtEpochMillis)))
             assertText("history_finished", text(HomeR.string.session_finished_at, displayTime(checkNotNull(source.endedAtEpochMillis))))
         }
+
         internal fun assertEveryRun(runs: List<VehicleRecordingRun>) {
             if (runs.isEmpty()) {
                 assertText("history_recording_run_empty", text(HomeR.string.history_recording_run_empty))
@@ -302,52 +473,161 @@ class SessionHistoryRecordingRunFlowTest {
             }
             for (index in runs.lastIndex downTo 0) {
                 assertRunText(runs, index)
-                for (tag in listOf("history_recording_run_source", "history_recording_run_status", "history_recording_run_started", "history_recording_run_ended", "history_recording_run_scope")) { scrollVisible(tag); assertTextFits(tag) }
+                for (tag in listOf(
+                    "history_recording_run_source",
+                    "history_recording_run_status",
+                    "history_recording_run_started",
+                    "history_recording_run_ended",
+                    "history_recording_run_scope",
+                )) {
+                    scrollVisible(tag)
+                    assertTextFits(tag)
+                }
                 if (index > 0) touch("history_recording_run_previous")
             }
         }
-        internal fun assertRunText(runs: List<VehicleRecordingRun>, index: Int) {
+
+        internal fun assertRunText(
+            runs: List<VehicleRecordingRun>,
+            index: Int,
+        ) {
             val run = runs[index]
             assertText("history_recording_run_source", text(HomeR.string.history_recording_run_source))
             assertText("history_recording_run_scope", text(HomeR.string.history_recording_run_scope))
             assertText("history_recording_run_position", text(HomeR.string.history_recording_run_position, index + 1, runs.size))
-            assertText("history_recording_run_status", text(when (run.status) {
-                RecordingRunStatus.STOPPED -> HomeR.string.history_recording_run_stopped
-                RecordingRunStatus.FAILED -> HomeR.string.history_recording_run_failed_status
-                RecordingRunStatus.INTERRUPTED -> HomeR.string.history_recording_run_interrupted_status
-                RecordingRunStatus.OPEN -> HomeR.string.history_recording_run_open
-            }))
-            assertText("history_recording_run_started", text(HomeR.string.history_recording_run_started, displayTime(run.startedAtEpochMillis)))
-            assertText("history_recording_run_ended", run.endedAtEpochMillis?.let { text(HomeR.string.history_recording_run_ended, displayTime(it)) } ?: text(HomeR.string.history_recording_run_ended_unknown))
-            assertTrue("과거 중단 경고를 숨기거나 만들면 안 됩니다", nodes("history_recording_run_interrupted").size == if (runs.any { it.status == RecordingRunStatus.INTERRUPTED }) 1 else 0)
+            assertText(
+                "history_recording_run_status",
+                text(
+                    when (run.status) {
+                        RecordingRunStatus.STOPPED -> HomeR.string.history_recording_run_stopped
+                        RecordingRunStatus.FAILED -> HomeR.string.history_recording_run_failed_status
+                        RecordingRunStatus.INTERRUPTED -> HomeR.string.history_recording_run_interrupted_status
+                        RecordingRunStatus.OPEN -> HomeR.string.history_recording_run_open
+                    },
+                ),
+            )
+            val started = text(HomeR.string.history_recording_run_started, displayTime(run.startedAtEpochMillis))
+            assertText("history_recording_run_started", started)
+            val ended =
+                run.endedAtEpochMillis?.let { text(HomeR.string.history_recording_run_ended, displayTime(it)) }
+                    ?: text(HomeR.string.history_recording_run_ended_unknown)
+            assertText("history_recording_run_ended", ended)
+            val interruptedWarnings = if (runs.any { it.status == RecordingRunStatus.INTERRUPTED }) 1 else 0
+            assertTrue("과거 중단 경고를 숨기거나 만들면 안 됩니다", nodes("history_recording_run_interrupted").size == interruptedWarnings)
             val shown = nodes("history_recording_run_content").flatMap(::nodeTexts).joinToString(" ")
-            for (stored in runs) assertTrue("원시 식별자를 UI에 노출하면 안 됩니다", !shown.contains(stored.runId) && !shown.contains(stored.processId) && !shown.contains(stored.sessionId))
+            for (stored in runs) {
+                assertTrue(
+                    "원시 식별자를 UI에 노출하면 안 됩니다",
+                    !shown.contains(stored.runId) && !shown.contains(stored.processId) && !shown.contains(stored.sessionId),
+                )
+            }
         }
-        internal fun assertRunContentAbsent() { for (tag in listOf("history_recording_run_content", "history_recording_run_ready", "history_recording_run_empty", "history_recording_run_failed", "history_recording_run_loading")) assertTrue("잠금 중 실행 상세를 표시하면 안 됩니다", nodes(tag).isEmpty()) }
-        internal fun assertCollapsed(tag: String) { waitFor(tag); assertTrue("새로 열린 이력의 영역은 접혀 있어야 합니다", nodes(tag).single().config.getOrNull(SemanticsProperties.StateDescription) == text(DesignR.string.parked_detail_collapsed)) }
-        internal fun closeHistory() { requireForeground(); touch("history_close"); waitFor("home_history"); assertTrue("이력을 닫아야 합니다", nodes("history_ready").isEmpty()) }
-        internal fun touch(tag: String) { requireForeground(); scrollVisible(tag); compose.onNodeWithTag(tag, useUnmergedTree = true).performClick(); compose.waitForIdle() }
+
+        internal fun assertRunContentAbsent() {
+            for (tag in listOf(
+                "history_recording_run_content",
+                "history_recording_run_ready",
+                "history_recording_run_empty",
+                "history_recording_run_failed",
+                "history_recording_run_loading",
+            )) {
+                assertTrue("잠금 중 실행 상세를 표시하면 안 됩니다", nodes(tag).isEmpty())
+            }
+        }
+
+        internal fun assertCollapsed(tag: String) {
+            waitFor(tag)
+            assertTrue(
+                "새로 열린 이력의 영역은 접혀 있어야 합니다",
+                nodes(tag).single().config.getOrNull(SemanticsProperties.StateDescription) == text(DesignR.string.parked_detail_collapsed),
+            )
+        }
+
+        internal fun closeHistory() {
+            requireForeground()
+            touch("history_close")
+            waitFor("home_history")
+            assertTrue("이력을 닫아야 합니다", nodes("history_ready").isEmpty())
+        }
+
+        internal fun touch(tag: String) {
+            requireForeground()
+            scrollVisible(tag)
+            compose.onNodeWithTag(tag, useUnmergedTree = true).performClick()
+            compose.waitForIdle()
+        }
+
         internal fun waitFor(tag: String) = compose.waitUntil(20_000) { nodes(tag).size == 1 }
-        internal fun nodes(tag: String): List<SemanticsNode> = compose.onAllNodes(hasTestTag(tag), useUnmergedTree = true).fetchSemanticsNodes(atLeastOneRootRequired = false)
-        internal fun nodeTexts(node: SemanticsNode): List<String> = node.config.getOrNull(SemanticsProperties.Text).orEmpty().map { it.text } + node.children.flatMap(::nodeTexts)
-        internal fun assertText(tag: String, expected: String) { waitFor(tag); assertTrue("저장된 원문과 같아야 합니다", nodeTexts(nodes(tag).single()).contains(expected)) }
-        internal fun text(id: Int, vararg args: Any): String = instrument.targetContext.getString(id, *args)
-        internal fun displayTime(time: Long): String = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM).withLocale(Locale.getDefault()).withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(time))
-        internal fun scrollVisible(tag: String) { waitFor(tag); compose.onNodeWithTag(tag, useUnmergedTree = true).performScrollTo(); compose.waitForIdle(); assertTrue("실제 가용 영역에 보여야 합니다", fullyVisible(nodes(tag).single(), checkNotNull(appViewport()))) }
+
+        internal fun nodes(tag: String): List<SemanticsNode> =
+            compose.onAllNodes(hasTestTag(tag), useUnmergedTree = true).fetchSemanticsNodes(atLeastOneRootRequired = false)
+
+        internal fun nodeTexts(node: SemanticsNode): List<String> =
+            node.config
+                .getOrNull(SemanticsProperties.Text)
+                .orEmpty()
+                .map { it.text } + node.children.flatMap(::nodeTexts)
+
+        internal fun assertText(
+            tag: String,
+            expected: String,
+        ) {
+            waitFor(tag)
+            assertTrue("저장된 원문과 같아야 합니다", nodeTexts(nodes(tag).single()).contains(expected))
+        }
+
+        internal fun text(
+            id: Int,
+            vararg args: Any,
+        ): String = instrument.targetContext.getString(id, *args)
+
+        internal fun displayTime(time: Long): String =
+            DateTimeFormatter
+                .ofLocalizedDateTime(
+                    FormatStyle.MEDIUM,
+                ).withLocale(Locale.getDefault())
+                .withZone(ZoneId.systemDefault())
+                .format(Instant.ofEpochMilli(time))
+
+        internal fun scrollVisible(tag: String) {
+            waitFor(tag)
+            compose.onNodeWithTag(tag, useUnmergedTree = true).performScrollTo()
+            compose.waitForIdle()
+            assertTrue("실제 가용 영역에 보여야 합니다", fullyVisible(nodes(tag).single(), checkNotNull(appViewport())))
+        }
+
         internal fun assertTextFits(tag: String) {
             fun descendants(node: SemanticsNode): List<SemanticsNode> = listOf(node) + node.children.flatMap(::descendants)
-            val textNodes = descendants(nodes(tag).single()).filter { it.config.getOrNull(SemanticsActions.GetTextLayoutResult)?.action != null }
+            val textNodes =
+                descendants(nodes(tag).single()).filter {
+                    it.config.getOrNull(SemanticsActions.GetTextLayoutResult)?.action !=
+                        null
+                }
             assertTrue("실제 text layout이 있어야 합니다", textNodes.isNotEmpty())
             for (node in textNodes) {
                 val layouts = mutableListOf<TextLayoutResult>()
                 val getter = checkNotNull(node.config.getOrNull(SemanticsActions.GetTextLayoutResult)?.action)
                 assertTrue("실제 text layout을 읽어야 합니다", getter(layouts) && layouts.isNotEmpty())
-                assertTrue("새 실행 문구가 잘리면 안 됩니다", layouts.all { layout -> !layout.hasVisualOverflow && (0 until layout.lineCount).none(layout::isLineEllipsized) })
+                assertTrue(
+                    "새 실행 문구가 잘리면 안 됩니다",
+                    layouts.all { layout ->
+                        !layout.hasVisualOverflow &&
+                            (0 until layout.lineCount).none(layout::isLineEllipsized)
+                    },
+                )
             }
         }
+
         internal fun endpointVisible(tag: String) = nodes(tag).singleOrNull()?.let { fullyVisible(it, checkNotNull(appViewport())) } == true
-        internal fun phase(value: String) { instrument.sendStatus(2, Bundle().apply { putString("stream", value + System.lineSeparator()) }) }
-        internal fun capture(name: String, anchor: String?) {
+
+        internal fun phase(value: String) {
+            instrument.sendStatus(2, Bundle().apply { putString("stream", value + System.lineSeparator()) })
+        }
+
+        internal fun capture(
+            name: String,
+            anchor: String?,
+        ) {
             if (anchor != null) scrollVisible(anchor)
             val diagnostic = anchor == null
             var state: String? = null
@@ -359,29 +639,52 @@ class SessionHistoryRecordingRunFlowTest {
                     val display = compose.activity.display
                     currentDisplayValid = display != null && display.isValid && mainDisplay != null && display.displayId == mainDisplay
                 }
-            } catch (problem: Throwable) { lifecycleError = problem }
+            } catch (problem: Throwable) {
+                lifecycleError = problem
+            }
             var windowError: Throwable? = null
-            val observedPackage = try { actualPackage() } catch (problem: Throwable) { windowError = problem; null }
-            val safeApp = lifecycleError == null && windowError == null && currentDisplayValid && state == Lifecycle.State.RESUMED.name && observedPackage == instrument.targetContext.packageName
+            val observedPackage =
+                try {
+                    actualPackage()
+                } catch (problem: Throwable) {
+                    windowError = problem
+                    null
+                }
+            val safeApp =
+                lifecycleError == null && windowError == null && currentDisplayValid && state == Lifecycle.State.RESUMED.name &&
+                    observedPackage == instrument.targetContext.packageName
             var failure: Throwable? = lifecycleError ?: windowError
+
             fun preserve(problem: Throwable) {
                 val first = failure
-                if (first == null) failure = problem else if (first !== problem) first.addSuppressed(problem)
+                if (first == null) {
+                    failure = problem
+                } else if (first !== problem) {
+                    first.addSuppressed(problem)
+                }
             }
             if (!safeApp && failure == null) failure = AssertionError("실제 Main 전면은 미확인입니다")
-            val proof = JSONObject().put("kind", "history_recording_run_read_only")
-                .put("foreground_basis", "single-focused-window-on-actual-Main-display")
-                .put("main_display_known", mainDisplay != null)
-                .put("current_main_display_valid", currentDisplayValid)
-                .put("actual_package", observedPackage ?: JSONObject.NULL)
-                .put("main_state", state ?: JSONObject.NULL)
-                .put("anchor", anchor ?: JSONObject.NULL)
-                .put("foreground_confirmed", safeApp)
-                .put("lifecycle_probe_error", lifecycleError?.javaClass?.simpleName ?: JSONObject.NULL)
-                .put("window_probe_error", windowError?.javaClass?.simpleName ?: JSONObject.NULL)
-                .put("capture_scope", if (diagnostic) "raw-default-display-diagnostic-not-app-only" else "confirmed-Main-app-window-crop")
-                .put("png_status", "pending")
-            try { File(evidence, "$name.json").writeText(proof.toString(2)) } catch (problem: Throwable) { preserve(problem) }
+            val proof =
+                JSONObject()
+                    .put("kind", "history_recording_run_read_only")
+                    .put("foreground_basis", "single-focused-window-on-actual-Main-display")
+                    .put("main_display_known", mainDisplay != null)
+                    .put("current_main_display_valid", currentDisplayValid)
+                    .put("actual_package", observedPackage ?: JSONObject.NULL)
+                    .put("main_state", state ?: JSONObject.NULL)
+                    .put("anchor", anchor ?: JSONObject.NULL)
+                    .put("foreground_confirmed", safeApp)
+                    .put("lifecycle_probe_error", lifecycleError?.javaClass?.simpleName ?: JSONObject.NULL)
+                    .put("window_probe_error", windowError?.javaClass?.simpleName ?: JSONObject.NULL)
+                    .put(
+                        "capture_scope",
+                        if (diagnostic) "raw-default-display-diagnostic-not-app-only" else "confirmed-Main-app-window-crop",
+                    ).put("png_status", "pending")
+            try {
+                File(evidence, "$name.json").writeText(proof.toString(2))
+            } catch (problem: Throwable) {
+                preserve(problem)
+            }
             // Private failure diagnostics attempt a raw default-display screenshot independently
             // of failed window/lifecycle probes. It is never labeled as confirmed Main imagery.
             try {
@@ -397,17 +700,32 @@ class SessionHistoryRecordingRunFlowTest {
                         val rect = checkNotNull(appViewport()).available
                         check(rect.left >= 0 && rect.top >= 0 && rect.right <= screenshot.width && rect.bottom <= screenshot.height)
                         val app = Bitmap.createBitmap(screenshot, rect.left, rect.top, rect.width(), rect.height())
-                        try { File(evidence, "$name.png").outputStream().use { check(app.compress(Bitmap.CompressFormat.PNG, 100, it)) } } finally { if (app !== screenshot) app.recycle() }
+                        try {
+                            File(evidence, "$name.png").outputStream().use { check(app.compress(Bitmap.CompressFormat.PNG, 100, it)) }
+                        } finally {
+                            if (app !==
+                                screenshot
+                            ) {
+                                app.recycle()
+                            }
+                        }
                     }
                     proof.put("png_status", "saved")
-                } finally { screenshot.recycle() }
+                } finally {
+                    screenshot.recycle()
+                }
             } catch (problem: Throwable) {
                 proof.put("png_status", "failed").put("png_error", problem.javaClass.simpleName)
                 preserve(problem)
             }
-            try { File(evidence, "$name.json").writeText(proof.toString(2)) } catch (problem: Throwable) { preserve(problem) }
+            try {
+                File(evidence, "$name.json").writeText(proof.toString(2))
+            } catch (problem: Throwable) {
+                preserve(problem)
+            }
             failure?.let { throw it }
         }
+
         internal suspend fun snapshot(graph: RecordingTestEntryPoint): ExistingData =
             withTimeout(30_000) {
                 val sessions = graph.sessions().observeSessions().first()
@@ -553,7 +871,12 @@ class SessionHistoryRecordingRunFlowTest {
                                 .put("sessionId", sessionId)
                                 .put(
                                     "memo",
-                                    memo?.let { JSONObject().put("sessionId", it.sessionId).put("text", it.text).put("version", it.version) }
+                                    memo?.let {
+                                        JSONObject()
+                                            .put("sessionId", it.sessionId)
+                                            .put("text", it.text)
+                                            .put("version", it.version)
+                                    }
                                         ?: JSONObject.NULL,
                                 )
                         },
@@ -637,7 +960,8 @@ class SessionHistoryRecordingRunFlowTest {
                 return expectedKeys == actualKeys && expectedKeys.all { sameJson(expected.get(it), actual.get(it)) }
             }
             if (expected is JSONArray && actual is JSONArray) {
-                return expected.length() == actual.length() && (0 until expected.length()).all { sameJson(expected.get(it), actual.get(it)) }
+                return expected.length() == actual.length() &&
+                    (0 until expected.length()).all { sameJson(expected.get(it), actual.get(it)) }
             }
             if (expected is Number && actual is Number) {
                 return try {
@@ -656,6 +980,11 @@ class SessionHistoryRecordingRunFlowTest {
             val memos: Map<String, SessionMemo?>,
             val recordingRuns: Map<String, List<VehicleRecordingRun>>,
         )
-        internal data class AppViewport(val available: Rect, val originX: Int, val originY: Int)
+
+        internal data class AppViewport(
+            val available: Rect,
+            val originX: Int,
+            val originY: Int,
+        )
     }
 }

@@ -64,45 +64,57 @@ class SessionHistoryRecordingRunMeasureTest {
                 reserve(output)
                 val warmups = JSONArray()
                 val samples = JSONArray()
-                val report = JSONObject()
-                    .put("schema", 1)
-                    .put("kind", "history_recording_runs_after_only")
-                    .put("measurementStage", "after")
-                    .put("runNonce", UUID.randomUUID().toString())
-                    .put("status", "started")
-                    .put("declaredProductCommit", product.lowercase(Locale.ROOT))
-                    .put("declaredHarnessRevision", harness.lowercase(Locale.ROOT))
-                    .put("revisionDeclarationSource", "external_runner_not_inferred_on_device")
-                    .put("productApkSha256", h.sha256(File(h.instrument.targetContext.applicationInfo.sourceDir)))
-                    .put("instrumentationApkSha256", h.sha256(File(h.instrument.context.applicationInfo.sourceDir)))
-                    .put("frozenInputBaselineHashes", h.baselineHashesJson())
-                    .put("frozenInputBaselineProvenance", h.baselineProvenanceJson())
-                    .put("originalData", originalData)
-                    .put("fixedSource", h.sessionJson(source))
-                    .put("catalog", catalog)
-                    .put("environment", environment)
-                    .put("measurementContract", measurementContract())
-                    .put("plannedWarmups", WARMUPS)
-                    .put("plannedSamples", SAMPLES)
-                    .put("warmups", warmups)
-                    .put("samples", samples)
-                    .put("preservedOriginalData", false)
-                    .put("fixedSourcePreserved", false)
-                    .put("returnedHome", false)
-                    .put("frozenInputBaselinesUnchanged", false)
-                    .put("environmentPreserved", false)
-                    .put("catalogPreserved", false)
-                    .put("sdkObserverCancelled", false)
-                    .put("automationFlagRestored", false)
-                    .put("excludedSamples", 0)
-                    .put("causalPerformanceClaim", false)
+                val report =
+                    JSONObject()
+                        .put("schema", 1)
+                        .put("kind", "history_recording_runs_after_only")
+                        .put("measurementStage", "after")
+                        .put("runNonce", UUID.randomUUID().toString())
+                        .put("status", "started")
+                        .put("declaredProductCommit", product.lowercase(Locale.ROOT))
+                        .put("declaredHarnessRevision", harness.lowercase(Locale.ROOT))
+                        .put("revisionDeclarationSource", "external_runner_not_inferred_on_device")
+                        .put("productApkSha256", h.sha256(File(h.instrument.targetContext.applicationInfo.sourceDir)))
+                        .put("instrumentationApkSha256", h.sha256(File(h.instrument.context.applicationInfo.sourceDir)))
+                        .put("frozenInputBaselineHashes", h.baselineHashesJson())
+                        .put("frozenInputBaselineProvenance", h.baselineProvenanceJson())
+                        .put("originalData", originalData)
+                        .put("fixedSource", h.sessionJson(source))
+                        .put("catalog", catalog)
+                        .put("environment", environment)
+                        .put("measurementContract", measurementContract())
+                        .put("plannedWarmups", WARMUPS)
+                        .put("plannedSamples", SAMPLES)
+                        .put("warmups", warmups)
+                        .put("samples", samples)
+                        .put("preservedOriginalData", false)
+                        .put("fixedSourcePreserved", false)
+                        .put("returnedHome", false)
+                        .put("frozenInputBaselinesUnchanged", false)
+                        .put("environmentPreserved", false)
+                        .put("catalogPreserved", false)
+                        .put("sdkObserverCancelled", false)
+                        .put("automationFlagRestored", false)
+                        .put("excludedSamples", 0)
+                        .put("causalPerformanceClaim", false)
                 write(output, report)
-                val sdkObserver = launch { combine(h.graph.vehicle().state, h.graph.restrictions().restrictions) { vehicle, restrictions -> vehicle to restrictions }.collect {} }
+                val sdkObserver =
+                    launch {
+                        combine(h.graph.vehicle().state, h.graph.restrictions().restrictions) { vehicle, restrictions ->
+                            vehicle to
+                                restrictions
+                        }.collect {}
+                    }
                 var bodyFailure: Throwable? = null
                 var cleanupFailure: Throwable? = null
+
                 fun preserveCleanup(problem: Throwable) {
                     val first = cleanupFailure
-                    if (first == null) cleanupFailure = problem else if (first !== problem) first.addSuppressed(problem)
+                    if (first == null) {
+                        cleanupFailure = problem
+                    } else if (first !== problem) {
+                        first.addSuppressed(problem)
+                    }
                     bodyFailure?.let { if (it !== problem) it.addSuppressed(problem) }
                 }
                 var measured = false
@@ -116,19 +128,25 @@ class SessionHistoryRecordingRunMeasureTest {
                         assertTrue("현재 실제 P+UX가 허용돼야 합니다", h.liveAllowed())
                         h.touch("home_history")
                         h.assertSource(source, 0, before.sessions.count { !it.isActive })
-                        listOf("history_observations", "history_summary_tasks", "history_memo", "history_recording_runs").forEach(h::assertCollapsed)
+                        listOf(
+                            "history_observations",
+                            "history_summary_tasks",
+                            "history_memo",
+                            "history_recording_runs",
+                        ).forEach(h::assertCollapsed)
                         h.scrollVisible("history_recording_runs")
                         h.requireForeground()
-                        val sample = JSONObject()
-                            .put("index", if (index < WARMUPS) index + 1 else index - WARMUPS + 1)
-                            .put("status", "started")
-                            .put("elapsedNs", JSONObject.NULL)
-                            .put("elapsedMs", JSONObject.NULL)
-                            .put("elapsedWaitNs", JSONObject.NULL)
-                            .put("observedEndpointElapsedNs", JSONObject.NULL)
-                            .put("endpointConfirmed", false)
-                            .put("sourceMatched", false)
-                            .put("returnedHome", false)
+                        val sample =
+                            JSONObject()
+                                .put("index", if (index < WARMUPS) index + 1 else index - WARMUPS + 1)
+                                .put("status", "started")
+                                .put("elapsedNs", JSONObject.NULL)
+                                .put("elapsedMs", JSONObject.NULL)
+                                .put("elapsedWaitNs", JSONObject.NULL)
+                                .put("observedEndpointElapsedNs", JSONObject.NULL)
+                                .put("endpointConfirmed", false)
+                                .put("sourceMatched", false)
+                                .put("returnedHome", false)
                         (if (index < WARMUPS) warmups else samples).put(sample)
                         val started = SystemClock.elapsedRealtimeNanos()
                         var observedEndpointElapsedNs: Long? = null
@@ -167,7 +185,10 @@ class SessionHistoryRecordingRunMeasureTest {
                                 .put("failureClass", failure.javaClass.simpleName)
                             throw failure
                         }
-                        if (index == WARMUPS - 1) { report.put("status", "warmups_completed"); write(output, report) }
+                        if (index == WARMUPS - 1) {
+                            report.put("status", "warmups_completed")
+                            write(output, report)
+                        }
                     }
                     assertTrue("모든 실제 원값이 성공이어야 합니다", successful(warmups) == WARMUPS && successful(samples) == SAMPLES)
                     report.put("statistics", statistics(samples))
@@ -175,49 +196,94 @@ class SessionHistoryRecordingRunMeasureTest {
                 } catch (failure: Throwable) {
                     bodyFailure = failure
                     report.put("failureClass", failure.javaClass.simpleName)
-                    try { h.capture("m2-failure-current-app", null) } catch (capture: Throwable) { failure.addSuppressed(capture) }
+                    try {
+                        h.capture("m2-failure-current-app", null)
+                    } catch (capture: Throwable) {
+                        failure.addSuppressed(capture)
+                    }
                     throw failure
                 } finally {
                     withContext(NonCancellable) {
-                        try { if (h.nodes("history_close").size == 1) h.closeHistory() } catch (failure: Throwable) { preserveCleanup(failure) }
+                        try {
+                            if (h.nodes("history_close").size ==
+                                1
+                            ) {
+                                h.closeHistory()
+                            }
+                        } catch (failure: Throwable) {
+                            preserveCleanup(failure)
+                        }
                         try {
                             assertTrue("마지막 화면은 같은 홈이어야 합니다", h.nodes("home_history").size == 1 && h.nodes("history_ready").isEmpty())
                             report.put("returnedHome", true)
-                        } catch (failure: Throwable) { preserveCleanup(failure) }
+                        } catch (failure: Throwable) {
+                            preserveCleanup(failure)
+                        }
                         try {
-                            val actualSource = withTimeout(30_000) {
-                                h.graph.sessions().observeSessions().first().singleOrNull { it.sessionId == source.sessionId }
-                            }
+                            val actualSource =
+                                withTimeout(30_000) {
+                                    h.graph
+                                        .sessions()
+                                        .observeSessions()
+                                        .first()
+                                        .singleOrNull { it.sessionId == source.sessionId }
+                                }
                             assertTrue("종료 후에도 같은 고정 source 전 필드를 보존해야 합니다", actualSource == source)
                             report.put("fixedSourcePreserved", true)
-                        } catch (failure: Throwable) { preserveCleanup(failure) }
+                        } catch (failure: Throwable) {
+                            preserveCleanup(failure)
+                        }
                         try {
                             h.assertPreserved(h.graph, before)
                             report.put("preservedOriginalData", true)
-                        } catch (failure: Throwable) { preserveCleanup(failure) }
+                        } catch (failure: Throwable) {
+                            preserveCleanup(failure)
+                        }
                         try {
                             h.assertBaselineUnchanged()
                             report.put("frozenInputBaselinesUnchanged", true)
-                        } catch (failure: Throwable) { preserveCleanup(failure) }
+                        } catch (failure: Throwable) {
+                            preserveCleanup(failure)
+                        }
                         try {
                             h.requireSameJson(environment, h.environmentJson(), "environmentAfterRun")
                             report.put("environmentPreserved", true)
-                        } catch (failure: Throwable) { preserveCleanup(failure) }
+                        } catch (failure: Throwable) {
+                            preserveCleanup(failure)
+                        }
                         try {
                             h.requireSameJson(catalog, h.catalogJson(h.graph), "catalogAfterRun")
                             report.put("catalogPreserved", true)
-                        } catch (failure: Throwable) { preserveCleanup(failure) }
+                        } catch (failure: Throwable) {
+                            preserveCleanup(failure)
+                        }
                         try {
                             sdkObserver.cancelAndJoin()
                             report.put("sdkObserverCancelled", true)
-                        } catch (failure: Throwable) { preserveCleanup(failure) }
+                        } catch (failure: Throwable) {
+                            preserveCleanup(failure)
+                        }
                         try {
                             h.restoreAutomationFlag()
                             report.put("automationFlagRestored", true)
-                        } catch (failure: Throwable) { preserveCleanup(failure) }
+                        } catch (failure: Throwable) {
+                            preserveCleanup(failure)
+                        }
                         report.put("cleanupFailureClass", cleanupFailure?.javaClass?.simpleName ?: JSONObject.NULL)
-                        report.put("warmupCounts", counts(warmups, WARMUPS)).put("sampleCounts", counts(samples, SAMPLES)).put("status", if (measured && bodyFailure == null && cleanupFailure == null) "completed" else "failed")
-                        try { write(output, report) } catch (failure: Throwable) {
+                        report.put("warmupCounts", counts(warmups, WARMUPS)).put("sampleCounts", counts(samples, SAMPLES)).put(
+                            "status",
+                            if (measured &&
+                                bodyFailure == null &&
+                                cleanupFailure == null
+                            ) {
+                                "completed"
+                            } else {
+                                "failed"
+                            },
+                        )
+                        try {
+                            write(output, report)
+                        } catch (failure: Throwable) {
                             val original = bodyFailure ?: cleanupFailure
                             if (original == null) throw failure else original.addSuppressed(failure)
                         }
@@ -225,30 +291,77 @@ class SessionHistoryRecordingRunMeasureTest {
                     if (bodyFailure == null && cleanupFailure != null) throw checkNotNull(cleanupFailure)
                 }
             }
-        } catch (failure: Throwable) { primary = failure; throw failure }
-        finally { try { h.restoreAutomationFlag() } catch (cleanup: Throwable) { if (primary == null) throw cleanup else primary.addSuppressed(cleanup) } }
+        } catch (
+            failure: Throwable,
+        ) {
+            primary = failure
+            throw failure
+        } finally {
+            try {
+                h.restoreAutomationFlag()
+            } catch (cleanup: Throwable) {
+                if (primary ==
+                    null
+                ) {
+                    throw cleanup
+                } else {
+                    primary.addSuppressed(cleanup)
+                }
+            }
+        }
         h.phase("HISTORY_RECORDING_RUN_M2_AFTER_COMPLETED")
     }
 
-    private fun measurementContract(): JSONObject = JSONObject()
-        .put("version", 1)
-        .put("method", "SessionHistoryRecordingRunMeasureTest.measureNewStoredRunDisclosureAfterOnlyAndPreserveFrozenData")
-        .put("clock", "SystemClock.elapsedRealtimeNanos")
-        .put("unit", "ms")
-        .put("warmups", WARMUPS)
-        .put("samples", SAMPLES)
-        .put("start", "directly before history_recording_runs performClick")
-        .put("endpoint", "exact latest run values then fixed scroll to visible history_recording_run_ended, Compose idle and same receipt/value recheck")
-        .put("endpointTimeoutNs", ENDPOINT_TIMEOUT_NS)
-        .put("endpointTimeoutIncludesClickAndComposeBlocking", true)
-        .put("composeBlockingTimeoutIsNotAnInterruptibleDeadline", true)
-        .put("included", JSONArray(listOf("click dispatch", "stored run read and exact displayed-value/receipt checks", "fixed end-marker scroll", "Compose synchronization/idle", "semantics/geometry checks", "received SDK-state live P/UX recheck", "focused-window/Main lifecycle/display receipt checks")))
-        .put("excluded", JSONArray(listOf("history opening", "pre-scroll to the new disclosure", "bulk original Room snapshot/source/catalog/environment comparisons outside the timer", "result JSON persistence", "history close and preservation/cleanup checks", "Activity/process startup")))
-        .put("failedSampleFields", "valid elapsedNs/elapsedMs and endpointConfirmed stay null/null/false; elapsedWaitNs records time to failure; a deadline-valid endpoint before a later check failure is retained separately as observedEndpointElapsedNs")
-        .put("cacheCondition", "fresh externally started process and Activity; five warmups; no cache clearing")
-        .put("order", "five warmups then thirty new run disclosures; same frozen latest ended session; new collapsed history each time")
-        .put("build", "same API34 debug/font1.0/light and frozen catalog/data/environment")
-        .put("performanceScope", "after-only instrumented new UI wall time, no before counterpart or speed claim")
+    private fun measurementContract(): JSONObject =
+        JSONObject()
+            .put("version", 1)
+            .put("method", "SessionHistoryRecordingRunMeasureTest.measureNewStoredRunDisclosureAfterOnlyAndPreserveFrozenData")
+            .put("clock", "SystemClock.elapsedRealtimeNanos")
+            .put("unit", "ms")
+            .put("warmups", WARMUPS)
+            .put("samples", SAMPLES)
+            .put("start", "directly before history_recording_runs performClick")
+            .put(
+                "endpoint",
+                "exact latest run values then fixed scroll to visible history_recording_run_ended, " +
+                    "Compose idle and same receipt/value recheck",
+            ).put("endpointTimeoutNs", ENDPOINT_TIMEOUT_NS)
+            .put("endpointTimeoutIncludesClickAndComposeBlocking", true)
+            .put("composeBlockingTimeoutIsNotAnInterruptibleDeadline", true)
+            .put(
+                "included",
+                JSONArray(
+                    listOf(
+                        "click dispatch",
+                        "stored run read and exact displayed-value/receipt checks",
+                        "fixed end-marker scroll",
+                        "Compose synchronization/idle",
+                        "semantics/geometry checks",
+                        "received SDK-state live P/UX recheck",
+                        "focused-window/Main lifecycle/display receipt checks",
+                    ),
+                ),
+            ).put(
+                "excluded",
+                JSONArray(
+                    listOf(
+                        "history opening",
+                        "pre-scroll to the new disclosure",
+                        "bulk original Room snapshot/source/catalog/environment comparisons outside the timer",
+                        "result JSON persistence",
+                        "history close and preservation/cleanup checks",
+                        "Activity/process startup",
+                    ),
+                ),
+            ).put(
+                "failedSampleFields",
+                "valid elapsedNs/elapsedMs and endpointConfirmed stay null/null/false; " +
+                    "elapsedWaitNs records time to failure; a deadline-valid endpoint before a later check failure " +
+                    "is retained separately as observedEndpointElapsedNs",
+            ).put("cacheCondition", "fresh externally started process and Activity; five warmups; no cache clearing")
+            .put("order", "five warmups then thirty new run disclosures; same frozen latest ended session; new collapsed history each time")
+            .put("build", "same API34 debug/font1.0/light and frozen catalog/data/environment")
+            .put("performanceScope", "after-only instrumented new UI wall time, no before counterpart or speed claim")
 
     private fun reserve(file: File) {
         assertTrue(
