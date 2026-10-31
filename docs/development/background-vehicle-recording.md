@@ -1,8 +1,8 @@
 # 내비 전면 중 차량 상태 기록과 중단 표시
 
-APP-05의 차량 상태 기록 유지와 중단 표시를 연결한 구현이다. a2cf9e2의 양 테마와 Main 전면 프로세스 중단/복구, 최종 DB exact 대조와 환경 복원을 확인했다. 최신 리뷰에서 추가 지적된 경계는 후속 수정/재검증 전까지 미해결로 유지한다. 기본은 활성 연습과 앱 화면의 STARTED 수명에 따른 기존 수집이다. 주차와 UX 허용이 모두 확인된 상태에서 사용자가 명시적으로 켠 경우에만 foreground service가 같은 연습의 차량 관찰을 소유한다. 위치, 실제 주행 경로, 목적지 전달, 길안내와 차량 제어는 추가하지 않는다.
+APP-05의 차량 상태 기록 유지와 중단 표시를 연결한 구현이다. a2cf9e2의 양 테마와 Main 전면 프로세스 중단/복구, 최종 DB exact 대조와 환경 복원을 확인했다. 이후 최신 리뷰의 두 경계는9fbf4d2에서 수정하고 별도 회차의 실제 재검증과 자료/환경 복원까지 확인했다. 기본은 활성 연습과 앱 화면의 STARTED 수명에 따른 기존 수집이다. 주차와 UX 허용이 모두 확인된 상태에서 사용자가 명시적으로 켠 경우에만 foreground service가 같은 연습의 차량 관찰을 소유한다. 위치, 실제 주행 경로, 목적지 전달, 길안내와 차량 제어는 추가하지 않는다.
 
-앞선 실제 앱 검증의 제품 기준은 `a2cf9e2`다. 최신 리뷰의 두 추가 경계는 후속 수정 코드와 별도로 재검증한다. 이전 제품 `de6357ff94d49bc1a88fbdbda7ea1a86b0612894`에서 실제 시스템 내비 전환 중 수집을 확인했고, 뒤이은 다크 실행에서 수집 재개와 Paused 표시가 갈라지는 상태 덮어쓰기를 발견했다. 즉시 전면 재진입을 재현한 뒤 상태를 먼저 준비하고 소유권을 마지막에 반환하는 최소 수정을 적용했다. 수정 제품의 전체 자동 검사는765개 통과했고 실제 기본 라이트와 확대 다크의 전체 흐름도 각각 통과했다. 초기 AX 전면 미확인 실패는 보존했으며, 최종 다크는 실제 Main display의 focused window를 관찰하는 `2d77775` test 하네스로 통과했다. 이어 Main 전면에서 의도적으로 프로세스를 종료한 실제 abort와 fresh process 복구를 분리해 확인했다. 소유 검증 캐시는 completed이며 최종 DB exact 대조와 환경 복원을 확인했다.
+앞선 실제 앱 검증의 제품 기준은 `a2cf9e2`다. 최신 두 경계 수정과 실제 재검증은 아래 후속 회차로 분리했다. 이전 제품 `de6357ff94d49bc1a88fbdbda7ea1a86b0612894`에서 실제 시스템 내비 전환 중 수집을 확인했고, 뒤이은 다크 실행에서 수집 재개와 Paused 표시가 갈라지는 상태 덮어쓰기를 발견했다. 즉시 전면 재진입을 재현한 뒤 상태를 먼저 준비하고 소유권을 마지막에 반환하는 최소 수정을 적용했다. 수정 제품의 전체 자동 검사는765개 통과했고 실제 기본 라이트와 확대 다크의 전체 흐름도 각각 통과했다. 초기 AX 전면 미확인 실패는 보존했으며, 최종 다크는 실제 Main display의 focused window를 관찰하는 `2d77775` test 하네스로 통과했다. 이어 Main 전면에서 의도적으로 프로세스를 종료한 실제 abort와 fresh process 복구를 분리해 확인했다. 소유 검증 캐시는 completed이며 최종 DB exact 대조와 환경 복원을 확인했다.
 
 초기 v1 변경 전후 계측은 `de6357ff94d49bc1a88fbdbda7ea1a86b0612894`까지의 자료이며 최종 제품 성능의 근거가 아니다. 구현과 빌드, 이번 실제 흐름의 성공을 플랫폼의 일반 지원이나 APP-04 위치/경로와 MAP-04 길안내까지 충족한 APP-05 전체 완료로 계산하지 않는다. 실행 결과, 최초 실패와 최신 PR/리뷰 조건은 [작업 계획](../plans/active/2026-10-31-background-vehicle-recording.md)에 구분해 기록한다.
 
@@ -151,3 +151,17 @@ fresh process의 별도 recovery는 OK1과 RECOVERY_COMPLETED로 끝났다. 이�
 원래 준비/종료 세션/관찰/메모와 의도한 설치 차이, 실제 실행을 위해 추가한 소유 세션/관찰/run을 분리한다. 소유 연습은 recovery 마지막 UI 단계에서 종료됐으며 owner completed와 run11개, 추가 관찰89개의 근거를 보존한다. 이들을 임의로 삭제하거나 새 세션으로 교체하지 않는다. 최종 SQLite의 원본 전 필드/물리형/행순서와 허용한 소유 추가에 따른 정확한 sequence 증가, FK와 무결성은 명시적인 역할별 manifest로 오프라인 exact 대조를 통과했다. 원본 준비1/종료11/관찰17/메모1과 소유 종료 연습1/추가 관찰89/실행11을 분리했다. 실행은10 STOPPED와 종료 시각 null의1 INTERRUPTED이며 실패5/구 runtime 성공1/수동 진단1을 최종 native 성공과 합치지 않았다. grants/runtime/font/night/IME/proxy도 복원 후 새 DB 복사와 재대조를 통과했다. 이 개수는 정확성과 보존 근거이며 성능 수치가 아니다. 원문 DB, 식별자, 개인 경로, 내비 화면과 플랫폼 로그는 비공개로 보존한다. 결과를 확보한 단계만 작업 계획과 이 문서에 반영하고 원래 환경을 복구한 뒤 실행이 소유한 AVD/forward/임시 탭만 정리한다.
 
 실제 수집/표시 상태 경합의 수정과 최종 양 테마, Main 전면 중단/복구 근거를 확보했다. 최종 DB exact 대조와 환경 복원을 확인했고 소유 AVD/forward/DDS 임시 탭만 정리했다. README는 실제 수집/표시 상태 경합의 새 사례로 기존4번을 교체하고 나머지 사례와 순서를 유지한다. 실제 사용 영향, Coroutine 즉시 재진입과 소유권 반환, 서비스와 영속 미확인 경계를 함께 설명하는 근거가 기존 단일 SQLite 물리형 사례보다 강하다고 판단한 이유를 계획에 기록했다. 최신성이나 검사 개수만으로 교체하지 않는다. 공개용 스크린샷이나 빈 자리표시자는 만들지 않았다. 이 문서의 작성과 배치는 앱 실행 경로를 바꾸지 않아 추가 성능 측정 대상이 아니며 링크, 초기 원값 대조와 공개 콘텐츠로 검증한다.
+
+## 최신 리뷰 경계 수정과 실제 후속 회차
+
+9fbf4d2는 open COMMIT 뒤 결과 전달 취소와, FinishedSession이 세션 통지보다 먼저 도착하는 두 순서를 수정했다. open 결과 수신과 opened 영수증 게시만 NonCancellable로 보호하되 원래 prepare context의 취소/isStarting/현재 허용 gate를 commit 전 확인한다. 보호 밖의 원 context 확인 후만 native dispatch한다. cleanup은 prepare join 뒤 정확한 run/process를 정리한다. FinishedSession만 정상 STOPPED/knownEnd/optOut으로 분기하며 다른 실패, cleanup 실패와 state-before-owner 순서는 유지한다.
+
+수정 전 domain42개 중 새2개만 RED, 수정 후42개 GREEN이다. 실제 Room COMMIT 뒤 adapter 결과 전달과 종료 통지를 제어한2개도 원형에서 RED, 수정 후 GREEN이다. 이 검사는 내부 특정 Room dispatcher나 SDK 동작의 직접 재현이 아니다. JDK17 전체 verify, debug/unsigned release/계측 APK와 단위 XML773개(실패/오류/건너뜀0, cache/up-to-date 포함)를 확인했다.
+
+같은9fbf4d2 제품/test APK의 실제 설치 hash를 전후 읽어 확인하고 이전 완료 캐시/전체 최종 자료를 그대로 보존한 별도 회차를 사용했다. 기본 라이트와 확대 다크 각각 실제 Main display focused 내비 전면/Main STOP/native FGS1/같은 OPEN과 해당 run의 새 SDK D/P 관찰을 확인했다. 복귀 D잠금/명시 STOPPED/서비스0/같은 연습/일반 Recording과 별도 외부 종료 복구도 통과했다. Main 전면의 READY OPEN/FGS를 외부 종료한 fixture는 실제 abort이며 JUnit PASS가 아니다. fresh process는 이전 run의 INTERRUPTED/null과 자동 BG 재개 없음, 새 process/run의 명시 enable/stop 및 과거 중단 보존을 확인하고 후속 소유 연습만 종료했다.
+
+첫 후속 다크는 본문 시작 전에 framework remove task의 동일 앱 process kill로 종료됐다. Java/native FATAL/ANR/LMK 근거는 찾지 못했고 앞선 다른 hardware process의 SIGABRT와 분리했다. 제거 요청자는 미확정이며 USER REQUESTED를 사람의 조작이나 앱/SDK 결함 배제 근거로 해석하지 않는다. 실제 초기 전면 조건의 첫 interrupt도 실패했다. 두 시작 실패는 새 marker를 만들지 않았고 실패 로그/소유 자료를 보존한 재시도 성공과 구분했다. native 시작의 반복성 한계를 성공으로 지우지 않는다.
+
+이전 완료 기준의 세션12/관찰106/실행11과 모든 다른 행/필드/물리형/순서/sequence, 기존 완료 캐시 원문은 보존됐다. 후속 소유 종료1/SDK 관찰39/terminal4(3STOPPED+1INTERRUPTED/null)만 별도로 추가했다. 이전 run의 nonce/시작/원형과 새 복구 process를 구분하고 최종 native 캐시/역할 manifest/실제 복사 SQLite를 exact 대조했다. 첫 검증 도구의 세션 정수 기대형에서 briefingVersion이 빠진 오류는 도구만 바로잡아 같은 자료로 다시 통과했으며 원본/기대 개수를 바꾸지 않았다. 최종 원래 권한/runtime/font/night/IME/proxy와 새 DB 복사 재조회도 일치했고 소유 AVD/forward/제어 탭만 정리했다. 이 개수는 정확성 근거이며 성능 수치가 아니다.
+
+원래 두 리뷰 스레드에 수정 커밋과 RED/GREEN/전체/실기 근거를 한국어로 답하고 전체 스레드를 다시 읽은 뒤 native Resolve를 확인했다. 스레드 해결은 최신 PR의 필수 CI/Codex/병합 정책을 대신하지 않는다. 초기v1 통계는 de6357까지의 자료이며9fbf4d2의 앱/SDK 성능 전후 값은 미측정이다.

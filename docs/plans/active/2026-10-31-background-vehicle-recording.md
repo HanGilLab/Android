@@ -1,6 +1,6 @@
 # 내비 전면 중 차량 기록과 중단 표시
 
-- 상태: a2cf9e2 실기와 환경 복원 완료, 최신 리뷰의 두 경계 수정/최종 재검증 진행
+- 상태: 최신 리뷰 경계 수정/전체/실제 재검증과 환경 복원 완료, 최종 문서 PR 검사와 병합 대기
 - 요구사항: APP-05의 차량 상태 기록 유지/중단 표시. 위치/경로/실제 도로 검증과 기존 활성 안내 보존은 포함하지 않는다.
 
 ## 목표와 범위
@@ -14,10 +14,10 @@ run marker를 schema5의 별도 FK 자료로 저장한다. OPEN, 정상 중단, 
 ## 완료 조건
 
 - [x] 기존 전면 동작 유지, P+UX/표시한 세션 snapshot/RESUMED 호스트/요청 token을 확인한 명시 enable만 FGS로 전환한다. 거부/이탈/옛 intent/다른 세션은 새 실행을 빌리지 않는다.
-- [ ] 단일 소유권과 cancel/join으로 화면/서비스 중복 수집을 막고, 종료/교체/읽기 실패/사용자 중단 뒤 늦은 append나 자동 BG 재시도가 없다.
+- [x] 단일 소유권과 cancel/join으로 화면/서비스 중복 수집을 막고, 종료/교체/읽기 실패/사용자 중단 뒤 늦은 append나 자동 BG 재시도가 없다.
 - [x] foreground 승격 성공 뒤만 서비스 수집하며 START_NOT_STICKY, 적절한 알림, 현재 실행/실패/중단 미확인과 실제 SDK/앱 관찰 범위를 표시한다. 실제 DDS D를 기록하되 상세 입력은 계속 잠근다.
 - [x] v4 기존 모든 행/물리형/순서/sequence를 보존하고 FK/실제 타입/업데이트 소유권/취소 rollback/삭제 CAS를 검증한다. null end를 정확한 공백 시간이나0으로 바꾸지 않는다.
-- [ ] JDK17 verify와 변경 단위/실제 SQLite/제어 native, 실제 Pleos 기본과 확대 다크의 내비 전면 SDK 기록/복귀/종료, 강제 프로세스 종료 뒤 중단 미확인과 명시 재개를 구분해 확인한다.
+- [x] JDK17 verify와 변경 단위/실제 SQLite/제어 native, 실제 Pleos 기본과 확대 다크의 내비 전면 SDK 기록/복귀/종료, 강제 프로세스 종료 뒤 중단 미확인과 명시 재개를 구분해 확인한다.
 - [x] 기준과 비교의 같은 입력/계측/조건 원값/표본/분포/실패/제외를 보존하고 새 수집의 SDK 속도 향상으로 바꾸지 않는다.
 - [x] README4개와 새 근거를 비교해 근거 있는 사례만 교체하고 지정 여섯 항목/실제 펼침 코드/브랜드/기존 화면을 유지한다. 새 공개 사진은 만들지 않는다.
 - [ ] 최신 PR 필수 CI/Codex/관련 실제 검증/미해결/정책 뒤 정상 병합하고 실제 head/tree/main ff-only/브랜치 정리와 Notion readback을 확인한다.
@@ -148,3 +148,15 @@ APP05의 차량 상태 수집은 이 내비 SDK API를 호출하지 않아 독�
 실제 Room 경계2개는 COMMIT 뒤 adapter 결과 전달 지연, 실제 finish COMMIT 뒤 controller 통지 지연을 각각 제어한다. 수정 패치를 정확히 백업한 뒤 committed 원형 controller로 순차 실행해2개 모두 AssertionError RED(오류/건너뜀0)를 확인하고 패치를 원형 그대로 복원했다. 첫 경우 실제 OPEN 잔존, 둘째 실제 FAILED 저장을 대조한다. 이는 실제 Room와 production adapter를 쓰지만 내부 특정 dispatcher 결함이나 실제 SDK/FGS 재현으로 과장하지 않는다. 같은 테스트 GREEN과 전체 verify/native APK/후속 실제 양 테마/외부 종료 복구를 새 제품에서 다시 확인한다. 원본 기록의 cancellation 계약도 commit 전 rollback과 commit 후 영수증 보존으로 명확히 구분했다.
 
 후속 실제 Room2개 GREEN(실패/오류/건너뜀0)과 JDK17 전체 verify/debug/unsigned release/native APK 빌드를 통과했다. 독립 읽기 검토에서도 원 context 취소 gate/dispatch 보호 밖/cleanup failure/state-before-owner/이전 캐시 불변과 새 소유1개 제한에 새 구체 결함을 찾지 못했다. 새 제품 APK와 test APK를 immutable hash로 고정했고 실제 후속 회차는 아직 미실행이다. 앞선 a2cf9e2 성공은 그 revision으로 명시하고 최신 성공으로 대신 쓰지 않는다.
+
+## 리뷰 수정 제품의 최종 확인
+
+9fbf4d2 실제 설치 제품/test hash를 전후 대조했다. 이전 completed 캐시와 전체 이전 최종 자료에 정확히 바인딩한 별도 review-followup 회차에서 라이트/확대 다크 각1PASS다. 양쪽 모두 실제 Main display focused 내비 전면/Main STOP/native FGS1/같은 OPEN/해당 run의 새 실제 SDK D/P/복귀 D잠금/명시 STOPPED/서비스0/연습 유지/일반 Recording을 확인했다. 앞선 a2cf9e2나 누적 themes만으로 대신하지 않는다.
+
+첫 후속 다크는 본문 시작 전 framework remove task에 의한 동일 앱 process kill로 중단됐다. 제거 요청자는 미확정, 앱 Java/native FATAL/ANR/LMK 근거는 없고 다른 hardware SIGABRT는 분리했다. USER REQUESTED를 사람 조작으로 추정하거나 앱/SDK 결함을 배제하지 않는다. 첫 interrupt의 초기 전면 조건 실패도 보존했다. 둘 모두 신규 run/READY가 없으며 같은 소유 자료/서비스 부재를 확인한 재시도 성공과 구분한다. 순차 실행과 데이터 보존을 유지하고 시작 반복성 한계를 정상 동작으로 만들지 않았다.
+
+이후 Main 전면 READY/OPEN/FGS를 실제 외부 종료했고 bounded receipt 대기와 실제 abort를 별도 확인했다(JUnitPASS 아님). fresh recover1PASS는 같은 이전 run/process/시작의 INTERRUPTED/null, 새 run/FGS 자동 생성 없음, 새 process/run 명시 시작→STOPPED, 이전 중단 보존과 후속 소유 연습만 종료를 확인했다.
+
+별도 최종 manifest의 새4개 역할은 light/dark/interrupted/recovery다. 이전 기준12세션/106관찰/11run의 원형/물리형/순서와 나머지 모든 자료를 유지했고 후속 종료1/관찰39/run4(3STOPPED+1INTERRUPTED/null)만 추가했다. 두 시작 실패는 marker0이라 실패 run으로 늘리지 않았다. native 캐시/실제 복사DB/FK/무결성/정확sequence/예상 물리형을 exact 대조했다. 검증 도구의 briefingVersion 정수 기대형 누락은 도구 수정 후 같은 원자료/기대 개수로 다시 통과했다. 기존 완료 캐시도 byte-exact이며 모든 원래 권한/runtime/화면/IME/proxy와 새 DB 재조회까지 확인하고 소유 AVD/forward/DDS 탭만 정리했다. 저장 행/검사 수는 성능 값이 아니다.
+
+원래 comment4432064183/4432064188 두 스레드를 새로 읽어 의미 수정/추가 지적/기존 답글 없음을 확인한 뒤9fbf4d2와 실제 RED/GREEN/전체/실기 근거를 한국어로 답했다. 답글4432317031과 두 번째 성공 ID, 원문 ID/수정 시각/분리 thread ID/commit/검증/실제 Resolve는 ignored checkpoint에 구분했다. 각 답글 뒤 전체 스레드를 재조회하고 native 해결을 표시했으며 두 스레드 실제 resolved를 재확인했다. 최신9fbf4d2 Codex는 completed/새 지적 없음이지만 최종 문서 commit의 필수 CI/리뷰와 정상 병합/Notion은 아직 별도 대기다.
