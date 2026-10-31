@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -30,6 +31,185 @@ import java.time.ZoneOffset
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class PracticeRecordingControllerTest {
+    @Test
+    fun `immediate foreground host stays recording after explicit background stop releases ownership`() =
+        runTest {
+            val f = Fixture(backgroundScope)
+            val controller = f.controller()
+            val immediate = UnconfinedTestDispatcher(testScheduler)
+            val host = backgroundScope.launch(immediate) { controller.recordWhileStarted() }
+            runCurrent()
+            assertEquals(VehicleRecordingState.Recording, controller.state.value)
+            assertTrue(controller.requestBackground(session()) { true })
+            runCurrent()
+            val service = backgroundScope.launch { controller.recordInService("run-1", "session-a") }
+            runCurrent()
+            assertEquals(BackgroundRecordingState.Active("run-1", "session-a"), controller.background.value)
+            assertTrue(controller.stopBackground("run-1"))
+            runCurrent()
+            service.join()
+            assertEquals(
+                RecordingRunStatus.STOPPED,
+                f.rows.value
+                    .single()
+                    .status,
+            )
+            assertEquals(BackgroundRecordingState.Disabled, controller.background.value)
+            assertEquals(
+                listOf("session-a"),
+                f.sessions.value
+                    .filter { it.isActive }
+                    .map { it.sessionId },
+            )
+            assertEquals(1, f.vehicle.state.subscriptionCount.value)
+            val beforeDrive = f.saved.size
+            f.vehicle.state.value = driving
+            runCurrent()
+            assertEquals(beforeDrive + 1, f.saved.size)
+            assertEquals("session-a" to driving, f.saved.last().let { it.first to it.second.state })
+            assertEquals(1, f.maxActiveWrites)
+            assertEquals(
+                "Native stop and a new live foreground subscription must not leave the controller Paused",
+                VehicleRecordingState.Recording,
+                controller.state.value,
+            )
+            host.cancelAndJoin()
+        }
+
+    @Test
+    fun `immediate foreground host stays recording after opting out of a completed failed run`() =
+        runTest {
+            val f = Fixture(backgroundScope)
+            val controller = f.controller()
+            val host = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { controller.recordWhileStarted() }
+            runCurrent()
+            assertTrue(controller.requestBackground(session()) { true })
+            runCurrent()
+            f.append = { throw IOException("controlled background append failure") }
+            val service = backgroundScope.launch { controller.recordInService("run-1", "session-a") }
+            runCurrent()
+            service.join()
+            assertEquals("run-1", (controller.background.value as BackgroundRecordingState.Failed).runId)
+            assertEquals(
+                RecordingRunStatus.FAILED,
+                f.rows.value
+                    .single()
+                    .status,
+            )
+            f.append = { VehicleObservationAppendResult.Appended(f.attempts.size.toLong()) }
+            assertTrue(controller.stopBackground("run-1"))
+            runCurrent()
+            assertEquals(1, f.vehicle.state.subscriptionCount.value)
+            val beforeDrive = f.saved.size
+            f.vehicle.state.value = driving
+            runCurrent()
+            assertEquals(beforeDrive + 1, f.saved.size)
+            assertTrue(f.saved.all { it.first == "session-a" })
+            assertEquals(listOf("run-1"), f.stops)
+            assertEquals(VehicleRecordingState.Recording, controller.state.value)
+            host.cancelAndJoin()
+        }
+
+    @Test
+    fun `immediate foreground host stays recording after cleanup failure releases explicit opt out`() =
+        runTest {
+            val f = Fixture(backgroundScope)
+            f.finishResult = { status, end -> status == RecordingRunStatus.FAILED && end == null }
+            val controller = f.controller()
+            val host = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { controller.recordWhileStarted() }
+            runCurrent()
+            assertTrue(controller.requestBackground(session()) { true })
+            runCurrent()
+            val service = backgroundScope.launch { controller.recordInService("run-1", "session-a") }
+            runCurrent()
+            assertTrue(controller.stopBackground("run-1"))
+            runCurrent()
+            service.join()
+            assertEquals(
+                RecordingRunStatus.FAILED,
+                f.rows.value
+                    .single()
+                    .status,
+            )
+            assertNull(
+                f.rows.value
+                    .single()
+                    .endedAtEpochMillis,
+            )
+            val warning = controller.background.value as BackgroundRecordingState.Failed
+            assertNull(warning.runId)
+            assertEquals("session-a", warning.sessionId)
+            assertEquals(1, f.vehicle.state.subscriptionCount.value)
+            val beforeDrive = f.saved.size
+            f.vehicle.state.value = driving
+            runCurrent()
+            assertEquals(beforeDrive + 1, f.saved.size)
+            assertEquals("session-a" to driving, f.saved.last().let { it.first to it.second.state })
+            assertEquals(listOf("run-1"), f.stops)
+            assertEquals(VehicleRecordingState.Recording, controller.state.value)
+            host.cancelAndJoin()
+        }
+
+    @Test
+    fun `immediate foreground host remains recording when pending recovery failure releases unlaunched owner`() =
+        runTest {
+            val f = Fixture(backgroundScope)
+            val recovery = CompletableDeferred<Unit>()
+            f.recover = {
+                recovery.await()
+                throw IOException("controlled recovery failure")
+            }
+            val controller = f.controller()
+            val host = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { controller.recordWhileStarted() }
+            assertTrue(controller.requestBackground(session()) { true })
+            runCurrent()
+            recovery.complete(Unit)
+            runCurrent()
+            assertEquals(BackgroundRecordingState.Reason.RECOVERY, f.failure(controller))
+            assertNull((controller.background.value as BackgroundRecordingState.Failed).runId)
+            assertTrue(f.rows.value.isEmpty())
+            assertTrue(f.starts.isEmpty())
+            assertTrue(f.stops.isEmpty())
+            assertEquals(1, f.vehicle.state.subscriptionCount.value)
+            val beforeDrive = f.saved.size
+            f.vehicle.state.value = driving
+            runCurrent()
+            assertEquals(beforeDrive + 1, f.saved.size)
+            assertTrue(f.saved.all { it.first == "session-a" })
+            assertEquals(VehicleRecordingState.Recording, controller.state.value)
+            host.cancelAndJoin()
+        }
+
+    @Test
+    fun `immediate foreground host is idle after background session completion releases ownership`() =
+        runTest {
+            val f = Fixture(backgroundScope)
+            val controller = f.controller()
+            val host = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { controller.recordWhileStarted() }
+            runCurrent()
+            assertTrue(controller.requestBackground(session()) { true })
+            runCurrent()
+            val service = backgroundScope.launch { controller.recordInService("run-1", "session-a") }
+            runCurrent()
+            f.sessions.value = listOf(session().copy(endedAtEpochMillis = 150))
+            runCurrent()
+            service.join()
+            assertEquals(
+                RecordingRunStatus.STOPPED,
+                f.rows.value
+                    .single()
+                    .status,
+            )
+            assertEquals(BackgroundRecordingState.Disabled, controller.background.value)
+            assertEquals(0, f.vehicle.state.subscriptionCount.value)
+            val saved = f.saved.toList()
+            f.vehicle.state.value = driving
+            runCurrent()
+            assertEquals(saved, f.saved)
+            assertEquals(VehicleRecordingState.Idle, controller.state.value)
+            host.cancelAndJoin()
+        }
+
     @Test
     fun `request opens a marker but records only after native promotion acknowledgement`() =
         runTest {

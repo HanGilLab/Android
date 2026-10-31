@@ -98,3 +98,15 @@ run marker를 schema5의 별도 FK 자료로 저장한다. OPEN, 정상 중단, 
 APP05의 차량 상태 수집은 이 내비 SDK API를 호출하지 않아 독립적으로 확인할 수 있다. 후속 actual 검사에서는 외부에서 확인한 실제 내비 component를 명시한 OS launcher intent만 실행하고 실제 package/Main STOP/FGS/Room 새 D/P/복귀/잠금/명시 중지/중단 복구 조건을 유지한다. 새 queries/권한/제품 구현은 추가하지 않는다. 이 OS 경로를 앱 내비 SDK 전환 성공이나 APP04/MAP04/APP05 전체 체크 완료로 대체하지 않는다. 제품 APK와 완료된 비교 원형은 그대로다.
 
 세 번째 진단 뒤에는 원본 준비1/종료11/관찰17/메모1의 전 필드/물리형/행순서와 모든 설정/권한을 대조했다. 원래 자료와 별도로 정확히1개 소유 활성 세션, 그 세션에만 연결된 관찰,3개 STOPPED 진단 run과 정확한 sequence 증가를 보존했다. 세션/실패 자료를 지우지 않고 소유 AVD를 중지한 뒤 검사 harness만 빌드했다. 최종 복구/종료/전체 보존은 아직 완료하지 않았다.
+
+## 전면 기록 표시 덮어쓰기: 수정 전 근거와 계획
+
+실제 system launcher 라이트는 Main STOP/FGS/같은 source의 새 D/P/복귀 D잠금/명시 중지/일반 전면 Recording을 모두 확인했다. 확대 다크의 첫 시도는 D수신 후 전면 accessibility package가 null인 관찰 미확인이었다. 실제 PNG는 내비 시작 화면이고 Main CREATED/FGS1/OPEN이었다. 이를 실제 다른 앱 전환이나 복원 실패/성공으로 단정하지 않는다. null만 제한 재관찰하고 다른 nonnull package는 즉시 실패하도록 검사 관찰을 보강했다. 뒤의 ADB 일시 무응답/회복/transport 재연결과 복구 완료 전 검사 빌드가 겹친 운영 실수도 분리했다. 같은 소유 process/생성 시각과 단독 활성 채팅을 확인해 잘못 덮인 소유권 flag를 복구했고 원본/설정과5개 종료 구간을 다시 대조했다.
+
+같은 제품 de6357f와 보존한 활성 연습에서 확대 다크를 다시 실행했을 때 실제 내비/Main STOP/FGS1/새 Room D/P/복귀 D잠금/명시 STOPPED/Disabled/FGS0까지는 성공했다. 이후 일반 전면 Recording을 기다리는15초 조건에서 실패했다. 실패 순간 Main RESUMED, foreground 실제 한길, background Disabled, recording Paused였고 마지막 run 종료 이후의 SDK 관찰도 존재했다. 이는 수집 자체는 다시 동작했는데 표시가 Paused로 덮인 정확성 문제를 좁히는 근거다.15초는 검사 실패 제한이며 측정한 앱/SDK 성능 값이나 개선율이 아니다. 최초 실패/후속 확인/새진단자료는 지우지 않는다.
+
+수정 전 가설은 finish의 owner=null 발행이 즉시 foreground collector를 재진입시켜 Recording을 발행한 뒤, cleanup이 Paused를 뒤늦게 쓰는 순서다. 먼저 즉시 재진입 foreground dispatcher를 사용하는 회귀에서 같은 source의 append/subscription과 상태를 분리해 현재 코드를 실패 재현한다. 정상 opt-out, 실패 뒤 opt-out, cleanup 실패, recovery 실패, 세션 종료의 소유권 반환을 확인한 뒤 상태/배경 표시를 먼저 정하고 소유권을 마지막에 넘기는 수정을 검토한다. 실제 SDK/플랫폼 시간 최적화가 아니라 표시 정확성 수정이며 가짜 저장소/제어 dispatcher/JUnit 시간을 앱 성능으로 쓰지 않는다.
+
+현재 v1 전후 timing은 initial 제품 de6357f까지의 실측이다. 후속 정확성 수정의 최종 앱 성능 비교로 대신하지 않으며 최종 SDK 처리/전면 복귀 성능 개선은 미측정으로 남긴다. 활성 소유 자료가 추가된 현재 입력을 원래11개 종료 입력과 같다고 취급하지 않는다. 성능 향상을 완료하거나 상대 개선율을 만들지 않고 실제 동작/데이터 보존과 별개로 기록한다.
+
+수정 전 targeted controller36개에서 새5개만 실패했고 Recording4/Idle1 기대가 모두 Paused로 덮였다. 기존31개와 수집/구독 단일 소유권 조건은 통과했다. 실제 종료 뒤 관찰 지속과 함께 즉시 재진입 상태 덮어쓰기 가설을 지지한다. 소유권 반환 네 분기에서 background/state를 먼저 정하고 owner 해제를 마지막에 발행하도록 최소 수정했으며, 같은 source/gate/ACK/취소 join/명시 시작 조건과 회귀5개를 유지한다. 전체 검사와 실제 양 테마/복구는 수정 후 다시 판정한다.

@@ -197,9 +197,10 @@ class PracticeRecordingController(
             val request = owner.value?.takeIf { it.runId == expectedRunId } ?: return@synchronized false
             request.optOutRequested = true
             if (request.completed.isCompleted) {
-                owner.value = null
                 currentBackground.value = BackgroundRecordingState.Disabled
                 currentState.value = VehicleRecordingState.Paused
+                // Release last: an immediate foreground collector can publish its state inline.
+                owner.value = null
             } else {
                 requestEnd(request, End(RecordingRunStatus.STOPPED, null, knownEnd = true, optOut = true))
             }
@@ -495,8 +496,8 @@ class PracticeRecordingController(
             synchronized(guard) {
                 if (owner.value === request) {
                     if (markerSource.value?.owner === request) setMarkerSource(null)
+                    // Every release must follow these writes so reentrant foreground state survives.
                     if (request.optOutRequested) {
-                        owner.value = null
                         currentBackground.value =
                             if (cleanupFailed) {
                                 BackgroundRecordingState.Failed(null, request.source.sessionId, checkNotNull(failure))
@@ -504,8 +505,8 @@ class PracticeRecordingController(
                                 BackgroundRecordingState.Disabled
                             }
                         currentState.value = VehicleRecordingState.Paused
-                    } else if (end.releaseForeground && !request.opened) {
                         owner.value = null
+                    } else if (end.releaseForeground && !request.opened) {
                         currentBackground.value =
                             BackgroundRecordingState.Failed(
                                 null,
@@ -513,10 +514,11 @@ class PracticeRecordingController(
                                 failure ?: BackgroundRecordingState.Reason.RECOVERY,
                             )
                         currentState.value = VehicleRecordingState.Paused
-                    } else if (end.optOut && failure == null) {
                         owner.value = null
+                    } else if (end.optOut && failure == null) {
                         currentBackground.value = BackgroundRecordingState.Disabled
                         currentState.value = VehicleRecordingState.Paused
+                        owner.value = null
                     } else {
                         currentBackground.value =
                             BackgroundRecordingState.Failed(
