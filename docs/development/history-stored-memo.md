@@ -1,6 +1,6 @@
 # 선택한 지난 연습의 저장 메모
 
-기존 이력에서 선택한 종료 기록의 메모를 읽는 독립 경계를 연결했다. 제품7017ddf5079582df6b823be42602bc17b5583f7d의 로컬 자동/제어/실제 검증과 기존 진입 비용의 전후 계측은 완료했다. 최신 PR의 CI/Codex와 정상 병합은 별도 대기다. [작업 계획](../plans/active/2026-10-31-history-stored-memo.md)에 완료 조건과 최초 실패를 관리한다. 전체 APP-06/APP-08, 지도 구간 복습과 실제 도로 검증의 완료를 뜻하지 않는다.
+기존 이력에서 선택한 종료 기록의 메모를 읽는 독립 경계를 연결했다. 제품7017ddf5079582df6b823be42602bc17b5583f7d의 로컬 자동/제어/실제 검증과 기존 진입 비용의 전후 계측은 완료했다. [제품 PR60](https://github.com/HanGilLab/Android/pull/60)은 동일 최종 head의 CI/Codex/관련 실기를 확인해 정상 병합했고 main 후속 CI와 브랜치 정리도 완료했다. 이 종료 문서 PR의 검사는 별도 확인 대상이다. [작업 계획](../plans/completed/2026-10-31-history-stored-memo.md)에 완료 조건과 최초 실패를 관리한다. 전체 APP-06/APP-08, 지도 구간 복습과 실제 도로 검증의 완료를 뜻하지 않는다.
 
 ## 제품 동작과 선택
 
@@ -62,3 +62,10 @@
 6. 마지막 domain snapshot 외에 외부 SQLite/sequence/권한/설정을 별도로 대조하고 원래 환경을 복원한다. 원래 자료와 명시적 소유 추가를 분리해 보존하고 이번 소유 AVD/forward/탭만 정리한다.
 
 README는 실제 기능 표의 한 문장과 유효한 소스 링크만 갱신했다. 기존4개/지정 여섯 항목/17개 펼친 실제 코드/18개 기존 이미지는 유지한다. 이번 읽기 연결은 기존1번/3번의 경계를 확장하지만 더 강한 독립 원인/영향/성능 개선을 입증하지 않아 기존 사례를 대체하지 않는다. 문서 정리는 런타임 성능 측정 적용 제외이며 링크/발췌/렌더/공개 콘텐츠로 검증한다.
+
+
+## 제품 PR60 종료 기록
+
+실제 최종 head1d151dbda88866797982c52664772981f3e97913의 [pull_request run41188177880](https://github.com/HanGilLab/Android/actions/runs/41188177880)/attempt1 및 같은 SHA의 App15368 필수4개는 success다. [Codex6541610156](https://github.com/HanGilLab/Android/pull/60#issuecomment-6541610156)이 completed/지적 없음/미해결 없음이고 전체 native 스레드/정식 리뷰0과 active strict/no bypass 정책을 확인했다. 정상 squash merge02545a50081e9f90773abdf0e5f637dcbc476e90의 실제 head/동일 tree/parent74be91f/noreply와 main ff-only/양쪽 작업 브랜치 정리를 확인했다. 병합 main의 별도 [push run41188565527](https://github.com/HanGilLab/Android/actions/runs/41188565527)/attempt1과 같은 SHA의 필수4개도 모두 success다.
+
+Notion readback은 필수19/54/선택3개 제외이며 APP06/08 전체는 미체크다. 실제 인증 없는 main README의4사례/17기본 펼침 Kotlin/18이미지 로드/1280px 가로넘침없음과 제품701/고정측정044 소스 일치를 확인했다. 이번 종료 문서는 완료 계획/현재 링크/실제 종료 기록만 정리하고 제품/단위/계측/README/CSV는 바꾸지 않는다. 이 문서 PR의 최신 CI/Codex와 최종 main 후속 검사는 별도이며 해당 PR/Notion에서 최종 결과를 관리한다.

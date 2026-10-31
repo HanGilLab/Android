@@ -1,6 +1,6 @@
 # 선택한 지난 연습의 저장 메모 열람
 
-- 상태: 로컬 구현/자동/실제/제어 검증과 전후 계측 완료, 최신 PR CI/Codex와 정상 병합 대기
+- 상태: 완료 (제품 PR60의 최신 CI/Codex/실기와 정상 병합, main 후속 CI/동기화/브랜치 정리/Notion readback 완료. 이 종료 문서 PR의 검사는 별도 확인 대상)
 - 요구사항: 출품 체크리스트 APP-06/APP-08의 선택한 과거 종료 기록 읽기 연결. 전체 지도 복습과 과정 완료는 별도 미완료다.
 
 ## 목표와 범위
@@ -15,7 +15,7 @@
 - [x] JDK17 전체 verify와 변경 JVM/native 경계, 실제 기본 라이트/확대 다크 Main/SDK/Room 및 DDS D-P를 확인한다. 실제 자료, 합성 입력과 검사 소유 기록은 분리하며 원래 자료/권한/설정을 보존한다.
 - [x] 같은 기존 이력 진입의 실제 기준과 비교 원값/분포/실패/제외/한계를 기록한다. 새 메모 열람 자체의 이전 동작이 없음을 구분한다.
 - [x] README의 기존4개와 근거를 비교해 더 강한 근거가 없으면 보존하고 유효한 실제 코드/링크, 기존 브랜드/화면과 정확히4개를 유지한다.
-- [ ] 동일 최신 head의 필수 CI/Codex/관련 실기/정책을 확인해 정상 병합하고 실제 head/tree/main ff-only/브랜치 정리 및 Notion readback을 확인한다.
+- [x] 동일 최신 head의 필수 CI/Codex/관련 실기/정책을 확인해 정상 병합하고 실제 head/tree/main ff-only/브랜치 정리 및 Notion readback을 확인한다.
 
 ## 구현 단계
 
@@ -52,7 +52,7 @@
 | 최신 체크리스트와 소유권 | 확인 | 같은 checkout의 다른 활성 채팅 없음. main74be91f clean, 필수19/54, 선택3개 제외/APP06/08 미체크. 열린 PR0/전체59개 담당 누락0. PR58/59 exact-head 완료와 최종 main push CI 통과. 원래PR1/8/10 최종 head 완료 미확인은 별도 유지 |
 | ./scripts/verify.sh | 통과 | JDK17.0.21+9, 전체4단계/46suites689 JVM 실패/오류/건너뜀0, debug/unsigned release/계측 APK |
 | 실제/제어 시나리오 | 최종 통과 | 실제 Main/SDK/Room 기본 라이트/확대 다크 각1PASS, 제어8PASS. 최초 제어1FAIL/7PASS와 재실행을 아래에 구분 |
-| 최신 PR CI/Codex | 미생성 | 같은 최신 head에서 별도로 확인 |
+| 최신 PR60 CI/Codex | 통과/정상 병합 | head1d151db, run41188177880/attempt1/App15368 필수4개와 Codex6541610156 completed/지적 없음/스레드0/정식리뷰0, merge02545a5 |
 
 ## README 사례 비교
 
@@ -85,3 +85,13 @@
 이번 연결은 기존1번의 실제 상태 선확인과3번의 원본/reader/query/화면 수명/옛 native 입력 소유권을 메모로 확장한다. 기존2번의 파괴적 트랜잭션/CAS/롤백,4번의 SQLite 물리 자료형 오염 원인보다 강한 독립 데이터 영향/원인 규명은 확보하지 않았고 속도 향상도 미확정이다. 따라서 기존 네 사례의 내용과 순서를 유지한다. 채용 관점에서 기존1/3을 대체하면 더 넓은 입력/렌더 경계의 설명을 같은 패턴의 읽기 연결로 좁히므로 교체하지 않는다. 최신성/코드량/검사 총수는 선정 근거가 아니다.
 
 실제 기본/확대 다크 확인 뒤 기능 표의 메모 행 한 문장만 갱신했다. 기존4개/여섯 항목 순서/17개 펼친 실제 코드/18개 기존 이미지/브랜드/목차/소개는 유지하고 source 링크5개만 현재 위치로 맞췄다. README에 검사 수/목록/CI/JUnit/빈 성과표나 새 캡처를 추가하지 않았다. 검증과 성능 상세는 이 계획/개발 문서/PR에 관리한다. 문서 자체는 런타임 성능 적용 제외이며 링크/실제 발췌/렌더/공개 콘텐츠 검사를 수행한다.
+
+## 제품 PR60의 실제 종료
+
+[PR60](https://github.com/HanGilLab/Android/pull/60)의 최종 head1d151dbda88866797982c52664772981f3e97913은 [pull_request CI](https://github.com/HanGilLab/Android/actions/runs/41188177880) run41188177880/attempt1과 같은 SHA의 App15368 필수4개 success다. [Codex6541610156](https://github.com/HanGilLab/Android/pull/60#issuecomment-6541610156)은 completed/지적 없음/미해결 없음이며 전체 native 스레드/정식 리뷰0, active strict/no bypass 보호 규칙을 재확인했다.
+
+실제 정상 squash merge는02545a50081e9f90773abdf0e5f637dcbc476e90이다. 실제 PR head/동일 tree/parent74be91f/검증된 noreply를 확인하고 main ff-only와 해당 로컬/원격 브랜치를 정리했다. 병합 main의 별도 [push CI](https://github.com/HanGilLab/Android/actions/runs/41188565527) run41188565527/attempt1 및 같은 SHA의 App15368 필수4개도 모두 success다. Notion 저장 후 실제 체크박스를 다시 읽어 필수19/54/선택3개 제외와 APP06/08 미체크를 확인했다. 과거 PR1/8/10 원래 최종 head 리뷰 미확인/PR8 실행 중은 여전히 별도이며 새 구체적 지적은 없었다.
+
+인증 없는 실제 GitHub main 렌더의4개 사례/17개 기본 펼침 Kotlin/18개 이미지 로드와1280px 가로 넘침 없음을 확인했다. 메모 기능 한 문장과 유효한 소스 링크 외 기존 README의 사례/코드/이미지는 보존했다. 실제 검증 제품701/고정 계측044와 병합 main의 해당 소스 일치를 확인했고 성능 향상은 확정하지 않았다. 소유 AVD/forward/DDS 탭과 원래 설정/자료 보존 근거는 유지한다.
+
+완료 계획 이동/현재 상대 링크/이 종료 기록만 문서 PR로 정리한다. 제품/단위/계측/README/CSV는 불변이며 새 앱 성능 측정 적용 대상이 아니다. 종료 문서의 quality/링크/공개 콘텐츠와 최신 CI/Codex는 별도로 확인하고 최종 결과는 해당 PR/Notion에 관리한다. 이 문서 작성 시점의 후속 검사를 제품 PR60/main 완료로 대신하지 않는다.
