@@ -1,6 +1,6 @@
 # 고정 시연 지점 선택과 지도 강조
 
-- 상태: 진행 중
+- 상태: 완료
 - 요구사항: MAP-03의 독립 제품 연결, APP-02와 검증된 MAP-02 고정 시연 preview
 
 ## 목표와 범위
@@ -14,7 +14,7 @@
 - [x] source/View/retry/이탈/STOP과 재생성에서 선택을 폐기하고 로딩/오류/미확인 상태를 선택 성공으로 표시하지 않는다.
 - [x] 기본 라이트와 확대 다크의 실제 Pleos 선택/P-D-P 및 원래 데이터/권한/설정을 확인한다.
 - [x] JDK17 전체 verify와 관련 자동/실기를 확인한다.
-- [ ] PR 최신 head의 필수 CI와 Codex 리뷰, 미해결 지적 없음과 정상 병합을 확인한다.
+- [x] PR 최신 head의 필수 CI와 Codex 리뷰, 미해결 지적 없음과 정상 병합을 확인한다.
 
 ## 구현 단계
 
@@ -92,3 +92,16 @@ MAP-03 실제 도로 구간 선택과 MAP-02 전체, 기존 독립 UX/SDK 오류
 - 마지막 full verify4단계와42 suites567개/실패/오류/건너뜀0/빌드/계측 APK가 통과했고, 실제로 측정/실기한 최종 앱 APK와 Main 선택 하네스 파일이 그대로임을 hash로 대조했다. 모든 최종 실행 뒤 원래 물리 데이터/권한/설정을 다시 확인하고 소유 AVD/forward/DDS탭만 정리했다. PR의 최신 CI/리뷰/병합은 아직 별도 미완료다.
 - 최종 README 비교: 새 delegated State 사례는 actual tuple을 통제한 native RED/GREEN으로 원인 규명을 보강하지만 기존3번과 같은 소유권 축이다. 단독 교체하면 현재3번의 gesture/child dispatch/SDK 예약 취소/접근성 판단 범위가 줄어든다. 1번의 상세 입력 fail-closed, 2번의 파괴적 CAS/Room 원자성, 4번의 SQLite 자료형 보존이 입증하는 별도 역량을 대체할 근거도 없다. 네 사례/순서/나머지 문장은 유지하고 바뀐 실제 guard 발췌/앵커만 맞췄다. 독립 감사에서4개/여섯순서/실제 연속코드17개/유효앵커/기존이미지18개 및 비노출을 확인했다. 단순 최신성/코드량/테스트수로 새 사례를 더 낫다고 선언하지 않는다.
 - 문서 링크/배치와 검증 기록 정리는 앱 실행 성능 변경이 아니므로 별도 성능 측정 적용에서 제외한다. 기존70개 timing 값/상태 보존, 최종105개 raw와 통계 재계산, 문서 링크/실제 source/형식/민감정보를 독립 확인했다. 측정과 정확성 근거는 이 계획/개발 문서/PR/CI에 두고 README에는 회귀 집계를 넣지 않는다.
+
+
+## PR 통합과 마감
+
+[PR #54](https://github.com/HanGilLab/Android/pull/54)의 실제 최신 head73b40d91dab8b58a0cb737aeec3c21acf3fb8243에서 [필수 CI4개](https://github.com/HanGilLab/Android/actions/runs/41155554462) App15368와 [동일 head Codex 완료/지적 없음](https://github.com/HanGilLab/Android/pull/54#issuecomment-6537179568), 전체 threads/formal0 및 active strict 정책을 직전 확인했다. 정상 squash879675d64da52885125bce87fe12f12ba9c3a882로 병합했고 실제 PR head/동일 tree/부모009/noreply를 확인한 뒤 main을 ff-only 동기화했다. 추가 커밋/미커밋 변경이 없어 해당 원격 자동 삭제와 로컬 병합 branch 정리를 확인했다. 보호 규칙 우회는 없었다.
+
+같은 main879의 [push run41156097455](https://github.com/HanGilLab/Android/actions/runs/41156097455) attempt1과 동일 SHA의 App15368 필수4개도 성공했다. 병합 후 Codex 재시작/새 지적은 없다. PR8/10의 원래 최종 리뷰 미확인은 이 작업으로 완료/승인된 것으로 기록하지 않는다.
+
+실제 공개 main879 README 렌더에서4사례/펼친Kotlin17개/hidden0/닫힌details내코드0/이미지18개 모두 로딩을 확인했고1280px viewport에서 document1265px로 페이지 가로 넘침이 없었다. 기존 브랜드/목차/개요/기능 화면/스택/구조/담당과 네 사례의 다양성을 보존했다.
+
+이 마감 변경은 계획 이동과 현재 source 링크/검증 기록, README의 구현 기능 표 한 문장만 정리한다. 기능 소개에 검증된 목록 선택/지도 강조/설명을 반영하고 기존 실제 화면과 네 사례/코드/순서는 유지한다. 앱 실행 동작과 성능을 바꾸지 않아 새 성능 측정 적용에서 제외한다. 측정/실기한 최종 제품6b001b9와 동일 app/harness를 통합했고 마감 PR에서도 JDK17 공식 전체 검사/문서 링크/동일 소스와 최신 CI/Codex를 별도로 확인한다. MAP-03 실제 도로 구간 선택과 전체 체크리스트19/54는 미완료를 유지한다.
+
+- 마감 브랜치의 JDK17 공식 전체 verify4단계와42 suites567개/실패/오류/건너뜀0/debug/unsigned release가 통과했다. 기존 결과 cache/up-to-date 포함이며 새 앱 실기/성능 실행은 문서 변경으로 인해 반복하지 않았다. 기능 소개 한 문장은 실제 완료 동작과 대조했고 문서/소스 링크와 네 사례/17코드/18이미지 보존을 확인했다. 마감 PR 최신 CI/Codex는 별도 실제 상태로 추적한다.
