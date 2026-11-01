@@ -208,3 +208,18 @@ JDK17 전체 verify5는 최신 C027과 제품/README 근거 도구에서 quality
 
 
 강화된 C source 6e324dc4c26ec0495029e5f91d1f824385104d3841b61513a1ded173ea1224b9는 독립 소스 검토에서 새 구체 결함이 없었다. 진단은 coroutine 자식 observer가 구조적으로 취소되기 전 body catch에서 확보하고, 원래 예외를 유지한다. JDK17 quality와 실제 app debug/AndroidTest APK 빌드가 통과했다. 제품 APK는 기존0dd6aa6과 byte-identical이며 frozen M1 source/APK/완료 원값은 보존한다. 이 소스 검토/빌드가 새 실제 두 테마나 최신 PR 리뷰 성공을 대신하지 않는다.
+
+
+## 강화된 C의 실제 전면 소실 확인과 명시적 준비 단계
+
+83a54ee 다크는 첫 입력 전90초 동안571번 모두 같은 Main이 RESUMED/유효한 같은 display였지만 window focus=false이고 알려진 다른 앱이 focused였다. 같은571번의 SDK 허용은 true였고, observer unwind 전 진단에서도 실제 CONNECTED/PARK/PARKED/UNRESTRICTED와 observer active=true였다. 이번 실패 조건은 전면 소실이며 SDK P/UX 소실로 해석하지 않는다. 플랫폼이 왜 전면을 바꿨는지는 미확정이다. 실제 제품/준비 입력0, native 보존6개는 true이며 원형 외부 exact와 별도 원래 설정 복원은 따로 확인한다.
+
+이전 private 준비 계약의 '초기 acquisition 중 외부 재포커스 없음'은 사용자의 금지가 아니라 검증자가 둔 제한이었다. 실제 다른 앱 전면을 확인한 이번 근거에 따라 다음 명시적 전체 시도 전에 변경한다. C-only 첫 제품 입력 전 환경 준비 단계와 단일 root ACK를 추가한다. 이 단계는 원래90초 절대 상한 안에 포함하며 새 host/display를 캡처하지 않는다. root는 실제 전면/화면을 읽고 필요하면 시스템 독에서 한길을 최대1회 선택한 뒤 같은 디렉터리/시도의 ACK만 전달한다. 준비 중 제품 버튼/DB 쓰기/권한 변경은 없고 ACK 뒤에는 재포커스/재실행/재시도하지 않는다. C는 ACK 뒤에도 같은 host/display/현재 실제 전면과 P+UX의1초 표본 안정 및 이후 모든 입력의 strict 조건을 자체 확인한다. ACK/명령 반환을 SDK나 전면 성공으로 대신하지 않는다.
+
+기존83 source는 acquiring/admitted 상태를 finally에만 저장해 외부에서 첫 준비 입력 전임을 실시간 증명할 수 없었다. 단순 uiStartRequested 부재는 준비 UI가 먼저 수행될 수 있어 근거가 부족하다. 새 acquiring/ACK/admitted 영수증을 첫 준비 버튼보다 먼저 남겨 외부 준비와 본문을 명확히 구분한다. 불명확하거나 ACK 뒤 외부 입력이 겹친 시도는 유효 성공으로 계산하지 않는다. frozen M1/제품/실제 SDK/D/P/body 기대와 timeout은 유지하고, 앱 성능 개선으로 기록하지 않는다.
+
+
+ACK 대기용 C에는 원래 elapsed 시작/절대 deadline과 캡처한 display를 그대로 private 보고서에 추가했다. 외부 도구는 시각이나 display0을 추정하지 않고 이 값을 실제 readback과 대조한다. 첫7afe 계측의 JDK17 quality/기기 APK 빌드는 통과했고, 이 metadata 추가 뒤의 현재 파일은 다시 빌드한다. ACK 뒤 금지 대상은 앱 재포커스/재실행과 제품 UI 입력이다. 기존 본문이 명시 요청하는 실제 브라우저 DDS D/P 전환은 별도 허용된 시나리오로 유지하며, 모든 외부 입력이0이었다고 기록하지 않는다. 원래 제품/상세 잠금과90초 상한은 바꾸지 않는다.
+
+
+최종 C의 private 메타데이터/진단명 정합 뒤 JDK17 quality와 app debug/AndroidTest APK 빌드를 다시 통과했다. 첫 입력 전 단일 ACK companion은 별도 순수 검사23개(기존 cleanup6, 준비 경계17)를 통과했으며 실제 run-as ACK/WM dump/runtime은 아직 검증하지 않았다. app/SDK 성능이나 실제 앱 성공의 대체 근거가 아니다. 실제 네이티브 실행에서 acquiring/ACK/admitted를 구분해 확인하고, 필요한 시스템 독 선택은 ACK 전 최대1회, ACK 뒤에는 앱 재포커스/제품 입력 없이 기존 명시 DDS D/P만 수행한다.

@@ -396,6 +396,9 @@ class FinishedSessionReviewFlowTest {
             JSONObject()
                 .put("scope", "pre-input-acquisition-not-continuous-foreground-proof")
                 .put("state", "acquiring")
+                .put("started_at_elapsed_realtime_millis", started)
+                .put("deadline_elapsed_realtime_millis", deadline)
+                .put("captured_main_display_id", expectedDisplay)
                 .put("timeout_millis", 90_000)
                 .put("poll_interval_millis", 100)
         report.put("initialAllowedAdmission", admission)
@@ -415,6 +418,7 @@ class FinishedSessionReviewFlowTest {
             .put("stability_basis", "all-100ms-polled-current-conditions-with-no-rejected-or-unknown-sample")
         try {
             withTimeout(90_000) {
+                val acknowledged = awaitPreinputRootAcknowledgment(admission, deadline)
                 while (true) {
                     check(SystemClock.elapsedRealtime() < deadline) { "initial admission exceeded its absolute deadline" }
                     var sameHost = false
@@ -462,10 +466,13 @@ class FinishedSessionReviewFlowTest {
                             requireHost()
                             check(h.liveAllowed())
                             check(SystemClock.elapsedRealtime() < deadline) { "final initial admission exceeded its absolute deadline" }
+                            check(sha256(File(directory, "root-preinput-ack.json")) == acknowledged)
                             admission
                                 .put("state", "admitted")
                                 .put("admitted_at_elapsed_realtime_millis", SystemClock.elapsedRealtime())
                                 .put("admitted_observed_stability_millis", lastObservedStableMillis)
+                            persist()
+                            phase("FINISH_SOURCE_REVIEW_PREINPUT_ADMITTED")
                             return@withTimeout
                         }
                     } else {
@@ -500,6 +507,73 @@ class FinishedSessionReviewFlowTest {
                 if (primary == null) throw diagnostic else primary.addSuppressed(diagnostic)
             }
         }
+    }
+
+    /** Root prepares the real system window once; no product input is permitted before this handoff. */
+    private suspend fun awaitPreinputRootAcknowledgment(
+        admission: JSONObject,
+        deadline: Long,
+    ): String {
+        check(owned == null && !report.has("uiStartRequested"))
+        val file = File(directory, "root-preinput-ack.json")
+        val expectedFile = File(directory.canonicalFile, file.name)
+        check(!file.exists() && file.canonicalFile == expectedFile) { "preexisting preinput acknowledgment is forbidden" }
+        admission
+            .put("directory", directory.name)
+            .put("root_ack_file", file.name)
+            .put("root_ack_state", "waiting")
+            .put("product_ui_input_requested", false)
+        persist()
+        check(SystemClock.elapsedRealtime() < deadline)
+        h.instrument.sendStatus(
+            2,
+            Bundle().apply {
+                putString("stream", "FINISH_SOURCE_REVIEW_PREINPUT_PREPARATION_REQUIRED" + System.lineSeparator())
+                putString("finishedReviewPreinputDirectory", directory.name)
+            },
+        )
+        var polls = 0
+        while (!file.exists()) {
+            check(SystemClock.elapsedRealtime() < deadline) { "preinput acknowledgment exceeded the initial absolute deadline" }
+            check(file.canonicalFile == expectedFile)
+            polls++
+            admission.put("root_ack_wait_polls", polls)
+            delay(100)
+        }
+        check(owned == null && !report.has("uiStartRequested"))
+        check(file.isFile && file.canonicalFile == expectedFile && file.length() in 1L..1024L)
+        val bytes =
+            file.inputStream().use { input ->
+                val buffer = ByteArray(1025)
+                var count = 0
+                while (count < buffer.size) {
+                    val read = input.read(buffer, count, buffer.size - count)
+                    if (read < 0) break
+                    count += read
+                }
+                check(count in 1..1024)
+                buffer.copyOf(count)
+            }
+        check(bytes.size.toLong() == file.length() && bytes.all { it.toInt() in 9..126 })
+        val raw = bytes.toString(Charsets.UTF_8).trim()
+        val ack = JSONObject(raw)
+        check(raw == ack.toString()) { "canonical acknowledgment required; duplicate keys and trailing data are forbidden" }
+        check(ack.keys().asSequence().toSet() == setOf("schema", "directory", "noProductUiInput", "rootDockSelections"))
+        check(ack.get("schema") is Int && ack.getInt("schema") == 1)
+        check(ack.get("directory") is String && ack.getString("directory") == directory.name)
+        check(ack.get("noProductUiInput") is Boolean && ack.getBoolean("noProductUiInput"))
+        check(ack.get("rootDockSelections") is Int && ack.getInt("rootDockSelections") in 0..1)
+        check(SystemClock.elapsedRealtime() < deadline)
+        val hash = sha256(bytes)
+        admission
+            .put("root_ack_state", "accepted")
+            .put("root_ack_sha256", hash)
+            .put("root_ack_wait_polls", polls)
+            .put("root_dock_selections", ack.getInt("rootDockSelections"))
+            .put("root_ack_accepted_at_elapsed_realtime_millis", SystemClock.elapsedRealtime())
+            .put("external_foreground_or_product_input_after_ack_permitted", false)
+        persist()
+        return hash
     }
 
     private suspend fun prepareThroughUiIfRequired(before: SessionHistoryRecordingRunFlowTest.Harness.ExistingData) {
