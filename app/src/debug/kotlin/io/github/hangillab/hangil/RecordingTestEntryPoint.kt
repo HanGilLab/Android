@@ -6,6 +6,8 @@ import dagger.hilt.components.SingletonComponent
 import io.github.hangillab.hangil.core.domain.CourseCompletionRepository
 import io.github.hangillab.hangil.core.domain.DrivingRestrictionsProvider
 import io.github.hangillab.hangil.core.domain.HistorySessionMemoWriter
+import io.github.hangillab.hangil.core.domain.LocationRecordingRepository
+import io.github.hangillab.hangil.core.domain.LocationUpdateGateway
 import io.github.hangillab.hangil.core.domain.NextPracticeRepository
 import io.github.hangillab.hangil.core.domain.PracticeCatalog
 import io.github.hangillab.hangil.core.domain.PracticeRepository
@@ -20,6 +22,10 @@ import io.github.hangillab.hangil.core.domain.VehicleObservationRepository
 @EntryPoint
 @InstallIn(SingletonComponent::class)
 interface RecordingTestEntryPoint {
+    fun locationUpdates(): LocationUpdateGateway
+
+    fun locationRecordings(): LocationRecordingRepository
+
     fun sessions(): PracticeSessionRepository
 
     fun observations(): VehicleObservationRepository

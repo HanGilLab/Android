@@ -44,6 +44,7 @@ fun HomeRoute(
     recordingState: VehicleRecordingState = VehicleRecordingState.Idle,
     onRetryRecording: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
+    onLocationRecording: () -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     HomeScreen(
@@ -68,6 +69,18 @@ fun HomeRoute(
                 modifier = Modifier.fillMaxWidth().heightIn(min = HanGilDimensions.secondaryActionMinHeight).testTag("home_history"),
             ) {
                 Text(stringResource(R.string.history_open), style = MaterialTheme.typography.titleLarge)
+            }
+            ParkedButton(
+                onClick = { if (viewModel.canViewHistory()) onLocationRecording() },
+                prominent = false,
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(
+                            min = HanGilDimensions.secondaryActionMinHeight,
+                        ).testTag("home_location_recording"),
+            ) {
+                Text(stringResource(R.string.location_recording_open), style = MaterialTheme.typography.titleLarge)
             }
         },
     )

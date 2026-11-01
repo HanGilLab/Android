@@ -43,10 +43,11 @@ class SessionMemoStorageTest {
                     PreparationMigration3To4,
                     PreparationMigration4To5,
                     PreparationMigration5To6,
+                    PreparationMigration6To7,
                 ).build()
         try {
             val sqlite = migrated.openHelper.writableDatabase
-            assertEquals(6, sqlite.version)
+            assertEquals(7, sqlite.version)
             val after = snapshot { query -> sqlite.query(query) }
             for (table in before.keys) {
                 // Compare every original column, physical type and value without exposing them.
