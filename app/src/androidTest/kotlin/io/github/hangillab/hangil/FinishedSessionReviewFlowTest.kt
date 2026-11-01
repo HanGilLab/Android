@@ -7,10 +7,14 @@ import android.os.Bundle
 import android.os.SystemClock
 import android.util.AtomicFile
 import android.view.Display
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.lifecycle.Lifecycle
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -372,8 +376,108 @@ class FinishedSessionReviewFlowTest {
         requireHost()
         h.scrollVisible(tag)
         compose.onNodeWithTag(tag, useUnmergedTree = true).assertIsDisplayed()
-        h.assertTextFits(tag)
+        var diagnosticFailure: Throwable? = null
+        try {
+            recordTextLayout(tag)
+        } catch (failure: Throwable) {
+            diagnosticFailure = failure
+        }
+        try {
+            h.assertTextFits(tag)
+        } catch (failure: Throwable) {
+            diagnosticFailure?.let { if (it !== failure) failure.addSuppressed(it) }
+            throw failure
+        }
+        diagnosticFailure?.let { throw it }
         requireHost()
+    }
+
+    private fun recordTextLayout(tag: String) {
+        fun descendants(node: SemanticsNode): List<SemanticsNode> = listOf(node) + node.children.flatMap(::descendants)
+        val anchor = h.nodes(tag).single()
+        val nodes = descendants(anchor).filter { it.config.getOrNull(SemanticsActions.GetTextLayoutResult)?.action != null }
+        val layouts = mutableListOf<TextLayoutResult>()
+        val gettersReturned = mutableListOf<Boolean>()
+        compose.runOnIdle {
+            for (node in nodes) {
+                gettersReturned += checkNotNull(node.config.getOrNull(SemanticsActions.GetTextLayoutResult)?.action).invoke(layouts)
+            }
+        }
+        val rows = JSONArray()
+        for (layout in layouts) {
+            val input = layout.layoutInput
+            val lines = JSONArray()
+            for (line in 0 until layout.lineCount) {
+                lines.put(
+                    JSONObject()
+                        .put("line", line)
+                        .put("left", layout.getLineLeft(line))
+                        .put("right", layout.getLineRight(line))
+                        .put("top", layout.getLineTop(line))
+                        .put("bottom", layout.getLineBottom(line))
+                        .put("baseline", layout.getLineBaseline(line))
+                        .put("ellipsized", layout.isLineEllipsized(line))
+                        .put("start_utf16", layout.getLineStart(line))
+                        .put("end_utf16", layout.getLineEnd(line))
+                        .put("visible_end_utf16", layout.getLineEnd(line, visibleEnd = true)),
+                )
+            }
+            val boxes = JSONArray()
+            for (offset in input.text.text.indices) {
+                val box = layout.getBoundingBox(offset)
+                boxes.put(
+                    JSONObject()
+                        .put("utf16_offset", offset)
+                        .put("left", box.left)
+                        .put("right", box.right)
+                        .put("top", box.top)
+                        .put("bottom", box.bottom),
+                )
+            }
+            rows.put(
+                JSONObject()
+                    .put("width_px", layout.size.width)
+                    .put("height_px", layout.size.height)
+                    .put("paragraph_width_px", layout.multiParagraph.width)
+                    .put("paragraph_height_px", layout.multiParagraph.height)
+                    .put("max_intrinsic_width_px", layout.multiParagraph.maxIntrinsicWidth)
+                    .put("min_intrinsic_width_px", layout.multiParagraph.minIntrinsicWidth)
+                    .put("did_exceed_max_lines", layout.multiParagraph.didExceedMaxLines)
+                    .put("overflow_width", layout.didOverflowWidth)
+                    .put("overflow_height", layout.didOverflowHeight)
+                    .put("first_baseline_px", layout.firstBaseline)
+                    .put("last_baseline_px", layout.lastBaseline)
+                    .put("font_size_sp", input.style.fontSize.value)
+                    .put("line_height_sp", input.style.lineHeight.value)
+                    .put("density", input.density.density)
+                    .put("font_scale", input.density.fontScale)
+                    .put("soft_wrap", input.softWrap)
+                    .put("max_lines", input.maxLines)
+                    .put("overflow_mode", input.overflow.toString())
+                    .put("constraint_min_width", input.constraints.minWidth)
+                    .put("constraint_max_width", input.constraints.maxWidth)
+                    .put("constraint_min_height", input.constraints.minHeight)
+                    .put("constraint_max_height", input.constraints.maxHeight)
+                    .put("text_length_utf16", input.text.length)
+                    .put("lines", lines)
+                    .put("character_boxes", boxes),
+            )
+        }
+        val bounds = anchor.boundsInWindow
+        val receipts = report.optJSONArray("textLayoutReceipts") ?: JSONArray().also { report.put("textLayoutReceipts", it) }
+        receipts.put(
+            JSONObject()
+                .put("tag", tag)
+                .put("observed_at_elapsed_realtime_nanos", SystemClock.elapsedRealtimeNanos())
+                .put("node_left", bounds.left)
+                .put("node_top", bounds.top)
+                .put("node_right", bounds.right)
+                .put("node_bottom", bounds.bottom)
+                .put("getters_returned", JSONArray(gettersReturned))
+                .put("layouts", rows)
+                .put("scope", "diagnostic-only-semantics-layout-not-a-render-or-overflow-success"),
+        )
+        persist()
     }
 
     private suspend fun assertOriginals(

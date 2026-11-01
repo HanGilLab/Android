@@ -1,6 +1,6 @@
 # 명시적으로 마친 같은 연습의 복습 연결
 
-- 상태: 변경 전 A1 완료와 원형 복원 확인 후 제품 구현 중
+- 상태: 제품 구현과 전체 자동 검사, native 경계 검증 완료. 실제 Main 라이트 검증의 텍스트 레이아웃 판정 원인 확인 중. 확대 다크, B/A2와 병합은 미완료
 - 요구사항: APP-06과 DES-06의 주차 후 복습 흐름 중 마침 결과와 같은 기록을 여는 연결. 실제 도로 구간, 위치 표본, 전체 항목 완료는 범위 밖이다.
 - 기준 main: dd4897880b24776c1599bb18096abc5bcc0a2219
 
@@ -126,3 +126,10 @@ README는 기존 네 사례와 순서를 유지했다. 새 연결은 ACK와 원�
 실제 Main 라이트 첫 시도는 UI 시작 전에 canonical-domain-baseline 비교에서 실패했다. frozen M1 원형은 기존5개 domain key 외에 courseCompletions/physicalDatabase를 포함한7개 key이고 재사용한 기존 Harness.dataJson은5개 key만 만들고 있었다. private 실제값 대조로 공통5개 key의 모든 값/타입/배열 순서와 별도 physical DB가 기준과 같은지 확인했다. 제품 데이터 손상으로 해석하지 않고 UI 시작/마침/D-P는 미실행으로 남겼다. 원문과 복원 전 DB 및 독립 원형 복원을 보존했다.
 
 새 Main 테스트 파일만 고쳐 실제 각 세션 순서의 완료 선언 영수증과 실제 physical을 추가해7개 전체를 exact 비교한다. 원래 key를 버리거나 성공 기본값을 넣지 않았다. 기준 파일의 실제 bytes hash는 parse/비교 전에 고정해 미수행과 변경을 구분한다. 제품/기존 M1/common helper/동작 기대/timeout은 그대로다. JDK17 quality와 새 기기 APK 빌드가 통과했다. 제품 debug APK가0dd6aa6과 byte-identical인지 확인한 뒤 재실행하며, 아직 실제 Main 성공이나 B/A2 완료로 기록하지 않는다.
+
+
+## 실제 Main 라이트의 제목 레이아웃 판정 조사
+
+c764 후보의 실제 Main 라이트 재시도는 실제 UI로 연습 시작, SDK P 기록 확인, 마침, 명시 복습과 같은 종료 원본 확인까지 진행했다. 이후 history_course의 기존 assertTextFits가 실패했다. 실제 진단은 width158px/height38px/1행, overflow_width=true, overflow_height=false, 생략 행0이다. 진단 화면에서 제목 전체가 보이므로 사용자에게 보이는 실제 glyph 잘림까지 확정하지 않는다. D/P와 구성 재생성 이후 단계는 이 실행에서 미실행이다. 원형 typed DB/sequence와 권한/설정 exact 복원은 별도로 통과했고 새 위치 권한 허용0이다.
+
+변경 전에 확보한 Compose 1.9.4 소스 근거에서 String Text의 실제 Paragraph와 GetTextLayoutResult가 만드는 별도 MultiParagraph의 폭이 다를 수 있다. size.width와 multiParagraph.width 비교만으로 실제 glyph 잘림인지 판별할 수 없다. 다음 실행은 새 C 테스트의 private report에 기존 size/constraints/paragraph/intrinsic 폭/행 및 glyph 경계를 진단으로만 추가한다. 제품, frozen M1, 공통 helper와 기존 실패 assertion/timeout은 바꾸지 않는다. 실제 glyph가 clip/viewport 범위를 벗어나는지 같은 입력과 기본1.0/라이트 조건에서 확인한 뒤에만 제품 또는 검증기의 원인을 구분한다. 이는 정확성 진단으로 앱 실행 성능 변경이 아니며 진단 소요 시간이나 통과 개수를 성능 개선으로 쓰지 않는다.
