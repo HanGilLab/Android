@@ -101,3 +101,19 @@ strict expected-source 종료 overload는 기존 ID API/PracticeSession ABI/sche
 첫 targeted 검사는 새 JVM fixture의 StateFlow에 직접 쓰려던 컴파일 오류4개로 Home 본문이 실행되지 않았다. fixture의 MutableStateFlow와 공개 StateFlow를 분리하고 같은 Home 전체 검사를 재실행해 통과했다. 실제 RoomPracticeSessionRepositoryTest15개와 신규 finish15/exact review13개는 실패/오류/건너뜀0을 XML로 확인했다. 이 숫자는 정확성 검증이며 성능 수치가 아니다. 첫 전체 verify는 앱 탐색 두 파일 포맷에서 실패했고 spotlessApply 후 JDK17 ./scripts/verify.sh 전체4단계(quality/test/debug/unsigned release)가 성공했다. 새 기기 테스트 APK :app:assembleDebugAndroidTest도 JDK17 실제 빌드 성공, 컴파일 오류0이다. 새 native/실제 Main 기본과 확대 다크/B/A2는 아직 실행하지 않았다.
 
 README는 기존 네 사례와 순서를 유지했다. 새 연결은 ACK와 원본 전달의 제품 경계를 보강하지만 기존1의 지연된 UI와 실제 주행 경계, 기존2의 여러 연결 자료를 포함한 원자 삭제/스냅샷 비교, 기존3의 비동기 조회/렌더/실제 입력 소유권, 기존4의 재진입 가능한 StateFlow 반환 순서를 대신할 더 강한 실제 제품 근거를 아직 확보하지 못했다. 기존 M1 baseline을 새 연결의 개선 성과로 차용하지 않는다. 새 다섯 사례나 임의 점수/테스트 총수로 비교하지 않는다. 현재 구현에 추가된 exact 삭제 후 분기만 실제 코드로 갱신하고 이동한 source 줄 링크5개를 맞췄다. 펼친 실제 코드22개를 소스와 대조했으며 여섯 항목 순서/브랜드/기능/실제 기존 이미지와 사례 개수4개를 보존했다. 이 발췌/링크 정합은 앱 실행 성능과 무관한 문서 변경이므로 성능 계측 적용 제외다.
+
+
+## 기기 실패를 분리하고 소유권 오류를 실제 재현한 수정
+
+첫 run-boundary는 첫 method 시작 뒤 완료 테스트0/7 상태로 프로세스가 종료됐다. startup ANR의 main 스레드는 GC 완료 대기, ClassLinker/MethodVerifier와 Dagger Application component build에 있었다. Java FATAL/LMK나 새 복습 본문의 교착으로 확정하지 않는다. 원문/복원 전 DB를 private에 보존했고 원형 DB/권한/설정 exact 복원은 독립 통과했다. 같은 후보를 정상 실행해 실제 Main 포커스와 P/UX, 실제 브라우저 DDS ONLINE/P를 확인한 뒤 소스/검증 조건을 바꾸지 않은 명시적 새 전체7 시도를 했다.
+
+두 번째 run-boundary는5PASS/2FAIL이다. 같은 원본의 Finished/AlreadyFinished 명시 복습과 실제 UUID Room3은 통과했지만, 캡처한 action 검증의 실제 host 확인과 metadata 교체 뒤 같은 exact entry 재진입에서 실패했다. 이를 전체 성공이나 실제 SDK/OS 수명 검증으로 바꾸지 않는다. 두 arm과 복원 전 typed snapshot, 원형 복원 결과를 각각 보존했다.
+
+현재 cold exact flow는 captured host가 false이거나 이미 취소된 collector도 먼저 공유 reader와 published 상태를 설치할 수 있었다. 정상 A의 Ready와 상세 authority를 유지한 상태에서 거부/취소된 cold collector를 겹쳐 실행하는 JVM 회귀3개를 먼저 추가했다. 제품 코드 미수정 상태의 실제 JDK17 실행은16개 중 바로 그3개 실패/오류0/건너뜀0이었다. 공유 owner 설치 전 active Job과 captured host를 확인하고 거부 collector는 자기 Locked만 발행하게 수정했다. 취소된 collector는 공유 reader/selection/deletion/published에 쓰지 않는다. 이는 정확성 수정이며 테스트 수나 전체 Gradle 시간을 성능 성과로 쓰지 않는다. 실제 GREEN과 native 재검증은 아래 후속 결과로 판정한다.
+
+별도 host 실패의 원인은 아직 확정하지 않았다. Boundary의 기존4 methods/expectations/실제 host 조건/timeout을 유지하고, 실패 cleanup 전에 private 단계/host lifecycle-focus-display와 controlled lifecycle/현재 history tag를 수집하는 진단만 추가했다. 원래 failure가 진단 실패에 가려지지 않게 했다. 이 controlled 진단은 실제 SDK 주행/실제 OS PAUSE 증거가 아니다.
+
+
+## 소유권 수정 후 다시 확보한 검사
+
+동일 회귀 기대를 유지한 JDK17 GREEN은 exact16개 모두 실패/오류/건너뜀0이며 Home 전체와 Room 종료 경계 명령도 통과했다. 이후 JDK17 전체 verify3의4단계가 모두 통과했다. 진단 전용 Boundary의 불필요한 onAllNodes import1개 때문에 첫 새 계측 APK 컴파일은 실패했고, import만 제거한 재빌드가 성공했다. 제품/검증 기대/조건은 바꾸지 않았다. 수정 후 새 native 전체7과 실제 Main 두 테마 및 B/A2는 아직 실행하지 않았으므로 완료로 기록하지 않는다.

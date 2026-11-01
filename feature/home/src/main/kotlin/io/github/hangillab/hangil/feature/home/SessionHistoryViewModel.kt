@@ -104,25 +104,33 @@ class SessionHistoryViewModel
             flow {
                 coroutineScope {
                     val owner = Reader(checkNotNull(currentCoroutineContext()[Job]), entry, canKeepOpen)
-                    synchronized(lock) {
-                        invalidateDeletionLocked()
-                        reader = owner
-                        ended = null
-                        if (entry is SessionHistoryEntry.FinishedReview) {
-                            if (reviewEntry != entry) {
-                                reviewEntry = entry
-                                reviewUnavailable = entry.expectedSource == null || entry.expectedSource.isActive
+                    val installed =
+                        synchronized(lock) {
+                            owner.job.ensureActive()
+                            if (entry is SessionHistoryEntry.FinishedReview && !hostAllowed(owner)) return@synchronized false
+                            owner.job.ensureActive()
+                            invalidateDeletionLocked()
+                            reader = owner
+                            ended = null
+                            if (entry is SessionHistoryEntry.FinishedReview) {
+                                if (reviewEntry != entry) {
+                                    reviewEntry = entry
+                                    reviewUnavailable = entry.expectedSource == null || entry.expectedSource.isActive
+                                }
+                                selectedId = entry.expectedSource?.sessionId
+                                selectionLost = false
                             }
-                            selectedId = entry.expectedSource?.sessionId
-                            selectionLost = false
+                            publishLocked(
+                                when {
+                                    entry is SessionHistoryEntry.FinishedReview && reviewUnavailable -> SessionHistoryUiState.Unavailable
+                                    else -> SessionHistoryUiState.Loading
+                                },
+                            )
+                            true
                         }
-                        publishLocked(
-                            when {
-                                entry is SessionHistoryEntry.FinishedReview && reviewUnavailable -> SessionHistoryUiState.Unavailable
-                                !hostAllowed(owner) -> SessionHistoryUiState.Locked
-                                else -> SessionHistoryUiState.Loading
-                            },
-                        )
+                    if (!installed) {
+                        emit(SessionHistoryUiState.Locked)
+                        return@coroutineScope
                     }
                     val queryJob =
                         launch {

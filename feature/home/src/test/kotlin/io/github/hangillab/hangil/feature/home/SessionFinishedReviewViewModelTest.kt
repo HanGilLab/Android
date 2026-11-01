@@ -24,6 +24,7 @@ import io.github.hangillab.hangil.core.domain.VehicleObservationAppendResult
 import io.github.hangillab.hangil.core.domain.VehicleObservationRepository
 import io.github.hangillab.hangil.core.domain.VehicleReading
 import io.github.hangillab.hangil.core.domain.VehicleState
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
@@ -233,6 +234,60 @@ class SessionFinishedReviewViewModelTest {
             assertEquals(listOf(f.a.sessionId), f.observedIds)
             assertTrue(states.last() is SessionHistoryObservationUiState.Empty)
             assertEquals(0, f.writes)
+        }
+
+    @Test fun `denied exact collector emits local lock without displacing a valid reader`() =
+        runTest {
+            val f = Fixture()
+            f.attach(this)
+            val original = f.ready()
+            val reads = f.reads
+            val deniedStates = mutableListOf<SessionHistoryUiState>()
+            backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+                f.model.observeEntry(SessionHistoryEntry.FinishedReview(f.a)) { false }.collect { deniedStates += it }
+            }
+            runCurrent()
+            assertEquals(SessionHistoryUiState.Locked, deniedStates.last())
+            assertEquals(original, f.state)
+            assertEquals(reads, f.reads)
+            assertTrue(f.model.canRevealStoredObservations(original.session.sessionId, original.generation))
+        }
+
+    @Test fun `cancelling a denied collector cannot clear a different live exact owner`() =
+        runTest {
+            val f = Fixture()
+            f.attach(this)
+            val original = f.ready()
+            val reads = f.reads
+            val denied =
+                backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+                    f.model.observeEntry(SessionHistoryEntry.FinishedReview(f.a)) { false }.collect()
+                }
+            runCurrent()
+            denied.cancel()
+            runCurrent()
+            assertEquals(original, f.state)
+            assertEquals(reads, f.reads)
+            assertTrue(f.model.canRevealStoredObservations(original.session.sessionId, original.generation))
+        }
+
+    @Test fun `already cancelled exact collection cannot install or clear a shared reader`() =
+        runTest {
+            val f = Fixture()
+            f.attach(this)
+            val original = f.ready()
+            val reads = f.reads
+            val rejected = mutableListOf<SessionHistoryUiState>()
+            backgroundScope.launch(start = CoroutineStart.UNDISPATCHED) {
+                // Enter the cold flow with its own cancelled Job. No SDK or external lifecycle is involved.
+                currentCoroutineContext().cancel()
+                f.model.observeEntry(SessionHistoryEntry.FinishedReview(f.a)) { true }.collect { rejected += it }
+            }
+            runCurrent()
+            assertTrue(rejected.isEmpty())
+            assertEquals(original, f.state)
+            assertEquals(reads, f.reads)
+            assertTrue(f.model.canRevealStoredObservations(original.session.sessionId, original.generation))
         }
 
     private class Fixture {

@@ -1,7 +1,10 @@
 package io.github.hangillab.hangil
 
 import android.accessibilityservice.AccessibilityServiceInfo
+import android.graphics.Bitmap
+import android.os.Looper
 import android.os.SystemClock
+import android.util.AtomicFile
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import androidx.activity.compose.setContent
@@ -13,6 +16,7 @@ import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -97,10 +101,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
+import org.json.JSONArray
+import org.json.JSONObject
 import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.File
+import java.io.FileOutputStream
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneId
@@ -108,6 +116,7 @@ import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.util.Locale
+import java.util.UUID
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicInteger
 import io.github.hangillab.hangil.feature.home.R as HomeR
@@ -303,6 +312,11 @@ class FinishSourceReviewBoundaryTest {
             body(f)
         } catch (failure: Throwable) {
             primary = failure
+            try {
+                f.captureFailure(failure)
+            } catch (_: Throwable) {
+                failure.addSuppressed(IllegalStateException("Private boundary diagnostic capture was incomplete"))
+            }
             throw failure
         } finally {
             try {
@@ -341,6 +355,14 @@ class FinishSourceReviewBoundaryTest {
         private var displayId: Int? = null
         private var originalFlag: Boolean? = null
         private var disposed = false
+        private var failureCaptured = false
+        private var phase = "created"
+        private var lastAction: String? = null
+        private var mountStage = "not-started"
+        private var lastGuard: HostReceipt? = null
+        private var lastFocusKnown: Boolean? = null
+        private var lastFocusExpected: Boolean? = null
+        private val phaseHistory = mutableListOf<JSONObject>()
         var isStopped = false
             private set
         lateinit var session: SessionViewModel
@@ -354,7 +376,11 @@ class FinishSourceReviewBoundaryTest {
             }
 
         fun mount() {
+            mark("mount:await-actual-host")
+            mountStage = "awaiting-actual-host"
             awaitHost()
+            mountStage = "actual-host-confirmed"
+            mark("mount:create-fixture")
             instrument.runOnMainSync {
                 owner.move(Lifecycle.State.RESUMED)
                 val watched =
@@ -442,6 +468,7 @@ class FinishSourceReviewBoundaryTest {
                     }
                 val provider = ViewModelProvider(owner, factory)
                 models.keys.forEach { provider[it] }
+                mountStage = "models-created"
                 compose.activity.setContent {
                     CompositionLocalProvider(LocalLifecycleOwner provides owner, LocalViewModelStoreOwner provides owner) {
                         HanGilTheme {
@@ -469,7 +496,9 @@ class FinishSourceReviewBoundaryTest {
                         }
                     }
                 }
+                mountStage = "UI-installed"
             }
+            mark("mount:return")
         }
 
         private fun <T> counted(upstream: Flow<T>): Flow<T> =
@@ -483,6 +512,7 @@ class FinishSourceReviewBoundaryTest {
             }
 
         fun openExact(source: PracticeSession?) {
+            mark(if (source == null) "entry:null-exact" else "entry:ended-exact")
             compose.runOnIdle {
                 target.value = source
                 exact.value = true
@@ -491,11 +521,13 @@ class FinishSourceReviewBoundaryTest {
         }
 
         fun waitReceipt() {
+            mark("wait:finish-receipt")
             compose.waitUntil(TIMEOUT) { session.finishReceipt.value != null }
             waitTag("session_finish_review")
         }
 
         fun ready(source: PracticeSession) {
+            mark("assert:exact-ready")
             waitTag("history_ready")
             check(
                 text("history_course") == source.courseTitle && text("history_goal") == source.goalTitle &&
@@ -529,6 +561,7 @@ class FinishSourceReviewBoundaryTest {
         fun nodes(tag: String): List<SemanticsNode> = compose.onAllNodesWithTag(tag, useUnmergedTree = true).fetchSemanticsNodes(false)
 
         fun waitTag(tag: String) {
+            mark("wait-tag:" + tag)
             compose.waitUntil(TIMEOUT) { nodes(tag).size == 1 }
             requireHost()
         }
@@ -542,6 +575,8 @@ class FinishSourceReviewBoundaryTest {
                 .orEmpty()
 
         fun touch(tag: String) {
+            lastAction = "touch:" + tag
+            mark(lastAction!!)
             requireHost()
             compose
                 .onNodeWithTag(tag, useUnmergedTree = true)
@@ -550,31 +585,39 @@ class FinishSourceReviewBoundaryTest {
                 .performClick()
         }
 
-        fun action(tag: String): () -> Boolean =
-            checkNotNull(
+        fun action(tag: String): () -> Boolean {
+            lastAction = "capture:" + tag
+            mark(lastAction!!)
+            return checkNotNull(
                 nodes(tag)
                     .single()
                     .config
                     .getOrNull(SemanticsActions.OnClick)
                     ?.action,
             )
+        }
 
         fun invoke(vararg actions: () -> Boolean) {
+            lastAction = "replay-captured-action"
+            mark(lastAction!!)
             compose.runOnIdle { actions.forEach { it() } }
         }
 
         fun move(state: Lifecycle.State) {
+            mark("controlled-lifecycle:" + state.name)
             compose.runOnIdle { owner.move(state) }
             compose.waitForIdle()
             requireHost()
         }
 
         fun publishDriving() {
+            mark("controlled-vehicle:driving")
             compose.runOnIdle { live.publish(driving()) }
             waitTag("home_locked_title")
         }
 
         fun publishParked() {
+            mark("controlled-vehicle:parked")
             compose.runOnIdle { live.publish(parked()) }
             waitTag("home_journey")
         }
@@ -624,15 +667,164 @@ class FinishSourceReviewBoundaryTest {
         }
 
         fun requireHost() {
+            lastFocusKnown = null
+            lastFocusExpected = null
+            val actual = hostReceipt()
+            lastGuard = actual
+            check(actual.resumed) { "Actual Catalog host is not RESUMED" }
+            check(actual.windowFocus) { "Actual Catalog host has no window focus" }
+            check(actual.displayKnown) { "Actual Catalog display is unknown" }
+            check(actual.displayValid) { "Actual Catalog display is invalid" }
+            check(actual.sameDisplay) { "Actual Catalog display differs from the captured display" }
+            val focused = focusedPackage()
+            lastFocusKnown = focused != null
+            lastFocusExpected = focused == instrument.targetContext.packageName
+            check(lastFocusExpected == true) { "Current actual focused window is unknown or foreign" }
+        }
+
+        private fun hostReceipt(): HostReceipt {
+            var actual: HostReceipt? = null
             instrument.runOnMainSync {
                 val activity = compose.activity
-                val display = checkNotNull(activity.display)
-                check(
-                    activity.lifecycle.currentState == Lifecycle.State.RESUMED && activity.hasWindowFocus() && display.isValid &&
-                        display.displayId == displayId,
+                val display = activity.display
+                actual =
+                    HostReceipt(
+                        activity.lifecycle.currentState.name,
+                        activity.lifecycle.currentState == Lifecycle.State.RESUMED,
+                        activity.hasWindowFocus(),
+                        display != null,
+                        display?.isValid == true,
+                        display != null && displayId != null && display.displayId == displayId,
+                        owner.lifecycle.currentState.name,
+                        entryEpoch.value,
+                    )
+            }
+            return checkNotNull(actual)
+        }
+
+        private fun mark(value: String) {
+            phase = value
+            phaseHistory += JSONObject().put("phase", value).put("appUptimeMillis", SystemClock.uptimeMillis())
+        }
+
+        /** A single failure observation, never a retry or a replacement for the original assertion. */
+        fun captureFailure(original: Throwable) {
+            if (failureCaptured) return
+            failureCaptured = true
+            val failedPhase = phase
+            val failures = JSONArray()
+            val report =
+                JSONObject()
+                    .put("kind", "real-Compose-controlled-finish-source-review-boundary-diagnostic")
+                    .put("status", "failed")
+                    .put("failureClass", original.javaClass.name)
+                    .put("phase", failedPhase)
+                    .put("lastAction", lastAction ?: JSONObject.NULL)
+                    .put("mountStage", mountStage)
+                    .put("entryEpoch", entryEpoch.value)
+                    .put("phaseHistory", JSONArray(phaseHistory))
+                    .put("lastGuard", lastGuard?.json() ?: JSONObject.NULL)
+                    .put("lastFocusedRootKnown", lastFocusKnown ?: JSONObject.NULL)
+                    .put("lastFocusedRootExpectedApp", lastFocusExpected ?: JSONObject.NULL)
+                    .put("observationOnlyNoRetry", true)
+                    .put("diagnosticFailures", failures)
+            var directory: File? = null
+
+            fun attempt(
+                stage: String,
+                action: () -> Unit,
+            ) {
+                try {
+                    action()
+                } catch (failure: Throwable) {
+                    failures.put(JSONObject().put("stage", stage).put("class", failure.javaClass.name))
+                }
+            }
+            attempt("private-directory") {
+                directory = File(instrument.targetContext.cacheDir, "screenshots/finish-source-review-boundary-" + UUID.randomUUID())
+                check(directory!!.mkdirs())
+            }
+            attempt("actual-and-controlled-lifecycle") {
+                report.put("failureObservation", hostReceipt().json())
+            }
+            attempt("actual-interactive-windows-flag") {
+                report.put(
+                    "observedInteractiveWindowsFlag",
+                    instrument.uiAutomation.serviceInfo.flags and AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS != 0,
                 )
             }
-            check(focusedPackage() == instrument.targetContext.packageName) { "Current actual focused window is unknown or foreign" }
+            attempt("history-tags-before-UI-disposal") {
+                check(Looper.myLooper() != Looper.getMainLooper()) { "Semantics diagnostics require the instrumentation thread" }
+                val roots = compose.onAllNodes(isRoot(), useUnmergedTree = true).fetchSemanticsNodes(false)
+
+                fun descendants(node: SemanticsNode): List<SemanticsNode> = listOf(node) + node.children.flatMap(::descendants)
+                val tags = roots.flatMap(::descendants).mapNotNull { it.config.getOrNull(SemanticsProperties.TestTag) }.toSet()
+                val known =
+                    listOf(
+                        "history_loading",
+                        "history_locked",
+                        "history_empty",
+                        "history_failed",
+                        "history_ready",
+                        "finished_review_unavailable",
+                        "history_close",
+                        "history_memo",
+                        "history_memo_empty",
+                        "home_journey",
+                        "home_locked_title",
+                        "session_finish",
+                        "session_finish_review",
+                    )
+                report.put("historyTags", JSONObject().apply { known.forEach { put(it, it in tags) } })
+                report.put("semanticsRootCount", roots.size)
+            }
+            attempt("private-PNG") {
+                val bitmap = checkNotNull(instrument.uiAutomation.takeScreenshot())
+                try {
+                    val image = File(checkNotNull(directory), "failure-before-cleanup.png")
+                    FileOutputStream(image).use { output -> check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) }
+                    report.put("privateScreenshotCaptured", true)
+                } finally {
+                    bitmap.recycle()
+                }
+            }
+            attempt("private-JSON") {
+                val output = AtomicFile(File(checkNotNull(directory), "failure-before-cleanup.json"))
+                val stream = output.startWrite()
+                try {
+                    stream.write(report.toString(2).toByteArray(Charsets.UTF_8))
+                    output.finishWrite(stream)
+                } catch (failure: Throwable) {
+                    output.failWrite(stream)
+                    throw failure
+                }
+            }
+            if (failures.length() > 0) {
+                // File exceptions can contain a private path. Never attach their raw message/cause to JUnit.
+                original.addSuppressed(IllegalStateException("Private boundary diagnostic capture was incomplete"))
+            }
+        }
+
+        private data class HostReceipt(
+            val lifecycle: String,
+            val resumed: Boolean,
+            val windowFocus: Boolean,
+            val displayKnown: Boolean,
+            val displayValid: Boolean,
+            val sameDisplay: Boolean,
+            val controlledLifecycle: String,
+            val entryEpoch: Int,
+        ) {
+            fun json(): JSONObject =
+                JSONObject()
+                    .put("actualLifecycle", lifecycle)
+                    .put("actualResumed", resumed)
+                    .put("actualWindowFocus", windowFocus)
+                    .put("displayKnown", displayKnown)
+                    .put("displayValid", displayValid)
+                    .put("sameDisplay", sameDisplay)
+                    .put("controlledLifecycle", controlledLifecycle)
+                    .put("entryEpoch", entryEpoch)
         }
 
         private fun focusedPackage(): String? {
@@ -656,6 +848,7 @@ class FinishSourceReviewBoundaryTest {
 
         fun dispose() {
             if (disposed) return
+            mark("dispose:begin")
             disposed = true
             var failure: Throwable? = null
 
@@ -674,6 +867,7 @@ class FinishSourceReviewBoundaryTest {
                     if (owner.lifecycle.currentState != Lifecycle.State.INITIALIZED) owner.move(Lifecycle.State.DESTROYED)
                 }
                 lifecycleRetired = true
+                mark("dispose:controlled-lifecycle-retired")
             }
             attempt {
                 instrument.runOnMainSync {
@@ -681,15 +875,18 @@ class FinishSourceReviewBoundaryTest {
                     compose.activity.setContent { }
                 }
                 uiDisposed = true
+                mark("dispose:UI-disposed")
             }
             attempt {
                 instrument.runOnMainSync { store.clear() }
                 modelsCleared = true
+                mark("dispose:models-cleared")
             }
             attempt {
                 compose.waitUntil(TIMEOUT) { activeReads.get() == 0 && activeWrites.get() == 0 }
                 check(lifecycleRetired && uiDisposed && modelsCleared)
                 isStopped = true
+                mark("dispose:owned-reads-and-writes-stopped")
             }
             attempt {
                 originalFlag?.let { before ->
@@ -707,7 +904,9 @@ class FinishSourceReviewBoundaryTest {
                     )
                 }
             }
+            mark("dispose:after-flag-restoration")
             failure?.let { throw it }
+            mark("dispose:completed")
         }
     }
 

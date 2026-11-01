@@ -207,7 +207,7 @@ fun allowsPracticeInteraction(
         vehicle.toDrivingRestrictions(restrictions.uxRestrictionState).allowsDetailedInteraction
 ```
 
-[표시한 원본과 조회 세대를 최신 reader에서 재확인](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L164-L177)
+[표시한 원본과 조회 세대를 최신 reader에서 재확인](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L172-L185)
 
 ```kotlin
 fun canRevealSummary(
@@ -298,7 +298,7 @@ data class SessionDeletionTarget(
 )
 ```
 
-[같은 확인 nonce의 중복 실행과 바뀐 선택을 차단](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L449-L467)
+[같은 확인 nonce의 중복 실행과 바뀐 선택을 차단](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L457-L475)
 
 ```kotlin
 fun confirmDeletion(nonce: Long): Boolean {
@@ -322,7 +322,7 @@ fun confirmDeletion(nonce: Long): Boolean {
 }
 ```
 
-[쓰기 순간의 job, reader/조회/선택과 최신 차량 조건 재확인](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L612-L650)
+[쓰기 순간의 job, reader/조회/선택과 최신 차량 조건 재확인](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L620-L658)
 
 ```kotlin
 private fun canCommitDeletion(
@@ -407,7 +407,7 @@ private suspend fun requirePermission(canProceed: () -> Boolean) {
 }
 ```
 
-[자기 삭제의 행 소실 통지를 결과 도착 전까지 보존](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L678-L694)
+[자기 삭제의 행 소실 통지를 결과 도착 전까지 보존](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L686-L702)
 
 ```kotlin
 private fun preserveDeletionReceiptLocked(
@@ -429,7 +429,7 @@ private fun preserveDeletionReceiptLocked(
 }
 ```
 
-[저장소가 반환한 명시적 삭제 결과에 따른 완료/실패 분기](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L555-L574)
+[저장소가 반환한 명시적 삭제 결과에 따른 완료/실패 분기](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L563-L582)
 
 ```kotlin
 when (result) {
