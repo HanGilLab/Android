@@ -47,3 +47,25 @@ SDK timestampMillis 시간 기준과 confidence 단위/범위는 미정의다. �
 
 - [위치 업데이트 수신과 중지](https://document.pleos.ai/docs/pleos-only/connect-sdk-pleos/FusedLocation/location-data-access)
 - [동일 FUSED_LOCATION 권한의 API별 요구](https://document.pleos.ai/docs/pleos-only/connect-sdk-pleos/FusedLocation/declaring-permissions)
+
+## 실제 ABI와 SDK 반환 의미
+
+현재 설치된 공식1.1.3 AAR의 initialize/release/isSupported/registerFusedLocationCallback/unregisterFusedLocationCallback/FusedLocationListener ABI를 javap로 대조했다. 등록/해제는 같은 listener를 사용한다. bytecode에서는 initialize가 비동기 연결을 시작하고 register는 binder가 없으면 queue에 넣은 뒤 반환한다. unregister/release도 일부 remote 오류를 catch/log하며 내부 retry Job의 명시 취소는 확인되지 않는다. Snapshot의 Returned/cleanupComplete는 로컬 호출 반환/필요 정리 시도 완료이며 연결/원격 해제 ACK가 아니다.
+
+업데이트 Binder stub은 null 입력을 listener.onChanged(null)로 전달하지 않고 로그만 남기는 경로가 있다. 제어 Empty 검사와 실제 callback Empty를 구분하고 실제 무수신 timeout을 Empty/미지원으로 추정하지 않는다. 일반 Exception으로 평탄화된 SDK 오류의 메시지로 권한/미지원 원인을 유추하지 않으며 isSupported=false도 정확한 부재 원인까지 확정하지 않는다. 원문 좌표/SDK timestamp/confidence/error message를 debug 공개 metadata에 넣지 않는다.
+
+## 첫 제어 검사와 실제 RED/GREEN
+
+최초 debug 제어27개는 JDK17에서 통과했다. 독립 검토에서 checkAccess가 현재 gate를 읽은 뒤 Driver.hasPermission 외부 호출이 gate를 폐기해도 앞선 true를 빌리는 후보를 찾았다. debug source 수정 전에 신규2개를 실행해 총29개 중2실패/기존27통과, 오류/건너뜀0을 실제 재현했다. 원래 probe/test 바이트와 XML/로그를 비공개로 보존했다. 이는 제어 fixture에서 등록/observer 전달의 경계를 재현한 것이며 실제 SDK/플랫폼 결함 재현은 아니다.
+
+수정은 debug probe 한 파일에서 permission 조회 뒤 closed/deadline/최신 gate를 다시 확인하는 경계다. 조회 예외의 unknown/null과 gate 예외의 단계, false permission의 PERMISSION_DENIED 및 최초 Throwable/정리 suppressed를 유지했다. 동일 테스트 source SHA6a29b2da0862ca3f76bf4bae39e4c79ad7236e3fa4908e8e05cf164a71afd396의29개가 모두 통과했다. 기대/timeout/기존UI/manifest를 완화하지 않았다.
+
+JDK17 엄격 Spotless, 전체 verify4단계와 native APK 컴파일이 통과했다. 제품60 suites/952 JVM와 별도 build-logic1 suite/4개는 실패/오류/건너뜀0이다. cache/up-to-date 가능성을 포함한 회귀 근거이며 SDK/앱 성능 수치가 아니다. 실제 native는 아직 미실행이다. native metadata의 actualSdk라는 두 필드는 실제 adapter 출처와 실제 initialize/register 여부/SDK callback receipt를 구분하도록 정정했고 해당 변경의 포맷/컴파일도 별도 확인한다. 정적 치환 guard의 잘못된 단일 출현 전제 중단1회와 sandbox 파일쓰기 준비 실패는 native/SDK 실패가 아니다.
+
+## release 불변과 성능 적용 제외 근거
+
+기존 before unsigned release APK와 전체 검사 뒤 산출물을 실제 zip entry별 대조했다. 전체 APK hash는 달랐으므로 byte 동일로 기록하지 않는다. 다른 항목은 META-INF/version-control-info.textproto 한 개이며197개 DEX/manifest/resources 등 payload는 같다. 비교한 이전 산출물의 형식적 source-to-binary 재현 증명은 주장하지 않는다. production/release/기존UI/source 및 SDK/권한/DB 버전의 Git diff도 없다. 이 test/debug 프로브가 기존 사용자 흐름의 실행 성능을 개선한 것으로 해석하거나 별도 속도 수치를 만들지 않는다.
+
+## 현재 권한 경계와 실제 검증 대기
+
+이전 일회성 LastKnown 검증을 완료한 동의를 새 업데이트 리스너 검증의 허용으로 자동 갱신하지 않는다. 새 코드에는 권한 요청/부여가 없고 이미 허용된 별도 시나리오는 명시 옵션과 실제 grant를 모두 요구한다. 우선 미허용 등록 차단/원형 보존과 코드 검토 가능한 PR를 준비한다. 새 callback 허용 관찰은 구체적인 조건의 동의를 확인하기 전 미실행이며 이 계획의 해당 완료 조건은 체크하지 않는다.
