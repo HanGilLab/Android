@@ -152,3 +152,5 @@ JDK17 `./scripts/verify.sh` 전체4단계가 종료0으로 통과했다. 제품 
 C 실제 Main/SDK의 첫 확대 다크는 원래 저장 메모 읽기와 IME/전면 확인 후 첫 실제 ASCII 입력의 exact draft 기대에서20초 실패했다. 실제 실패 PNG에는 원래42codepoint 뒤 요청 문자열이 붙어61codepoint가 되어 있었다. 문자 dispatch는 수신됐지만 하네스의 Ctrl+A 뒤 전체 선택 전제가 성립하지 않았다. 이를 제품 저장/SDK 실패나 입력 성공으로 기록하지 않는다. 실제 CTRL 키 down/up과 전체 선택 범위 확인을 입력 전에 추가하며 실제 키 입력과 exact draft/IME/전면 기대는 유지한다. 기대를 append로 바꾸거나 SetText/VM 쓰기/가짜 성공을 쓰지 않는다. 수정 뒤 C와 B/A2 계측은 아직 미실행이다.
 
 C 입력 수정은 CTRL_LEFT down/A down-up/CTRL_LEFT up, 정상 uptime/keyboard source/정규화 meta와 실제 전체 TextSelectionRange 확인이다. key release를 finally에서 독립 시도하고 최초 예외를 보존한다. JDK17 엄격 Spotless와 native APK 컴파일이 통과했으며 frozen M1 원바이트는 같다. 수정 뒤 실제 입력 성공은 아직 미확인이다.
+
+수정 C의 기본 라이트 재실행은 실제 전체 선택 범위/ASCII 대체/exact draft를 통과한 뒤 첫 버튼 가시성의 GetTextLayout 검증 준비에서 실패했다. 하네스가 compose.runOnIdle의 UI thread 안에서 동기화가 필요한 h.nodes를 다시 조회한 것이 실제 stack 원인이다. 노드/자손을 UI thread 밖에서 먼저 얻고 기존 GetTextLayout action만 runOnIdle 안에서 실행하도록 조회 위치 한 곳만 옮긴다. bounds/IME/전체 glyph/ellipsis/원문/20초 조건은 그대로다. 원래 실패를 보존하고 전체 C 성공으로 세지 않는다.

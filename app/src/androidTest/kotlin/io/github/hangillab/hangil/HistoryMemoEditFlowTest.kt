@@ -387,8 +387,9 @@ class HistoryMemoEditFlowTest {
                 bounds.right + origin.x <= available.right + 1 && bounds.bottom + origin.y <= available.bottom + 1,
         )
         val layouts = mutableListOf<TextLayoutResult>()
+        val textNodes = descendants(h.nodes(tag).single())
         compose.runOnIdle {
-            descendants(h.nodes(tag).single()).forEach {
+            textNodes.forEach {
                 it.config
                     .getOrNull(SemanticsActions.GetTextLayoutResult)
                     ?.action
