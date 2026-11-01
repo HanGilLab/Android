@@ -117,3 +117,12 @@ README는 기존 네 사례와 순서를 유지했다. 새 연결은 ACK와 원�
 ## 소유권 수정 후 다시 확보한 검사
 
 동일 회귀 기대를 유지한 JDK17 GREEN은 exact16개 모두 실패/오류/건너뜀0이며 Home 전체와 Room 종료 경계 명령도 통과했다. 이후 JDK17 전체 verify3의4단계가 모두 통과했다. 진단 전용 Boundary의 불필요한 onAllNodes import1개 때문에 첫 새 계측 APK 컴파일은 실패했고, import만 제거한 재빌드가 성공했다. 제품/검증 기대/조건은 바꾸지 않았다. 수정 후 새 native 전체7과 실제 Main 두 테마 및 B/A2는 아직 실행하지 않았으므로 완료로 기록하지 않는다.
+
+
+## 최신 후보의 native7 통과와 실제 Main 준비 실패
+
+제품0dd6aa6의 새 native 전체7은 모두 PASS/JUnit 완료이며 원형 DB/sequence/권한/설정 복원 exact와 새 위치 권한 허용0을 확인했다. 이전5PASS/2FAIL과 startup ANR는 따로 보존했다. 호스트 실패가 재발하지 않았다는 사실을 제품 수정으로 원인 해결했다고 확정하지 않는다. JVM RED/GREEN3은 거부/취소 collector의 공유 owner 덮어쓰기를 직접 재현하고 차단한 별도 근거다.
+
+실제 Main 라이트 첫 시도는 UI 시작 전에 canonical-domain-baseline 비교에서 실패했다. frozen M1 원형은 기존5개 domain key 외에 courseCompletions/physicalDatabase를 포함한7개 key이고 재사용한 기존 Harness.dataJson은5개 key만 만들고 있었다. private 실제값 대조로 공통5개 key의 모든 값/타입/배열 순서와 별도 physical DB가 기준과 같은지 확인했다. 제품 데이터 손상으로 해석하지 않고 UI 시작/마침/D-P는 미실행으로 남겼다. 원문과 복원 전 DB 및 독립 원형 복원을 보존했다.
+
+새 Main 테스트 파일만 고쳐 실제 각 세션 순서의 완료 선언 영수증과 실제 physical을 추가해7개 전체를 exact 비교한다. 원래 key를 버리거나 성공 기본값을 넣지 않았다. 기준 파일의 실제 bytes hash는 parse/비교 전에 고정해 미수행과 변경을 구분한다. 제품/기존 M1/common helper/동작 기대/timeout은 그대로다. JDK17 quality와 새 기기 APK 빌드가 통과했다. 제품 debug APK가0dd6aa6과 byte-identical인지 확인한 뒤 재실행하며, 아직 실제 Main 성공이나 B/A2 완료로 기록하지 않는다.

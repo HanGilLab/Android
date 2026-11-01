@@ -88,7 +88,7 @@ class FinishedSessionReviewFlowTest {
                 environment = h.environmentJson()
                 catalog = h.catalogJson(h.graph)
                 report
-                    .put("originalData", h.dataJson(original))
+                    .put("originalData", frozenDataJson(original, originalPhysical))
                     .put("physicalBefore", originalPhysical)
                     .put("environment", environment)
                     .put("catalog", catalog)
@@ -455,16 +455,18 @@ class FinishedSessionReviewFlowTest {
                 else -> h.requireSameJson(rows, now, "original-typed-table")
             }
         }
-        report.put("physicalAfter", current).put("currentData", h.dataJson(after))
+        report.put("physicalAfter", current).put("currentData", frozenDataJson(after, current))
         persist()
     }
 
-    private fun assertBaseline(
+    private suspend fun assertBaseline(
         data: SessionHistoryRecordingRunFlowTest.Harness.ExistingData,
         physical: JSONObject,
     ) {
         check(baselineFile.isFile && !File(baselineFile.path + ".bak").exists() && !File(baselineFile.path + ".new").exists())
-        val baseline = JSONObject(baselineFile.readText())
+        val baselineBytes = baselineFile.readBytes()
+        baselineHash = sha256(baselineBytes)
+        val baseline = JSONObject(baselineBytes.toString(Charsets.UTF_8))
         check(baseline.getString("status") == "completed" && baseline.getBoolean("preservedOriginalData"))
         check(
             baseline.getString("measurementSeries") == "history-memo-edit-read-v1" && baseline.getString("measurementStage") == "baseline",
@@ -475,13 +477,37 @@ class FinishedSessionReviewFlowTest {
             check(values.length() == count)
             for (index in 0 until count) check(values.getJSONObject(index).getString("status") == "success")
         }
-        val frozen = JSONObject(baseline.getJSONObject("originalData").toString())
-        h.requireSameJson(frozen.get("physicalDatabase"), physical, "canonical-typed-baseline")
-        frozen.remove("physicalDatabase")
-        h.requireSameJson(frozen, h.dataJson(data), "canonical-domain-baseline")
+        h.requireSameJson(baseline.getJSONObject("originalData"), frozenDataJson(data, physical), "canonical-all-seven-fields-baseline")
         h.requireSameJson(baseline.getJSONObject("catalog"), h.catalogJson(h.graph), "catalog-baseline")
-        baselineHash = sha256(baselineFile)
         report.put("frozenBaselineSha256", baselineHash).put("baselineKind", "completed-frozen-M1-canonical-input-only")
+    }
+
+    /** Match frozen M1's complete schema using actual repository receipts, never inferred nulls. */
+    private suspend fun frozenDataJson(
+        data: SessionHistoryRecordingRunFlowTest.Harness.ExistingData,
+        physical: JSONObject,
+    ): JSONObject {
+        val completions = JSONArray()
+        for (session in data.sessions) {
+            val declaration =
+                h.graph
+                    .courseCompletions()
+                    .observe(session.sessionId)
+                    .first()
+            completions.put(
+                JSONObject().put("sessionId", session.sessionId).put(
+                    "declaration",
+                    declaration?.let {
+                        JSONObject()
+                            .put("source", h.sessionJson(it.source))
+                            .put("version", it.version)
+                            .put("declaredAtEpochMillis", it.declaredAtEpochMillis)
+                            .put("origin", it.origin.name)
+                    } ?: JSONObject.NULL,
+                ),
+            )
+        }
+        return h.dataJson(data).put("courseCompletions", completions).put("physicalDatabase", physical)
     }
 
     private fun physicalDatabase(): JSONObject =
@@ -620,8 +646,10 @@ class FinishedSessionReviewFlowTest {
         }
     }
 
-    private fun sha256(file: File): String =
-        MessageDigest.getInstance("SHA-256").digest(file.readBytes()).joinToString("") { "%02x".format(it.toInt() and 255) }
+    private fun sha256(file: File): String = sha256(file.readBytes())
+
+    private fun sha256(bytes: ByteArray): String =
+        MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it.toInt() and 255) }
 
     private fun phase(value: String) = h.instrument.sendStatus(2, Bundle().apply { putString("stream", value + System.lineSeparator()) })
 }
