@@ -1,6 +1,6 @@
 # 명시적으로 켠 전면 연습의 SDK 위치 표본 기록
 
-- 상태: 진행 중
+- 상태: 진행 중, 구현/기본 및 확대 다크/실제 미허용 검증 완료. 새 실제 SDK 저장 동의와 최신 PR 병합 조건 대기
 - 요구사항: APP-04의 위치 입력/수집 상태 연결, 주차 후 기록 열람. 위치/경로 전체와 APP-05의 배경 위치 수집은 완료 범위가 아니다.
 - 기준 main: dd4897880b24776c1599bb18096abc5bcc0a2219
 
@@ -53,7 +53,7 @@
 | domain/Room/SDK/feature 단위, debug 앱 조립 | 실제 성공 | JDK17 관련 전체 단위 target와 assembleDebug 통과. 전체 verify와 실제 UI는 별도 대기 |
 | 전체 verify 첫 실행 | 실패 | 작성 중 native 검증 파일의 포맷 검사에서 중단. 해당 실패 로그를 보존 |
 | 최종 후보 전체 verify | 실제 성공 | JDK17 quality/모듈 경계/lint/build-logic/JVM/debug/unsigned release 통과. JVM 68 suite 1070개와 build-logic 4개 실패/오류/건너뜀0. 실제 SDK/수동 성공이나 성능 수치와 구분 |
-| 최종 화면 검증 APK | 실제 빌드 성공, 실행은 미실행 | getOrNull 확장 import 누락 실패를 보존하고 import만 추가한 뒤 관련 lint/포맷/app 및 library native APK 빌드 통과 |
+| 최종 화면 검증 APK | 실제 빌드와 기본/확대 UI 및 미허용 실행 성공 | 초기 준비/전면 내비 실패와 정상 복귀 뒤 최종 성공을 아래에 구분. 새 실제 SDK 저장/D/Main STOP은 동의 전 미실행 |
 
 ## 남은 문제와 인계
 
@@ -64,7 +64,7 @@
 
 제품 소스 dd489788과 같은 baseline+harness commit ab336ee에서 동일 frozen 새 계측 source b9cdc721999866d5d6c93f2c6d4f8b1ab23a075179a349e73e96a5b10bd5f5f8/APK를 고정했다. 첫 외부 실행은 빈 추가table 인자가 remote shell에서 사라져 instrumentation 자체가 시작되지 않았다. 원문 외부 실패와 표본0/미실행을 보존하고 shlex 인자 인코딩만 정정했다. 제품/계측 APK/타이머를 바꾸지 않았다.
 
-실제 A는 warm5/main30 전부 성공, 실패/누락/제외0으로 완료했다. 중앙값 930.950834ms, Q1 914.823667/Q3 941.282292ms, IQR 26.458625ms, 최솟값 863.816001/최댓값 1051.131208ms이다. quartile은 정렬한 각 절반의 중앙값이다. 이는 기존 메모 공개 wall-time 기준이며 새 위치 수집/저장 속도나 성능 개선 수치가 아니다. B는 아직 미실행이다.
+실제 A는 warm5/main30 전부 성공, 실패/누락/제외0으로 완료했다. 중앙값 930.950834ms, Q1 914.823667/Q3 941.282292ms, IQR 26.458625ms, 최솟값 863.816001/최댓값 1051.131208ms이다. quartile은 정렬한 각 절반의 중앙값이다. 이는 기존 메모 공개 wall-time 기준이며 새 위치 수집/저장 속도나 성능 개선 수치가 아니다. B는 이 A 기준을 기록할 당시 미실행이었고, 실제 B 결과는 아래 A/B 관찰에 분리했다.
 
 모든 원래 row/typed값/순서/sequence/권한/runtime/font/night/IME/proxy와 source/version/catalog/environment가 정확히 보존됐고 FUSED_LOCATION도 실제 미허용이었다. SDK P/UX와 실제 Main/focus를 확인했다. 기준을 고정한 뒤에만 제품 구현 GO를 기록했고 소유 AVD/forward/DDS 탭을 종료했다. 실제 구현은 업데이트 domain/SDK, schema7 자식 자료와 삭제CAS, 전면controller, 앱/UI의 소유 경계를 나눠 진행한다.
 
@@ -114,3 +114,19 @@ A는 `ab336ee`(제품 소스는 기준 main과 동일), B는 `4a6db65`의 debug 
 - 기본 font1.0/라이트에서 실제 제품 Route, 제어 SDK/차량 입력, 소유 Room의 명시 시작, D 수동 표본/상세 잠금, 중지, 종료 이력, PAUSE/STOP/원본 교체와 옛 클릭 차단을 통과했다. 실제 SDK의 D 수신 및 실제 Main STOP은 별도 미실행이다. 9개 anchor의 최소24sp TextLayout, glyph/줄 범위, ellipsis/overflow/viewport와 실제 화면을 비공개로 확인했다. SDK 위치/공개 사진이 아닌 제어 fixture의 실제 Compose UI다.
 - 확대1.3/다크 첫 실행은 세 사례 중 초기 실제 host/focus/display 확인 두 곳에서 실패했다. 원래 설정/DB/권한은 독립 정리와 전체 snapshot 대조로 복원됐다. 냉 시작 조건을 분리한 같은 APK 재시도도 첫 host receipt 재확인에서 실패하고 나머지 두 사례는 통과했다. 두 실패는 fixture/source/제어 UI 생성 이전이며 실제 어떤 lifecycle/focus/display 항이 바뀌었는지는 아직 미확인이다. 기존 라이트 cache를 다시 export한 archive는 다크 화면 근거로 세지 않는다. guard를 약화하지 않고 추가 진단을 준비한다. 확대 다크 UI와 해당 mode의 실제 미허용 검증은 완료로 세지 않는다.
 - 앞선 실제 메타데이터 관찰 두 창은 사용/복구 완료 상태다. 새 실제 SDK→소유 Room/D/Main STOP의 두 관찰 창은 새 동의 전 미실행이며 실제 허용/위치 저장/이동으로 대신 기록하지 않는다.
+
+
+## 확대 다크의 실제 전면 확인과 최종 미허용 검증
+
+추가 진단의 원래 main-thread guard 값에서 검사 Activity가 CREATED/focus=false였고, 실제 focused root는 Pleos 기본 DrivingView였다. 기본 내비의 전면/겹침도 실제 플랫폼 창과 화면에서 확인했다. 이후의 동일 Activity/구성 관찰만으로 이전 실패를 통과로 바꾸지 않았다. 설정 전환 뒤 정상 뒤로 가기와 명시적 Main 열기로 기본 내비에서 한길에 돌아온 실제 화면/P를 확인한 뒤 같은 검증을 다시 시작했다. 앱이나 기본 내비 데이터를 삭제하거나 해당 앱을 강제 종료하지 않았다.
+
+검사 host 준비는 전체 조건/expected 구성/known-own focus를 같은 Activity에서 연속 확인한 뒤에만 host를 발급하도록 보강했다. 본문/최종 관찰의 known foreign/unknown/상태 이탈 즉시 실패는 유지했다. 이 보강만으로 최초 다크 실패가 성공한 것은 아니며, 실제 전면 DrivingView 확인과 정상 복귀가 필요했다. Compose Activity cache 추정은 현재 캐시 sources/bytecode와 대조해 부정했고 원인으로 기록하지 않는다.
+
+최종 동일 제품 APK와 최종 제어 source로 기본1.0/라이트 세 흐름과 실제 미허용, 전면 복귀를 확인한 확대1.3/다크 세 흐름과 실제 미허용을 모두 통과했다. 새 1.3/true UUID의 9개 실제 UI metadata/PNG를 라이트 두 그룹과 구분했고, 모두 최소24sp/실제 resource 및 Compose fontScale/전체 TextLayout/ellipsis와 glyph/viewport 조건을 통과했다. 실제 제어 화면도 비공개로 읽기와 버튼 도달을 확인했다. 실제 SDK의 D 수신을 뜻하지 않는다.
+
+모든 실행 뒤 원래 font/night/proxy/IME, 전체 원본 행/값/SQLite 타입/순서/sequence와 실제 runtime 권한을 expected schema7 snapshot과 정확히 대조했다. 설치 제품/최종 계측 APK hash도 고정 파일과 대조했고 소유 AVD만 종료했다. 제품 바이너리는 실측 B의 `4a6db65`와 동일하다. 과거 실패/미실행, 성공한 라이트와 새 다크 자료, 실제 SDK 위치 표본이 아닌 제어 자료를 계속 분리한다.
+
+실제 SDK 위치 표본을 새 테스트 전용 로컬 DB에서 비교한 뒤 소유 DB만 삭제하는 검증, 실제 D와 Main STOP은 여전히 새 FUSED_LOCATION 동의 전 미실행이다. 현재 권한은 미허용이며 이전 두 관찰 창 동의는 재사용하지 않았다. PR #74는 미병합이고 최신 head CI/Codex와 별도 SDK 수동 검증의 전체 완료를 기다린다. 필수19/54, 선택3개 제외를 유지한다.
+
+
+최종 준비 경계와 실제 수동 근거를 포함한 상태에서 JDK17 `./scripts/verify.sh` 전체를 다시 통과했다. cache/up-to-date 재사용은 별도이며 JUnit/CI/Gradle 소요 시간을 앱 성능으로 해석하지 않는다. 실제 미허용 권한과 데이터가 복구된 소유 AVD 및 임시 DDS 탭을 정리했다. 새 위치 수신 동의 요청은 이 최종 head의 필수 CI/Codex가 실제 완료된 뒤 구체적 두 창/테스트 소유 저장 범위로 진행한다.

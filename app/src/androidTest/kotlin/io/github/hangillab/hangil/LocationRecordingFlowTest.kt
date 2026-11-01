@@ -146,6 +146,7 @@ class LocationRecordingFlowTest {
     private var actualHost: ComponentCatalogActivity? = null
     private var actualHostDisplay: Int? = null
     private val activityNumbers = IdentityHashMap<ComponentCatalogActivity, Int>()
+    private var originalGuardObservation: JSONObject? = null
     private val visualEnabled get() = InstrumentationRegistry.getArguments().getString("manualLocationRecordingVisual") == "true"
     private val visualDirectory by lazy {
         File(instrument.targetContext.cacheDir, "screenshots/foreground-location-controlled-${UUID.randomUUID()}").apply { check(mkdirs()) }
@@ -356,6 +357,7 @@ class LocationRecordingFlowTest {
             assertActualHost()
         } catch (failure: Throwable) {
             primary = failure
+            recordHostFailure("fixture-failure-before-cleanup", failure)
             throw failure
         } finally {
             fun cleanup(action: () -> Unit) {
@@ -610,42 +612,118 @@ class LocationRecordingFlowTest {
 
     /** Setup may wait for ActivityRule focus before any owned fixture or policy owner exists. */
     private fun prepareActualHost() {
-        var phase = "initial-focus-display-wait"
+        var phase = "initial-stable-candidate-preparation"
         try {
             check(actualHost == null && actualHostDisplay == null)
+            val args = InstrumentationRegistry.getArguments()
+            val expectedFont = args.getString("expectedFontScale")
+            val expectedDark = args.getString("expectedDark")
+            check(expectedFont == "1.0" || expectedFont == "1.3")
+            check(expectedDark == "false" || expectedDark == "true")
+            val fontScale = checkNotNull(expectedFont).toFloat()
+            val dark = expectedDark == "true"
             val deadline = SystemClock.elapsedRealtime() + 20_000
-            while (actualHost == null && SystemClock.elapsedRealtime() < deadline) {
+            var previous: ComponentCatalogActivity? = null
+            var previousDisplay: Int? = null
+            var previousConfiguration: Configuration? = null
+            var firstValidAt: Long? = null
+            while (SystemClock.elapsedRealtime() < deadline) {
+                phase = "initial-provisional-candidate"
+                var candidate: ComponentCatalogActivity? = null
+                var displayId: Int? = null
+                var configuration: Configuration? = null
+                var prepared = false
                 instrument.runOnMainSync {
                     val activity = compose.activity
                     val display = activity.display
-                    if (activity.lifecycle.currentState == Lifecycle.State.RESUMED && activity.hasWindowFocus() &&
-                        display != null && display.isValid
-                    ) {
-                        actualHost = activity
-                        actualHostDisplay = display.displayId
+                    val lifecycle = activity.lifecycle.currentState
+                    val focused = activity.hasWindowFocus()
+                    val displayValid = display?.isValid
+                    val displayReadId = display?.displayId
+                    val config = Configuration(activity.resources.configuration)
+                    val configMatches = configurationMatches(config, fontScale, dark)
+                    prepared = lifecycle == Lifecycle.State.RESUMED && focused && display != null && displayValid == true && configMatches
+                    candidate = activity
+                    displayId = displayReadId
+                    configuration = config
+                    originalGuardObservation =
+                        hostGuardObservation(phase, activity, activity, lifecycle, focused, displayReadId, displayValid, config, prepared)
+                }
+                var valid = false
+                if (prepared) {
+                    phase = "initial-provisional-AX-query"
+                    val observed = actualFocusedPackage(checkNotNull(displayId))
+                    originalGuardObservation
+                        ?.put("focusedPackageRead", observed ?: JSONObject.NULL)
+                        ?.put("focusedPackageReadAtElapsedRealtimeMillis", SystemClock.elapsedRealtime())
+                    if (observed != null) {
+                        assertTrue("Known foreign initial focus cannot be substituted", observed == instrument.targetContext.packageName)
+                        phase = "initial-provisional-post-AX-recheck"
+                        instrument.runOnMainSync {
+                            val current = compose.activity
+                            val display = current.display
+                            val lifecycle = current.lifecycle.currentState
+                            val focused = current.hasWindowFocus()
+                            val displayValid = display?.isValid
+                            val displayReadId = display?.displayId
+                            val config = Configuration(current.resources.configuration)
+                            valid = current === candidate && lifecycle == Lifecycle.State.RESUMED && focused && display != null &&
+                                displayValid == true && displayReadId == displayId && config == configuration &&
+                                configurationMatches(config, fontScale, dark)
+                            originalGuardObservation =
+                                hostGuardObservation(
+                                    phase,
+                                    candidate,
+                                    current,
+                                    lifecycle,
+                                    focused,
+                                    displayReadId,
+                                    displayValid,
+                                    config,
+                                    valid,
+                                )?.put("precedingFocusedPackageRead", observed)
+                            val observedAt = SystemClock.elapsedRealtime()
+                            val earlier = firstValidAt
+                            if (valid && previous === candidate && previousDisplay == displayId && previousConfiguration == config &&
+                                earlier != null && observedAt - earlier >= 100 && observedAt < deadline
+                            ) {
+                                // The owner does not exist until both complete candidate observations agree.
+                                actualHost = current
+                                actualHostDisplay = checkNotNull(displayReadId)
+                            }
+                        }
+                        if (actualHost != null) return
                     }
                 }
-                if (actualHost == null) SystemClock.sleep(50)
-            }
-            assertTrue("Initial real Compose host focus/display must become known", actualHost != null && actualHostDisplay != null)
-            phase = "initial-captured-host-before-AX"
-            while (SystemClock.elapsedRealtime() < deadline) {
-                assertActualHostLifecycle()
-                phase = "initial-captured-host-AX-query"
-                val observed = actualFocusedPackage()
-                if (observed != null) {
-                    assertTrue("Known foreign initial focus cannot be substituted", observed == instrument.targetContext.packageName)
-                    return
+                if (valid) {
+                    if (previous !== candidate || previousDisplay != displayId || previousConfiguration != configuration) {
+                        previous = candidate
+                        previousDisplay = displayId
+                        previousConfiguration = configuration
+                        firstValidAt = SystemClock.elapsedRealtime()
+                    }
+                } else {
+                    previous = null
+                    previousDisplay = null
+                    previousConfiguration = null
+                    firstValidAt = null
                 }
-                phase = "initial-captured-host-before-AX"
                 SystemClock.sleep(50)
             }
-            throw AssertionError("Initial actual focused package remained unknown")
+            throw AssertionError("Initial real Compose host needs two agreeing observations at least 100ms apart within 20s")
         } catch (failure: Throwable) {
             recordHostFailure(phase, failure)
             throw failure
         }
     }
+
+    private fun configurationMatches(
+        config: Configuration,
+        fontScale: Float,
+        dark: Boolean,
+    ): Boolean =
+        abs(config.fontScale - fontScale) <= 0.01f &&
+            (config.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES) == dark
 
     /** Owned actions never wait for a foreign/unknown window to return or recapture a display. */
     private fun assertActualHost() {
@@ -654,6 +732,9 @@ class LocationRecordingFlowTest {
             assertActualHostLifecycle()
             phase = "strict-owned-host-AX-query"
             val observed = actualFocusedPackage()
+            originalGuardObservation
+                ?.put("focusedPackageRead", observed ?: JSONObject.NULL)
+                ?.put("focusedPackageReadAtElapsedRealtimeMillis", SystemClock.elapsedRealtime())
             assertTrue("Actual focused package is unknown at an owned action boundary", observed != null)
             assertTrue(
                 "Known foreign focus at an owned action boundary must fail immediately",
@@ -695,7 +776,9 @@ class LocationRecordingFlowTest {
                 .put("permissionChanged", false)
                 .put("pngStatus", "not-attempted")
         val errors = JSONArray()
-        proof.put("diagnosticFailures", errors)
+        proof
+            .put("diagnosticFailures", errors)
+            .put("originalGuardObservation", originalGuardObservation?.let { JSONObject(it.toString()) } ?: JSONObject.NULL)
 
         fun attempt(
             stage: String,
@@ -859,15 +942,69 @@ class LocationRecordingFlowTest {
         var allowed = false
         instrument.runOnMainSync {
             val activity = actualHost
+            val current = compose.activity
             val display = activity?.display
-            allowed = activity != null && compose.activity === activity && activity.lifecycle.currentState == Lifecycle.State.RESUMED &&
-                activity.hasWindowFocus() && display != null && display.isValid && display.displayId == actualHostDisplay
+            val lifecycle = activity?.lifecycle?.currentState
+            val focused = activity?.hasWindowFocus()
+            val config = activity?.resources?.configuration
+            val displayReadId = display?.displayId
+            val displayValid = display?.isValid
+            allowed = activity != null && current === activity && lifecycle == Lifecycle.State.RESUMED && focused == true &&
+                display != null && displayValid == true && displayReadId == actualHostDisplay
+            originalGuardObservation =
+                hostGuardObservation(
+                    "strict-owned-host-condition",
+                    activity,
+                    current,
+                    lifecycle,
+                    focused,
+                    displayReadId,
+                    displayValid,
+                    config,
+                    allowed,
+                )
         }
         assertTrue("The captured real Compose host must remain RESUMED and focused on the same valid display", allowed)
     }
 
-    private fun actualFocusedPackage(): String? {
-        val display = checkNotNull(actualHostDisplay)
+    private fun hostGuardObservation(
+        phase: String,
+        expected: ComponentCatalogActivity?,
+        current: ComponentCatalogActivity,
+        lifecycle: Lifecycle.State?,
+        focused: Boolean?,
+        displayId: Int?,
+        displayValid: Boolean?,
+        config: Configuration?,
+        allowed: Boolean,
+    ): JSONObject? =
+        try {
+            fun identity(value: ComponentCatalogActivity?): Any =
+                value?.let { activityNumbers.getOrPut(it) { activityNumbers.size + 1 } } ?: JSONObject.NULL
+            JSONObject()
+                .put("basis", "values-read-inside-the-original-main-thread-guard")
+                .put("phase", phase)
+                .put("observedAtElapsedRealtimeMillis", SystemClock.elapsedRealtime())
+                .put("expectedActivitySequence", identity(expected))
+                .put("currentActivitySequence", identity(current))
+                .put("sameActivity", expected?.let { it === current } ?: JSONObject.NULL)
+                .put("lifecycleRead", lifecycle?.name ?: JSONObject.NULL)
+                .put("windowFocusRead", focused ?: JSONObject.NULL)
+                .put("displayKnown", displayId != null)
+                .put("displayValidRead", displayValid ?: JSONObject.NULL)
+                .put("displayIdRead", displayId ?: JSONObject.NULL)
+                .put("capturedDisplayId", actualHostDisplay ?: JSONObject.NULL)
+                .put("fontScaleRead", config?.fontScale?.toDouble() ?: JSONObject.NULL)
+                .put(
+                    "darkRead",
+                    config?.let { it.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES }
+                        ?: JSONObject.NULL,
+                ).put("guardAllowed", allowed)
+        } catch (_: Throwable) {
+            null
+        }
+
+    private fun actualFocusedPackage(display: Int = checkNotNull(actualHostDisplay)): String? {
         val windows = instrument.uiAutomation.windowsOnAllDisplays
         val all = buildList { for (index in 0 until windows.size()) addAll(windows.valueAt(index)) }
         try {
