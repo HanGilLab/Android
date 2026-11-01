@@ -30,6 +30,7 @@ import io.github.hangillab.hangil.core.designsystem.ParkedDisclosure
 import io.github.hangillab.hangil.core.designsystem.ParkedLockedNotice
 import io.github.hangillab.hangil.core.designsystem.ParkedPage
 import io.github.hangillab.hangil.core.designsystem.ParkedPanel
+import io.github.hangillab.hangil.core.domain.PracticeSession
 import io.github.hangillab.hangil.core.domain.Preparation
 import io.github.hangillab.hangil.core.domain.PreparedPractice
 import io.github.hangillab.hangil.core.domain.VehicleRecordingState
@@ -44,6 +45,46 @@ fun HomeRoute(
     recordingState: VehicleRecordingState = VehicleRecordingState.Idle,
     onRetryRecording: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
+) {
+    HomeRouteContent(onPrepare, onMapPreview, onHistory, onPrepareNext, null, showDiagnostics, recordingState, onRetryRecording, viewModel)
+}
+
+@Composable
+fun HomeRoute(
+    onPrepare: () -> Unit,
+    onMapPreview: () -> Unit,
+    onHistory: () -> Unit,
+    onPrepareNext: (String) -> Unit,
+    onFinishedReview: (PracticeSession) -> Unit,
+    showDiagnostics: Boolean = false,
+    recordingState: VehicleRecordingState = VehicleRecordingState.Idle,
+    onRetryRecording: () -> Unit = {},
+    viewModel: HomeViewModel = hiltViewModel(),
+) {
+    HomeRouteContent(
+        onPrepare,
+        onMapPreview,
+        onHistory,
+        onPrepareNext,
+        onFinishedReview,
+        showDiagnostics,
+        recordingState,
+        onRetryRecording,
+        viewModel,
+    )
+}
+
+@Composable
+private fun HomeRouteContent(
+    onPrepare: () -> Unit,
+    onMapPreview: () -> Unit,
+    onHistory: () -> Unit,
+    onPrepareNext: (String) -> Unit,
+    onFinishedReview: ((PracticeSession) -> Unit)?,
+    showDiagnostics: Boolean,
+    recordingState: VehicleRecordingState,
+    onRetryRecording: () -> Unit,
+    viewModel: HomeViewModel,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     HomeScreen(
@@ -60,6 +101,7 @@ fun HomeRoute(
                 canPrepare = state.preparation is PreparationLoadState.Loaded,
                 recordingState = recordingState,
                 onRetryRecording = onRetryRecording,
+                onFinishedReview = onFinishedReview,
             )
             NavigationScreenRoute()
             ParkedButton(

@@ -84,18 +84,50 @@ class SessionHistoryViewModel
         private var deletionNonce = 0L
         private var deletion: DeletionAction? = null
 
+        private var reviewEntry: SessionHistoryEntry.FinishedReview? = null
+        private var reviewUnavailable = false
+
         val uiState =
+            entryFlow(SessionHistoryEntry.Explore) { true }
+                .stateIn(viewModelScope, SharingStarted.WhileSubscribed(0, 0), SessionHistoryUiState.Loading)
+
+        /** Each exact route supplies a new RESUMED owner. Null never opts into general history. */
+        fun observeEntry(
+            entry: SessionHistoryEntry,
+            canKeepOpen: () -> Boolean,
+        ): Flow<SessionHistoryUiState> = entryFlow(entry, canKeepOpen)
+
+        private fun entryFlow(
+            entry: SessionHistoryEntry,
+            canKeepOpen: () -> Boolean,
+        ): Flow<SessionHistoryUiState> =
             flow {
                 coroutineScope {
-                    val owner = Reader(checkNotNull(currentCoroutineContext()[Job]))
+                    val owner = Reader(checkNotNull(currentCoroutineContext()[Job]), entry, canKeepOpen)
                     synchronized(lock) {
                         invalidateDeletionLocked()
                         reader = owner
                         ended = null
-                        publishLocked(SessionHistoryUiState.Loading)
+                        if (entry is SessionHistoryEntry.FinishedReview) {
+                            if (reviewEntry != entry) {
+                                reviewEntry = entry
+                                reviewUnavailable = entry.expectedSource == null || entry.expectedSource.isActive
+                            }
+                            selectedId = entry.expectedSource?.sessionId
+                            selectionLost = false
+                        }
+                        publishLocked(
+                            when {
+                                entry is SessionHistoryEntry.FinishedReview && reviewUnavailable -> SessionHistoryUiState.Unavailable
+                                !hostAllowed(owner) -> SessionHistoryUiState.Locked
+                                else -> SessionHistoryUiState.Loading
+                            },
+                        )
                     }
                     val queryJob =
                         launch {
+                            if (entry is SessionHistoryEntry.FinishedReview && reviewUnavailable) return@launch
+                            if (!hostAllowed(owner)) return@launch
                             requests.flatMapLatest { watchAccess(owner, it) }.collect()
                         }
                     try {
@@ -113,9 +145,20 @@ class SessionHistoryViewModel
                         queryJob.cancel()
                     }
                 }
-            }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(0, 0), SessionHistoryUiState.Loading)
+            }
 
-        fun canRead(): Boolean = allowsPracticeInteraction(vehicle.state.value, restrictions.restrictions.value)
+        fun canRead(): Boolean =
+            synchronized(lock) {
+                allowsPracticeInteraction(vehicle.state.value, restrictions.restrictions.value) &&
+                    (reader?.let(::hostAllowed) != false)
+            }
+
+        private fun hostAllowed(owner: Reader): Boolean =
+            try {
+                owner.canKeepOpen()
+            } catch (_: Exception) {
+                false
+            }
 
         /** Rechecks the exact displayed summary at the detail action and composition boundaries. */
         fun canRevealSummary(
@@ -516,7 +559,12 @@ class SessionHistoryViewModel
                             selectionLost = true
                             // Preserve the deleted cursor until the user explicitly accepts another record.
                             selectedId = action.session.sessionId
-                            published.value = SessionHistoryUiState.SelectionChanged(nextGenerationLocked())
+                            if (action.owner.entry is SessionHistoryEntry.FinishedReview) {
+                                reviewUnavailable = true
+                                publishLocked(SessionHistoryUiState.Unavailable)
+                            } else {
+                                published.value = SessionHistoryUiState.SelectionChanged(nextGenerationLocked())
+                            }
                             deletionPublished.value = SessionDeletionUiState.Deleted(action.nonce, action.session)
                         }
                         SessionDeletionResult.Missing -> failDeletionLocked(action, SessionDeletionUiState.FailureReason.MISSING)
@@ -649,6 +697,7 @@ class SessionHistoryViewModel
             synchronized(lock) {
                 val owner = reader?.takeIf { it.job.isActive } ?: return@synchronized false
                 if (!canRead()) return@synchronized false
+                if (owner.entry is SessionHistoryEntry.FinishedReview && reviewUnavailable) return@synchronized false
                 invalidateDeletionLocked()
                 epoch++
                 owner.query = null
@@ -658,11 +707,27 @@ class SessionHistoryViewModel
                 true
             }
 
+        fun retryEntry(
+            expected: SessionHistoryUiState,
+            canKeepOpen: () -> Boolean,
+        ): Boolean =
+            synchronized(lock) {
+                val owner = reader ?: return@synchronized false
+                if (owner.entry !is SessionHistoryEntry.FinishedReview || published.value !== expected ||
+                    expected !is SessionHistoryUiState.Failed || !hostAllowed(owner) || !canKeepOpen()
+                ) {
+                    return@synchronized false
+                }
+                if (published.value !== expected || reader !== owner) return@synchronized false
+                retry()
+            }
+
         /** Explicitly accepts the latest received list after a selected record disappeared. */
         fun resetToLatest(expectedGeneration: Long): Boolean =
             synchronized(lock) {
                 val owner = reader ?: return@synchronized false
                 val query = owner.query ?: return@synchronized false
+                if (owner.entry is SessionHistoryEntry.FinishedReview) return@synchronized false
                 if (!currentQuery(owner, query) || !canRead()) return@synchronized false
                 val changed = published.value as? SessionHistoryUiState.SelectionChanged ?: return@synchronized false
                 if (changed.generation != expectedGeneration) return@synchronized false
@@ -692,6 +757,7 @@ class SessionHistoryViewModel
             synchronized(lock) {
                 val owner = reader ?: return@synchronized false
                 val query = owner.query ?: return@synchronized false
+                if (owner.entry is SessionHistoryEntry.FinishedReview) return@synchronized false
                 if (!currentQuery(owner, query) || !canRead()) return@synchronized false
                 val current = published.value as? SessionHistoryUiState.Ready ?: return@synchronized false
                 if (
@@ -764,7 +830,14 @@ class SessionHistoryViewModel
                     )
                 } finally {
                     synchronized(lock) {
-                        if (reader === owner && owner.query === query) owner.query = null
+                        if (reader === owner && owner.query === query) {
+                            if (owner.entry is SessionHistoryEntry.FinishedReview && !query.job.isActive &&
+                                owner.job.isActive && hostAllowed(owner) && canRead()
+                            ) {
+                                publishLocked(SessionHistoryUiState.Failed(SessionHistoryUiState.FailureReason.SESSION_READ))
+                            }
+                            owner.query = null
+                        }
                     }
                 }
             }
@@ -822,6 +895,17 @@ class SessionHistoryViewModel
             if (!preserveDeletionReceiptLocked(owner, query, snapshot)) invalidateDeletionLocked()
             val finished = snapshot.filterNot { it.isActive }
             ended = finished
+            val exact = owner.entry as? SessionHistoryEntry.FinishedReview
+            if (exact != null) {
+                val expected = exact.expectedSource
+                if (reviewUnavailable || expected == null || snapshot.singleOrNull { it.sessionId == expected.sessionId } != expected) {
+                    reviewUnavailable = true
+                    publishLocked(SessionHistoryUiState.Unavailable)
+                    return@synchronized
+                }
+                selectedId = expected.sessionId
+                selectionLost = false
+            }
             if (selectedId != null && finished.none { it.sessionId == selectedId }) selectionLost = true
             if (selectedId == null && !selectionLost) selectedId = finished.firstOrNull()?.sessionId
             publishSelectionLocked(finished)
@@ -898,7 +982,7 @@ class SessionHistoryViewModel
         private fun currentReader(
             owner: Reader,
             requestEpoch: Long,
-        ): Boolean = reader === owner && owner.job.isActive && requestEpoch == epoch
+        ): Boolean = reader === owner && owner.job.isActive && requestEpoch == epoch && hostAllowed(owner)
 
         private fun currentQuery(
             owner: Reader,
@@ -940,6 +1024,8 @@ class SessionHistoryViewModel
 
         private class Reader(
             val job: Job,
+            val entry: SessionHistoryEntry,
+            val canKeepOpen: () -> Boolean,
         ) {
             var query: Query? = null
         }
