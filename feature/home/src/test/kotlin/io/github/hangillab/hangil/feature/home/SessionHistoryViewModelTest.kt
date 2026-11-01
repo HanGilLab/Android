@@ -1468,6 +1468,7 @@ class SessionHistoryViewModelTest {
                 UnexpectedHistoryMemoRepository,
                 UnexpectedHistoryRecordingRunRepository,
                 UnexpectedHistoryCourseCompletionRepository,
+                UnexpectedHistorySessionMemoWriter,
             )
     }
 

@@ -302,6 +302,7 @@ class SessionHistoryCourseCompletionDeletionBoundaryTest {
                 UnexpectedHistoryMemoRepository,
                 UnexpectedHistoryRecordingRunRepository,
                 completions,
+                UnexpectedHistorySessionMemoWriter,
             )
 
         init {

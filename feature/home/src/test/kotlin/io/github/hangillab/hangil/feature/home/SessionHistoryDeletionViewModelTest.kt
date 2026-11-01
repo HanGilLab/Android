@@ -755,6 +755,7 @@ class SessionHistoryDeletionViewModelTest {
                 UnexpectedHistoryMemoRepository,
                 UnexpectedHistoryRecordingRunRepository,
                 UnexpectedHistoryCourseCompletionRepository,
+                UnexpectedHistorySessionMemoWriter,
             )
 
         init {

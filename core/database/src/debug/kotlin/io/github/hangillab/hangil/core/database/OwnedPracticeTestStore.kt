@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.pm.ApplicationInfo
 import androidx.room.Room
 import io.github.hangillab.hangil.core.domain.CourseCompletionRepository
+import io.github.hangillab.hangil.core.domain.HistorySessionMemoWriter
 import io.github.hangillab.hangil.core.domain.PracticeCatalog
 import io.github.hangillab.hangil.core.domain.PracticeRepository
 import io.github.hangillab.hangil.core.domain.PracticeSessionRepository
@@ -29,6 +30,7 @@ class OwnedPracticeTestStore private constructor(
     val sessions: PracticeSessionRepository get() = RoomPracticeSessionRepository(database, catalog)
     val observations: VehicleObservationRepository get() = RoomVehicleObservationRepository(database)
     val memos: SessionMemoRepository get() = RoomSessionMemoRepository(database)
+    val historyMemoWriter: HistorySessionMemoWriter get() = RoomHistorySessionMemoWriter(database)
     val deletions: SessionDeletionRepository get() = RoomSessionDeletionRepository(database)
     val courseCompletions: CourseCompletionRepository get() = RoomCourseCompletionRepository(database)
 

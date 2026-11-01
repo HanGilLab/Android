@@ -484,6 +484,7 @@ class ManualCourseCompletionBoundaryTest {
                                             }
                                         }
                                     },
+                                    UnexpectedHistorySessionMemoWriter,
                                 ) as T
                             }
                         },

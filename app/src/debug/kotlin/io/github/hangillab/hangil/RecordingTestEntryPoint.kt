@@ -5,6 +5,7 @@ import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import io.github.hangillab.hangil.core.domain.CourseCompletionRepository
 import io.github.hangillab.hangil.core.domain.DrivingRestrictionsProvider
+import io.github.hangillab.hangil.core.domain.HistorySessionMemoWriter
 import io.github.hangillab.hangil.core.domain.NextPracticeRepository
 import io.github.hangillab.hangil.core.domain.PracticeCatalog
 import io.github.hangillab.hangil.core.domain.PracticeRepository
@@ -36,6 +37,8 @@ interface RecordingTestEntryPoint {
     fun catalog(): PracticeCatalog
 
     fun memos(): SessionMemoRepository
+
+    fun historyMemoWriter(): HistorySessionMemoWriter
 
     fun courseCompletions(): CourseCompletionRepository
 

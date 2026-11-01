@@ -108,3 +108,37 @@
 기대/원값/통계 재계산/실제 source/host/가시성/20초/표본 조건은 바꾸지 않았다. 모든 문자열 값과 getter/statistics 검증을 보존하고 suppress/config/성공 기본값은 추가하지 않았다. root 보조 수정 스크립트가 적용 전에 중단된 정적 준비 실패3회도 별도다. 그 중 getter 대조가 통계 재검증 누락을 발견한 수정안은 적용하지 않았다. 원래 로그와 strict 반복/해시 근거는 비공개로 보존한다. 포맷 준비/정적 검토 통과를 실제 UI/측정/제품 검증으로 세지 않는다.
 
 A1 실행 전 최종 지표를 M1 기존 메모 펼침 하나로 고정했다. 이전 코드의 일반 이력 진입 M0를 추가하려던 namespace 두 줄은 root의 미커밋 변경만 정확히 제거했고 원래 하네스는 main 바이트와 같다. 결과가 유리해서 제외한 것이 아니라 실행 전 전면 관찰 계약과 직접 관련성을 확인한 선택이며 M0 표본은0개다. M1은 A1/B/A2 각각5warm/30본, 총105원값을 별도 보존한다.
+
+## 변경 전 A1의 실제 결과와 생산 구현 GO
+
+기준 제품은55af9b0과 동일한 고정 debug APK, 실제 고정 하네스 commit은86905edd848e7344a81501d14d75d935f7f83125이다. 엄격한 포맷과 계측 APK 컴파일 뒤 동일 실제 설치 APK/hash와 source provenance를 보존했다. 실제 브라우저 DDS ONLINE와 D 전환의 앱 잠금, P 복귀의 실제 Main 화면을 확인했다. 이 기어 전환은 독립 UX 조합/새 위치 검증 성공으로 확대하지 않는다.
+
+실제 원래 memo-bearing 비latest 종료 기록 한 개를 고정한 M1 A1은 첫 계측에서5warm/30본이 완료됐다. 본30의 중앙값929.0149585ms, Q1/Q3 902.218251/936.395042ms, IQR34.176791ms, min/max870.233959/1019.2425ms다. 실패/누락/미실행/제외 표본0이며 이전 품질 준비7실패와 정적 보조 중단은 별도다. 이 시간은 SDK/DB 단독이나 신규 수정 저장 시간이 아니라 실제 click/동기화/가시성/TextLayout/원문과version/세션/실제전면 재검증 비용을 포함한 하네스 wall time이다. 아직 비교나 향상 근거는 없다.
+
+외부 exact 대조로 원래 schema6의 모든 table/row/field/SQLite 물리형/순서/sequence와 grants/runtime/font/night/IME/proxy를 보존했다. production 메모/다른 자료에 쓰지 않았고 이번 소유 AVD/forward와 연결 DDS 탭을 종료했다. 원래 baseline JSON/APK/source/hash와 전체 조건은 ignored 비공개에 보존했다. root는 실제 기준/자료 보존/자원 종료를 확인한 뒤에만 생산 구현 GO를 전달한다. B와 동일 A APK의 A2, 변경 동작/native/전체 검증/최신 PR 검사/리뷰/병합은 아직 미실행이다.
+
+## 첫 구현의 JVM와 정적 상태 문구 점검
+
+JDK17 새 실제 Room 타깃21개와 feature 전체 408개(17 suites, 신규메모편집22개 포함)가 각각 실패/오류/건너뜀0으로 첫 실행에 통과했다. UI/native와 전체 verify를 대신한 완료는 아니며 실제 RED를 재현한 것으로 쓰지 않는다.
+
+정적 읽기 검토에서 Failed.retainedDraft가 최근 메모의 “저장되지 않은 초안” 문구를 재사용한 문제를 발견했다. 이 상태에는 COMMIT 뒤 ACK 취소나 Saved ACK 후 fresh read 실패도 도달하므로 미저장을 확정할 근거가 없다. 현재 입력 내용과 저장 여부 재확인 행동을 구분하는 history 전용 중립 문구로 수정한다. 기존 최근 메모 문구와 상태/API/저장 동작은 바꾸지 않으며 native의 불확실 상태 표시에서 별도 확인한다.
+
+## 후속 오류와 동기 취소의 실제 RED/GREEN
+
+독립 읽기 검토에서 최초 Conflict/WRITE_UNCONFIRMED로 보존한 입력이 같은 child query의 후속 오류/유한 종료/자체 취소에 다시 지워지는 경로와 refresh의 cancel-finally 재진입 경계를 좁혔다. 제품 수정 전에 새4개 기대를 실제 실행해 전체26개 중 새4개 실패/기존22개 통과, 오류/건너뜀0을 확인했다. 원래 Reader/test source 바이트와 원XML/로그를 비공개로 보존했다. 이 재현은 제어 coroutine/JVM의 알고리즘 경계이며 실제 Android I/O/플랫폼 경합을 강제로 재현했다는 주장은 아니다.
+
+수정은 Reader 한 파일의 최소 경계다. 현재 source/parent/host/gate를 다시 확인한 뒤 여전히 유효한 owner가 이미 실패이면 최초 Failed/token/reason/입력 원문을 유지한다. source/gate/부모 query/host 폐기가 우선하는 기존 잠금은 유지한다. refresh는 기존 query identity를 먼저 분리한 뒤 그 Job을 취소해 옛 finally가 새 ACK 검증/입력을 폐기하지 못하게 한다. 사용자 명시 retry/revoke는 여전히 초안을 지우며 자동 저장/자동 재동의는 하지 않는다.
+
+동일 신규 테스트 source SHA-256 `db4a40e67cec66f85b3437621cc50d1b5b9105b4f65c7cad1018191bed58d15c`의26개가 수정 뒤 모두 통과했고 실패/오류/건너뜀0이었다. 기대/생산 조건을 완화하지 않았다. 뒤의 포맷으로 source 공백이 달라질 수 있으므로 이 동일 바이트 GREEN과 최종 전체 검사/실기를 구분한다. 수정 후 전체 verify, native와 B/A2 측정, 동일 PR head CI/Codex/정상 병합은 아직 별도다.
+
+## 이전 제품 A2 이후 최종 설치 복원 계획
+
+A2는 성능 비교의 순서/반복 편차를 관찰하기 위해 같은 원형 A APK로 돌아가는 측정 단계이며 최종 제품 상태가 아니다. A2 뒤에는 source/schema6/원본 자료가 같은 고정 최종 B APK와 실제 검증한 native 테스트 APK를 다시 설치한다. 실제 설치 APK의 SHA-256과 선택한 과거 메모 읽기/수정 진입 및 취소의 화면, 원래 모든 앱 자료/물리형/순서/sequence/권한/설정/baseline 원형과 소유 fixture 잔존을 확인한 뒤 이번 소유 AVD/forward/DDS 탭을 정리한다. 이 최종 설치 복원을 새 성능 표본이나 새 전후 개선으로 세지 않는다. 현재 아직 미실행이다.
+
+## 최종 전체 자동 검사와 native 컴파일 준비
+
+JDK17 `./scripts/verify.sh` 전체4단계가 종료0으로 통과했다. 제품 모듈59 suites/923 JVM와 별도 build-logic1 suite/4개는 각각 실패/오류/건너뜀0이다. cache/up-to-date 가능성을 포함한 회귀 근거이며 앱 성능 수치가 아니다. 실제 XML을 별도 집계했다.
+
+제품 전역 첫 포맷은 새 core/feature 테스트2개와 editor/reader의 if 형태2곳에서 실패했다. 같은 엄격한 ktlint1.7.1/설정의 실제 정규화 출력을 적용해 기대/토큰/원문 SQL값/게이트 평가 순서를 유지했고 두 번째 Spotless가 통과했다. 소유 formatter 준비의 버전 출력/INFO 혼입 검산2회와 스타일 brace 검산 중단은 적용 전에 차단했으며 규칙을 끄지 않았다. RED/GREEN 바이트는 그 당시 기록으로 보존하고 새 전체 검사는 정규화 이후 source다.
+
+앱 계측 APK의 첫 컴파일은 C 테스트의 JSONArray/Locale import 누락으로 실패했고 native 본문은 미실행이었다. root가 그2개 import만 추가하고 같은 포맷/컴파일을 다시 실행해 종료0을 확인했다. 제품/SDK/권한/기대 완화는 없다. 실제 Android A5/B3/C1과 양 테마, B/A2 timing과 최종 설치 복원 및 최신 PR 검사/리뷰/병합은 아직 미실행이다.

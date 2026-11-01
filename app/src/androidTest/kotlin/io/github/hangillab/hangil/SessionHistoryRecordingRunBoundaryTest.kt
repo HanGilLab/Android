@@ -262,6 +262,7 @@ class SessionHistoryRecordingRunBoundaryTest {
                                 f.memos,
                                 f.runs,
                                 UnexpectedHistoryCourseCompletionRepository,
+                                UnexpectedHistorySessionMemoWriter,
                             ) as T
                         }
                     },

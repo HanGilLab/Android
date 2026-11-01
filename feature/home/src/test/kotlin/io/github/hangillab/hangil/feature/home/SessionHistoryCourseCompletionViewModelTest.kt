@@ -1047,6 +1047,7 @@ class SessionHistoryCourseCompletionViewModelTest {
                 },
                 UnexpectedHistoryRecordingRunRepository,
                 declarations,
+                UnexpectedHistorySessionMemoWriter,
             )
     }
 
