@@ -13,10 +13,10 @@ release/production 코드, 기존 LastKnown UI와 계약, DB/앱 원본 자료/m
 
 - [x] 공식 문서와 설치된1.1.3 AAR의 실제 등록/해제 ABI, 같은 listener/권한/연결 조건을 대조한다.
 - [x] debug 전용 프로브의 bounded owner/등록/해제/닫기/late callback/권한과 live gate 폐기, 후속 정리 실패를 제어 검사로 확인한다. release/기존 앱 흐름과 데이터는 그대로다.
-- [ ] 실제 Main/SDK/P+UX/미허용 선행 확인과 opt-in 절차를 준비하고 실기 결과/미실행을 구분한다. 성공 기본값/위치 주입/실제 좌표 공개를 하지 않는다.
+- [x] 실제 Main/SDK/P+UX/미허용 선행 확인과 opt-in 절차를 준비하고 실기 결과/미실행을 구분한다. 성공 기본값/위치 주입/실제 좌표 공개를 하지 않는다.
 - [ ] 실제 허용 검증이 가능한 경우 callback/Empty/error/timeout를 있는 그대로 기록하고 같은 listener 해제와 새 인스턴스 재시도를 확인한다. 미충족이면 이 조건은 체크하지 않는다.
 - [ ] 기존 원본/권한/runtime flags/font/night/IME/proxy와 소유 AVD/forward/DDS 정리, JDK17 전체 verify/native 컴파일/관련 실기와 최신 PR CI/Codex/미해결 지적을 확인한다.
-- [ ] 새 근거를 README4개와 비교하고 더 강한 원인/판단/실제 결과가 없으면4개/순서/6항목/22실제 발췌/18기존 이미지를 유지한다.
+- [x] 새 근거를 README4개와 비교하고 더 강한 원인/판단/실제 결과가 없으면4개/순서/6항목/22실제 발췌/18기존 이미지를 유지한다.
 
 ## 구현 단계
 
@@ -37,7 +37,10 @@ release/production 코드, 기존 LastKnown UI와 계약, DB/앱 원본 자료/m
 | 기존 PR8/10 | 미완료 보존 | PR8 원래 head review running, PR10 completed는 실제 원래 head와 다름. 새 승인으로 해석하지 않음 |
 | 공식 제출 안내7개/빈 양식1개 | 실제 GET/hash8개 동일 | 변경/새 발송/서명/추가 저장소 작업 없음 |
 | 공식 FusedLocation callback 안내 | 확인 | 아래 원문 링크. 실제 AAR/등록 성공/실제callback과는 별도 |
-| JDK17 전체 verify/native/실제 callback | 미실행 | 코드 추가 전 계획이며 성공으로 세지 않음 |
+| JDK17 전체 verify | 통과 | 제품60 suites/952 JVM, 별도 build-logic1 suite/4, 실패/오류/건너뜀0 |
+| native APK 포맷/컴파일 | 통과 | metadata 정정과 IME 정책 수정 후 별도 재검증 |
+| 실제 미허용 등록 차단 | 첫 실패 뒤 수정/재실행 통과 | 실제 Main/초기 SDK P+UX 아래 PERMISSION_DENIED, init/register0. 아래 실패 근거와 성공을 분리 |
+| 실제 업데이트 허용 수신 | 미실행 | 별도 callback 창의 새 동의가 없고 SDK 수신으로 기록하지 않음 |
 
 ## 남은 문제와 인계
 
@@ -79,3 +82,15 @@ JDK17 엄격 Spotless, 전체 verify4단계와 native APK 컴파일이 통과했
 ## README 사례 비교
 
 이번 gate 재검사 결함은 debug 기술 프로브의 명시적 제어 seam에서 재현했고 실제 SDK 업데이트 허용 수신은 미검증이다. 기존1번은 실제 SDK 주행 상태와 상세 조작 허용 시점,2번은 실제 Room 연결 자료의 원자적 삭제,3번은 비동기 지도 렌더/입력 소유권,4번은 실제 기록 소유권 반환과 복귀 화면의 경쟁 경계를 입증한다. 이번 근거가 이들보다 제품 영향과 실제 결과를 더 설득력 있게 입증하지 못하므로 모두 보존한다. README4개/순서/여섯 항목/22실제 발췌/18기존 이미지 checker가 통과했고 anchor 수정도 필요하지 않다. 새 성능 성과나 공개 진단 이미지는 추가하지 않는다.
+
+## 수정 후 실제 미허용 검증과 복구
+
+5d59a1a1096b83029979748249634099894b5d53 소스의 새 APK에서 명시 opt-in 미허용 시나리오가 통과했다. 실제 Main의 lifecycle/display/single focused-window와 초기 SDK 주차/UX 허용을 확인한 뒤 PERMISSION_DENIED로 종료했고 initialize/register/unregister/release 시도는 없다. 필요한 binding context close는 반환했다. SDK 콜백 수신은 false이며 SDK의 허용 수신/권한 오류 콜백을 확인한 것이 아니다.
+
+네이티브는 domain/전체 typed SQLite schema6/catalog/environment/공개 permission settings, SDK gate observer 닫힘, 원래 UIAutomation flag 복원을 확인했다. 외부 도구는 제한된 IME 설정, 모든 기존 행/값/타입/순서/sequence/권한/runtime flags/font/night/IME/proxy의 정확한 일치를 별도로 확인했다. 처음 실패한 보고서와 성공 보고서의 namespace/파일을 보존하고 성공만 첫 시도의 결과처럼 덮어쓰지 않았다.
+
+검증을 마친 뒤 직전 검증된 main 제품 APK와 기존 계측 APK를 데이터 삭제나 downgrade 없이 다시 설치했고 실제 설치 파일 hash까지 대조했다. 전용 debug 앱의 FUSED_LOCATION 권한은 계속 미허용이다. 새 callback 허용 검증은 실행하지 않았고 후보 APK는 ignored 영역에 따로 고정했다. foreground service도 없다. 종료 시 소유 AVD/포워딩/검증 DDS 탭만 정리한다.
+
+계측의 instance/final 스크린샷은 Main의 실제 display/전면을 확인한 진단 자료다. SDK 주차/UX 값이 미확인인 잠금 화면도 관찰됐으므로 이 화면을 항상 허용 상태의 증거나 공개 기능 화면으로 사용하지 않는다. 복구 cold start에서는 기본 내비가 전면에 오는 동작도 관찰해 Main을 다시 명시 실행했다. 원본 데이터/APK 보존과 cold-start 화면 상태를 구분한다. release 앱 동작/성능 향상, 실제 위치, 연속 기록이나 전체 APP-04/MAP-01 완료를 주장하지 않는다.
+
+현재 작업은 새 허용 callback 검증과 최신 PR 필수 CI/Codex가 남아 있어 active 계획으로 유지한다. 전체 완료/병합은 아직 승인하지 않았다.
