@@ -92,3 +92,25 @@
 무관한 종료 기록의 삭제로 session 목록이 다시 전달돼도 현재 활성 full source가 동일할 수 있다. 기존 제어 VM은 그 알림까지 sourceRevision 변경으로 처리해 SDK 등록 응답을 기다리는 명시 시작을 취소했다. 현재 활성/다른 종료 행에서 동일 활성 행만 남는 실제 Flow 입력으로 회귀를 먼저 추가했고 수정 전 해당 guard 유지 기대가 실패했다. 유효 Source.Active의 전체 PracticeSession이 같을 때에만 accepted-start의 sourceRevision/issued를 유지하고, 화면 revision은 계속 바꿔 옛 Ready 클릭을 차단하도록 분리했다. source 교체/종료/오류, 새 reader/host, 권한/주차/UX 상실은 기존 폐기를 유지한다. 수정 뒤 최종 전체 verify에서 해당 18개 제어 VM 회귀를 모두 통과했다. 수정 전 단일 실패와 같은 기대/입력을 유지했다. 이는 시작 의도와 UI receipt의 정확성 근거다.
 
 README의 발췌/소스 링크와 계획 갱신은 앱 실행 코드를 바꾸지 않으므로 별도 성능 측정 적용 대상이 아니다. 네 사례의 여섯 항목 순서, 실제 코드 일치/유효 줄 링크, 기존 이미지와 공개 민감 정보 검사를 수행한다. 제품 코드의 기존 행동 영향 측정은 앞선 A/B 계약을 그대로 따른다.
+
+
+## 실제 A/B 기존 행동 영향 관찰
+
+A는 `ab336ee`(제품 소스는 기준 main과 동일), B는 `4a6db65`의 debug APK다. 같은 frozen source `b9cdc721999866d5d6c93f2c6d4f8b1ab23a075179a349e73e96a5b10bd5f5f8`와 계측 APK를 두 번 사용했고 실제 설치 제품/계측 APK hash를 각각 고정 파일과 대조했다. JDK17, Pleos API34, font1.0/라이트, 실제 Main RESUMED/동일 display/focus/P+UX, 원래 nonlatest 메모/전체 source/version/catalog/environment와 미허용 권한 조건을 일치시켰다. Gradle 빌드는 AVD 수동 시나리오와 겹치지 않았다.
+
+| 단계 | warm/본 표본 | 중앙값(ms) | Q1/Q3(ms) | IQR(ms) | 최솟값/최댓값(ms) | 실패/누락/미실행/제외 |
+|---|---|---|---|---|---|---|
+| A | 5/30 | 930.950834 | 914.823667 / 941.282292 | 26.458625 | 863.816001 / 1051.131208 | 0/0/0/0 |
+| B | 5/30 | 913.8595835 | 904.772042 / 932.826459 | 28.054417 | 861.702084 / 983.843542 | 0/0/0/0 |
+
+정렬한 각 절반의 중앙값을 quartile로 사용했다. B−A 중앙값의 관찰 차이는 −17.0912505ms, 관찰 변화율은 −1.835891851%다. IQR가 겹치고 차이가 각 단계 IQR보다 작다. A/B 실행 순서와 OS/ART/JIT/열/캐시, additive schema 차이를 완전 통제하지 못했고 A2/downgrade도 하지 않았다. 따라서 개선, 인과적 저하, 동등성 또는 무회귀를 확정하지 않는다. 새 위치 수집/저장 성능이나 운전자 성과를 뜻하지 않는다. README에는 성능 성과로 추가하지 않는다.
+
+[정제한 실제 실행 순서의 70개 원값](../../development/measurements/2026-11-01-foreground-location-entry.csv)은 warm과 본 표본을 분리한 ns/ms 값만 담는다. 각 단계의 성공 표본은 빠르거나 느린 값을 포함해 모두 유지했다. 원래 source/메모, 개인 환경, 원문 로그는 포함하지 않는다. 재현은 계획에 명시한 원래 입력을 보존한 상태에서 같은 frozen `ForegroundLocationEntryReadMeasureTest#measureStoredMemoOpeningAndPreserveOriginalData`를 baseline/comparison stage로 각각 호출하고, schema6/7와 새 빈 table 두 개의 의도된 차이를 검증한다. 선언한 commit/source hash만 믿지 않고 설치 APK hash와 입력/환경 equality를 확인한다. 다른 입력을 만들거나 이전 schema를 재설치해 같은 실측이라고 하지 않는다.
+
+## 실제 수동 검증의 현재 범위
+
+- 실제 Android library-owned Room의 재열기/복구/연결 삭제와 commit 거부/좌표 없는 거부 metadata 검증을 통과했다. 제어 입력이며 실제 SDK 위치 수신으로 계산하지 않는다.
+- 실제 Main/Hilt SDK 권한 미허용에서 단일 시작 요청은 거부됐고 생성 run/update flow/local register 0을 확인했다. 소유 controller/store 정리, 원래 domain/typed SQLite/앱 읽기 가능 설정과 automation flags 보존도 통과했다. 전 앱의 모든 SDK 초기화가 0이라는 주장은 아니다.
+- 기본 font1.0/라이트에서 실제 제품 Route, 제어 SDK/차량 입력, 소유 Room의 명시 시작, D 수동 표본/상세 잠금, 중지, 종료 이력, PAUSE/STOP/원본 교체와 옛 클릭 차단을 통과했다. 실제 SDK의 D 수신 및 실제 Main STOP은 별도 미실행이다. 9개 anchor의 최소24sp TextLayout, glyph/줄 범위, ellipsis/overflow/viewport와 실제 화면을 비공개로 확인했다. SDK 위치/공개 사진이 아닌 제어 fixture의 실제 Compose UI다.
+- 확대1.3/다크 첫 실행은 세 사례 중 초기 실제 host/focus/display 확인 두 곳에서 실패했다. 원래 설정/DB/권한은 독립 정리와 전체 snapshot 대조로 복원됐다. 냉 시작 조건을 분리한 같은 APK 재시도도 첫 host receipt 재확인에서 실패하고 나머지 두 사례는 통과했다. 두 실패는 fixture/source/제어 UI 생성 이전이며 실제 어떤 lifecycle/focus/display 항이 바뀌었는지는 아직 미확인이다. 기존 라이트 cache를 다시 export한 archive는 다크 화면 근거로 세지 않는다. guard를 약화하지 않고 추가 진단을 준비한다. 확대 다크 UI와 해당 mode의 실제 미허용 검증은 완료로 세지 않는다.
+- 앞선 실제 메타데이터 관찰 두 창은 사용/복구 완료 상태다. 새 실제 SDK→소유 Room/D/Main STOP의 두 관찰 창은 새 동의 전 미실행이며 실제 허용/위치 저장/이동으로 대신 기록하지 않는다.

@@ -6,8 +6,11 @@ import android.graphics.Bitmap
 import android.graphics.Point
 import android.graphics.Rect
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.view.Display
+import android.view.PixelCopy
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
@@ -116,8 +119,11 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
 import java.time.Clock
+import java.util.IdentityHashMap
 import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
@@ -139,6 +145,7 @@ class LocationRecordingFlowTest {
     private val instrument get() = InstrumentationRegistry.getInstrumentation()
     private var actualHost: ComponentCatalogActivity? = null
     private var actualHostDisplay: Int? = null
+    private val activityNumbers = IdentityHashMap<ComponentCatalogActivity, Int>()
     private val visualEnabled get() = InstrumentationRegistry.getArguments().getString("manualLocationRecordingVisual") == "true"
     private val visualDirectory by lazy {
         File(instrument.targetContext.cacheDir, "screenshots/foreground-location-controlled-${UUID.randomUUID()}").apply { check(mkdirs()) }
@@ -603,43 +610,249 @@ class LocationRecordingFlowTest {
 
     /** Setup may wait for ActivityRule focus before any owned fixture or policy owner exists. */
     private fun prepareActualHost() {
-        check(actualHost == null && actualHostDisplay == null)
-        val deadline = SystemClock.elapsedRealtime() + 20_000
-        while (actualHost == null && SystemClock.elapsedRealtime() < deadline) {
-            instrument.runOnMainSync {
-                val activity = compose.activity
-                val display = activity.display
-                if (activity.lifecycle.currentState == Lifecycle.State.RESUMED && activity.hasWindowFocus() &&
-                    display != null && display.isValid
-                ) {
-                    actualHost = activity
-                    actualHostDisplay = display.displayId
+        var phase = "initial-focus-display-wait"
+        try {
+            check(actualHost == null && actualHostDisplay == null)
+            val deadline = SystemClock.elapsedRealtime() + 20_000
+            while (actualHost == null && SystemClock.elapsedRealtime() < deadline) {
+                instrument.runOnMainSync {
+                    val activity = compose.activity
+                    val display = activity.display
+                    if (activity.lifecycle.currentState == Lifecycle.State.RESUMED && activity.hasWindowFocus() &&
+                        display != null && display.isValid
+                    ) {
+                        actualHost = activity
+                        actualHostDisplay = display.displayId
+                    }
                 }
+                if (actualHost == null) SystemClock.sleep(50)
             }
-            if (actualHost == null) SystemClock.sleep(50)
-        }
-        assertTrue("Initial real Compose host focus/display must become known", actualHost != null && actualHostDisplay != null)
-        while (SystemClock.elapsedRealtime() < deadline) {
-            assertActualHostLifecycle()
-            val observed = actualFocusedPackage()
-            if (observed != null) {
-                assertTrue("Known foreign initial focus cannot be substituted", observed == instrument.targetContext.packageName)
-                return
+            assertTrue("Initial real Compose host focus/display must become known", actualHost != null && actualHostDisplay != null)
+            phase = "initial-captured-host-before-AX"
+            while (SystemClock.elapsedRealtime() < deadline) {
+                assertActualHostLifecycle()
+                phase = "initial-captured-host-AX-query"
+                val observed = actualFocusedPackage()
+                if (observed != null) {
+                    assertTrue("Known foreign initial focus cannot be substituted", observed == instrument.targetContext.packageName)
+                    return
+                }
+                phase = "initial-captured-host-before-AX"
+                SystemClock.sleep(50)
             }
-            SystemClock.sleep(50)
+            throw AssertionError("Initial actual focused package remained unknown")
+        } catch (failure: Throwable) {
+            recordHostFailure(phase, failure)
+            throw failure
         }
-        throw AssertionError("Initial actual focused package remained unknown")
     }
 
     /** Owned actions never wait for a foreign/unknown window to return or recapture a display. */
     private fun assertActualHost() {
-        assertActualHostLifecycle()
-        val observed = actualFocusedPackage()
-        assertTrue("Actual focused package is unknown at an owned action boundary", observed != null)
-        assertTrue(
-            "Known foreign focus at an owned action boundary must fail immediately",
-            observed == instrument.targetContext.packageName,
-        )
+        var phase = "strict-owned-host-lifecycle"
+        try {
+            assertActualHostLifecycle()
+            phase = "strict-owned-host-AX-query"
+            val observed = actualFocusedPackage()
+            assertTrue("Actual focused package is unknown at an owned action boundary", observed != null)
+            assertTrue(
+                "Known foreign focus at an owned action boundary must fail immediately",
+                observed == instrument.targetContext.packageName,
+            )
+        } catch (failure: Throwable) {
+            recordHostFailure(phase, failure)
+            throw failure
+        }
+    }
+
+    /** Diagnostics never issue a receipt, retry an action, substitute a package or change the original failure. */
+    private fun recordHostFailure(
+        phase: String,
+        primary: Throwable,
+    ) {
+        try {
+            writeHostFailure(phase, primary)
+        } catch (failure: Throwable) {
+            if (failure !== primary) primary.addSuppressed(failure)
+        }
+    }
+
+    private fun writeHostFailure(
+        phase: String,
+        primary: Throwable,
+    ) {
+        val proof =
+            JSONObject()
+                .put("schema", 1)
+                .put("kind", "controlled-host-failure-diagnostic")
+                .put("status", "failure-diagnostic-unverified")
+                .put("phase", phase)
+                .put("observedAtElapsedRealtimeMillis", SystemClock.elapsedRealtime())
+                .put("observationBasis", "fresh-after-original-guard-failure-not-an-atomic-replay-of-the-failed-condition")
+                .put("primaryFailureClass", primary.javaClass.name)
+                .put("foregroundSuccessEvidence", false)
+                .put("actualSdkLocation", false)
+                .put("permissionChanged", false)
+                .put("pngStatus", "not-attempted")
+        val errors = JSONArray()
+        proof.put("diagnosticFailures", errors)
+
+        fun attempt(
+            stage: String,
+            action: () -> Unit,
+        ) {
+            try {
+                action()
+            } catch (failure: Throwable) {
+                errors.put(JSONObject().put("stage", stage).put("class", failure.javaClass.name))
+                if (stage == "actual-window-surface-diagnostic" && proof.optString("pngStatus") != "unsupported-current-display") {
+                    proof.put("pngStatus", "failed-unverified-window-copy")
+                }
+                if (failure !== primary) primary.addSuppressed(failure)
+            }
+        }
+        var activity: ComponentCatalogActivity? = null
+        var currentDisplay: Int? = null
+        var defaultDisplay = false
+        val directory =
+            File(instrument.targetContext.cacheDir, "screenshots/foreground-location-controlled-host-failure-${UUID.randomUUID()}")
+        attempt("actual-activities") {
+            instrument.runOnMainSync {
+                val current = compose.activity
+                activity = current
+                val display = current.display
+                currentDisplay = display?.displayId
+                defaultDisplay = display != null && display.isValid && display.displayId == Display.DEFAULT_DISPLAY
+                val config = current.resources.configuration
+
+                fun identity(value: ComponentCatalogActivity?): Any =
+                    value?.let { activityNumbers.getOrPut(it) { activityNumbers.size + 1 } }
+                        ?: JSONObject.NULL
+                proof
+                    .put("capturedActivitySequence", identity(actualHost))
+                    .put("currentActivitySequence", identity(current))
+                    .put("sameActivity", actualHost?.let { it === current } ?: JSONObject.NULL)
+                    .put("currentLifecycle", current.lifecycle.currentState.name)
+                    .put("currentHasWindowFocus", current.hasWindowFocus())
+                    .put("currentDisplayKnown", display != null)
+                    .put("currentDisplayValid", display?.isValid ?: JSONObject.NULL)
+                    .put("currentDisplayId", display?.displayId ?: JSONObject.NULL)
+                    .put("capturedDisplayId", actualHostDisplay ?: JSONObject.NULL)
+                    .put("sameDisplay", actualHostDisplay?.let { it == display?.displayId } ?: JSONObject.NULL)
+                    .put("currentFontScale", config.fontScale.toDouble())
+                    .put("currentDark", config.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES)
+                val captured = actualHost
+                proof
+                    .put("capturedLifecycle", captured?.lifecycle?.currentState?.name ?: JSONObject.NULL)
+                    .put("capturedHasWindowFocus", captured?.hasWindowFocus() ?: JSONObject.NULL)
+                    .put("capturedDisplayCurrentlyValid", captured?.display?.isValid ?: JSONObject.NULL)
+                    .put(
+                        "capturedFontScale",
+                        captured
+                            ?.resources
+                            ?.configuration
+                            ?.fontScale
+                            ?.toDouble() ?: JSONObject.NULL,
+                    ).put(
+                        "capturedDark",
+                        captured?.resources?.configuration?.let {
+                            it.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
+                        } ?: JSONObject.NULL,
+                    )
+            }
+        }
+        attempt("expected-configuration") {
+            val args = InstrumentationRegistry.getArguments()
+            proof
+                .put("expectedFontScale", args.getString("expectedFontScale") ?: JSONObject.NULL)
+                .put("expectedDark", args.getString("expectedDark") ?: JSONObject.NULL)
+        }
+        attempt("actual-focused-windows") {
+            val flags = instrument.uiAutomation.serviceInfo.flags
+            proof
+                .put("automationFlags", flags)
+                .put("interactiveWindowFlag", flags and AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS != 0)
+            val scopedDisplay = actualHostDisplay ?: currentDisplay
+            proof
+                .put("focusedWindowDisplayId", scopedDisplay ?: JSONObject.NULL)
+                .put("focusedWindowDisplayBasis", if (actualHostDisplay != null) "captured" else "current-provisional-not-a-receipt")
+            val allDisplays = instrument.uiAutomation.windowsOnAllDisplays
+            val allWindows = buildList { for (index in 0 until allDisplays.size()) addAll(allDisplays.valueAt(index)) }
+            try {
+                val windows = scopedDisplay?.let { allDisplays[it] }
+                proof
+                    .put("scopedWindowsKnown", windows != null)
+                    .put("sameDisplayConsistent", windows?.all { it.displayId == scopedDisplay } ?: JSONObject.NULL)
+                    .put("focusedWindowCount", windows?.count { it.isFocused } ?: JSONObject.NULL)
+                val focused = JSONArray()
+                windows?.filter { it.isFocused }?.forEach { window ->
+                    val root = window.root
+                    try {
+                        focused.put(
+                            JSONObject()
+                                .put("displayId", window.displayId)
+                                .put("type", window.type)
+                                .put("focused", window.isFocused)
+                                .put("active", window.isActive)
+                                .put("rootKnown", root != null)
+                                .put("package", root?.packageName?.toString() ?: JSONObject.NULL),
+                        )
+                    } finally {
+                        root?.recycle()
+                    }
+                }
+                proof.put("focusedWindows", focused)
+            } finally {
+                allWindows.forEach { it.recycle() }
+            }
+        }
+        attempt("private-directory") { check(directory.mkdirs()) }
+        attempt("actual-window-surface-diagnostic") {
+            if (!defaultDisplay) proof.put("pngStatus", "unsupported-current-display")
+            check(defaultDisplay) { "Window diagnostic is unsupported off the known actual default display" }
+            proof.put("pngStatus", "pending-unverified-window-copy")
+            val target = checkNotNull(activity)
+            val size = Point()
+            instrument.runOnMainSync {
+                val display = checkNotNull(target.display)
+                check(display.isValid && display.displayId == Display.DEFAULT_DISPLAY)
+                size.set(target.window.decorView.width, target.window.decorView.height)
+            }
+            check(size.x > 0 && size.y > 0)
+            val bitmap = Bitmap.createBitmap(size.x, size.y, Bitmap.Config.ARGB_8888)
+            val complete = CountDownLatch(1)
+            val result = AtomicInteger(-1)
+            val releaseWhenComplete = AtomicBoolean(false)
+            val recycled = AtomicBoolean(false)
+            var submitted = false
+
+            fun release() {
+                if (recycled.compareAndSet(false, true)) bitmap.recycle()
+            }
+            try {
+                PixelCopy.request(target.window, bitmap, { outcome ->
+                    result.set(outcome)
+                    complete.countDown()
+                    if (releaseWhenComplete.get()) release()
+                }, Handler(Looper.getMainLooper()))
+                submitted = true
+                check(complete.await(5, TimeUnit.SECONDS)) { "Actual window PixelCopy did not finish" }
+                proof.put("pixelCopyResult", result.get())
+                check(result.get() == PixelCopy.SUCCESS) { "Actual window surface was unavailable" }
+                File(directory, "failure-diagnostic-unverified.png").outputStream().use {
+                    check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it))
+                }
+                proof
+                    .put("pngStatus", "saved-failure-diagnostic-unverified")
+                    .put("captureBasis", "PixelCopy-actual-test-Activity-window-surface-not-foreground-proof")
+                    .put("pngWidth", bitmap.width)
+                    .put("pngHeight", bitmap.height)
+            } finally {
+                releaseWhenComplete.set(true)
+                if (!submitted || complete.count == 0L) release()
+            }
+        }
+        attempt("save-private-diagnostic") { File(directory, "host-failure.json").writeText(proof.toString(2)) }
     }
 
     private fun assertActualHostLifecycle() {
