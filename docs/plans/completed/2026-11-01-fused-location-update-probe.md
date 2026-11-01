@@ -14,8 +14,8 @@ release/production 코드, 기존 LastKnown UI와 계약, DB/앱 원본 자료/m
 - [x] 공식 문서와 설치된1.1.3 AAR의 실제 등록/해제 ABI, 같은 listener/권한/연결 조건을 대조한다.
 - [x] debug 전용 프로브의 bounded owner/등록/해제/닫기/late callback/권한과 live gate 폐기, 후속 정리 실패를 제어 검사로 확인한다. release/기존 앱 흐름과 데이터는 그대로다.
 - [x] 실제 Main/SDK/P+UX/미허용 선행 확인과 opt-in 절차를 준비하고 실기 결과/미실행을 구분한다. 성공 기본값/위치 주입/실제 좌표 공개를 하지 않는다.
-- [ ] 실제 허용 검증이 가능한 경우 callback/Empty/error/timeout를 있는 그대로 기록하고 같은 listener 해제와 새 인스턴스 재시도를 확인한다. 미충족이면 이 조건은 체크하지 않는다.
-- [ ] 기존 원본/권한/runtime flags/font/night/IME/proxy와 소유 AVD/forward/DDS 정리, JDK17 전체 verify/native 컴파일/관련 실기와 최신 PR CI/Codex/미해결 지적을 확인한다.
+- [x] 실제 허용 검증이 가능한 경우 callback/Empty/error/timeout를 있는 그대로 기록하고 같은 listener 해제와 새 인스턴스 재시도를 확인한다. 미충족이면 이 조건은 체크하지 않는다.
+- [x] 기존 원본/권한/runtime flags/font/night/IME/proxy와 소유 AVD/forward/DDS 정리, JDK17 전체 verify/native 컴파일/관련 실기와 최신 PR CI/Codex/미해결 지적을 확인한다.
 - [x] 새 근거를 README4개와 비교하고 더 강한 원인/판단/실제 결과가 없으면4개/순서/6항목/22실제 발췌/18기존 이미지를 유지한다.
 
 ## 구현 단계
@@ -40,7 +40,9 @@ release/production 코드, 기존 LastKnown UI와 계약, DB/앱 원본 자료/m
 | JDK17 전체 verify | 통과 | 제품60 suites/952 JVM, 별도 build-logic1 suite/4, 실패/오류/건너뜀0 |
 | native APK 포맷/컴파일 | 통과 | metadata 정정과 IME 정책 수정 후 별도 재검증 |
 | 실제 미허용 등록 차단 | 첫 실패 뒤 수정/재실행 통과 | 실제 Main/초기 SDK P+UX 아래 PERMISSION_DENIED, init/register0. 아래 실패 근거와 성공을 분리 |
-| 실제 업데이트 허용 수신 | 미실행 | 별도 callback 창의 새 동의가 없고 SDK 수신으로 기록하지 않음 |
+| 실제 업데이트 허용 수신 | 새 사용자 동의 후 두 인스턴스 관찰 완료 | 실제 LOCATION_CALLBACK18/20개, 각 최대20초 창. 위치의 현재성/정확도/이동/저장 증거와 구분 |
+| 임시 권한 회수/원형 복구 | 최초 회수 후 읽기 실패를 보존하고 후속 복구 통과 | 같은 권한의 원래 false/0flags 행을 재구성한 뒤 전체 typed 원형 exact. 허용 검증 재실행 없음 |
+| 회수 후 실제 미허용 차단 | 통과 | 새 미허용 인스턴스가 init/register0으로 종료. 원본/설정 보존 |
 
 ## 남은 문제와 인계
 
@@ -63,13 +65,13 @@ SDK timestampMillis 시간 기준과 confidence 단위/범위는 미정의다. �
 
 수정은 debug probe 한 파일에서 permission 조회 뒤 closed/deadline/최신 gate를 다시 확인하는 경계다. 조회 예외의 unknown/null과 gate 예외의 단계, false permission의 PERMISSION_DENIED 및 최초 Throwable/정리 suppressed를 유지했다. 동일 테스트 source SHA6a29b2da0862ca3f76bf4bae39e4c79ad7236e3fa4908e8e05cf164a71afd396의29개가 모두 통과했다. 기대/timeout/기존UI/manifest를 완화하지 않았다.
 
-JDK17 엄격 Spotless, 전체 verify4단계와 native APK 컴파일이 통과했다. 제품60 suites/952 JVM와 별도 build-logic1 suite/4개는 실패/오류/건너뜀0이다. cache/up-to-date 가능성을 포함한 회귀 근거이며 SDK/앱 성능 수치가 아니다. 실제 native는 아직 미실행이다. native metadata의 actualSdk라는 두 필드는 실제 adapter 출처와 실제 initialize/register 여부/SDK callback receipt를 구분하도록 정정했고 해당 변경의 포맷/컴파일도 별도 확인한다. 정적 치환 guard의 잘못된 단일 출현 전제 중단1회와 sandbox 파일쓰기 준비 실패는 native/SDK 실패가 아니다.
+JDK17 엄격 Spotless, 전체 verify4단계와 native APK 컴파일이 통과했다. 제품60 suites/952 JVM와 별도 build-logic1 suite/4개는 실패/오류/건너뜀0이다. cache/up-to-date 가능성을 포함한 회귀 근거이며 SDK/앱 성능 수치가 아니다. 이 단계에서는 실제 native가 미실행이었다. native metadata의 actualSdk라는 두 필드는 실제 adapter 출처와 실제 initialize/register 여부/SDK callback receipt를 구분하도록 정정했고 해당 변경의 포맷/컴파일도 별도 확인한다. 정적 치환 guard의 잘못된 단일 출현 전제 중단1회와 sandbox 파일쓰기 준비 실패는 native/SDK 실패가 아니다.
 
 ## release 불변과 성능 적용 제외 근거
 
 기존 before unsigned release APK와 전체 검사 뒤 산출물을 실제 zip entry별 대조했다. 전체 APK hash는 달랐으므로 byte 동일로 기록하지 않는다. 다른 항목은 META-INF/version-control-info.textproto 한 개이며197개 DEX/manifest/resources 등 payload는 같다. 비교한 이전 산출물의 형식적 source-to-binary 재현 증명은 주장하지 않는다. production/release/기존UI/source 및 SDK/권한/DB 버전의 Git diff도 없다. 이 test/debug 프로브가 기존 사용자 흐름의 실행 성능을 개선한 것으로 해석하거나 별도 속도 수치를 만들지 않는다.
 
-## 현재 권한 경계와 실제 검증 대기
+## 허용 검증 전에 유지한 승인 경계
 
 이전 일회성 LastKnown 검증을 완료한 동의를 새 업데이트 리스너 검증의 허용으로 자동 갱신하지 않는다. 새 코드에는 권한 요청/부여가 없고 이미 허용된 별도 시나리오는 명시 옵션과 실제 grant를 모두 요구한다. 우선 미허용 등록 차단/원형 보존과 코드 검토 가능한 PR를 준비한다. 새 callback 허용 관찰은 구체적인 조건의 동의를 확인하기 전 미실행이며 이 계획의 해당 완료 조건은 체크하지 않는다.
 
@@ -93,10 +95,37 @@ JDK17 엄격 Spotless, 전체 verify4단계와 native APK 컴파일이 통과했
 
 계측의 instance/final 스크린샷은 Main의 실제 display/전면을 확인한 진단 자료다. SDK 주차/UX 값이 미확인인 잠금 화면도 관찰됐으므로 이 화면을 항상 허용 상태의 증거나 공개 기능 화면으로 사용하지 않는다. 복구 cold start에서는 기본 내비가 전면에 오는 동작도 관찰해 Main을 다시 명시 실행했다. 원본 데이터/APK 보존과 cold-start 화면 상태를 구분한다. release 앱 동작/성능 향상, 실제 위치, 연속 기록이나 전체 APP-04/MAP-01 완료를 주장하지 않는다.
 
-현재 작업은 새 허용 callback 검증과 최신 PR 필수 CI/Codex가 남아 있어 active 계획으로 유지한다. 전체 완료/병합은 아직 승인하지 않았다.
+PR 최초 작성 시점에는 새 허용 callback 검증과 최신 PR CI/Codex를 미완료로 남겼다. 이후의 실제 결과는 아래 승인 후 관찰과 후속 복구 항목을 따른다.
 
 ## 실제 복구 화면과 안전한 대기
 
 원래 제품/계측 APK로 복구한 뒤 Main의 topResumedActivity/currentFocus와 실제 화면을 확인했다. cold start의 미확인 잠금과 기본 내비 전면을 복구 실패나 성공으로 단정하지 않고, 다시 실행한 Main에서 최종 주차 확인 홈과 주요 버튼이 표시되는 것을 확인했다. 별도 위치 프로브/추가 gateway 구독을 유지해 만든 성공 화면이 아니다. 이 관찰로 시작 지연이나 성능 전후 값을 산출하지 않았다. 최종 전체 원형과 외부 제한 IME를 다시 대조한 다음 이번 소유 DDS 탭/포워딩/AVD만 종료했다.
 
 PR #73은 ois0886을 담당자로 지정했다. 최신 head 필수 CI와 Codex 리뷰를 추적한다. 실제 callback 허용 검증은 미실행으로 남아 있어 자동 병합을 승인하지 않는다. 새 허용 창은 같은 전용 debug 앱의 FUSED_LOCATION 하나에 한하며, 전면 Main/현재 P+UX 아래 최대20초의 두 인스턴스 관찰 뒤 임시 권한과 원래 플래그/데이터/설정을 복구하는 범위다. 새 동의는 현재 run/코드/범위와 결속하고 실제 시도 전에 한 번 소비해 자동 반복하지 않는다. 원문 좌표 기록, 백그라운드 수집, provider 주입이나 다른 권한은 포함하지 않는다. 사용자 답변이 없으면 승인으로 추정하지 않고 후보와 PR를 보존한다.
+
+## 새 명시 동의 이후 실제 SDK 업데이트
+
+사용자가 이 채팅에서 같은 전용 debug 앱의 FUSED_LOCATION 하나에 최대20초씩 두 창만 새로 허용했다. 이전 LastKnown 일회성 동의는 수정/재사용하지 않았다. 검증 코드5d59a1a1096b83029979748249634099894b5d53과 실제 설치된 후보 제품/계측 APK hash를 대조하고, 새 관찰 직전에도 전체 원형과 원래 미허용을 다시 확인했다. 새 동의는 현재 run/소스/범위와 결속하고 grant 의도/소유 user를 명령 전에 저장했으며 native 진입 전에 한 번 소비했다.
+
+지원되지 않는 shell 권한 조회 명령과 PackageManager 전체 덤프의 Queries 아래 반복 User 헤더를 primary package로 잘못 해석한 외부 파서 사전 검사는 권한 변경 전에 중단했다. 실제 장치 도움말과 primary package의 유일한 설치 user/runtime section을 근거로 읽기 범위를 좁혔고, missing/중복/unknown을 정상값으로 바꾸지 않았다. 이 준비 실패는 SDK 콜백 실패나 승인 창 사용 횟수에 넣지 않는다. 앱의 실제 checkSelfPermission과 외부 PackageManager typed row를 독립 대조했다.
+
+허용 native 메서드는 한 번 실행했고 그 안의 서로 다른 두 인스턴스에서 실제 SDK LOCATION_CALLBACK을 각각18개와20개 수신했다. 이는 서로 다른 위치 수나 성능 지표가 아닌 callback 관찰 개수다. 두 창 모두 현재 SDK P/UX 허용과 실제 전면 Main을 확인했고 supported/permission은 true였다. initialize/register/unregister/binding close/release의 로컬 호출 시도와 반환, cleanupComplete를 확인했다. 두 인스턴스의 TIMED_OUT은 콜백을 수신한 제한 창의 종료 사유이며 무수신으로 해석하지 않는다. 실제 Empty/error callback은 관찰되지 않았다.
+
+관측한 구조적 좌표 유효 여부만 metadata로 남기고 좌표, SDK 원본 시각/confidence와 원문 오류는 저장하지 않았다. 실제 위치의 현재성/정확도, 이동/서로 다른 지점, 끊김 없는 연속성, 위치 DB 기록, 백그라운드 수집과 원격 provider 정지 ACK는 입증하지 않았다. 제어 검사에서의 Empty/error/늦은 callback과 이번 실제 수신은 별도 근거다. 화면은 실제 Main/display 진단으로만 사용하며, Home의 미확인 잠금 프레임을 항상 UI 허용 상태였던 것처럼 쓰거나 공개 기능 화면으로 추가하지 않는다.
+
+## 권한 회수의 첫 복구 판정 실패와 후속 실제 복구
+
+finally에서 고정한 소유 user의 같은 FUSED_LOCATION을 회수하는 명령은 반환했다. 그러나 실제 직후 primary package/runtime에서 소유 user의 원래 false/0flags 행 자체가 사라져 외부 읽기와 전체 원형 검사가 실패했다. 다른 user의 false 행을 소유 user의 상태로 빌리거나 누락을 false 기본값으로 바꾸지 않았다. 최초 외부 실행 보고서는 native 절차 통과와 restoration_verified=false를 함께 보존하며 후속 복구로 덮지 않는다.
+
+원래 소유 user의 행이 명시적 granted=false/0flags였다는 사전 근거를 확인한 뒤 같은 FUSED_LOCATION의 user-set/user-fixed를 원래0으로 clear해 실제 false/0flags 행을 재구성했다. 다른 user/권한이나 전체 permission reset은 건드리지 않았고 재grant나 허용 native 재시도도 없다. 그 뒤 실제 primary/runtime row와 전체 SQLite/domain/catalog/환경/모든 grant/runtime flags/font/night/IME/proxy가 원래 값/타입/순서/sequence까지 정확히 같음을 확인했다. 제한된 enabled_input_methods도 외부에서 새로 읽어 정확한 일치를 확인했다.
+
+회수 후 별도 미허용 native가 실제 checkSelfPermission=false와 PERMISSION_DENIED, init/register0을 확인했다. 이 미허용 차단 확인은 새 허용 callback 창이 아니다. 기존 제품/계측 APK를 다시 설치하고 실제 설치 hash와 전체 원형을 대조했다. 새 동의의 consumed와 grant intent는 해제하지 않고 복구 완료만 별도 기록했다.
+
+## 최종 범위와 사례 재비교
+
+이 작업의 완료 범위는 debug SDK 등록/해제 기술 프로브와 실제 허용/미허용 관찰 및 원형 복구다. 위치/차량 기록 제품 연결과 지도 채택, SDK 시각/신뢰도 의미, 전체 MAP-01/APP-04 및 ENV-06은 별도 미완료로 유지한다. 필수19/54와 선택3개 제외도 바뀌지 않는다. 새 관찰 후에도 기존 README1번의 실제 주행 상세 조작,2번의 Room 연결 자료 원자성,3번의 지도 비동기 렌더/입력 소유권,4번의 기록 소유권/복귀 화면 경쟁보다 이 debug 프로브의 제품 영향과 해결 결과가 더 강하다고 판단할 근거가 없다. 기존4개와 순서,22발췌/18이미지를 보존한다. 시간 제한/콜백 개수/회귀 검사 수를 성능 개선으로 쓰지 않는다.
+
+제품 소스가 포함된 PR head246203a의 필수 CI4개(실행41266980425, attempt1)와 Codex 리뷰 지적 없음/미해결0을 확인했다. 실제 허용/회수 결과를 추가한 최종 문서 head는 GitHub의 현재 head를 기준으로 필수 CI/Codex와 미해결 지적을 다시 확인한 뒤에만 병합한다. 진행 중/실패/제한 상태를 승인으로 처리하지 않는다.
+
+
+최종 복구 뒤 실제 설치된 이전 제품/계측 APK hash를 다시 확인했고, 독립 실행한 Main의 실제 topResumed/currentFocus와 주차 확인 홈/주요 버튼 표시까지 확인했다. 그 뒤 제한 IME와 전체 원형을 새로 대조하고 이번 소유 DDS 탭/forward/AVD만 종료했다. 원래 AVD나 사용자 데이터는 삭제하지 않았다. 새 동의는 소비/복구 완료 상태이며 추가 허용 관찰로 자동 재사용하지 않는다.
