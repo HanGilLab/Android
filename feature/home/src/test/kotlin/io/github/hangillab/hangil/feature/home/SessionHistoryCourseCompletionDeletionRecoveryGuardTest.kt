@@ -430,6 +430,7 @@ class SessionHistoryCourseCompletionDeletionRecoveryGuardTest {
                 UnexpectedHistoryMemoRepository,
                 UnexpectedHistoryRecordingRunRepository,
                 completions,
+                UnexpectedHistorySessionMemoWriter,
             )
 
         init {

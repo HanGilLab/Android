@@ -498,6 +498,7 @@ class SessionDeletionFlowTest {
                                 UnexpectedHistoryMemoRepository,
                                 UnexpectedHistoryRecordingRunRepository,
                                 UnexpectedHistoryCourseCompletionRepository,
+                                UnexpectedHistorySessionMemoWriter,
                             ) as T
                         }
                     }

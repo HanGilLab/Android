@@ -217,6 +217,7 @@ class SessionHistoryObservationBoundaryTest {
                             UnexpectedHistoryMemoRepository,
                             UnexpectedHistoryRecordingRunRepository,
                             UnexpectedHistoryCourseCompletionRepository,
+                            UnexpectedHistorySessionMemoWriter,
                         ) as T
                     }
                 }

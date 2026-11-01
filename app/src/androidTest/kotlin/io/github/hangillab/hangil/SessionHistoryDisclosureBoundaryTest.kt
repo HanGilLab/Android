@@ -123,6 +123,7 @@ class SessionHistoryDisclosureBoundaryTest {
                             UnexpectedHistoryMemoRepository,
                             UnexpectedHistoryRecordingRunRepository,
                             UnexpectedHistoryCourseCompletionRepository,
+                            UnexpectedHistorySessionMemoWriter,
                         ) as T
                     }
                 }

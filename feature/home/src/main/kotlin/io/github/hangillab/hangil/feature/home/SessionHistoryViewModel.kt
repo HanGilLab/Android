@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.github.hangillab.hangil.core.domain.CourseCompletionRepository
 import io.github.hangillab.hangil.core.domain.DrivingRestrictionsProvider
+import io.github.hangillab.hangil.core.domain.HistorySessionMemoWriter
 import io.github.hangillab.hangil.core.domain.PracticeSession
 import io.github.hangillab.hangil.core.domain.PracticeSessionRepository
 import io.github.hangillab.hangil.core.domain.RecordingRunRepository
@@ -61,13 +62,14 @@ class SessionHistoryViewModel
         memos: SessionMemoRepository,
         recordingRuns: RecordingRunRepository,
         courseCompletions: CourseCompletionRepository,
+        historyMemoWriter: HistorySessionMemoWriter,
     ) : ViewModel() {
         private val lock = Any()
         private val storedObservations = SessionHistoryObservationReader(lock, observations, ::canRead)
-        private val storedMemos = SessionHistoryMemoReader(lock, memos, ::canRead)
+        private val storedMemos = SessionHistoryMemoReader(lock, memos, historyMemoWriter, ::canRead)
         private val storedRecordingRuns = SessionHistoryRecordingRunReader(lock, recordingRuns, ::canRead)
         private val courseCompletion = SessionHistoryCourseCompletionReader(lock, courseCompletions, ::canRead)
-        private val courseCompletionReads = MutableStateFlow(0L)
+        private val deletionDetailReads = MutableStateFlow(0L)
         private var receivedHasActiveSession: Boolean? = null
         private val published = MutableStateFlow<SessionHistoryUiState>(SessionHistoryUiState.Loading)
         private val requests = MutableStateFlow(0L)
@@ -253,21 +255,29 @@ class SessionHistoryViewModel
             historyGeneration: Long,
             canKeepOpen: () -> Boolean,
         ): Flow<SessionHistoryMemoUiState> =
-            storedMemos.observe(expected, historyGeneration, canKeepOpen) {
-                val owner = reader
-                val query = owner?.query
-                if (owner == null || query == null || selectionSnapshotLocked(expected.sessionId, historyGeneration)?.session != expected) {
-                    null
-                } else {
-                    SessionHistoryMemoReader.Binding(
-                        isCurrent = {
-                            currentQuery(owner, query) &&
-                                selectionSnapshotLocked(expected.sessionId, historyGeneration)?.session == expected
-                        },
-                        denyAccess = {
-                            if (currentQuery(owner, query)) restartDeniedQueryLocked(owner, query)
-                        },
-                    )
+            deletionDetailReads.flatMapLatest {
+                storedMemos.observe(expected, historyGeneration, canKeepOpen) {
+                    val owner = reader
+                    val query = owner?.query
+                    if (owner == null || query == null ||
+                        selectionSnapshotLocked(expected.sessionId, historyGeneration)?.session != expected
+                    ) {
+                        null
+                    } else {
+                        SessionHistoryMemoReader.Binding(
+                            isCurrent = {
+                                currentQuery(owner, query) &&
+                                    selectionSnapshotLocked(expected.sessionId, historyGeneration)?.session == expected
+                            },
+                            denyAccess = {
+                                if (currentQuery(owner, query)) restartDeniedQueryLocked(owner, query)
+                            },
+                            canWrite = {
+                                receivedHasActiveSession == false &&
+                                    deletion?.phase !in listOf(DeletionPhase.PREPARING, DeletionPhase.CONFIRMING, DeletionPhase.DELETING)
+                            },
+                        )
+                    }
                 }
             }
 
@@ -281,7 +291,7 @@ class SessionHistoryViewModel
             historyGeneration: Long,
             canKeepOpen: () -> Boolean,
         ): Flow<SessionHistoryCourseCompletionUiState> =
-            courseCompletionReads.flatMapLatest {
+            deletionDetailReads.flatMapLatest {
                 courseCompletion.observe(expected, historyGeneration, canKeepOpen) {
                     val owner = reader
                     val query = owner?.query
@@ -325,6 +335,25 @@ class SessionHistoryViewModel
 
         fun retryStoredMemo(token: SessionHistoryMemoUiState.Token): Boolean = storedMemos.retry(token)
 
+        fun beginStoredMemoEdit(token: SessionHistoryMemoUiState.Token): Boolean = storedMemos.beginEdit(token)
+
+        fun editStoredMemo(
+            token: SessionHistoryMemoUiState.Token,
+            nonce: Long,
+            text: String,
+        ): Boolean = storedMemos.edit(token, nonce, text)
+
+        fun cancelStoredMemoEdit(
+            token: SessionHistoryMemoUiState.Token,
+            nonce: Long,
+        ): Boolean = storedMemos.cancelEdit(token, nonce)
+
+        fun saveStoredMemo(
+            token: SessionHistoryMemoUiState.Token,
+            nonce: Long,
+            expectedText: String,
+        ): Boolean = storedMemos.save(token, nonce, expectedText)
+
         /** No additional database read exists until a visible, source-bound request is accepted. */
         fun requestDeletion(
             expectedSessionId: String,
@@ -350,6 +379,7 @@ class SessionHistoryViewModel
                     }
                     val current = currentSelectionLocked(expectedSessionId, expectedGeneration) ?: return@synchronized null
                     if (!canKeepOpen()) return@synchronized null
+                    if (storedMemos.isEditing()) return@synchronized null
                     if (deletion?.phase in listOf(DeletionPhase.PREPARING, DeletionPhase.CONFIRMING, DeletionPhase.DELETING)) {
                         return@synchronized null
                     }
@@ -357,6 +387,7 @@ class SessionHistoryViewModel
                     val owner = checkNotNull(reader)
                     val query = checkNotNull(owner.query)
                     courseCompletion.invalidate()
+                    storedMemos.invalidate()
                     val action = DeletionAction(++deletionNonce, owner, query, current.session, current.generation, canKeepOpen)
                     val job =
                         viewModelScope.launch(start = CoroutineStart.LAZY) {
@@ -395,9 +426,9 @@ class SessionHistoryViewModel
         fun dismissDeletion(nonce: Long): Boolean =
             synchronized(lock) {
                 val action = deletion?.takeIf { it.nonce == nonce } ?: return@synchronized false
-                val recoverCourseCompletion = takeCourseCompletionRecoveryLocked(action)
+                val recoverDetails = takeDetailReadRecoveryLocked(action)
                 invalidateDeletionLocked()
-                if (recoverCourseCompletion) courseCompletionReads.value++
+                if (recoverDetails) deletionDetailReads.value++
                 true
             }
 
@@ -575,16 +606,16 @@ class SessionHistoryViewModel
             reason: SessionDeletionUiState.FailureReason,
         ) {
             val recoverPreparation = action.phase == DeletionPhase.PREPARING
-            if (reason == SessionDeletionUiState.FailureReason.MISSING) action.courseCompletionRecoveryPending = false
+            if (reason == SessionDeletionUiState.FailureReason.MISSING) action.detailReadRecoveryPending = false
             action.phase = DeletionPhase.FAILED
             action.job = null
             deletionPublished.value = SessionDeletionUiState.Failed(action.nonce, action.session, reason)
-            if (recoverPreparation && takeCourseCompletionRecoveryLocked(action)) courseCompletionReads.value++
+            if (recoverPreparation && takeDetailReadRecoveryLocked(action)) deletionDetailReads.value++
         }
 
-        private fun takeCourseCompletionRecoveryLocked(action: DeletionAction): Boolean {
-            if (!action.courseCompletionRecoveryPending) return false
-            action.courseCompletionRecoveryPending = false
+        private fun takeDetailReadRecoveryLocked(action: DeletionAction): Boolean {
+            if (!action.detailReadRecoveryPending) return false
+            action.detailReadRecoveryPending = false
             return !action.sourceAbsent && action.phase != DeletionPhase.DELETING &&
                 action.phase != DeletionPhase.DELETED && currentDeletionContextLocked(action)
         }
@@ -902,7 +933,7 @@ class SessionHistoryViewModel
             var target: SessionDeletionTarget? = null
             var job: Job? = null
             var sourceAbsent = false
-            var courseCompletionRecoveryPending = true
+            var detailReadRecoveryPending = true
         }
 
         private enum class DeletionPhase { PREPARING, CONFIRMING, DELETING, FAILED, DELETED }

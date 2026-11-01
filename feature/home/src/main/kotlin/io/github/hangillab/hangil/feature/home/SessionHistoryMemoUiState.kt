@@ -3,7 +3,7 @@ package io.github.hangillab.hangil.feature.home
 import io.github.hangillab.hangil.core.domain.PracticeSession
 import io.github.hangillab.hangil.core.domain.SessionMemo
 
-/** A read-only user note bound to one immutable history selection, never an SDK observation. */
+/** One selected historical user note and revocable, explicit edits; never an SDK observation. */
 sealed interface SessionHistoryMemoUiState {
     val source: PracticeSession
     val historyGeneration: Long
@@ -27,14 +27,14 @@ sealed interface SessionHistoryMemoUiState {
         override val token: Token,
     ) : SessionHistoryMemoUiState
 
-    /** The captured source/host expired; this does not assert that the note was deleted. */
+    /** Expired source/host does not assert that the stored note was deleted. */
     data class Unavailable(
         override val source: PracticeSession,
         override val historyGeneration: Long,
         override val token: Token,
     ) : SessionHistoryMemoUiState
 
-    /** Only an actual null repository receipt means the selected record has no note. */
+    /** Only a real null receipt means the selected record has no note. */
     data class Empty(
         override val source: PracticeSession,
         override val historyGeneration: Long,
@@ -46,6 +46,7 @@ sealed interface SessionHistoryMemoUiState {
         override val historyGeneration: Long,
         override val token: Token,
         val reason: FailureReason,
+        val retainedDraft: String? = null,
     ) : SessionHistoryMemoUiState
 
     data class Ready(
@@ -53,7 +54,41 @@ sealed interface SessionHistoryMemoUiState {
         override val historyGeneration: Long,
         override val token: Token,
         val memo: SessionMemo,
+        val canEdit: Boolean = false,
+        val feedback: Feedback? = null,
     ) : SessionHistoryMemoUiState
 
-    enum class FailureReason { MEMO_READ, MEMO_STREAM_COMPLETED, INVALID_MEMO }
+    data class Editing(
+        override val source: PracticeSession,
+        override val historyGeneration: Long,
+        override val token: Token,
+        val memo: SessionMemo,
+        val draft: String,
+        val nonce: Long,
+    ) : SessionHistoryMemoUiState
+
+    data class Saving(
+        override val source: PracticeSession,
+        override val historyGeneration: Long,
+        override val token: Token,
+        val memo: SessionMemo,
+        val draft: String,
+        val nonce: Long,
+    ) : SessionHistoryMemoUiState
+
+    enum class Feedback { SAVED, RELOADED }
+
+    enum class FailureReason {
+        MEMO_READ,
+        MEMO_STREAM_COMPLETED,
+        INVALID_MEMO,
+        CONFLICT,
+        BLOCKED,
+        INVALID_TEXT,
+        SESSION_CHANGED,
+        SESSION_ACTIVE,
+        MISSING_SESSION,
+        WRITE_UNCONFIRMED,
+        INVALID_SAVE_RESULT,
+    }
 }

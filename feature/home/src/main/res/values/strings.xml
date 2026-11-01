@@ -236,4 +236,10 @@
     <string name="course_completion_retry">다시 불러오기</string>
     <string name="history_delete_completion_present">사용자 마무리 선언 있음</string>
     <string name="history_delete_completion_absent">사용자 마무리 선언 없음</string>
+    <string name="history_memo_edit_context">%1$s / %2$s의 메모</string>
+    <string name="history_memo_conflict">저장된 메모가 바뀌었어요. 다시 읽은 뒤 수정해 주세요.</string>
+    <string name="history_memo_edit_blocked">연습 중이 아니고 주차와 화면 사용이 허용될 때 수정할 수 있어요.</string>
+    <string name="history_memo_write_unconfirmed">저장 결과를 확인하지 못했어요. 메모를 다시 읽어 주세요.</string>
+    <string name="history_memo_reloaded">저장된 메모를 다시 읽었어요.</string>
+    <string name="history_memo_entered_text">입력한 내용이에요. 저장 여부는 다시 읽어 확인해 주세요.</string>
 </resources>

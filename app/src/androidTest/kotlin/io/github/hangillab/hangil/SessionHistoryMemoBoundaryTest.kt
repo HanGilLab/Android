@@ -215,6 +215,7 @@ class SessionHistoryMemoBoundaryTest {
                             f.memos,
                             UnexpectedHistoryRecordingRunRepository,
                             UnexpectedHistoryCourseCompletionRepository,
+                            UnexpectedHistorySessionMemoWriter,
                         ) as T
                     }
                 }
