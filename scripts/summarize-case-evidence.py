@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 CASES = (
-    ("parking", "core/domain/build/test-results/test", "DrivingRestrictionsTest"),
+    ("finished_review", "feature/home/build/test-results/testDebugUnitTest", "SessionFinishReviewViewModelTest"),
     ("session", "core/database/build/test-results/testDebugUnitTest", "RoomSessionDeletionRepositoryTest"),
     ("map", "feature/map/build/test-results/testDebugUnitTest", "MapViewModelTest"),
     ("recording", "core/domain/build/test-results/test", "PracticeRecordingControllerTest"),
@@ -67,7 +67,12 @@ def main():
     recording_commit_boundaries = read_suite(root, "core/database/build/test-results/testDebugUnitTest", "RecordingControllerPersistenceBoundaryTest")
     recording_migration = read_suite(root, "core/database/build/test-results/testDebugUnitTest", "RecordingRunMigrationTest")
     recording_feature = read_suite(root, "feature/home/build/test-results/testDebugUnitTest", "SessionRecordingViewModelTest")
+    # Receipt/source handoff and inactive collector ownership are separate JVM boundaries.
+    finished_exact = read_suite(root, "feature/home/build/test-results/testDebugUnitTest", "SessionFinishedReviewViewModelTest")
+    finished_repository = read_suite(root, "core/database/build/test-results/testDebugUnitTest", "RoomPracticeSessionRepositoryTest")
+    parking_guard = read_suite(root, "core/domain/build/test-results/test", "DrivingRestrictionsTest")
     supporting = {
+        "finished_review": [finished_exact, finished_repository, parking_guard],
         "session": [session_intents, session_declarations],
         "map": [map_input],
         "recording": [recording_repository, recording_commit_boundaries, recording_migration, recording_feature],
@@ -75,14 +80,21 @@ def main():
     # Preserve the replaced observation case's regressions without adding a fifth README case.
     legacy_observation = read_suite(root, "core/database/build/test-results/testDebugUnitTest", "RoomVehicleObservationRepositoryTest")
     legacy_migration = read_suite(root, "core/database/build/test-results/testDebugUnitTest", "VehicleObservationMigrationTest")
-    legacy_supporting = {"observation": [legacy_observation, legacy_migration]}
+    # The former parking case remains a legacy context for the same receipt, not an additive total.
+    legacy_supporting = {"observation": [legacy_observation, legacy_migration], "parking": [parking_guard]}
     output = {
         "cases": cases,
         "case_supporting_suites": supporting,
         "legacy_regression_supporting_suites": legacy_supporting,
         "scope": (
             "Existing JUnit XML receipts only; reported timestamps may precede this invocation, and cached/up-to-date results "
-            "are not fresh runs. No combined test total is computed. Controlled BackgroundRecordingBoundaryTest uses real "
+            "are not fresh runs. No combined test total is computed; shared supporting/legacy receipts are not additive. "
+            "FinishSourceReviewBoundaryTest uses real Home/History Compose with controlled lifecycle, source and P/UX, "
+            "not actual SDK or production Room. FinishSourceReviewRoomFlowTest uses production repositories in a UUID-owned "
+            "schema6 store with controlled source/ACK delivery; it does not prove an internal Room dispatcher defect. "
+            "FinishedSessionReviewFlowTest actual Hilt Main/SDK/Room, theme, lifecycle and original-data preservation runs "
+            "are opt-in and tracked separately, including failed or incomplete attempts. These JVM receipts do not prove "
+            "app SDK or native screen success. Controlled BackgroundRecordingBoundaryTest uses real "
             "Compose with a synthetic LifecycleRegistry, source, controller and gate; it does not prove OS Activity "
             "transitions, actual SDK receipt or native foreground-service success. Actual BackgroundVehicleRecordingFlowTest "
             "Main STOP/native FGS/SDK and external process interruption/recovery runs are opt-in and tracked separately, "

@@ -1,6 +1,6 @@
 # 명시적으로 마친 같은 연습의 복습 연결
 
-- 상태: 제품 구현과 전체 자동 검사, native 경계 검증 완료. 실제 Main 라이트 검증의 텍스트 레이아웃 판정 원인 확인 중. 확대 다크, B/A2와 병합은 미완료
+- 상태: 제품 구현과 전체 자동 검사, 실제 Main 라이트 흐름 완료. 확대 다크, frozen B/A2와 병합은 미완료
 - 요구사항: APP-06과 DES-06의 주차 후 복습 흐름 중 마침 결과와 같은 기록을 여는 연결. 실제 도로 구간, 위치 표본, 전체 항목 완료는 범위 밖이다.
 - 기준 main: dd4897880b24776c1599bb18096abc5bcc0a2219
 
@@ -141,3 +141,28 @@ c764 후보의 실제 Main 라이트 재시도는 실제 UI로 연습 시작, SD
 실패 조건을 그대로 둔 진단 재실행에서도 같은 지점에서 실패했고 원형 DB/sequence/권한/설정 exact 복원이 성공했다. 실제 제목 node는158×38px, 재구성한 MultiParagraph 폭1440px, maxIntrinsicWidth158px이었다. 모든8개 UTF-16 범위와 단일 행 전체가0..158×0..38px 안에 있고 생략/행 초과가 없었다. 따라서 이 입력에서 hasVisualOverflow의 폭 비교는 실제 글자 잘림이 아닌 검사기 오판이다. 같은 Compose1.9.4의 String Text semantics 재구성 경로와 정합한다.
 
 다음 수정은 C 테스트 전용으로 실제 문자열 일치/모든 line 범위의 연속 coverage/행 초과와 생략 없음/유한한 행 및 비공백 문자 경계를 확인한다. 기존 scrollVisible/실제 host/viewport 검사는 유지한다. 이미 고정한 M1의 textGeometryFits와 같은1px 픽셀 반올림 허용 범위를 적용하고 누락/NaN/0크기/행 초과/ellipsis/coverage 누락은 실패로 둔다. frozen M1과 기존 공통 helper, 제품과 글꼴/여백은 변경하지 않는다. 이는 실제 성능과 무관한 검증기 정확성 수정이며 과거 두 native 실패를 성공으로 바꾸지 않는다. 기본 및 확대 다크 전체 흐름은 다시 수행하고 D/P와 최종 복원까지 실제 완료를 요구한다.
+
+
+## 실제 근거 확보 뒤 README 사례 선정 변경
+
+실제 Main 라이트의 명시 복습/구성 재생성/SDK D 잠금과 P의 새 공개, 원형 자료 보존까지 확보한 뒤 기존 네 사례를 다시 비교했다. 새 사례는 기존1의 일반적인 최신 P/UX와 callback fencing 설명보다 마침 A라는 사용자 의도를 DB fullsource CAS, ACK/관찰 순서, cold reader 입장과 실제 탐색까지 연결하며, 무효 collector가 정상 reader를 빼앗는 결함의 직접 재현/차단 근거가 있다. 이를 기존1과 교체한다. 단순 최신성, 코드량, 검사 수가 이유가 아니다. 실제 도입 전 같은 복습 버튼이 다른 기록을 열었다고 쓰지 않는다. 그 버튼은 없었고 기존 ACK가 원본을 버린다는 연결 부재와 구현 중 직접 발견한 collector 결함을 구분한다. 앞선 native cold 재진입 실패의 유일 원인으로 이 결함을 확정하지 않는다.
+
+기존2의 원자 다중 자료 삭제와 snapshot/CAS, 기존3의 조회/렌더/실제 입력 소유권, 기존4의 실제 내비 전면/FGS/저장 재개와 반환 순서 문제는 서로 다른 경계와 직접 근거를 갖고 있어 내용과 순서를 유지한다. 새 사례는 여섯 항목 순서와 실제 연속 코드/현재 소스 링크를 사용한다. 실제 라이트만 확인된 시점의 결과를 다크/실제 위치/운전자 효과까지 확대하지 않으며, 전후 성능 미측정을 명시한다. 기존 메모 M1은 새 동선 속도가 아니므로 차용하지 않는다. 관련 정확성 근거 도구의 네 사례 대상도 새1의 finish/exact reader/Room 경계로 갱신하고 기존 주차 회귀는 legacy로 보존한다. README에는 검사 목록/개수/CI 집계/미측정 성과표를 넣지 않는다. 문서와 근거 매핑 변경은 앱 성능 변경이 아니므로 실측 적용 제외이며, 실제 코드 일치/유효 링크/구조/민감 정보와 도구의 보고서 분류를 검증한다.
+
+
+## 실제 라이트 완료와 다크의 준비/제어 실패 분리
+
+제품0dd6aa6과 byte-identical한 f92 후보의 실제 Main 라이트 전체는 native JUnit/완료 영수증과 독립 원형 DB/sequence/권한/설정 exact 복원까지 통과했다. 실제 UI 시작/마침/명시 같은 종료 원본 복습, 구성 재생성 뒤 원본 유지, DDS D의 SDK 수신과 상세 잠금, P 복귀 뒤 이전 상세 미공개와 새 선택을 확인했다. 이전 준비/레이아웃 실패는 그대로 보존한다.
+
+확대1.3/다크 첫 실행은 초기 실제 전면이 다른 앱이어서 UI 시작 전에 실패했다. 두 번째는 실제 시작/마침/같은 원본/구성 재생성/D 잠금까지 갔지만 첫 P 제어가 낙관적 화면 응답 뒤 실제 DDS D로 되돌아가90초 P 수신 대기에서 실패했다. root가 나중에 새 D 응답을 관찰하고 P를 다시 보내 지속된 PARKED 응답을 확인했으나 제한 시간 뒤이므로 성공으로 바꾸지 않는다. 세 번째는 원형 snapshot 이후 실제 UI 입력0/새 세션0인 초기 P/UX 획득 뒤 foreground 확인에서 실패했다. SDK 구독이 focus 소실을 일으켰다는 인과는 확정하지 않는다. 공통 awaitAllowed는 allowed 획득 직후 foreground를 한 번 검사하는 구조다.
+
+다크 뒤 첫 외부 복원은 font_scale이 원래 null 대신 유효 기본값1.0으로 남아 exact 비교에서 실패했다. 원래 실패 영수증을 보존하고 별도 명시 restoreverify를 다시 실행해 원형 DB/sequence/권한/설정 exact 복원을 확인했다. native/첫 cleanup 실패를 재분류하지 않는다. 별도 측정용 platform-preflight를 원래 null 설정에서 잘못 호출한 준비 오류는 실제 원형 두 번 대조로 구분했다.
+
+다음 C-only 수정은 최초 UI 조작 전 조건 획득을 명시한다. 처음 캡처한 같은 Main/display를 다시 포착하거나 자동 refocus하지 않고,90초 절대 제한 안에서 현재 P+UX/RESUMED/실제 window focus/known-own package를 모두 관찰해야 입장한다. unknown/다른 package/host 미준비/gate 거부는 실제 횟수로 기록하며 조건 충족으로 대체하지 않는다. 최종 strict requireHost/live gate 확인 뒤 원형 자료/owned0을 다시 대조하고 첫 입력을 허용한다. 최초 h.assertEnvironment의 실제 다른 앱 거부, 이후 구성 재생성/D/P 대기/모든 입력과 지속 소유권 검사는 그대로 둔다. 이는 입력 전 준비 획득이며 조작 중 전면 이탈을 허용하는 변경이 아니다. 제품/common/frozen M1은 바꾸지 않으며 성능 변경이 아닌 검증 준비의 정확성 수정이다.
+
+B는 고정 계측 APK와 실제 후보 APK, 원형/측정 환경 대조 및 정상 실행 준비까지만 수행했고 native 측정/표본0이다. 창 선택/포커스 정보와 달리 실제 화면이 기본 내비 loading Surface에 남아 측정을 시작하지 않았다. 현재 소유 app UID/실제 APK를 확인한 비파괴 로컬 JDI 관찰에서 main은 MessageQueue.nativePollOnce/Looper 대기였으며 앱 무한 반복이나 지속 Binder 차단을 확정하지 않는다. main 재개/디버거 분리/정확한 임시 loopback 포워딩 제거를 확인했다. root가 필요한 debuggerd 명령은 확대 권한을 사용하지 않고 중단했다. adb jdwp의 streaming 출력을 일회 조회로 사용한 도구 timeout도 앱 결과가 아니다. 원형과 측정 설정 exact 대조 후 소유 AVD만 userdata를 보존해 종료했다. 재부팅/재준비는 별도 실행 조건으로 기록하고 표본이나 과거 A1과 섞지 않는다.
+
+계획 기록/patch 준비의 UTF-8 stdin 오류 때문에 첫 C 적용은 미실행이었다. 그 뒤 실제 실행된 전체 verify4와 native build는 C0e718 및 새 README/근거 매핑에 대한 성공으로 구분한다. 아래 C 적용 뒤 quality/새 native APK를 다시 검증하며, 이전 빌드를 새 C의 성공으로 바꾸지 않는다.
+
+
+수정한 초기 admission C 소스의 JDK17 quality와 새 native APK 빌드는 각각 통과했다. 제품 debug APK는 계속0dd6aa6과 byte-identical한지 설치/등록 때 별도로 대조한다. 앞선 전체 verify4는 README 새 사례와 근거 매핑을 포함한 네 단계 성공이고, C 초기 admission은 그 이후 품질/기기 빌드로 구분한다. 새로운 C 실제 라이트/다크 실행과 B/A2는 아직 완료하지 않았다.

@@ -27,6 +27,7 @@ import io.github.hangillab.hangil.core.domain.VehicleReading
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
@@ -103,7 +104,8 @@ class FinishedSessionReviewFlowTest {
                     launch {
                         combine(h.graph.vehicle().state, h.graph.restrictions().restrictions) { v, r -> v to r }.collect { }
                     }
-                h.awaitAllowed()
+                initialAllowedAdmission()
+                assertOriginals(original, originalPhysical)
                 requireHost()
                 prepareThroughUiIfRequired(original)
                 report.put("uiStartRequested", true)
@@ -260,6 +262,95 @@ class FinishedSessionReviewFlowTest {
         report.put("status", "completed")
         persist()
         phase("FINISH_SOURCE_REVIEW_COMPLETED")
+    }
+
+    /** No UI input is admitted until all current preconditions hold on the originally captured host. */
+    private suspend fun initialAllowedAdmission() {
+        check(owned == null && !report.has("initialAllowedAdmission"))
+        val expectedHost = checkNotNull(actualHost)
+        val expectedDisplay = checkNotNull(actualDisplay)
+        val started = SystemClock.elapsedRealtime()
+        val deadline = started + 90_000L
+        val admission =
+            JSONObject()
+                .put("scope", "pre-input-acquisition-not-continuous-foreground-proof")
+                .put("state", "acquiring")
+                .put("timeout_millis", 90_000)
+                .put("poll_interval_millis", 100)
+        report.put("initialAllowedAdmission", admission)
+        var polls = 0
+        var unknownPackageSamples = 0
+        var knownOtherPackageSamples = 0
+        var hostNotReadySamples = 0
+        var gateNotAllowedSamples = 0
+        var primary: Throwable? = null
+        try {
+            withTimeout(90_000) {
+                while (true) {
+                    check(SystemClock.elapsedRealtime() < deadline) { "initial admission exceeded its absolute deadline" }
+                    var sameHost = false
+                    var resumed = false
+                    var windowFocus = false
+                    var validDisplay = false
+                    var sameDisplay = false
+                    h.instrument.runOnMainSync {
+                        val host = compose.activity
+                        val display = host.display
+                        sameHost = host === expectedHost
+                        resumed = host.lifecycle.currentState == Lifecycle.State.RESUMED
+                        windowFocus = host.hasWindowFocus()
+                        validDisplay = display != null && display.isValid
+                        sameDisplay = display?.displayId == expectedDisplay
+                    }
+                    val actualPackage = h.actualPackage()
+                    val allowed = h.liveAllowed()
+                    polls++
+                    if (actualPackage == null) {
+                        unknownPackageSamples++
+                    } else if (actualPackage != h.instrument.targetContext.packageName) {
+                        knownOtherPackageSamples++
+                    }
+                    val hostReady = sameHost && resumed && windowFocus && validDisplay && sameDisplay
+                    if (!hostReady) hostNotReadySamples++
+                    if (!allowed) gateNotAllowedSamples++
+                    admission
+                        .put("last_same_captured_host", sameHost)
+                        .put("last_resumed", resumed)
+                        .put("last_window_focus", windowFocus)
+                        .put("last_display_valid", validDisplay)
+                        .put("last_same_captured_display", sameDisplay)
+                        .put("last_package_known", actualPackage != null)
+                        .put("last_package_own", actualPackage == h.instrument.targetContext.packageName)
+                        .put("last_received_P_UX_allowed", allowed)
+                    check(SystemClock.elapsedRealtime() < deadline) { "initial admission observation exceeded its absolute deadline" }
+                    if (hostReady && allowed && actualPackage == h.instrument.targetContext.packageName) {
+                        requireHost()
+                        check(h.liveAllowed())
+                        check(SystemClock.elapsedRealtime() < deadline) { "final initial admission exceeded its absolute deadline" }
+                        admission.put("state", "admitted").put("admitted_at_elapsed_realtime_millis", SystemClock.elapsedRealtime())
+                        return@withTimeout
+                    }
+                    delay(100)
+                }
+            }
+        } catch (failure: Throwable) {
+            primary = failure
+            admission.put("state", "failed").put("failure_class", failure.javaClass.name)
+            throw failure
+        } finally {
+            admission
+                .put("elapsed_wait_millis", SystemClock.elapsedRealtime() - started)
+                .put("polls", polls)
+                .put("unknown_package_samples", unknownPackageSamples)
+                .put("known_other_package_samples", knownOtherPackageSamples)
+                .put("host_not_ready_samples", hostNotReadySamples)
+                .put("received_gate_not_allowed_samples", gateNotAllowedSamples)
+            try {
+                persist()
+            } catch (diagnostic: Throwable) {
+                if (primary == null) throw diagnostic else primary.addSuppressed(diagnostic)
+            }
+        }
     }
 
     private suspend fun prepareThroughUiIfRequired(before: SessionHistoryRecordingRunFlowTest.Harness.ExistingData) {
