@@ -1,6 +1,6 @@
 # 선택한 과거 연습의 기존 메모 수정
 
-과거 종료 기록에서 실제로 읽은 사용자 메모를 수정하고 다시 읽는 기능이다. 제품 `ec7868499097405d30eb95d7a3e4de1d1fc8072c`의 전체 자동 검사와 제어 Compose/소유 Room을 확인했고, native v3 `565529c`에서 실제 Main/SDK/IME의 라이트와 확대 다크 취소 흐름을 확인했다. 공통 조회 계측 A1/B/A2와 최종 B 설치/원본/설정 복원을 완료했다. 최신 PR 검증과 병합은 아직 별도 조건이며 [작업 계획](../plans/active/2026-11-01-history-memo-edit.md)은 active다.
+과거 종료 기록에서 실제로 읽은 사용자 메모를 수정하고 다시 읽는 기능이다. 제품 `ec7868499097405d30eb95d7a3e4de1d1fc8072c`의 전체 자동 검사와 제어 Compose/소유 Room을 확인했고, native v3 `565529c`에서 실제 Main/SDK/IME의 라이트와 확대 다크 취소 흐름을 확인했다. 공통 조회 계측 A1/B/A2와 최종 B 설치/원본/설정 복원을 완료했다. [제품 PR71](https://github.com/HanGilLab/Android/pull/71)은 최종 head의 필수 CI4개, Codex 종료/지적 없음과 실제 검증을 확인해 정상 병합했고 main ff-only/병합 브랜치 정리를 마쳤다. [작업 계획](../plans/completed/2026-11-01-history-memo-edit.md)에 실제 결과와 남은 전체 요구사항을 기록했다.
 
 ## 제품 범위와 저장 계약
 

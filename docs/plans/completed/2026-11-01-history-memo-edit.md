@@ -1,6 +1,6 @@
 # 선택한 과거 종료 연습의 기존 메모 수정
 
-- 상태: 구현, 실제 검증과 계측 완료. 최신 PR71 head의 필수 CI/Codex와 정상 병합 대기
+- 상태: 완료. PR71 최신 head의 필수 CI/Codex/실제 관련 검증과 정상 병합, main ff-only 및 작업 브랜치 정리 확인
 - 요구사항: APP-06과 APP-08의 선택한 과거 종료 기록 복습. 기존 저장 메모의 읽기 전용 공백만 연결한다. 전체 실제 도로 구간 복습, 보관 정책과 APP-06/08 전체 완료는 별도다.
 
 ## 목표와 범위
@@ -18,7 +18,7 @@
 - [x] JDK17 전체 verify, 변경 경계 테스트와 실제 Compose/소유 실제 Room/실제 Main 및 SDK 읽기 기본/확대/다크를 구분해 확인한다. 실제 생산 메모는 수정하지 않고 원형/권한/설정을 보존한다.
 - [x] 동일 고정 하네스의 변경 전 A1/후 B/동일 이전 제품 A2 공통 UI 원값과 source/APK/입력/표본을 보존하고 새 편집 저장 성능과 혼동하지 않는다.
 - [x] README 기존4개와 새 원인/판단/실제 결과를 비교해 더 강한 경우만 교체하고 4개/지정6항목/펼친 실제 코드/유효 링크/기존 실제 이미지 및 공개 경계를 유지한다.
-- [ ] 최신 동일 head 필수 CI/Codex/구체 지적/실제 관련 검증/보호 정책 뒤 정상 병합하고 실제 head/tree/기록과 main ff-only/브랜치 정리를 확인한다.
+- [x] 최신 동일 head 필수 CI/Codex/구체 지적/실제 관련 검증/보호 정책 뒤 정상 병합하고 실제 head/tree/기록과 main ff-only/브랜치 정리를 확인한다.
 
 ## 구현 단계
 
@@ -46,11 +46,11 @@
 | A2 이후 최종 B 복원 | 같은 제품/native APK hash, 실제 기본 C1 추가 PASS | 모든 원본/물리형/순서/sequence/권한/runtime/설정 동일, 소유 DB/marker/sidecar 잔존0, 기록 서비스0 |
 | README | 정확히4사례/지정6항목/실제22발췌/기존18이미지 유지 | 새 사례 비교 후 기존4개 보존, 기능 표만 실제 수정 반영 |
 | 최종 JDK17 `./scripts/verify.sh quality` | 통과 | 최종 문서/CSV와 제품 ec78684/native565529c source 동일성을 대조한 뒤 Spotless/경계/Lint 및 공개 제한 패턴 확인 |
-| 최신 PR71 검사/리뷰/정상 병합 | 대기 | 이전 head 성공과 최신 최종 head를 구분하며 실제 종료 전 완료로 기록하지 않음 |
+| 최신 PR71 검사/리뷰/정상 병합 | 실제 완료 | head0276a4f 필수 CI4개(run41262362600)/Codex6551667101 종료 및 지적 없음, native 미해결 스레드0. d4f30fc 정상 병합/tree/head 확인과 main ff-only/로컬 원격 브랜치 정리 |
 
 ## 남은 문제와 인계
 
-제품/실기/원값 보존과 이번 소유 자원 정리는 완료했다. 최신 최종 PR71 head의 필수 CI4개, Codex 종료/미해결 지적 없음과 보호 정책을 다시 확인해야 정상 병합할 수 있다. 병합 기록/head/tree와 main ff-only/브랜치 정리, 종료 문서 PR 및 Notion 실제 상태 갱신은 아직 남았다. APP-06/08 전체는 미완료이고 필수19/54(선택3개 제외)를 유지한다. 실제 위치/도로 구간 복습, 새 과거 메모 생성/삭제, 새 권한/SDK와 편집 저장 성능을 완료로 확대하지 않는다.
+이 계획의 기존 메모 수정 범위와 실제 검증/원값 보존/최종 B 복원/PR71 정상 병합 및 브랜치 정리를 완료했다. APP-06/08 전체와 실제 도로 구간 복습은 미완료이며 필수19/54(선택3개 제외)를 유지한다. 새 과거 메모 생성/삭제, 위치/SDK/권한과 편집 저장 성능으로 완료 범위를 확대하지 않는다. 원래 PR8/10의 원래 최종 리뷰 미확인은 현재 작업의 검증과 별도로 계속 관리하며 다른 head의 종료를 승인으로 바꾸지 않는다. 병합 후 main push 검사는 아래 실제 run에서 별도 추적하며 종료 기록 PR도 자체 최신 필수 CI와 Codex를 거친다.
 
 ## 구현 전에 고정한 최소 계약
 
@@ -160,3 +160,9 @@ A1과 B는 다른 기기 부팅이고 B는 native 검증 뒤, A2는 B와 같은 
 ## 최종 B 설치 복원과 안전한 자원 종료
 
 A2 뒤 고정 제품 B와 검증한 native v3를 다시 설치했고 실제 기본 C1을 추가 통과해 읽기/실제 전체 선택 및 입력 취소/source/recreate/DDS D/P/원문 복원을 확인했다. 이는 설치 복원 검증이며 새 성능 표본이 아니다. 설치된 두 APK의 실제 hash가 고정 파일과 같았으며 외부 snapshot에서 원래 모든 앱 자료/SQLite 물리형/순서/sequence/권한/runtime/font/night/IME/proxy가 원형과 같았다. 이번 소유 UUID DB/marker/sidecar 잔존0과 기록 서비스 미실행을 확인한 뒤 소유 DDS 탭/forward/AVD만 종료했다. 원래 자료/원형 A1와 실패 증거는 보존했다. 모든 가상 차량 신호 초기값 복원이나 새 실제 주행/위치 검증을 뜻하지 않는다.
+
+## 실제 제품 병합과 정리
+
+[PR71](https://github.com/HanGilLab/Android/pull/71)의 최종 head0276a4fb2daee1684fb2550e3fb69c644502cfa4는 [필수 CI4개](https://github.com/HanGilLab/Android/actions/runs/41262362600)와 같은 head의 Codex6551667101이 종료/지적 없음인 것을 확인했다. 실제 관련 native/자료/설정/원값과 보호 규칙25857016 active/no bypass/strict ci-required/linear를 재확인해 정상 squash 병합했다. 리뷰 미실행/실패를 승인으로 바꾸지 않았고 자동 리뷰를 임의 승인/기각/삭제하지 않았다.
+
+실제 병합은 d4f30fc7f0115fd3d7bcd8f8fa14c0691c61abb9, parent는55af9b01b766fef22360de36eb079cb359e2efa3이며 PR 끝 head와 main tree가 같다. noreply 작성자와 원격 자동 삭제를 확인하고 clean main을 ff-only 동기화한 뒤 동일 끝 commit의 로컬 작업 브랜치도 정리했다. [병합 후 main push 검사](https://github.com/HanGilLab/Android/actions/runs/41262831712)는 PR 검사와 별도로 추적한다. 이 문서 이동은 앱 실행 성능을 바꾸지 않으므로 실제 source/CSV/README 바이트 동일성과 링크/문서 경계 및 품질 검사로 확인한다.
