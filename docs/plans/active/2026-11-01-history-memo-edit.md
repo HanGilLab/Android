@@ -142,3 +142,13 @@ JDK17 `./scripts/verify.sh` 전체4단계가 종료0으로 통과했다. 제품 
 제품 전역 첫 포맷은 새 core/feature 테스트2개와 editor/reader의 if 형태2곳에서 실패했다. 같은 엄격한 ktlint1.7.1/설정의 실제 정규화 출력을 적용해 기대/토큰/원문 SQL값/게이트 평가 순서를 유지했고 두 번째 Spotless가 통과했다. 소유 formatter 준비의 버전 출력/INFO 혼입 검산2회와 스타일 brace 검산 중단은 적용 전에 차단했으며 규칙을 끄지 않았다. RED/GREEN 바이트는 그 당시 기록으로 보존하고 새 전체 검사는 정규화 이후 source다.
 
 앱 계측 APK의 첫 컴파일은 C 테스트의 JSONArray/Locale import 누락으로 실패했고 native 본문은 미실행이었다. root가 그2개 import만 추가하고 같은 포맷/컴파일을 다시 실행해 종료0을 확인했다. 제품/SDK/권한/기대 완화는 없다. 실제 Android A5/B3/C1과 양 테마, B/A2 timing과 최종 설치 복원 및 최신 PR 검사/리뷰/병합은 아직 미실행이다.
+
+## 실제 native A/B와 C 입력 준비 실패
+
+고정 제품 ec7868499097405d30eb95d7a3e4de1d1fc8072c에서 제어 Compose A5와 소유 UUID 실제 Room B3 기본 라이트가 각각 실패/건너뜀0으로 통과했다. B는 합성 P/UX와 production writer의 원문/새 version/다른 자료 보존, 오래된 저장과 삭제 CAS 거부, COMMIT 뒤 adapter ACK 취소/재조회이며 실제 SDK 저장 경합으로 확대하지 않는다.
+
+확대1.3/다크의 첫 B는 초기 Catalog RESUMED/display/window focus가 확인되지 않아 fixture mount 전에1개가 실패했고 나머지2개가 통과했다. 원래 진단 화면에 기본 내비가 전면이었으며 이는 앱-only 성공 화면이 아니다. 실제 Main을 다시 전면으로 연 뒤 source/기대/시간 제한을 바꾸지 않은 B 재실행3개가 모두 통과했다. 원래 실패 로그/PNG와 재실행을 별도로 보존한다.
+
+C 실제 Main/SDK의 첫 확대 다크는 원래 저장 메모 읽기와 IME/전면 확인 후 첫 실제 ASCII 입력의 exact draft 기대에서20초 실패했다. 실제 실패 PNG에는 원래42codepoint 뒤 요청 문자열이 붙어61codepoint가 되어 있었다. 문자 dispatch는 수신됐지만 하네스의 Ctrl+A 뒤 전체 선택 전제가 성립하지 않았다. 이를 제품 저장/SDK 실패나 입력 성공으로 기록하지 않는다. 실제 CTRL 키 down/up과 전체 선택 범위 확인을 입력 전에 추가하며 실제 키 입력과 exact draft/IME/전면 기대는 유지한다. 기대를 append로 바꾸거나 SetText/VM 쓰기/가짜 성공을 쓰지 않는다. 수정 뒤 C와 B/A2 계측은 아직 미실행이다.
+
+C 입력 수정은 CTRL_LEFT down/A down-up/CTRL_LEFT up, 정상 uptime/keyboard source/정규화 meta와 실제 전체 TextSelectionRange 확인이다. key release를 finally에서 독립 시도하고 최초 예외를 보존한다. JDK17 엄격 Spotless와 native APK 컴파일이 통과했으며 frozen M1 원바이트는 같다. 수정 뒤 실제 입력 성공은 아직 미확인이다.

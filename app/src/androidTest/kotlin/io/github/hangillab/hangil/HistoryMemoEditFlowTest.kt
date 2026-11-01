@@ -5,7 +5,10 @@ import android.database.sqlite.SQLiteDatabase
 import android.graphics.Bitmap
 import android.graphics.Rect
 import android.os.Bundle
+import android.os.SystemClock
 import android.view.Display
+import android.view.InputDevice
+import android.view.KeyCharacterMap
 import android.view.KeyEvent
 import android.view.WindowInsets
 import android.view.accessibility.AccessibilityNodeInfo
@@ -244,17 +247,89 @@ class HistoryMemoEditFlowTest {
     private fun typeUsingAndroidKeys(text: String) {
         h.requireForeground()
         check(imeVisible() == true)
-        // Real Android key dispatch to the focused editor. No test-only SetText or direct VM edit.
-        h.instrument.sendKeySync(KeyEvent(0, 0, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_A, 0, KeyEvent.META_CTRL_ON))
-        h.instrument.sendKeySync(KeyEvent(0, 0, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_A, 0, KeyEvent.META_CTRL_ON))
+        val before = checkNotNull(editableMemoNode().config.getOrNull(SemanticsProperties.EditableText)).text
+        check(before.isNotEmpty())
+        val control = KeyEvent.normalizeMetaState(KeyEvent.META_CTRL_ON or KeyEvent.META_CTRL_LEFT_ON)
+        val controlDown = SystemClock.uptimeMillis()
+        var aDown = controlDown
+        var aAttempted = false
+        var primary: Throwable? = null
+        try {
+            sendPhysicalKey(KeyEvent.KEYCODE_CTRL_LEFT, KeyEvent.ACTION_DOWN, control, controlDown)
+            aDown = SystemClock.uptimeMillis()
+            aAttempted = true
+            sendPhysicalKey(KeyEvent.KEYCODE_A, KeyEvent.ACTION_DOWN, control, aDown)
+        } catch (failure: Throwable) {
+            primary = failure
+            throw failure
+        } finally {
+            var releaseFailure: Throwable? = null
+            try {
+                if (aAttempted) sendPhysicalKey(KeyEvent.KEYCODE_A, KeyEvent.ACTION_UP, control, aDown)
+            } catch (failure: Throwable) {
+                releaseFailure = failure
+            }
+            try {
+                sendPhysicalKey(KeyEvent.KEYCODE_CTRL_LEFT, KeyEvent.ACTION_UP, 0, controlDown)
+            } catch (failure: Throwable) {
+                val firstReleaseFailure = releaseFailure
+                if (firstReleaseFailure == null) {
+                    releaseFailure = failure
+                } else if (firstReleaseFailure !== failure) {
+                    firstReleaseFailure.addSuppressed(failure)
+                }
+            }
+            val originalFailure = primary
+            val failedRelease = releaseFailure
+            if (failedRelease != null) {
+                if (originalFailure == null) throw failedRelease
+                if (originalFailure !== failedRelease) originalFailure.addSuppressed(failedRelease)
+            }
+        }
+        compose.waitForIdle()
         h.requireForeground()
         check(imeVisible() == true)
+        val selected = editableMemoNode()
+        val current = checkNotNull(selected.config.getOrNull(SemanticsProperties.EditableText)).text
+        val range = checkNotNull(selected.config.getOrNull(SemanticsProperties.TextSelectionRange))
+        check(current == before) { "select-all must not change the original draft" }
+        check((range.start == 0 && range.end == current.length) || (range.end == 0 && range.start == current.length)) {
+            "actual select-all did not cover the full editable UTF16 range"
+        }
+        // Only a confirmed actual selection permits Android text dispatch. No append fallback.
         h.instrument.sendStringSync(text)
         compose.waitForIdle()
         assertDraft(text)
         check(imeVisible() == true)
         h.requireForeground()
     }
+
+    private fun sendPhysicalKey(
+        code: Int,
+        action: Int,
+        metaState: Int,
+        downTime: Long,
+    ) {
+        h.instrument.sendKeySync(
+            KeyEvent(
+                downTime,
+                SystemClock.uptimeMillis(),
+                action,
+                code,
+                0,
+                KeyEvent.normalizeMetaState(metaState),
+                KeyCharacterMap.VIRTUAL_KEYBOARD,
+                0,
+                0,
+                InputDevice.SOURCE_KEYBOARD,
+            ),
+        )
+    }
+
+    private fun editableMemoNode(): SemanticsNode =
+        descendants(h.nodes("history_memo_textfield").single()).single {
+            it.config.getOrNull(SemanticsProperties.EditableText) != null
+        }
 
     private fun descendants(node: SemanticsNode): List<SemanticsNode> = listOf(node) + node.children.flatMap(::descendants)
 
