@@ -286,7 +286,7 @@ UI 버튼 잠금이나 프로세스 내부 Mutex만으로는 다른 저장 경�
 
 **코드**
 
-[확인 조회에서 고정하는 종료 원본과 연결 자료 버전](core/domain/src/main/kotlin/io/github/hangillab/hangil/core/domain/SessionDeletionTarget.kt#L4-L10)
+[확인 조회에서 고정하는 종료 원본과 연결 자료 버전](core/domain/src/main/kotlin/io/github/hangillab/hangil/core/domain/SessionDeletionTarget.kt#L4-L11)
 
 ```kotlin
 data class SessionDeletionTarget(
@@ -295,6 +295,7 @@ data class SessionDeletionTarget(
     val memoVersion: String?,
     val recordingRuns: List<VehicleRecordingRun> = emptyList(),
     val completionDeclaration: CourseCompletionDeclaration? = null,
+    val locationRecording: LocationRecordingSnapshot = LocationRecordingSnapshot(emptyList(), emptyList()),
 )
 ```
 
@@ -396,7 +397,7 @@ override suspend fun delete(
     }
 ```
 
-[쓰기 전후 허용 조건과 코루틴 취소 확인](core/database/src/main/kotlin/io/github/hangillab/hangil/core/database/RoomSessionDeletionRepository.kt#L90-L95)
+[쓰기 전후 허용 조건과 코루틴 취소 확인](core/database/src/main/kotlin/io/github/hangillab/hangil/core/database/RoomSessionDeletionRepository.kt#L91-L96)
 
 ```kotlin
 private suspend fun requirePermission(canProceed: () -> Boolean) {

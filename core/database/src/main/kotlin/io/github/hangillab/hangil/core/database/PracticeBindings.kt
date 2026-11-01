@@ -6,6 +6,7 @@ import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import io.github.hangillab.hangil.core.domain.CourseCompletionRepository
 import io.github.hangillab.hangil.core.domain.HistorySessionMemoWriter
+import io.github.hangillab.hangil.core.domain.LocationRecordingRepository
 import io.github.hangillab.hangil.core.domain.NextPracticeRepository
 import io.github.hangillab.hangil.core.domain.PracticeCatalog
 import io.github.hangillab.hangil.core.domain.PracticeRepository
@@ -42,6 +43,9 @@ internal abstract class PracticeBindings {
 
     @Binds @Singleton
     abstract fun recordingRunRepository(implementation: RoomRecordingRunRepository): RecordingRunRepository
+
+    @Binds @Singleton
+    abstract fun locationRecordingRepository(implementation: RoomLocationRecordingRepository): LocationRecordingRepository
 
     @Binds @Singleton
     abstract fun courseCompletionRepository(implementation: RoomCourseCompletionRepository): CourseCompletionRepository
