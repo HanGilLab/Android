@@ -49,6 +49,8 @@ import java.util.concurrent.atomic.AtomicReference
  * Returned cleanup calls are local outcomes, not a remote-provider stop acknowledgement.
  * SDK Binder null updates may never reach onChanged; timeout remains notReceived, never Empty.
  * The external runner owns fresh consent, original whole-environment backup and restoration.
+ * The target SDK blocks app reads of enabled_input_methods. The external runner must read and
+ * compare its actual before/after value; this harness neither observes nor substitutes it.
  */
 @RunWith(AndroidJUnit4::class)
 class FusedLocationUpdateProbeTest {
@@ -90,6 +92,9 @@ class FusedLocationUpdateProbeTest {
                     .put("lastKnownRequestedByHarness", false)
                     .put("productionWritesByHarness", false)
                     .put("detailedRuntimePermissionFlagsVerifiedByHarness", false)
+                    .put("enabledInputMethodsObservedByHarness", false)
+                    .put("enabledInputMethodsExternalBeforeAfterReadbackRequired", true)
+                    .put("enabledInputMethodsObservationReason", "app-read-blocked-by-target-sdk-policy-no-substitute-value")
                     .put("externalRunnerRequired", "whole-runtime-grant-flags-and-whole-environment-before-after-exact-preservation")
                     .put(
                         "sameListenerBasis",
@@ -489,6 +494,8 @@ class FusedLocationUpdateProbeTest {
     private fun permissionGranted(): Boolean =
         h.instrument.targetContext.checkSelfPermission(FusedLocationPermission.NAME) == PackageManager.PERMISSION_GRANTED
 
+    // Public app-readable state only. enabled_input_methods needs the external runner's actual
+    // shell before/after readback; no permission adoption or fabricated successful value is used.
     private fun platformJson(): JSONObject {
         val context = h.instrument.targetContext
         val info = context.packageManager.getPackageInfo(context.packageName, PackageManager.GET_PERMISSIONS)
@@ -516,7 +523,6 @@ class FusedLocationUpdateProbeTest {
             .put("requestedPermissionsInManifestOrder", permissions)
             .put("fusedLocationGranted", permissionGranted())
             .put("defaultInputMethod", Settings.Secure.getString(resolver, Settings.Secure.DEFAULT_INPUT_METHOD) ?: JSONObject.NULL)
-            .put("enabledInputMethods", Settings.Secure.getString(resolver, Settings.Secure.ENABLED_INPUT_METHODS) ?: JSONObject.NULL)
             .put("showImeWithHardKeyboard", Settings.Secure.getString(resolver, "show_ime_with_hard_keyboard") ?: JSONObject.NULL)
             .put("actualImeVisible", imeVisible)
             .put("fontScaleSetting", Settings.System.getString(resolver, Settings.System.FONT_SCALE) ?: JSONObject.NULL)

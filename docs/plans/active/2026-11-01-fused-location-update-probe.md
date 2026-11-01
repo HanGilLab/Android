@@ -11,8 +11,8 @@ release/production 코드, 기존 LastKnown UI와 계약, DB/앱 원본 자료/m
 
 ## 완료 조건
 
-- [ ] 공식 문서와 설치된1.1.3 AAR의 실제 등록/해제 ABI, 같은 listener/권한/연결 조건을 대조한다.
-- [ ] debug 전용 프로브의 bounded owner/등록/해제/닫기/late callback/권한과 live gate 폐기, 후속 정리 실패를 제어 검사로 확인한다. release/기존 앱 흐름과 데이터는 그대로다.
+- [x] 공식 문서와 설치된1.1.3 AAR의 실제 등록/해제 ABI, 같은 listener/권한/연결 조건을 대조한다.
+- [x] debug 전용 프로브의 bounded owner/등록/해제/닫기/late callback/권한과 live gate 폐기, 후속 정리 실패를 제어 검사로 확인한다. release/기존 앱 흐름과 데이터는 그대로다.
 - [ ] 실제 Main/SDK/P+UX/미허용 선행 확인과 opt-in 절차를 준비하고 실기 결과/미실행을 구분한다. 성공 기본값/위치 주입/실제 좌표 공개를 하지 않는다.
 - [ ] 실제 허용 검증이 가능한 경우 callback/Empty/error/timeout를 있는 그대로 기록하고 같은 listener 해제와 새 인스턴스 재시도를 확인한다. 미충족이면 이 조건은 체크하지 않는다.
 - [ ] 기존 원본/권한/runtime flags/font/night/IME/proxy와 소유 AVD/forward/DDS 정리, JDK17 전체 verify/native 컴파일/관련 실기와 최신 PR CI/Codex/미해결 지적을 확인한다.
@@ -69,3 +69,13 @@ JDK17 엄격 Spotless, 전체 verify4단계와 native APK 컴파일이 통과했
 ## 현재 권한 경계와 실제 검증 대기
 
 이전 일회성 LastKnown 검증을 완료한 동의를 새 업데이트 리스너 검증의 허용으로 자동 갱신하지 않는다. 새 코드에는 권한 요청/부여가 없고 이미 허용된 별도 시나리오는 명시 옵션과 실제 grant를 모두 요구한다. 우선 미허용 등록 차단/원형 보존과 코드 검토 가능한 PR를 준비한다. 새 callback 허용 관찰은 구체적인 조건의 동의를 확인하기 전 미실행이며 이 계획의 해당 완료 조건은 체크하지 않는다.
+
+## 첫 실제 denied 실패와 수정 범위
+
+현재 커밋3f2e9e5의 실제 Main과 SDK 주차/UX 허용 조건에서 미허용 검증1개를 실행했으나 original()의 enabled_input_methods 읽기에서 Android targetSdk33 초과 정책의 SecurityException으로 실패했다. 프로브 인스턴스/SDK 초기화/등록에는 도달하지 않았다. original 미확보 뒤 보존 검사도 성공으로 처리하지 않고 suppressed 실패로 보존했다. 첫 실패 JSON/계측 로그/진단 화면은 ignored 자료로 남겼다.
+
+수정은 native 테스트에서 제한된 설정의 앱 조회를 제거하고, harness가 관찰하지 않았으며 외부 실제 shell 전후 대조가 필요함을 명시하는 것이다. null/정상값 대체, targetSDK 하향, shell 권한 채택이나 신규 권한을 쓰지 않는다. 기존 전체 원형이 첫 실패 뒤에도 동일함을 확인한 다음 외부 도구로 해당 IME 설정의 수정 전 기준과 readback을 별도 확보했다. 기존 원형을 덮어쓰지 않았다. 해당 수정 뒤 실제 denied는 다시 실행해야 하며 아직 성공으로 기록하지 않는다.
+
+## README 사례 비교
+
+이번 gate 재검사 결함은 debug 기술 프로브의 명시적 제어 seam에서 재현했고 실제 SDK 업데이트 허용 수신은 미검증이다. 기존1번은 실제 SDK 주행 상태와 상세 조작 허용 시점,2번은 실제 Room 연결 자료의 원자적 삭제,3번은 비동기 지도 렌더/입력 소유권,4번은 실제 기록 소유권 반환과 복귀 화면의 경쟁 경계를 입증한다. 이번 근거가 이들보다 제품 영향과 실제 결과를 더 설득력 있게 입증하지 못하므로 모두 보존한다. README4개/순서/여섯 항목/22실제 발췌/18기존 이미지 checker가 통과했고 anchor 수정도 필요하지 않다. 새 성능 성과나 공개 진단 이미지는 추가하지 않는다.
