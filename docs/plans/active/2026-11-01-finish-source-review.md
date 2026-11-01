@@ -50,12 +50,15 @@
 |---|---|---|
 | 최신 main 기술 의존성 | 읽기 확인 | SessionFinishResult.session과 기존 SessionHistory/Room/Vehicle/UX 계약만 사용, PR74/schema7/위치 API 의존0 |
 | 새 검증 환경과 A1 | 실제 완료 | 별도 소유 AVD, 고정 APK/frozen M1, warmup5와 본30 성공, native 보존/취소/복귀 플래그 및 외부 typed DB/권한/설정 exact, 원형 복원 뒤 종료 |
-| 제품 구현 | 진행 중 | A1 완료 뒤 strict finish, receipt와 cold exact review, 메모리 토큰 탐색을 구현 중 |
-| 검사/실제 UI/B/A2/최신 리뷰 | 미실행 | 구현 이후 같은 입력/계측/원형 대조와 실제 동작 검증 필요 |
+| 제품 구현 | 구현 완료, 실제 UI 전체 검증 중 | A1 완료 뒤 strict finish, receipt와 cold exact review, 메모리 토큰 탐색을 연결했고 거부/취소 cold collector의 owner 덮어쓰기를 실제 RED/GREEN으로 수정 |
+| JDK17 전체 자동 검사와 native 경계 | 통과 | 전체 verify3, 실제 Compose/Room7 완료. 기존 실패와 수정 전후 결과는 아래에 분리 |
+| 실제 Main 기본/확대 다크 | 미완료 | 기본에서 실제 UI 시작/마침/같은 원본 복습까지 확인했으나 검사기의 문단/글자 폭 혼동으로 실패, D/P 미도달. C 전용 geometry 검증 후 전체 재실행 필요 |
+| B/A2 | 미실행 | frozen APK/같은 입력과 실제 원값, 독립 복원 대조 필요 |
+| 최신 PR 검사/리뷰와 병합 | 매 head 재확인 필요 | c764 CI4/Codex 완료와 지적0 확인. 이후 C 진단 커밋2dc는 별도 최신 확인 대상, 병합 미실행 |
 
 ## README 사례 비교와 남은 문제
 
-현재 새 연결은 구현/실측/실제 검증 전이므로 기존 네 사례를 대체할 근거가 없다. exact-source handoff/cold query의 원본 경계는 기존 데이터 소유권/비동기 입력 사례와 비교해 실제 영향, 원인 증거, 대안/구현 기여와 재현 결과가 더 강할 때만 교체한다. 단순 최신성/코드량/검사 수로 교체하지 않는다. 문서/발췌 정합은 앱 실행 성능과 무관하므로 측정 적용 제외, 실제 코드/유효 링크/기존 이미지/공개 민감 정보 검사를 수행한다.
+기존 네 사례는 유지한다. 구현 후 실제 근거와 각 사례를 비교한 판단은 아래 제품 구현 절에 기록했으며 아직 교체할 더 강한 근거를 확보하지 못했다. exact-source handoff/cold query의 원본 경계는 기존 데이터 소유권/비동기 입력 사례와 비교해 실제 영향, 원인 증거, 대안/구현 기여와 재현 결과가 더 강할 때만 교체한다. 단순 최신성/코드량/검사 수로 교체하지 않는다. 문서/발췌 정합은 앱 실행 성능과 무관하므로 측정 적용 제외, 실제 코드/유효 링크/기존 이미지/공개 민감 정보 검사를 수행한다.
 
 필수19/54, 선택3개 제외를 유지한다. APP06/DES06 전체, 실제 구간/위치/배경 수집, PR74 새 임시 저장 동의와 원래 PR8/10 최종 리뷰를 완료로 바꾸지 않는다. 답변 없는 새 위치 동의를 재사용하거나 반복 요청하지 않는다.
 
@@ -133,3 +136,8 @@ README는 기존 네 사례와 순서를 유지했다. 새 연결은 ACK와 원�
 c764 후보의 실제 Main 라이트 재시도는 실제 UI로 연습 시작, SDK P 기록 확인, 마침, 명시 복습과 같은 종료 원본 확인까지 진행했다. 이후 history_course의 기존 assertTextFits가 실패했다. 실제 진단은 width158px/height38px/1행, overflow_width=true, overflow_height=false, 생략 행0이다. 진단 화면에서 제목 전체가 보이므로 사용자에게 보이는 실제 glyph 잘림까지 확정하지 않는다. D/P와 구성 재생성 이후 단계는 이 실행에서 미실행이다. 원형 typed DB/sequence와 권한/설정 exact 복원은 별도로 통과했고 새 위치 권한 허용0이다.
 
 변경 전에 확보한 Compose 1.9.4 소스 근거에서 String Text의 실제 Paragraph와 GetTextLayoutResult가 만드는 별도 MultiParagraph의 폭이 다를 수 있다. size.width와 multiParagraph.width 비교만으로 실제 glyph 잘림인지 판별할 수 없다. 다음 실행은 새 C 테스트의 private report에 기존 size/constraints/paragraph/intrinsic 폭/행 및 glyph 경계를 진단으로만 추가한다. 제품, frozen M1, 공통 helper와 기존 실패 assertion/timeout은 바꾸지 않는다. 실제 glyph가 clip/viewport 범위를 벗어나는지 같은 입력과 기본1.0/라이트 조건에서 확인한 뒤에만 제품 또는 검증기의 원인을 구분한다. 이는 정확성 진단으로 앱 실행 성능 변경이 아니며 진단 소요 시간이나 통과 개수를 성능 개선으로 쓰지 않는다.
+
+
+실패 조건을 그대로 둔 진단 재실행에서도 같은 지점에서 실패했고 원형 DB/sequence/권한/설정 exact 복원이 성공했다. 실제 제목 node는158×38px, 재구성한 MultiParagraph 폭1440px, maxIntrinsicWidth158px이었다. 모든8개 UTF-16 범위와 단일 행 전체가0..158×0..38px 안에 있고 생략/행 초과가 없었다. 따라서 이 입력에서 hasVisualOverflow의 폭 비교는 실제 글자 잘림이 아닌 검사기 오판이다. 같은 Compose1.9.4의 String Text semantics 재구성 경로와 정합한다.
+
+다음 수정은 C 테스트 전용으로 실제 문자열 일치/모든 line 범위의 연속 coverage/행 초과와 생략 없음/유한한 행 및 비공백 문자 경계를 확인한다. 기존 scrollVisible/실제 host/viewport 검사는 유지한다. 이미 고정한 M1의 textGeometryFits와 같은1px 픽셀 반올림 허용 범위를 적용하고 누락/NaN/0크기/행 초과/ellipsis/coverage 누락은 실패로 둔다. frozen M1과 기존 공통 helper, 제품과 글꼴/여백은 변경하지 않는다. 이는 실제 성능과 무관한 검증기 정확성 수정이며 과거 두 native 실패를 성공으로 바꾸지 않는다. 기본 및 확대 다크 전체 흐름은 다시 수행하고 D/P와 최종 복원까지 실제 완료를 요구한다.

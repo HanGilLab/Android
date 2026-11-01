@@ -376,96 +376,108 @@ class FinishedSessionReviewFlowTest {
         requireHost()
         h.scrollVisible(tag)
         compose.onNodeWithTag(tag, useUnmergedTree = true).assertIsDisplayed()
-        var diagnosticFailure: Throwable? = null
-        try {
-            recordTextLayout(tag)
-        } catch (failure: Throwable) {
-            diagnosticFailure = failure
+        val receipts = recordTextLayout(tag)
+        check(receipts.isNotEmpty()) { "actual text layout nodes are required" }
+        for (receipt in receipts) {
+            check(receipt.getterReturned && receipt.layouts.isNotEmpty()) { "actual text layout getter must return nonempty results" }
+            check(receipt.textValues.isNotEmpty() && receipt.textValues.none(String::isEmpty)) { "actual semantics text is required" }
+            check(
+                receipt.layouts.all { layout ->
+                    layout.layoutInput.text.text in receipt.textValues && textGeometryFits(layout, layout.layoutInput.text.text)
+                },
+            ) { "every actual layout must match displayed semantics and fit its measured text bounds" }
+            check(receipt.textValues.all { expected -> receipt.layouts.any { it.layoutInput.text.text == expected } }) {
+                "no displayed semantics text may be omitted from the geometry check"
+            }
         }
-        try {
-            h.assertTextFits(tag)
-        } catch (failure: Throwable) {
-            diagnosticFailure?.let { if (it !== failure) failure.addSuppressed(it) }
-            throw failure
-        }
-        diagnosticFailure?.let { throw it }
         requireHost()
     }
 
-    private fun recordTextLayout(tag: String) {
+    private fun recordTextLayout(tag: String): List<TextLayoutReceipt> {
         fun descendants(node: SemanticsNode): List<SemanticsNode> = listOf(node) + node.children.flatMap(::descendants)
         val anchor = h.nodes(tag).single()
         val nodes = descendants(anchor).filter { it.config.getOrNull(SemanticsActions.GetTextLayoutResult)?.action != null }
-        val layouts = mutableListOf<TextLayoutResult>()
-        val gettersReturned = mutableListOf<Boolean>()
+        val receipts = mutableListOf<TextLayoutReceipt>()
         compose.runOnIdle {
             for (node in nodes) {
-                gettersReturned += checkNotNull(node.config.getOrNull(SemanticsActions.GetTextLayoutResult)?.action).invoke(layouts)
+                val layouts = mutableListOf<TextLayoutResult>()
+                val returned = checkNotNull(node.config.getOrNull(SemanticsActions.GetTextLayoutResult)?.action).invoke(layouts)
+                val values =
+                    node.config
+                        .getOrNull(SemanticsProperties.Text)
+                        .orEmpty()
+                        .map { it.text }
+                receipts += TextLayoutReceipt(values, returned, layouts)
             }
         }
         val rows = JSONArray()
-        for (layout in layouts) {
-            val input = layout.layoutInput
-            val lines = JSONArray()
-            for (line in 0 until layout.lineCount) {
-                lines.put(
+        for ((receiptIndex, receipt) in receipts.withIndex()) {
+            for (layout in receipt.layouts) {
+                val input = layout.layoutInput
+                val lines = JSONArray()
+                for (line in 0 until layout.lineCount) {
+                    lines.put(
+                        JSONObject()
+                            .put("line", line)
+                            .put("left", layout.getLineLeft(line))
+                            .put("right", layout.getLineRight(line))
+                            .put("top", layout.getLineTop(line))
+                            .put("bottom", layout.getLineBottom(line))
+                            .put("baseline", layout.getLineBaseline(line))
+                            .put("ellipsized", layout.isLineEllipsized(line))
+                            .put("start_utf16", layout.getLineStart(line))
+                            .put("end_utf16", layout.getLineEnd(line))
+                            .put("visible_end_utf16", layout.getLineEnd(line, visibleEnd = true)),
+                    )
+                }
+                val boxes = JSONArray()
+                for (offset in input.text.text.indices) {
+                    val box = layout.getBoundingBox(offset)
+                    boxes.put(
+                        JSONObject()
+                            .put("utf16_offset", offset)
+                            .put("left", box.left)
+                            .put("right", box.right)
+                            .put("top", box.top)
+                            .put("bottom", box.bottom),
+                    )
+                }
+                rows.put(
                     JSONObject()
-                        .put("line", line)
-                        .put("left", layout.getLineLeft(line))
-                        .put("right", layout.getLineRight(line))
-                        .put("top", layout.getLineTop(line))
-                        .put("bottom", layout.getLineBottom(line))
-                        .put("baseline", layout.getLineBaseline(line))
-                        .put("ellipsized", layout.isLineEllipsized(line))
-                        .put("start_utf16", layout.getLineStart(line))
-                        .put("end_utf16", layout.getLineEnd(line))
-                        .put("visible_end_utf16", layout.getLineEnd(line, visibleEnd = true)),
+                        .put("width_px", layout.size.width)
+                        .put("height_px", layout.size.height)
+                        .put("paragraph_width_px", layout.multiParagraph.width)
+                        .put("paragraph_height_px", layout.multiParagraph.height)
+                        .put("max_intrinsic_width_px", layout.multiParagraph.maxIntrinsicWidth)
+                        .put("min_intrinsic_width_px", layout.multiParagraph.minIntrinsicWidth)
+                        .put("did_exceed_max_lines", layout.multiParagraph.didExceedMaxLines)
+                        .put("overflow_width", layout.didOverflowWidth)
+                        .put("overflow_height", layout.didOverflowHeight)
+                        .put("first_baseline_px", layout.firstBaseline)
+                        .put("last_baseline_px", layout.lastBaseline)
+                        .put("font_size_sp", input.style.fontSize.value)
+                        .put("line_height_sp", input.style.lineHeight.value)
+                        .put("density", input.density.density)
+                        .put("font_scale", input.density.fontScale)
+                        .put("soft_wrap", input.softWrap)
+                        .put("max_lines", input.maxLines)
+                        .put("overflow_mode", input.overflow.toString())
+                        .put("constraint_min_width", input.constraints.minWidth)
+                        .put("constraint_max_width", input.constraints.maxWidth)
+                        .put("constraint_min_height", input.constraints.minHeight)
+                        .put("constraint_max_height", input.constraints.maxHeight)
+                        .put("text_length_utf16", input.text.length)
+                        .put("lines", lines)
+                        .put("character_boxes", boxes)
+                        .put("node_receipt_index", receiptIndex)
+                        .put("layout_text_matches_semantics", input.text.text in receipt.textValues)
+                        .put("line_and_character_geometry_fits", textGeometryFits(layout, input.text.text)),
                 )
             }
-            val boxes = JSONArray()
-            for (offset in input.text.text.indices) {
-                val box = layout.getBoundingBox(offset)
-                boxes.put(
-                    JSONObject()
-                        .put("utf16_offset", offset)
-                        .put("left", box.left)
-                        .put("right", box.right)
-                        .put("top", box.top)
-                        .put("bottom", box.bottom),
-                )
-            }
-            rows.put(
-                JSONObject()
-                    .put("width_px", layout.size.width)
-                    .put("height_px", layout.size.height)
-                    .put("paragraph_width_px", layout.multiParagraph.width)
-                    .put("paragraph_height_px", layout.multiParagraph.height)
-                    .put("max_intrinsic_width_px", layout.multiParagraph.maxIntrinsicWidth)
-                    .put("min_intrinsic_width_px", layout.multiParagraph.minIntrinsicWidth)
-                    .put("did_exceed_max_lines", layout.multiParagraph.didExceedMaxLines)
-                    .put("overflow_width", layout.didOverflowWidth)
-                    .put("overflow_height", layout.didOverflowHeight)
-                    .put("first_baseline_px", layout.firstBaseline)
-                    .put("last_baseline_px", layout.lastBaseline)
-                    .put("font_size_sp", input.style.fontSize.value)
-                    .put("line_height_sp", input.style.lineHeight.value)
-                    .put("density", input.density.density)
-                    .put("font_scale", input.density.fontScale)
-                    .put("soft_wrap", input.softWrap)
-                    .put("max_lines", input.maxLines)
-                    .put("overflow_mode", input.overflow.toString())
-                    .put("constraint_min_width", input.constraints.minWidth)
-                    .put("constraint_max_width", input.constraints.maxWidth)
-                    .put("constraint_min_height", input.constraints.minHeight)
-                    .put("constraint_max_height", input.constraints.maxHeight)
-                    .put("text_length_utf16", input.text.length)
-                    .put("lines", lines)
-                    .put("character_boxes", boxes),
-            )
         }
         val bounds = anchor.boundsInWindow
-        val receipts = report.optJSONArray("textLayoutReceipts") ?: JSONArray().also { report.put("textLayoutReceipts", it) }
-        receipts.put(
+        val saved = report.optJSONArray("textLayoutReceipts") ?: JSONArray().also { report.put("textLayoutReceipts", it) }
+        saved.put(
             JSONObject()
                 .put("tag", tag)
                 .put("observed_at_elapsed_realtime_nanos", SystemClock.elapsedRealtimeNanos())
@@ -473,12 +485,59 @@ class FinishedSessionReviewFlowTest {
                 .put("node_top", bounds.top)
                 .put("node_right", bounds.right)
                 .put("node_bottom", bounds.bottom)
-                .put("getters_returned", JSONArray(gettersReturned))
+                .put("getters_returned", JSONArray(receipts.map { it.getterReturned }))
+                .put("semantics_text_counts", JSONArray(receipts.map { it.textValues.size }))
+                .put("layout_counts", JSONArray(receipts.map { it.layouts.size }))
+                .put("pixel_rounding_tolerance_px", 1)
                 .put("layouts", rows)
-                .put("scope", "diagnostic-only-semantics-layout-not-a-render-or-overflow-success"),
+                .put("scope", "actual-semantics-line-character-geometry-viewport-checked-separately"),
         )
         persist()
+        return receipts
     }
+
+    /** Same full-coverage rule as frozen M1; paragraph-container width is not a glyph boundary. */
+    private fun textGeometryFits(
+        layout: TextLayoutResult,
+        expected: String,
+    ): Boolean {
+        if (expected.isEmpty() || layout.layoutInput.text.text != expected || layout.size.width <= 0 || layout.size.height <= 0 ||
+            layout.lineCount <= 0 || layout.multiParagraph.didExceedMaxLines
+        ) {
+            return false
+        }
+
+        // One physical pixel only covers integral measured-size versus float text-coordinate rounding.
+        fun inside(
+            left: Float,
+            top: Float,
+            right: Float,
+            bottom: Float,
+        ): Boolean =
+            left.isFinite() && top.isFinite() && right.isFinite() && bottom.isFinite() && left <= right && top <= bottom &&
+                left >= -1f && top >= -1f && right <= layout.size.width + 1f && bottom <= layout.size.height + 1f
+        var covered = 0
+        for (line in 0 until layout.lineCount) {
+            val end = layout.getLineEnd(line, visibleEnd = false)
+            if (layout.getLineStart(line) != covered || end < covered || end > expected.length || layout.isLineEllipsized(line) ||
+                !inside(layout.getLineLeft(line), layout.getLineTop(line), layout.getLineRight(line), layout.getLineBottom(line))
+            ) {
+                return false
+            }
+            covered = end
+        }
+        return covered == expected.length &&
+            expected.indices.filterNot { expected[it].isWhitespace() }.all {
+                val box = layout.getBoundingBox(it)
+                inside(box.left, box.top, box.right, box.bottom)
+            }
+    }
+
+    private data class TextLayoutReceipt(
+        val textValues: List<String>,
+        val getterReturned: Boolean,
+        val layouts: List<TextLayoutResult>,
+    )
 
     private suspend fun assertOriginals(
         before: SessionHistoryRecordingRunFlowTest.Harness.ExistingData,
