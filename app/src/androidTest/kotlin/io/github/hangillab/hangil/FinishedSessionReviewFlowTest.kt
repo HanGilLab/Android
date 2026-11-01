@@ -83,134 +83,140 @@ class FinishedSessionReviewFlowTest {
             h.assertEnvironment()
             captureHostReceipt()
             runBlocking {
-                val original = h.snapshot(h.graph)
-                before = original
-                check(original.sessions.none { it.isActive } && original.preparation != null)
-                expectedPreparation = original.preparation
-                val originalPhysical = physicalDatabase()
-                physical = originalPhysical
-                assertBaseline(original, originalPhysical)
-                environment = h.environmentJson()
-                catalog = h.catalogJson(h.graph)
-                report
-                    .put("originalData", frozenDataJson(original, originalPhysical))
-                    .put("physicalBefore", originalPhysical)
-                    .put("environment", environment)
-                    .put("catalog", catalog)
-                    .put("rootCanonicalAndSequenceRestoreRequired", true)
-                    .put("nativeRepositoryWrites", 0)
-                persist()
-                sdkObserver =
-                    launch {
-                        combine(h.graph.vehicle().state, h.graph.restrictions().restrictions) { v, r -> v to r }.collect { }
-                    }
-                initialAllowedAdmission()
-                assertOriginals(original, originalPhysical)
-                requireHost()
-                prepareThroughUiIfRequired(original)
-                report.put("uiStartRequested", true)
-                persist()
-                touch("session_start")
-                val started =
+                try {
+                    val original = h.snapshot(h.graph)
+                    before = original
+                    check(original.sessions.none { it.isActive } && original.preparation != null)
+                    expectedPreparation = original.preparation
+                    val originalPhysical = physicalDatabase()
+                    physical = originalPhysical
+                    assertBaseline(original, originalPhysical)
+                    environment = h.environmentJson()
+                    catalog = h.catalogJson(h.graph)
+                    report
+                        .put("originalData", frozenDataJson(original, originalPhysical))
+                        .put("physicalBefore", originalPhysical)
+                        .put("environment", environment)
+                        .put("catalog", catalog)
+                        .put("rootCanonicalAndSequenceRestoreRequired", true)
+                        .put("nativeRepositoryWrites", 0)
+                    persist()
+                    sdkObserver =
+                        launch {
+                            combine(h.graph.vehicle().state, h.graph.restrictions().restrictions) { v, r -> v to r }.collect { }
+                        }
+                    initialAllowedAdmission()
+                    assertOriginals(original, originalPhysical)
+                    requireHost()
+                    prepareThroughUiIfRequired(original)
+                    report.put("uiStartRequested", true)
+                    persist()
+                    touch("session_start")
+                    val started =
+                        withTimeout(20_000) {
+                            h.graph
+                                .sessions()
+                                .observeSessions()
+                                .first { rows ->
+                                    rows.count { it.isActive } == 1 &&
+                                        rows.count { it.sessionId !in original.sessions.map { it.sessionId } } == 1
+                                }.single { it.isActive }
+                        }
+                    check(started.sessionId !in original.sessions.map { it.sessionId })
+                    check(started.selection == expectedPreparation)
+                    owned = started
+                    report.put("ownedActiveSource", h.sessionJson(started)).put("status", "owned-active")
+                    persist()
                     withTimeout(20_000) {
-                        h.graph
-                            .sessions()
-                            .observeSessions()
-                            .first { rows ->
-                                rows.count { it.isActive } == 1 &&
-                                    rows.count { it.sessionId !in original.sessions.map { it.sessionId } } == 1
-                            }.single { it.isActive }
-                    }
-                check(started.sessionId !in original.sessions.map { it.sessionId })
-                check(started.selection == expectedPreparation)
-                owned = started
-                report.put("ownedActiveSource", h.sessionJson(started)).put("status", "owned-active")
-                persist()
-                withTimeout(20_000) {
-                    h.graph.observations().observe(started.sessionId).first { rows ->
-                        rows.any {
-                            it.observation.source == VehicleObservationSource.SDK_STATE_OBSERVATION &&
-                                it.observation.state.gear == VehicleReading.Available(GearPosition.PARK)
+                        h.graph.observations().observe(started.sessionId).first { rows ->
+                            rows.any {
+                                it.observation.source == VehicleObservationSource.SDK_STATE_OBSERVATION &&
+                                    it.observation.state.gear == VehicleReading.Available(GearPosition.PARK)
+                            }
                         }
                     }
-                }
-                assertOriginals(original, originalPhysical)
-                check(h.nodes("history_ready").isEmpty())
-                touch("session_finish")
-                val ended =
-                    withTimeout(20_000) {
-                        h.graph
-                            .sessions()
-                            .observeSessions()
-                            .first { rows ->
-                                rows.singleOrNull { it.sessionId == started.sessionId }?.isActive == false
-                            }.single { it.sessionId == started.sessionId }
+                    assertOriginals(original, originalPhysical)
+                    check(h.nodes("history_ready").isEmpty())
+                    touch("session_finish")
+                    val ended =
+                        withTimeout(20_000) {
+                            h.graph
+                                .sessions()
+                                .observeSessions()
+                                .first { rows ->
+                                    rows.singleOrNull { it.sessionId == started.sessionId }?.isActive == false
+                                }.single { it.sessionId == started.sessionId }
+                        }
+                    check(ended == started.copy(endedAtEpochMillis = checkNotNull(ended.endedAtEpochMillis)))
+                    owned = ended
+                    report.put("ownedEndedSource", h.sessionJson(ended)).put("status", "owned-ended")
+                    persist()
+                    requireHost()
+                    h.waitFor("session_finish_review")
+                    check(h.nodes("history_ready").isEmpty()) { "finish must not navigate automatically" }
+                    visibleText("session_finish_review")
+                    capture("explicit-review-action", false)
+                    touch("session_finish_review")
+                    assertExact(ended)
+                    assertCold()
+                    visibleText("history_course")
+                    visibleText("history_task")
+                    visibleText("history_finished")
+                    capture("exact-review", false)
+                    compose.activityRule.scenario.recreate()
+                    h.assertEnvironment()
+                    captureHostReceipt()
+                    h.awaitAllowed()
+                    assertExact(ended)
+                    assertCold()
+                    touch("history_observations")
+                    h.waitFor("review_ready")
+                    h.assertText("review_source", h.text(HomeR.string.review_source))
+                    visibleText("review_source")
+                    capture("stored-actual-SDK-observation", false)
+                    phase("FINISH_SOURCE_REVIEW_AWAIT_D")
+                    h.awaitDrive()
+                    requireHost()
+                    h.waitFor("history_locked")
+                    compose.waitUntil(20_000) {
+                        listOf("history_ready", "history_observation_content", "history_memo_content").all { h.nodes(it).isEmpty() }
                     }
-                check(ended == started.copy(endedAtEpochMillis = checkNotNull(ended.endedAtEpochMillis)))
-                owned = ended
-                report.put("ownedEndedSource", h.sessionJson(ended)).put("status", "owned-ended")
-                persist()
-                requireHost()
-                h.waitFor("session_finish_review")
-                check(h.nodes("history_ready").isEmpty()) { "finish must not navigate automatically" }
-                visibleText("session_finish_review")
-                capture("explicit-review-action", false)
-                touch("session_finish_review")
-                assertExact(ended)
-                assertCold()
-                visibleText("history_course")
-                visibleText("history_task")
-                visibleText("history_finished")
-                capture("exact-review", false)
-                compose.activityRule.scenario.recreate()
-                h.assertEnvironment()
-                captureHostReceipt()
-                h.awaitAllowed()
-                assertExact(ended)
-                assertCold()
-                touch("history_observations")
-                h.waitFor("review_ready")
-                h.assertText("review_source", h.text(HomeR.string.review_source))
-                visibleText("review_source")
-                capture("stored-actual-SDK-observation", false)
-                phase("FINISH_SOURCE_REVIEW_AWAIT_D")
-                h.awaitDrive()
-                requireHost()
-                h.waitFor("history_locked")
-                compose.waitUntil(20_000) {
-                    listOf("history_ready", "history_observation_content", "history_memo_content").all { h.nodes(it).isEmpty() }
+                    check(!h.liveAllowed())
+                    capture("actual-D-locked", false)
+                    assertOriginals(original, originalPhysical)
+                    phase("FINISH_SOURCE_REVIEW_AWAIT_P")
+                    h.awaitAllowed()
+                    requireHost()
+                    assertExact(ended)
+                    assertCold()
+                    check(h.nodes("review_ready").isEmpty()) { "D/P recovery must not revive an old detail disclosure" }
+                    touch("history_observations")
+                    h.waitFor("review_ready")
+                    h.assertText("review_source", h.text(HomeR.string.review_source))
+                    capture("fresh-P-exact-review", false)
+                    touch("history_close")
+                    h.waitFor("home_history")
+                    check(h.nodes("history_ready").isEmpty() && h.nodes("session_finish_review").isEmpty())
+                    requireHost()
+                    assertOriginals(original, originalPhysical)
+                    report
+                        .put("status", "body-complete")
+                        .put("actualUiStart", true)
+                        .put("actualUiFinish", true)
+                        .put("explicitSameEndedSourceReview", true)
+                        .put("retainedAcrossRecreation", true)
+                        .put("actualSDKDrivingLockAndFreshParkReopen", true)
+                    persist()
+                    sdkObserver?.cancelAndJoin()
+                    sdkObserver = null
+                } catch (failure: Throwable) {
+                    captureFailureBeforeCleanup(failure, "body-before-coroutine-unwind", sdkObserver?.isActive)
+                    throw failure
                 }
-                check(!h.liveAllowed())
-                capture("actual-D-locked", false)
-                assertOriginals(original, originalPhysical)
-                phase("FINISH_SOURCE_REVIEW_AWAIT_P")
-                h.awaitAllowed()
-                requireHost()
-                assertExact(ended)
-                assertCold()
-                check(h.nodes("review_ready").isEmpty()) { "D/P recovery must not revive an old detail disclosure" }
-                touch("history_observations")
-                h.waitFor("review_ready")
-                h.assertText("review_source", h.text(HomeR.string.review_source))
-                capture("fresh-P-exact-review", false)
-                touch("history_close")
-                h.waitFor("home_history")
-                check(h.nodes("history_ready").isEmpty() && h.nodes("session_finish_review").isEmpty())
-                requireHost()
-                assertOriginals(original, originalPhysical)
-                report
-                    .put("status", "body-complete")
-                    .put("actualUiStart", true)
-                    .put("actualUiFinish", true)
-                    .put("explicitSameEndedSourceReview", true)
-                    .put("retainedAcrossRecreation", true)
-                    .put("actualSDKDrivingLockAndFreshParkReopen", true)
-                persist()
-                sdkObserver?.cancelAndJoin()
-                sdkObserver = null
             }
         } catch (failure: Throwable) {
             primary = failure
+            captureFailureBeforeCleanup(failure, "initialization-before-independent-cleanup", sdkObserver?.isActive)
             report.put("status", "failed").put("failureClass", failure.javaClass.name)
             try {
                 persist()
@@ -264,6 +270,121 @@ class FinishedSessionReviewFlowTest {
         phase("FINISH_SOURCE_REVIEW_COMPLETED")
     }
 
+    private fun captureFailureBeforeCleanup(
+        original: Throwable,
+        phase: String,
+        observerActive: Boolean?,
+    ) {
+        if (report.has("failureBeforeCleanupCaptureAttempted")) return
+        report.put("failureBeforeCleanupCaptureAttempted", true)
+        try {
+            recordFailureBeforeCleanup(phase, observerActive)
+        } catch (diagnostic: Throwable) {
+            if (diagnostic !== original) original.addSuppressed(diagnostic)
+        }
+    }
+
+    /** The body catch runs before runBlocking cancels its child observer during exception unwind. */
+    private fun recordFailureBeforeCleanup(
+        phase: String,
+        observerActive: Boolean?,
+    ) {
+        val state =
+            JSONObject()
+                .put("scope", "current-receipts-before-native-cleanup-not-a-causal-verdict")
+                .put("observed_at_elapsed_realtime_nanos", SystemClock.elapsedRealtimeNanos())
+                .put("capture_phase", phase)
+                .put("sdk_observer_active_at_capture", observerActive ?: JSONObject.NULL)
+        var first: Throwable? = null
+
+        fun attempt(
+            name: String,
+            action: () -> Unit,
+        ) {
+            try {
+                action()
+            } catch (failure: Throwable) {
+                state.put(name + "_failure_class", failure.javaClass.name)
+                if (first == null) {
+                    first = failure
+                } else if (first !== failure) {
+                    first!!.addSuppressed(failure)
+                }
+            }
+        }
+
+        fun reading(value: VehicleReading<*>): JSONObject =
+            when (value) {
+                is VehicleReading.Available ->
+                    JSONObject()
+                        .put("kind", "AVAILABLE")
+                        .put("enum_value", (value.value as? Enum<*>)?.name ?: JSONObject.NULL)
+                        .put("boolean_value", (value.value as? Boolean) ?: JSONObject.NULL)
+                VehicleReading.Unknown -> JSONObject().put("kind", "UNKNOWN")
+                VehicleReading.Unsupported -> JSONObject().put("kind", "UNSUPPORTED")
+                VehicleReading.PermissionDenied -> JSONObject().put("kind", "PERMISSION_DENIED")
+                VehicleReading.Error -> JSONObject().put("kind", "ERROR")
+            }
+        attempt("vehicle_and_UX") {
+            val vehicle =
+                h.graph
+                    .vehicle()
+                    .state.value
+            val restrictions =
+                h.graph
+                    .restrictions()
+                    .restrictions.value
+            state
+                .put("vehicle_connection", vehicle.connection.name)
+                .put("vehicle_gear", reading(vehicle.gear))
+                .put("vehicle_turn_signal", reading(vehicle.turnSignal))
+                .put("vehicle_brake", reading(vehicle.brakePressed))
+                .put("parking_state", restrictions.parkingState.name)
+                .put("UX_restriction_state", restrictions.uxRestrictionState.name)
+                .put("current_live_allowed", h.liveAllowed())
+                .put("state_reads_are_sequential", true)
+        }
+        attempt("actual_host") {
+            h.instrument.runOnMainSync {
+                val host = compose.activity
+                val display = host.display
+                state
+                    .put("same_captured_host", host === actualHost)
+                    .put("main_lifecycle", host.lifecycle.currentState.name)
+                    .put("has_window_focus", host.hasWindowFocus())
+                    .put("display_known", display != null)
+                    .put("display_valid", display?.isValid ?: JSONObject.NULL)
+                    .put(
+                        "same_captured_display",
+                        if (display != null &&
+                            actualDisplay != null
+                        ) {
+                            display.displayId == actualDisplay
+                        } else {
+                            JSONObject.NULL
+                        },
+                    )
+            }
+        }
+        attempt("actual_focused_window") {
+            val actual = h.actualPackage()
+            state
+                .put("focused_package_known", actual != null)
+                .put("focused_package_is_own", if (actual != null) actual == h.instrument.targetContext.packageName else JSONObject.NULL)
+        }
+        report.put("failureBeforeCleanupState", state)
+        try {
+            persist()
+        } catch (failure: Throwable) {
+            if (first == null) {
+                first = failure
+            } else if (first !== failure) {
+                first!!.addSuppressed(failure)
+            }
+        }
+        first?.let { throw it }
+    }
+
     /** No UI input is admitted until all current preconditions hold on the originally captured host. */
     private suspend fun initialAllowedAdmission() {
         check(owned == null && !report.has("initialAllowedAdmission"))
@@ -284,6 +405,14 @@ class FinishedSessionReviewFlowTest {
         var hostNotReadySamples = 0
         var gateNotAllowedSamples = 0
         var primary: Throwable? = null
+        var stableSince = -1L
+        var stabilityRejectedSampleResets = 0
+        var stablePolls = 0
+        var maximumObservedStableMillis = 0L
+        var lastObservedStableMillis = 0L
+        admission
+            .put("required_observed_stability_millis", 1000)
+            .put("stability_basis", "all-100ms-polled-current-conditions-with-no-rejected-or-unknown-sample")
         try {
             withTimeout(90_000) {
                 while (true) {
@@ -323,12 +452,27 @@ class FinishedSessionReviewFlowTest {
                         .put("last_package_own", actualPackage == h.instrument.targetContext.packageName)
                         .put("last_received_P_UX_allowed", allowed)
                     check(SystemClock.elapsedRealtime() < deadline) { "initial admission observation exceeded its absolute deadline" }
+                    val observedAt = SystemClock.elapsedRealtime()
                     if (hostReady && allowed && actualPackage == h.instrument.targetContext.packageName) {
-                        requireHost()
-                        check(h.liveAllowed())
-                        check(SystemClock.elapsedRealtime() < deadline) { "final initial admission exceeded its absolute deadline" }
-                        admission.put("state", "admitted").put("admitted_at_elapsed_realtime_millis", SystemClock.elapsedRealtime())
-                        return@withTimeout
+                        if (stableSince < 0) stableSince = observedAt
+                        stablePolls++
+                        lastObservedStableMillis = observedAt - stableSince
+                        maximumObservedStableMillis = maxOf(maximumObservedStableMillis, lastObservedStableMillis)
+                        if (lastObservedStableMillis >= 1000) {
+                            requireHost()
+                            check(h.liveAllowed())
+                            check(SystemClock.elapsedRealtime() < deadline) { "final initial admission exceeded its absolute deadline" }
+                            admission
+                                .put("state", "admitted")
+                                .put("admitted_at_elapsed_realtime_millis", SystemClock.elapsedRealtime())
+                                .put("admitted_observed_stability_millis", lastObservedStableMillis)
+                            return@withTimeout
+                        }
+                    } else {
+                        stableSince = -1L
+                        stablePolls = 0
+                        lastObservedStableMillis = 0L
+                        stabilityRejectedSampleResets++
                     }
                     delay(100)
                 }
@@ -345,6 +489,11 @@ class FinishedSessionReviewFlowTest {
                 .put("known_other_package_samples", knownOtherPackageSamples)
                 .put("host_not_ready_samples", hostNotReadySamples)
                 .put("received_gate_not_allowed_samples", gateNotAllowedSamples)
+                .put("stability_rejected_sample_resets", stabilityRejectedSampleResets)
+                .put("current_stable_polls", stablePolls)
+                .put("last_observed_stability_millis", lastObservedStableMillis)
+                .put("maximum_observed_stability_millis", maximumObservedStableMillis)
+                .put("stable_since_elapsed_realtime_millis", if (stableSince >= 0) stableSince else JSONObject.NULL)
             try {
                 persist()
             } catch (diagnostic: Throwable) {

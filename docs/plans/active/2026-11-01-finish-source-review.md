@@ -1,16 +1,16 @@
 # 명시적으로 마친 같은 연습의 복습 연결
 
-- 상태: 제품 구현과 전체 자동 검사, 실제 Main 라이트 흐름 완료. 확대 다크, frozen B/A2와 병합은 미완료
+- 상태: 제품 구현, JDK17 전체 자동 검사, C027 실제 Main 라이트와 M1 A1/B/A2 관찰 및 원형 대조 완료. 강화된 진단 C의 실제 두 테마, 최종 문서/PR 리뷰와 병합은 대기
 - 요구사항: APP-06과 DES-06의 주차 후 복습 흐름 중 마침 결과와 같은 기록을 여는 연결. 실제 도로 구간, 위치 표본, 전체 항목 완료는 범위 밖이다.
 - 기준 main: dd4897880b24776c1599bb18096abc5bcc0a2219
 
 ## 목표와 범위
 
-현재 main의 SessionViewModel.finish는 Finished/AlreadyFinished에 들어 있는 종료 세션을 버리고 enum 피드백만 남긴다. 일반 이력은 진입 당시 최신 종료 기록을 고른다. 마침 뒤 다른 종료 자료가 전달되거나 원본이 바뀌면 방금 마친 대상을 그대로 복습한다는 요청을 표현할 수 없다. 마침 응답의 전체 종료 원본을 보존하고 사용자가 명시적으로 같은 기록의 복습을 열도록 연결한다. 자동 화면 전환을 추가하지 않는다.
+기준 main의 SessionViewModel.finish는 Finished/AlreadyFinished에 들어 있는 종료 세션을 버리고 enum 피드백만 남긴다. 일반 이력은 진입 당시 최신 종료 기록을 고른다. 마침 뒤 다른 종료 자료가 전달되거나 원본이 바뀌면 방금 마친 대상을 그대로 복습한다는 요청을 표현할 수 없다. 마침 응답의 전체 종료 원본을 보존하고 사용자가 명시적으로 같은 기록의 복습을 열도록 연결한다. 자동 화면 전환을 추가하지 않는다.
 
 기존 이력의 관찰, 메모, 저장 실행과 수동 마무리 열람을 재사용한다. 조회 owner를 만들기 전에 전체 expected source를 고정하고 최신 기록으로 fallback하지 않는다. 삭제, 같은 ID의 교체/재생성, active 복귀, read 실패와 종료 미확인을 나눈다. P와 UX 해제, 실제 RESUMED, reader/query/generation, 일회성 클릭과 기존 메모 CAS를 유지한다. 프로세스 재생성으로 메모리 원본을 잃으면 unavailable로 돌아가며 현재 최신 기록으로 복원하지 않는다.
 
-새 DB/schema/SDK/권한 계약이나 배경 수집, 실제 위치/경로, 다음 과제 저장 제약 확대는 없다. 마침 쓰기에는 expected fullsource overload를 fail-closed 기본 Blocked로 추가하고 Room의 같은 트랜잭션에서 실제 원본을 비교한다. 기존 ID 기반 호출과 PracticeSession 생성자/copy ABI를 유지한다. 후반 receipt 비교만으로 이미 발생한 다른 원본의 종료 쓰기가 복구됐다고 주장하지 않는다. domain에 물리 rowId/version이 없으므로 관찰 없이 모든 논리 필드가 동일한 삭제/재삽입 ABA까지 검출한다고 주장하지 않는다. PR74와 이전 실제 위치 동의 대기는 그대로 보존한다. 기존 schema7 후보 AVD에 main/schema6 APK를 설치하지 않는다. 이미 설치된 Pleos 이미지로 별도 test-owned 초기 AVD만 구성하고 기존 AVD/userdata/config/snapshot을 변경하지 않는다.
+새 DB/schema/SDK/권한 계약이나 배경 수집, 실제 위치/경로, 다음 과제 저장 제약 확대는 없다. 마침 쓰기에는 expected fullsource overload를 fail-closed 기본 Blocked로 추가하고 Room의 같은 트랜잭션에서 실제 원본을 비교한다. 기존 ID 기반 호출과 PracticeSession 생성자/copy ABI를 유지한다. 후반 receipt 비교만으로 이미 발생한 다른 원본의 종료 쓰기가 복구됐다고 주장하지 않는다. domain에 물리 rowId/version이 없으므로 관찰 없이 모든 논리 필드가 동일한 삭제/재삽입 ABA까지 검출한다고 주장하지 않는다. PR74의 새 명시적 임시 저장 동의는 승인됐지만 아직 소비하지 않았으며, private rebind 준비 후 실제 실행은 별도로 대기한다. 이전 동의를 재사용하거나 이 schema6 작업의 실행과 합치지 않는다. 기존 schema7 후보 AVD에 main/schema6 APK를 설치하지 않는다. 이미 설치된 Pleos 이미지로 별도 test-owned 초기 AVD만 구성하고 기존 AVD/userdata/config/snapshot을 변경하지 않는다.
 
 ## 완료 조건
 
@@ -19,7 +19,7 @@
 - [ ] cold exact-source 이력은 최신/다른 원본을 잠깐 표시하거나 삭제/교체 뒤 다른 행을 차용하지 않는다.
 - [ ] 기존 일반 이력, 출처/Empty/Failed, 메모 CAS와 다음 과제의 latest/no-active 제약을 보존한다.
 - [ ] JDK17 전체 verify와 변경 동작의 단위/실제 Room/Compose/실제 Main 기본, 확대 다크를 확인한다.
-- [ ] 같은 frozen 기존 메모 disclosure 계측 A1/B/A2의 실제 원값, 원형/조건 대조와 한계를 기록한다.
+- [x] 같은 frozen 기존 메모 disclosure 계측 A1/B/A2의 실제 원값, 원형/조건 대조와 한계를 기록한다.
 - [ ] 최신 PR head 필수 CI, Codex, 실제 관련 수동 검증과 미해결 지적/정책을 확인한 뒤 병합/동기화/브랜치를 정리한다.
 - [ ] README 기존 네 사례와 실제 근거를 비교하고 여섯 항목/실제 펼친 코드/기능과 이미지를 보존한다.
 
@@ -51,16 +51,20 @@
 | 최신 main 기술 의존성 | 읽기 확인 | SessionFinishResult.session과 기존 SessionHistory/Room/Vehicle/UX 계약만 사용, PR74/schema7/위치 API 의존0 |
 | 새 검증 환경과 A1 | 실제 완료 | 별도 소유 AVD, 고정 APK/frozen M1, warmup5와 본30 성공, native 보존/취소/복귀 플래그 및 외부 typed DB/권한/설정 exact, 원형 복원 뒤 종료 |
 | 제품 구현 | 구현 완료, 실제 UI 전체 검증 중 | A1 완료 뒤 strict finish, receipt와 cold exact review, 메모리 토큰 탐색을 연결했고 거부/취소 cold collector의 owner 덮어쓰기를 실제 RED/GREEN으로 수정 |
-| JDK17 전체 자동 검사와 native 경계 | 통과 | 전체 verify3, 실제 Compose/Room7 완료. 기존 실패와 수정 전후 결과는 아래에 분리 |
-| 실제 Main 기본/확대 다크 | 미완료 | 기본에서 실제 UI 시작/마침/같은 원본 복습까지 확인했으나 검사기의 문단/글자 폭 혼동으로 실패, D/P 미도달. C 전용 geometry 검증 후 전체 재실행 필요 |
-| B/A2 | 미실행 | frozen APK/같은 입력과 실제 원값, 독립 복원 대조 필요 |
-| 최신 PR 검사/리뷰와 병합 | 매 head 재확인 필요 | c764 CI4/Codex 완료와 지적0 확인. 이후 C 진단 커밋2dc는 별도 최신 확인 대상, 병합 미실행 |
+| JDK17 전체 자동 검사와 native 경계 | 기록된 실행 통과 | 전체 verify와 실제 Compose/Room 경계 통과를 확인했다. 과거 실패와 수정 전후, 이후 C-only 품질/기기 빌드는 아래에 분리 |
+| 실제 Main 기본/확대 다크 | C027 기본 라이트 전체 완료, 확대 다크 미완료 | 실제 UI 시작/마침/같은 원본 복습, D 잠금/P 새 선택, 구성 재생성과 원형 보존을 확인했다. 다크 시작 실패와 최초 입력 전 허용 조건 소실은 별도 보존했다. 강화된 C는 현재 상태 진단과 더 엄격한 첫 입력 전 획득만 바꾸며 두 테마를 다시 검증한다 |
+| 고정 M1 A1/B/A2 | 실제 완료, 성능 효과 미확정 | 세 유효 arm 각각5 warm/30 main과 원형/권한/설정 대조 완료, 실패/누락/제외0. 실패한 두 A1과 첫 A2는 별도 보존했고 같은 A 반복 편차를 코드 개선으로 해석하지 않는다 |
+| 최신 PR 검사/리뷰와 병합 | 최종 head 판정 대기 | 과거 head의 검사/리뷰 결과는 보존한다. 최신 C027 두 테마와 최종 문서 반영 뒤 최신 필수 검사/리뷰를 별도 확인하며 병합은 아직 완료하지 않았다 |
+
+현재 고정 M1의 본30 중앙값은 A1 2426.938980ms, B 933.1852715ms, A2 928.8730215ms다. A2는 A1과 같은 제품 APK이며 A2-A1도 -1498.0659585ms로 크게 달라졌다. B-A1 -1493.7537085ms를 코드 성능 향상으로 확정하지 않는다. B-A2는 A2를 분모로 +4.31225ms / +0.4642453705%이며 B/A2의 IQR은 겹친다. 각5 warm과 본30의 원래 ns, inclusive 분포, 실패 시도와 순서/ART/cache/환경 한계는 [측정 기록](../../development/measurements/finish-source-review-memo-open-results.md)에 분리했다. 이는 기존 메모 펼침 관찰이며 새 마침 복습 동선의 전후 성능 측정이 아니다.
 
 ## README 사례 비교와 남은 문제
 
-기존 네 사례는 유지한다. 구현 후 실제 근거와 각 사례를 비교한 판단은 아래 제품 구현 절에 기록했으며 아직 교체할 더 강한 근거를 확보하지 못했다. exact-source handoff/cold query의 원본 경계는 기존 데이터 소유권/비동기 입력 사례와 비교해 실제 영향, 원인 증거, 대안/구현 기여와 재현 결과가 더 강할 때만 교체한다. 단순 최신성/코드량/검사 수로 교체하지 않는다. 문서/발췌 정합은 앱 실행 성능과 무관하므로 측정 적용 제외, 실제 코드/유효 링크/기존 이미지/공개 민감 정보 검사를 수행한다.
+새 마침 원본 연결과 무효 cold collector 차단 근거를 기존1의 일반 주차/UX fencing 설명과 비교해 사례1을 교체했다. 사용자 의도를 DB fullsource CAS, ACK/관찰 순서, 조회 소유권과 실제 탐색까지 연결한 근거를 선정했으며 나머지2/3/4의 내용과 순서는 유지했다. 단순 최신성/코드량/검사 수로 선정하지 않았고, 앞선 native 재진입 실패의 유일 원인으로 collector 결함을 확정하지 않는다. 여섯 항목/실제 연속 코드/현재 소스 링크와 기존 이미지는 보존했으며 최종 문서 리뷰는 최신 C027 결과와 함께 별도 확인한다. 문서/발췌 정합은 앱 실행 성능과 무관하므로 측정 적용 제외다.
 
-필수19/54, 선택3개 제외를 유지한다. APP06/DES06 전체, 실제 구간/위치/배경 수집, PR74 새 임시 저장 동의와 원래 PR8/10 최종 리뷰를 완료로 바꾸지 않는다. 답변 없는 새 위치 동의를 재사용하거나 반복 요청하지 않는다.
+필수19/54, 선택3개 제외를 유지한다. APP06/DES06 전체, 실제 구간/위치/배경 수집과 원래 PR8/10 최종 리뷰를 완료로 바꾸지 않는다. PR74의 새 임시 저장 동의는 승인됐고 아직 소비하지 않았으며 private rebind 후 실제 실행은 대기다. 이 승인을 이미 끝난 실행이나 APP 전체 완료로 해석하지 않는다.
+
+아래 준비와 실패 기록의 미실행/대기 표현은 당시 실행 시점의 상태다. 현재 완료 범위와 남은 판정은 위 요약 및 마지막 고정 M1 결과와 구분한다.
 
 ## 실제 기준 환경 준비에서 구분한 실패
 
@@ -166,3 +170,41 @@ B는 고정 계측 APK와 실제 후보 APK, 원형/측정 환경 대조 및 정
 
 
 수정한 초기 admission C 소스의 JDK17 quality와 새 native APK 빌드는 각각 통과했다. 제품 debug APK는 계속0dd6aa6과 byte-identical한지 설치/등록 때 별도로 대조한다. 앞선 전체 verify4는 README 새 사례와 근거 매핑을 포함한 네 단계 성공이고, C 초기 admission은 그 이후 품질/기기 빌드로 구분한다. 새로운 C 실제 라이트/다크 실행과 B/A2는 아직 완료하지 않았다.
+
+
+## A2의 SDK 조건 소실과 한 번의 전체 재시도 계약
+
+첫 A2는 warmup5와 본17개를 완료한 뒤 본18 준비 단계에서 ComposeTimeoutException으로 실패했다. 계측 시작 전이어서 실패 표본의 elapsedNs/elapsedMs/elapsedWaitNs/observedEndpointElapsedNs는 모두 null이고 남은12개는 미실행이다. 진단은 같은 Main RESUMED/focus/display/known-own, hostIntervened=false지만 차량 DISCONNECTED/gear Unknown/주차 UNKNOWN, UX UNRESTRICTED와 history_locked1이었다. UX만으로 주차를 추정하지 않고 잠금을 유지한 실제 결과이며 앱 성능 저하나 무한 반복의 증거로 바꾸지 않는다. native 원형/복귀/catalog/환경/SDK observer 취소/automation flag 복원과 외부 typed DB/측정 설정 exact는 모두 확인했다.
+
+앞의17개를 다른 arm에 보충하거나 실패 시간을0으로 채우지 않는다. 실제 raw/로그/cleanup, 한 번 읽은 live 상태와 SHA/mtime를 별도 failed arm에 보존한다. 고정 source13bf/같은 test APK/A APK/입력/표본 수/20초 endpoint/1800초 외부 제한은 유지한다. 독립 임시 archive helper는 이 정확한 최초 SDK 조건 소실 실패, A1/B 완료와 동일 입력, writer 부재와 실제 APK/native raw hash를 확인한 뒤 host/native rename과 ACK를 모두 확인해야만 A2 marker2를 예약한다. 어떤 중간 실패도 옛 leg를 차단한 채 journal을 남기며 완료 자료를 덮거나 추가 재시도를 자동 호출하지 않는다. 원형과 측정 설정 대조 뒤 동일 소유 AVD만 userdata를 보존해 새 부팅하고 실제 Main/P/UX/DDS 조건을 다시 확보한 전체5+30 한 번을 수행한다. 유효 A1/B의 fresh boot와 재시도 arm의 boot/ART/cache/순서 한계를 분리하며 causal 개선/동등성/무회귀를 확정하지 않는다.
+
+
+## 완료한 고정 메모 관찰과 성능 해석
+
+세 유효 arm의5 warm/30 main이 실제 완료됐고 native/외부 원형 보존도 대조했다. 실패한 두 A1과 첫 A2는 그대로 보존하고 합치지 않았다. A1 중앙값2426.938980ms, B933.1852715ms, 같은 A APK의 A2 928.8730215ms다. A2도 A1보다 크게 달라져 B-A1의 약61.55% 관측 감소를 코드 성능 개선으로 확정하지 않는다. 새 마침 복습 동선은 성능 전후 미측정이다.
+
+정제한 원래 ns, 워밍업/본 분리, inclusive 분포, 절대 차이/관측 변화율, 실패/누락/미실행과 fresh boot/ART/cache/순서/검증 비용 포함 한계는 [측정 기록](../../development/measurements/finish-source-review-memo-open-results.md)에 기록했다. 입력/원형/계측/실제 APK 대조는 완료했고 개인정보/실제 위치/원문 메모/로그는 공개하지 않았다. 최신 C의 실제 기본/확대 다크와 PR 최신 검사/리뷰/병합은 아직 완료하지 않았다.
+
+
+## 최신 C027 라이트 통과와 다크의 실행 전 준비 보강
+
+최신 C027 라이트는 실제 Main UI 시작/마침/같은 원본 복습, 구성 재생성, 실제 SDK D 잠금과 P 새 선택까지 native 전체 완료했다. 같은 실행의 원형/권한/설정 외부 exact와 새 위치 권한 허용0을 확인했고 실제 화면도 대조했다.
+
+최신 C027 다크 첫 시도는 h.assertEnvironment의 최초 전면 앱 검사에서 known-other를 감지해 L312에서 실패했다. 원형 native 초기화, SDK observer와 제품 UI 입력 전에 중단됐으므로 원값/제품 동작0이며 native 미초기화 cleanup 플래그를 보존한다. 외부 원형 DB 복원은 확인했으나 font_scale 원래 null 키의 첫 exact 복원은 실패했다. 해당 실패를 고치지 않고 별도 restoreverify에서 원래 키/권한/설정과 원형 exact를 다시 확인했다.
+
+다음 명시적 전체 다크 실행 전에 private 외부 준비만 보강한다. 기존 QA verify_data가 Main을 종료한 뒤 font/night를 적용하고 바로 instrumentation을 시작하던 순서 사이에 정상 Main launch를 추가한다. 같은 소유 기기/고정 user와 APK를 검사한 뒤 고정 Main의 am start -W만 호출하며, 그 반환을 실제 전면/SDK P/UX 성공으로 사용하지 않는다. instrumentation 시작 뒤 재실행/재포커스/자동 재시도는 없고 native 최초 known-other 거부/25초, C027 실제 admission/조건/본문/timeout은 바꾸지 않는다. 관찰한 초기 준비 실패의 원인을 제품 결함 해결로 과장하지 않는다. 앱 실행 성능의 개선이 아닌 외부 검증 준비이므로 M1에 합치지 않는다.
+
+
+정상 Main 사전 실행을 추가한 다음 C027 다크 시도는 instrumentation이 numtests/본문/원본 native 보고서를 만들기 전에 Process crashed로 종료됐다. 제품 UI/SDK 검증 성공으로 세지 않는다. native 보고서 부재와 첫 font exact 복구 실패를 보존했으며 별도 restoreverify는 전체 원형/권한/원래 설정 exact를 확인했다. 진단 수집 첫 보조 호출은 private helper에 Path를 전달한 TypeError로 실패했고 원래 adb 진단은 helper의 private evidence에 이미 보존됐다. 도구 오류를 앱 원인으로 해석하지 않는다. frozen/제품/계측 소스와 기대를 유지하고 동일 test-owned AVD/userdata만 정상 중지/재부팅한 뒤 새 전체 다크를 시도한다. 보호 기기/데이터 삭제/새 권한/타 프로세스 종료는 없다.
+
+
+## 다크 첫 입력 전 조건 소실과 강화할 관찰
+
+같은 userdata의 새 부팅 뒤 C027 다크는 최초 admission을127ms/1표본에서 통과했다. 당시 고정 Main/display/실제 전면과 SDK P+UX가 모두 true였다. 그러나 첫 session_start 입력 직전 touch의 현재 liveAllowed 검사 L424가 false여서 중단됐다. uiStartRequested는 준비 표시이며 실제 UI 시작/새 source는 발생하지 않았다. native 원형/typed rows/catalog/environment/observer 취소/automation flag 보존을 모두 확인했고 외부 원형 exact, 별도 원래 설정 복구 exact도 확인했다. 실제 실패 화면의 P 표시는 과거 UI 상태일 수 있으므로 현재 허용의 근거로 사용하지 않는다.
+
+아직 실패 순간의 vehicle/UX 값을 확보하지 못했으므로 연결/주차/UX 중 무엇이 변했는지와 원인은 미확정이다. 다음 C-only 수정은 cleanup 전에 현재 vehicle/UX/liveAllowed와 고정 host의 실제 상태를 private 진단으로 남긴다. 최초 입력 전 acquisition은 같은90초 절대 제한/100ms poll 안에서 고정 host/display/known-own/P+UX가 연속1000ms 유지돼야 통과하도록 더 엄격하게 만든다. unknown/false가 하나라도 나오면 연속 구간을 초기화한다. 본문 각 입력의 즉시 host/P+UX 검사, timeout과 원본/실제 SDK 기대는 바꾸거나 실패 뒤 재시도하지 않는다. 초기 조건 확보의 강화이며 앱/SDK 결함을 해결했다고 주장하지 않고, frozen M1 원값/계측/제품 코드에 적용하지 않는다. 실제 성능/사용 흐름 변경이 없는 검사 진단/준비이므로 앱 성능 전후 계측 적용 제외다.
+
+JDK17 전체 verify5는 최신 C027과 제품/README 근거 도구에서 quality/test/debug/unsigned release의 네 BUILD SUCCESSFUL을 확인했다. 이후 위 C-only 변경은 별도 품질/계측 APK 빌드와 실제 두 테마 재검증으로 추적한다.
+
+
+강화된 C source 6e324dc4c26ec0495029e5f91d1f824385104d3841b61513a1ded173ea1224b9는 독립 소스 검토에서 새 구체 결함이 없었다. 진단은 coroutine 자식 observer가 구조적으로 취소되기 전 body catch에서 확보하고, 원래 예외를 유지한다. JDK17 quality와 실제 app debug/AndroidTest APK 빌드가 통과했다. 제품 APK는 기존0dd6aa6과 byte-identical이며 frozen M1 source/APK/완료 원값은 보존한다. 이 소스 검토/빌드가 새 실제 두 테마나 최신 PR 리뷰 성공을 대신하지 않는다.
