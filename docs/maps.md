@@ -6,11 +6,11 @@ MAP-01의 첫 단계는 주차 상태에서 고정 시연 지역의 실제 온�
 ## 표시와 사용 조건
 
 - 렌더러: MapLibre Native Android 13.5.0, `android-sdk-opengl` artifact와 명시적인 OpenGL 선택.
-- 지도 스타일: OpenFreeMap Liberty. 지도 화면에 OpenFreeMap, OpenMapTiles, OpenStreetMap 출처와 Native attribution을 유지한다.
+- 지도 스타일: 라이트 OpenFreeMap Liberty, 다크 OpenFreeMap Dark. 지도 화면의 OpenFreeMap, OpenMapTiles, OpenStreetMap 출처와 Native attribution 활성화를 유지한다. 두 스타일의 디자인 출처 접근성은 별도 실제 점검 항목이다.
 - 온라인 지도 요청만 사용한다. 별도 영역 다운로드, 사전 수집, 오프라인 기능은 구현하지 않는다.
 - 온라인 서비스는 가용성과 정확성을 보장하지 않으므로 로딩, 실패, 재시도를 표시한다.
 - 고정 중심은 공개된 서울 시연 지역이며 사용자의 현재 위치나 검토된 연습 코스가 아니다.
-- MapLibre의 BSD 2-Clause 라이선스 원문을 앱의 `assets/licenses/maplibre-native.txt`에 포함한다. 추가 에셋과 의존성 사용 조건은 DES-08에서 계속 정리한다.
+- MapLibre의 BSD 2-Clause 원문은 앱의 `assets/licenses/maplibre-native.txt`에 포함한다. 실제 style/glyph/sprite 출처와 자료별 조건, 제공 버전 및 표시의 미확정은 [지도 자료 출처](development/map-asset-sources.md)에 분리했다. 전체 에셋과 release 의존성 조건은 DES-08에서 계속 정리한다.
 
 ## 검증 경계
 
