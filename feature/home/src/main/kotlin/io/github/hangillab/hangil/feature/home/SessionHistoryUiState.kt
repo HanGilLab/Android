@@ -11,6 +11,8 @@ sealed interface SessionHistoryUiState {
 
     data object Empty : SessionHistoryUiState
 
+    data object Unavailable : SessionHistoryUiState
+
     data class SelectionChanged(
         val generation: Long,
     ) : SessionHistoryUiState

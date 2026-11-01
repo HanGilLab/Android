@@ -21,6 +21,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import io.github.hangillab.hangil.core.designsystem.HanGilTheme
 import io.github.hangillab.hangil.feature.course.CourseRoute
 import io.github.hangillab.hangil.feature.course.NextPracticeRoute
+import io.github.hangillab.hangil.feature.home.FinishedSessionReviewRoute
 import io.github.hangillab.hangil.feature.home.HomeRoute
 import io.github.hangillab.hangil.feature.home.SessionHistoryRoute
 import io.github.hangillab.hangil.feature.home.SessionRecordingViewModel
@@ -29,6 +30,7 @@ import kotlinx.coroutines.launch
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     private val recording: SessionRecordingViewModel by viewModels()
+    private val finishedReviews: FinishedReviewNavigationViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -40,9 +42,10 @@ class MainActivity : ComponentActivity() {
         setContent {
             HanGilTheme {
                 val recordingState by recording.state.collectAsStateWithLifecycle()
+                val finishedReviewEntry by finishedReviews.entry.collectAsStateWithLifecycle()
                 val navigation = rememberNavController()
                 NavHost(navigation, startDestination = "home") {
-                    composable("home") {
+                    composable("home") { homeEntry ->
                         HomeRoute(
                             onPrepare = { navigation.navigate("preparation") { launchSingleTop = true } },
                             onMapPreview = { navigation.navigate("map") { launchSingleTop = true } },
@@ -50,12 +53,41 @@ class MainActivity : ComponentActivity() {
                             onPrepareNext = { id ->
                                 navigation.navigate("preparation/next/${Uri.encode(id)}") { launchSingleTop = true }
                             },
+                            onFinishedReview = openReview@{ source ->
+                                if (navigation.currentBackStackEntry !== homeEntry ||
+                                    !lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) ||
+                                    !homeEntry.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+                                ) {
+                                    return@openReview
+                                }
+                                val token = finishedReviews.open(source) ?: return@openReview
+                                navigation.navigate("finished-review/$token") { launchSingleTop = true }
+                            },
                             showDiagnostics = showDiagnostics,
                             recordingState = recordingState,
                             onRetryRecording = { recording.retry() },
                         )
                     }
                     composable("history") { SessionHistoryRoute(onClose = { navigation.popBackStack() }) }
+                    composable(
+                        "finished-review/{finishedReviewToken}",
+                        arguments = listOf(navArgument("finishedReviewToken") { type = NavType.StringType }),
+                    ) { reviewEntry ->
+                        val token = reviewEntry.arguments?.getString("finishedReviewToken")
+                        val expected = finishedReviewEntry?.takeIf { it.token == token }?.source
+                        FinishedSessionReviewRoute(
+                            expectedSource = expected,
+                            onClose = {
+                                if (navigation.currentBackStackEntry === reviewEntry &&
+                                    lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) &&
+                                    reviewEntry.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+                                ) {
+                                    finishedReviews.clear(token)
+                                    navigation.popBackStack()
+                                }
+                            },
+                        )
+                    }
                     composable("preparation") { CourseRoute(onClose = { navigation.popBackStack() }) }
                     composable(
                         "preparation/next/{nextPracticeSourceId}",

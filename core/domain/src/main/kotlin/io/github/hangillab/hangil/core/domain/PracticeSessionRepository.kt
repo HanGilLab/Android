@@ -13,6 +13,13 @@ interface PracticeSessionRepository {
         canCommit: () -> Boolean,
     ): SessionStartResult
 
+    /** Strict finish is opt-in for adapters. Never silently delegate a full source to the ID writer. */
+    suspend fun finish(
+        expectedSource: PracticeSession,
+        endedAtEpochMillis: Long,
+        canCommit: () -> Boolean,
+    ): SessionFinishResult = SessionFinishResult.Blocked
+
     suspend fun finish(
         sessionId: String,
         endedAtEpochMillis: Long,

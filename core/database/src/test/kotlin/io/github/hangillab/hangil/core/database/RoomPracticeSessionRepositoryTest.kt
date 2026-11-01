@@ -10,9 +10,12 @@ import io.github.hangillab.hangil.core.domain.PracticeSelection
 import io.github.hangillab.hangil.core.domain.Preparation
 import io.github.hangillab.hangil.core.domain.SessionFinishResult
 import io.github.hangillab.hangil.core.domain.SessionStartResult
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
@@ -264,6 +267,95 @@ class RoomPracticeSessionRepositoryTest {
                 } catch (_: SQLiteException) {
                     // Only the expected storage failure is accepted; no normal session result is fabricated.
                 }
+            }
+        }
+
+    @Test fun `strict finish rejects every changed immutable source field before a write`() =
+        runBlocking {
+            memoryDatabase().useDatabase { db ->
+                RoomPracticeRepository(db).saveSelection(selection) { true }
+                val repository = RoomPracticeSessionRepository(db, catalog)
+                val source = (repository.start(practice, 1_000) { true } as SessionStartResult.Started).session
+                val changed =
+                    listOf(
+                        source.copy(selection = source.selection.copy(goalId = "other")),
+                        source.copy(selection = source.selection.copy(courseId = "other")),
+                        source.copy(selection = source.selection.copy(courseVersion = 2)),
+                        source.copy(selection = source.selection.copy(briefingVersion = 2)),
+                        source.copy(selection = source.selection.copy(taskId = "other")),
+                        source.copy(goalTitle = "other"),
+                        source.copy(courseTitle = "other"),
+                        source.copy(taskTitle = "other"),
+                        source.copy(startedAtEpochMillis = 999),
+                        source.copy(endedAtEpochMillis = 2_000),
+                    )
+                for (expected in changed) {
+                    assertEquals(SessionFinishResult.SourceChanged, repository.finish(expected, 2_000) { true })
+                    assertEquals(listOf(source), repository.observeSessions().first())
+                }
+                // The UI's source is now stale while the actual DB has the same ID and new metadata.
+                db.openHelper.writableDatabase.execSQL(
+                    "UPDATE practice_session SET taskTitle = ? WHERE sessionId = ?",
+                    arrayOf("replacement", source.sessionId),
+                )
+                val replacement = source.copy(taskTitle = "replacement")
+                assertEquals(SessionFinishResult.SourceChanged, repository.finish(source, 2_000) { true })
+                assertEquals(listOf(replacement), repository.observeSessions().first())
+                assertEquals(SessionFinishResult.Missing, repository.finish(source.copy(sessionId = "missing"), 2_000) { true })
+            }
+        }
+
+    @Test fun `strict duplicate preserves the original ended snapshot and rejects a foreign duplicate`() =
+        runBlocking {
+            memoryDatabase().useDatabase { db ->
+                RoomPracticeRepository(db).saveSelection(selection) { true }
+                val repository = RoomPracticeSessionRepository(db, catalog)
+                val source = (repository.start(practice, 1_000) { true } as SessionStartResult.Started).session
+                val ended = (repository.finish(source, 2_000) { true } as SessionFinishResult.Finished).session
+                assertEquals(source.copy(endedAtEpochMillis = 2_000), ended)
+                assertEquals(SessionFinishResult.AlreadyFinished(ended), repository.finish(source, 8_000) { true })
+                assertEquals(SessionFinishResult.SourceChanged, repository.finish(source.copy(taskTitle = "stale"), 9_000) { true })
+                assertEquals(listOf(ended), repository.observeSessions().first())
+            }
+        }
+
+    @Test fun `strict finish checks live permission after its write and rolls back`() =
+        runBlocking {
+            memoryDatabase().useDatabase { db ->
+                RoomPracticeRepository(db).saveSelection(selection) { true }
+                val repository = RoomPracticeSessionRepository(db, catalog)
+                val source = (repository.start(practice, 1_000) { true } as SessionStartResult.Started).session
+                var checks = 0
+                assertEquals(SessionFinishResult.Blocked, repository.finish(source, 2_000) { ++checks == 1 })
+                assertEquals(2, checks)
+                assertEquals(listOf(source), repository.observeSessions().first())
+                assertEquals(SessionFinishResult.InvalidTime, repository.finish(source, 999) { true })
+                assertEquals(SessionFinishResult.InvalidTime, repository.finish(source, 0) { true })
+            }
+        }
+
+    @Test fun `strict cancellation observed after the write rolls back without a success result`() =
+        runBlocking {
+            memoryDatabase().useDatabase { db ->
+                RoomPracticeRepository(db).saveSelection(selection) { true }
+                val repository = RoomPracticeSessionRepository(db, catalog)
+                val source = (repository.start(practice, 1_000) { true } as SessionStartResult.Started).session
+                val work =
+                    kotlinx.coroutines.CoroutineScope(currentCoroutineContext()).async {
+                        val owner = checkNotNull(currentCoroutineContext()[Job])
+                        var checks = 0
+                        repository.finish(source, 2_000) {
+                            if (++checks == 2) owner.cancel()
+                            true
+                        }
+                    }
+                try {
+                    work.await()
+                    fail("cancelled transaction cannot acknowledge finish")
+                } catch (_: CancellationException) {
+                    // The independent transaction job is cancelled, the test parent remains alive.
+                }
+                assertEquals(listOf(source), repository.observeSessions().first())
             }
         }
 

@@ -9,6 +9,8 @@ sealed interface SessionFinishResult {
         val session: PracticeSession,
     ) : SessionFinishResult
 
+    data object SourceChanged : SessionFinishResult
+
     data object Missing : SessionFinishResult
 
     data object Blocked : SessionFinishResult
