@@ -80,6 +80,10 @@ class FinishedSessionReviewFlowTest {
         var environment: JSONObject? = null
         var catalog: JSONObject? = null
         try {
+            val initialMain = compose.activity
+            report.put("nativePreparationMainResumeRequested", true)
+            compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+            check(compose.activity === initialMain) { "Preparation must retain the originally created Main" }
             h.assertEnvironment()
             captureHostReceipt()
             runBlocking {

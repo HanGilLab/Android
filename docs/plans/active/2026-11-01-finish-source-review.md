@@ -296,3 +296,23 @@ README는 정확4개와 문제, 원인, 해결, 결과, 대체안/회고, 코드
 
 
 검증 시작 직전 실제 화면 근거를 C의 입력 전 준비 단계에 추가한다. 전용 Qt 에뮬레이터는 정상 부팅과 창 생성, DDS ONLINE을 확인했지만 CUA 앱 목록과 Studio 미러링에서 직접 선택하지 못했다. 네이티브 계측이 준비 영수증을 보내기 전 실제 display0 화면과 포커스 근거를 비공개 PNG/JSON으로 저장하고 root가 해당 시도의 새 원본을 확인한 뒤만 단일 ACK를 전달한다. 이 사전 화면은 SDK/전면 성공이나 native admission의 근거로 간주하지 않고 별도 출처로 표시한다. 기존90초 절대 상한, 고정 host/display, 실제 P/UX/포커스1초 안정과 본문 모든 입력 검사는 유지한다. 위치 수집/권한/JDI와 제품 코드, M1은 변경하지 않으며 성능 측정 적용 제외다.
+
+
+## PR75 위치와 독립적인 실제 UI 검증의 환경 분리
+
+실제 C 재개 전 전용 기기의 Android 시스템이 반복 종료됐다. private 원문에서 watchdog이 android.fg의 GnssNative.native_stop_sv_status_collection 정지를60초 기다린 뒤 시스템을 종료한 것을 확인했다. 차량 서비스의 CarServiceHelper 연결 오류는 함께 관찰한 증상이며 유일한 최초 원인으로 확정하지 않는다. 실제 C는 JUnit 시작/ROOT_ACK/제품 입력 이전에 실패했고, 실패한 실행과 각 복구 결과를 분리해 보존했다. Google 공식37.2.13을 별도 경로에 설치한 뒤에도 계측 시작 전 Process crashed가 발생했으므로 새 버전으로 해결됐다고 기록하지 않는다. 원래 SDK는 변경하지 않았다.
+
+PR75는 기존 차량/UX 계약과 schema6 종료 원본 연결만 사용하며 위치 API/리스너를 호출하지 않는다. 기존 기기와 userdata를 보존한 동일 PR75 전용 기기에서 GPS 하드웨어를 일시적으로 미지원으로 구성해 C의 실제 Main/P/UX, 종료 원본 복습과 D/P 잠금 경계를 분리 검증한다. FUSED_LOCATION은 계속 거부하며 주차/UX/전면/ROOT_ACK 본문 조건과90초 상한은 바꾸지 않는다. GPS 미지원 환경의 성공을 GPS 활성 환경, PR74의 실제 위치 수신, 지도 내비나 출품 전체 검증으로 확장하지 않는다. GPS 설정 원문은 private 백업하고 전용 기기 종료 뒤 원래 설정으로 되돌린다. 각 실행에서 canonical DB와 전체 권한/flags/앱 설정 복구를 따로 확인한다. 원래 보호 기기에는 이 설정을 적용하지 않는다.
+
+이번 변경은 검증 환경 분리이며 제품/고정 M1/측정 소스와 APK는 바꾸지 않는다. 전후 성능 비교로 쓰지 않으며 기존 M1 세 arm과 미확정 결론을 유지한다. C는 라이트/확대 다크 각각 실제 성공과 원형 복구를 확인해야 완료다. 현재는 분리 검증 전이며 수동 완료나 병합으로 기록하지 않는다.
+
+
+### native 시작 직후의 실제 Main 준비 순서
+
+GPS 장치 분리 조건의 첫 C에서는 JUnit이 실제 시작됐고 이전의 Process crashed와 구분됐다. 제품 입력/ROOT_ACK 이전 Harness.assertEnvironment의 즉시 RESUMED 검사에서 실제 Main이 CREATED여서 실패했다. native 실패 영수증도 CREATED/focus=false를 기록했고, 이후 시스템 조회에서는 기본 내비가 전면이며 keyguard=false, inputRestricted=false, 화면 ON을 확인했다. 실패 당시와 이후 전면 상태를 같은 시점의 증거로 합치지 않는다. 그 실행은 전체 DB/권한/flags/앱 설정 복구를 통과했다.
+
+같은 ActivityScenario의 원래 Main을 명시적으로 RESUMED로 요청한 뒤 기존 환경 검사를 수행하도록 수동 C의 준비 순서만 정정한다. 실제 Activity 객체 동일성, RESUMED/현재 window focus/유효 display, 원래 ROOT_ACK와 실제 SDK P/UX1초 안정 및 기존90초 절대 상한은 모두 유지한다. 상태 값을 대입하거나 외부 내비를 종료/비활성화하지 않는다. 이 준비 요청은 ROOT_ACK 전에만 실행하고 ACK 뒤에는 기존 외부 전면 조작 금지를 유지한다. 테스트 준비이며 앱 성능이나 제품 해결 사례로 기록하지 않는다. 실제 성공 여부는 동일 native 흐름의 새 실행과 원형 복구로 확인한다.
+
+같은 Main 재개 요청을 추가한 후보에서 JDK17.0.21 spotlessApply, 전체 ./scripts/verify.sh와 :app:assembleDebugAndroidTest를 모두 exit0으로 완료했다. 캐시 재사용 포함이며 실제 C 성공과 성능 자료를 대신하지 않는다. 앞선 분리 조건의 native 첫 실패는 JUnit 실제 시작 후의 준비 단계 실패이며 ROOT_ACK/제품 입력은 없었고 전체 canonical/권한/flags/앱 설정 복구는 실제 통과했다. 다음 C 재실행과 두 테마/ROOT_ACK의 실제 성공은 아직 대기다.
+
+이번 새 근거는 환경 GNSS watchdog과 native Main 준비 순서에 관한 것으로 제품의 원본/조회 소유권, 파괴적 DB 쓰기, 지도 비동기 수명과 상태 반환 문제를 새로 해결한 성과가 아니다. 기존 README 네 사례의 내용과 순서, 여섯 항목과 실제 코드를 유지하고 미측정 성능 수치를 추가하지 않았다.
