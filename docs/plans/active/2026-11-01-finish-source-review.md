@@ -223,3 +223,68 @@ ACK 대기용 C에는 원래 elapsed 시작/절대 deadline과 캡처한 display
 
 
 최종 C의 private 메타데이터/진단명 정합 뒤 JDK17 quality와 app debug/AndroidTest APK 빌드를 다시 통과했다. 첫 입력 전 단일 ACK companion은 별도 순수 검사23개(기존 cleanup6, 준비 경계17)를 통과했으며 실제 run-as ACK/WM dump/runtime은 아직 검증하지 않았다. app/SDK 성능이나 실제 앱 성공의 대체 근거가 아니다. 실제 네이티브 실행에서 acquiring/ACK/admitted를 구분해 확인하고, 필요한 시스템 독 선택은 ACK 전 최대1회, ACK 뒤에는 앱 재포커스/제품 입력 없이 기존 명시 DDS D/P만 수행한다.
+
+
+## 최신 첫 입력 전 실패와 독립 작업 인계
+
+최종91e9025 다크는 첫 준비 phase/ACK에 도달하기 전에 초기 Main AX focused 창을 확인하지 못해 실패했다. SDK observer와 제품/준비 UI 입력, 새 원본, ACK, 위치 권한 허용은 모두0이다. 진단의 초기 DISCONNECTED/UNKNOWN은 observer 시작 전 값이므로 실제 SDK 상태 소실의 근거로 사용하지 않는다. 이후 정리 세 명령은 실제 am get-current-user 호출에서 activity 서비스 Broken pipe와 서비스 부재로 실패했다. ADB 콘솔과 getprop은 응답했고, 시스템 서비스의 일시 사용 불능은 확인했지만 원인이나 system_server 종료/재시작을 확정할 로그는 없다.
+
+실패 직후 복원 전 typed JSON은 canonical snapshot과 전체 dict exact였다. 이후 원형 복사/설정 복구의 초기 실패도 보존했고, 같은 소유 AVD/userdata만 정상 종료/새 부팅한 뒤 원형/전체 권한/원래 설정을 독립 두 번 exact 대조했다. 실제 복구와 그 후 정상 종료를 확인했으며 실패한 native 시도를 성공으로 바꾸지 않는다. 원래 보호 AVD와 자료는 건드리지 않았고 새 위치 권한 허용0을 유지했다.
+
+제품 기본 라이트와 고정 M1 완료는 유지하되 최종 다크, 새 ROOT_ACK runtime과 전체 병합 조건은 미완료다. 같은 환경 준비 실패를 전체 후속 작업의 대기로 확대하지 않는다. PR74는 현재 검토된 dd9895b와 별도 새 빈 schema7 기기에서 승인된 실제 SDK 임시 저장 검증을 진행할 수 있으며 PR75 API를 호출하거나 병합에 의존하지 않는다. PR75의 현재 head/source/APK/실패/복구/꺼진 userdata와 도구를 보존하고 독립 작업 뒤 관련 수동 검증을 이어간다. 새 근거가 기존 다른 사례보다 강하지 않아 README의 정확4개와 기존 선정/순서를 유지한다.
+
+
+## 2026-11-02 현재 C 검증 재개 계획
+
+최신 Notion 체크리스트와 두 checkout의 Git/ignored 상태, 저장소 지침 및 PR74/75 리뷰를 다시 확인했다. PR75의 현재91e9025는 main의 schema6 계약에서 시작한 독립 변경이며 PR74의 미병합 위치/schema7 구현을 포함하거나 호출하지 않는다. 위치 준비 도구와 별도 추가 진단1회는 재사용하지 않는다. 위치 권한 허용, 좌표 읽기/저장, JDI 없이 기존 소유 PR75 AVD/userdata와 실제 설치 후보를 대조해 최종 C의 기본 라이트와 확대 다크를 한 번씩 검증한다. 실패 시 해당 시도의 원형과 플랫폼 복구 결과를 따로 기록하고 본문을 자동 재시도하지 않는다.
+
+현재 C의 첫 입력 전 ROOT_ACK 준비는 실제 acquiring 영수증/절대 deadline/같은 display를 확인한 뒤 필요 시 시스템 독 선택 최대1회와 단일 ACK만 허용한다. ACK 뒤에는 제품 UI 재포커스/재실행 없이 native가 실제 P/UX/전면 안정과 모든 입력 조건을 확인한다. 본문이 요청한 브라우저 DDS D/P는 실제 브리지 online/선택 상태와 native 단계로 구분한다. 미확인 전면이나 빈 UI 계층은 성공으로 사용하지 않는다. 기존 보호 기기와 PR74 기기는 건드리지 않는다.
+
+이 실행은 기존 제품 동작의 정확성과 새 C 준비/해제 경계를 검증하며 제품/기기 SDK 성능을 바꾸는 구현이 아니다. M1과 다른 입력/테마/준비 조건의 시간을 성능 개선 표본으로 만들지 않는다. 제품/native 소스를 바꾸기 전 필요성이 생기면 별도 가설/측정 계약부터 정한다. 실제 C 두 테마, 원형/전체 권한/원래 설정, 최종 head CI4개/Codex와 충돌/정책이 모두 확인되기 전에는 PR75 전체 완료나 병합으로 기록하지 않는다. README 네 사례는 실제 새 근거를 얻은 뒤 비교하며, 근거가 더 강하지 않으면 그대로 보존한다.
+
+
+### 첫 ROOT_ACK runtime 실패와 UID 경계 수정 계획
+
+현재 C 라이트는 실제 첫 입력 전 preparation phase에 도달했지만 단일 ACK 전달이 실패했다. ACK 예약/실패 기록과 native 보고서를 보존하며 같은 시도의 ACK를 재시도하지 않았다. native는90초 동안 waiting 상태였고 준비/시작/마침 UI 입력0이다. 종료 시 Main RESUMED와 focus는 true였으나 SDK는 CONNECTING/gear와 주차 UNKNOWN/UX UNRESTRICTED여서 이 값을 P/UX 성공으로 대체하지 않는다. native 보존 플래그와 외부 전체 canonical/권한/원래 설정 복구를 별도 확인했다.
+
+실제 ACK shell의 awk 파일 읽기 실패와 같은 표현식의 host 성공을 구분했다. 이후 같은 기기의 읽기 전용 대조에서 shell UID는 /proc/uptime의 숫자 시간을 반환했으나 앱 run-as UID는 returncode2/출력0으로 실패했다. 이를 근거로 현재 ACK private script 안의 시간 조회가 잘못된 UID에 놓인 것으로 좁혔다. 위치/JDI/권한/제품 구현 문제로 해석하지 않는다.
+
+수정 전 순수 companion 검사에 모든 앱 UID script의 시간/현재사용자 API 금지와 shell 시간 검사 두 번을 검증하는 회귀를 추가해 RED를 확인한다. 수정은 시간/고정 사용자 확인을 shell UID의 app-private 원자 commit 호출 전후로 옮기고, stdin payload가 앞선 시스템 조회에 소비되지 않도록 분리한다. 앱 UID는 검증한 새 디렉터리에 같은 네 필드 ACK의 no-overwrite 임시 쓰기/hash/원자 rename만 수행한다. 부모 shell이 원래 절대 deadline 안에서 전체 commit의 반환을 확인해야 성공 영수증을 내며, native의 원래90초/1초 안정 및 모든 입력 strict 검사는 그대로다. commit이 늦거나 불명확하면 실패/재시도 없음이며 native가 늦은 ACK로 입력을 시작할 수 있게 바꾸지 않는다.
+
+GREEN과 source/pin 대조 뒤 새 namespace의 명시적 C 라이트/확대 다크를 실행한다. 기존 실패를 성공 자료와 합치지 않는다. phase를 관찰한 동일 root companion은 실제 같은 시도/원본/현재 Main을 재확인해 독 선택0의 단일 ACK만 즉시 전달하며, 실패 시 재시도하지 않는다. 전면이 다른 앱이면 자동 재포커스나 ACK를 하지 않는다. 본문의 실제 DDS D/P 전환만 root가 수행한다. 검증 도구의 UID 정확성 수정이므로 앱 실행 성능 전후 측정 적용 제외이고 제품/native 기대, APK와 M1 원값은 보존한다.
+
+
+### 현재 창과 과거 ANR 창의 분리, 화면 제어 차단
+
+시계 UID 수정 뒤 라이트의 새 시도는 numtests/본문/보고서 전에 Process crashed로 종료됐고 원형과 플랫폼 복구는 성공했다. Java crash buffer에서 해당 앱의 새 예외를 확보하지 못했으며 호스트 자원 관찰만으로 원인을 확정하지 않는다. 확대 다크는 실제 preparation에 도달했지만 ACK 예약/쓰기 전에 현재 창 metadata 검증에서 거부됐다. 동일 시도의 ACK를 다시 쓰지 않았고 native 입력0/원래90초 대기 실패로 보존했다. 최초 복구 판정 실패 뒤 독립 restoreverify는 전체 원형/원래 권한/설정 일치를 확인했다.
+
+정확한 두 transport 결과를 재생하니 WindowManager 전체 출력에는 과거 LAST ANR과 현재 출력의 top-focused-display 값이 함께 있었고 display section도 중복됐다. 기존 전역 검색은 이를 현재 미확인으로 판정했다. 과거 영역을 제외한 실제 현재 창은 여전히 Main이 아닌 다른 창이므로 이 거부를 성공으로 바꾸지 않는다. 현재 P/UX가 true였던 native 값도 실제 전면 성공을 대신하지 않는다. 별도 순수 lock 대조에서 같은 프로세스의 실행 guard는 통과했으므로 lock 원인 가설은 제외했다.
+
+[AOSP Android14 WindowManagerService](https://android.googlesource.com/platform/frameworks/base/+/refs/heads/android14-release/services/core/java/com/android/server/wm/WindowManagerService.java)의 ANR 저장과 기본 dump 순서를 대조했다. 과거 기록은 windows/display를 저장하며 기본 출력은 LAST ANR 뒤에 현재 policy/display/windows를 출력한다. 수정 전 현재 창 해석 회귀에 과거의 다른 창+현재 Main 허용, 과거 Main+현재 다른 창 거부, 누락/중복 history-policy 경계와 실제 현재 중복/timeout 거부를 추가해 RED부터 확인한다. 유일한 정규 LAST ANR 시작과 다음 유일한 정규 policy 경계가 모두 확인될 때만 과거 영역을 제외하고 기존 실제 display/고정 user/Main/포커스/root-task/resumed 검사를 그대로 유지한다. 경계가 모호하면 실패하며 과거 창이나 임의 마지막 값을 현재에 빌려주지 않는다. private metadata parser 수정이므로 앱 성능 전후 계측 적용 제외다.
+
+실제 화면을 직접 확인하지 못해 새 native 시도/독 선택을 완료하지 않았다. 마지막 미확인 항목은 실제 화면과 관련 수동 검증으로 유지하고 이전 실패의 원인을 소급해 확정하지 않는다. 화면 제어가 복구되기 전 새 native 시도/독 선택을 시작하지 않고, 원형 복구된 소유 PR75 AVD를 정상 종료해 보존한다. source/JDK 검사와 기록을 마친 뒤 실제 화면의 수동 재개 조건만 인계한다. 제품/native 기대/소스/APK/M1 원값과 README 네 사례는 유지한다.
+
+
+### 2026-11-02 검증 결과와 안전한 수동 인계
+
+현재91e9025에서 JDK17 전체 ./scripts/verify.sh가 exit0과 네 BUILD SUCCESSFUL로 끝났다. 캐시와 UP-TO-DATE를 포함한 소스, 품질, 테스트 및 빌드 검증이며 앱/SDK 성능 개선 수치로 사용하지 않는다. 이후 변경은 ignored 외부 검증 도구와 이 계획뿐이며 제품/native 소스와 APK, frozen M1 원값은 유지했다.
+
+시계 UID와 과거/현재 창 경계 수정은 각각 수정 전 RED와 수정 후 순수 GREEN으로 확인했다. 실제 shell UID의 시간 읽기 성공과 app run-as UID의 실패는 같은 기기의 읽기 전용 대조 근거다. 부모 shell의 기존 절대 시간 제한과 앱 UID의 원자 ACK 저장을 분리했고, live/만료 시간 경계의 추출 shell 검사도 통과했다. 실제 root ACK 전체 전달의 성공은 아직 미검증이다. 과거 영역을 제외한 실제 다크 시도의 현재 다른 창은 계속 거부되며, 이 거부를 Main 전면 성공으로 바꾸지 않았다. 기존 다섯 함수 AST 추출 계약도 순수 대조에서 호환됨을 확인했다. 과거 보조 도구 pin이나 일회성 JDI 승인을 새 실행의 승인으로 재사용하지 않는다.
+
+이번 native 라이트 두 시도와 확대 다크 한 시도는 모두 실패로 보존했다. 첫 ACK 실패, 본문 시작 전 Process crashed, 실제 현재 창 미확인에 따른 ACK 전 거부를 구분하고 제품 입력이나 전체 C 성공으로 세지 않는다. 다크의 첫 복구 판정 실패도 보존한 뒤 독립 restoreverify에서 전체 canonical, 원래 권한과 설정 일치를 확인했다. 소유 PR75 AVD와 자체 DDS forward는 정상 종료했으며 PR74 기기와 승인된 위치 수신 검증은 건드리지 않았다. 새 위치 권한 허용, 위치 관찰/저장과 JDI는 모두0이다.
+
+실제 화면 확인과 현재 C의 기본/확대 다크 전체 시나리오가 남아 있다. 화면을 확인할 수 없는 동안 외부 도구의 native 실행 진입을 차단하고 독 선택이나 새 시도를 자동 반복하지 않는다. 수동 화면 재개 조건만 인계하며 독립 소스/JVM/빌드 작업의 전체 대기로 확대하지 않는다. 현재 PR75 head의 필수 CI4개와 Codex 완료/구체 지적 없음, 이번 JDK17 전체 성공을 확인했지만 수동 완료를 대신하지 않으므로 PR75는 열린 미병합 상태다. PR8/10의 원래 최종 리뷰 미확인도 별도로 유지했다.
+
+README는 정확4개와 문제, 원인, 해결, 결과, 대체안/회고, 코드 순서 및 실제 펼침 구현/유효한 소스 링크를 확인했고 HEAD와 동일하게 보존했다. 이번 새 근거는 외부 검증 도구의 UID와 metadata 해석 경계에 관한 것으로, 기존 네 제품 사례가 입증하는 원본/읽기 소유권, 파괴적 DB 쓰기, 비동기 지도 입력 및 상태 반환 순서보다 사용자 영향과 실제 제품 해결을 강하게 입증하지 못한다. 따라서 추가하거나 교체하지 않았고 새 성능 주장을 만들지 않았다. Notion의 해당 PR75 상태/실패/복구와 차단을 갱신했으며 전체 체크박스57개 중 선택3개를 제외한 필수19/54를 유지한다. 공식 안내와 양식8개는 HTTP200/기준 원바이트 동일을 확인했으며 제출/서명/외부 발송은 수행하지 않았다.
+
+
+### 2026-11-02 현재 main 동기화와 검증 준비
+
+이전 실패/복구 기록은91e9025에서 실행한 과거 근거로 보존한다. 이후 main에 반영된 지도 출처와 전체 사용 흐름/계획 문서는 이 PR의 제품/계측 동작을 바꾸지 않지만, strict 필수 검사 정책상 behind 상태는 병합 준비 완료가 아니다. 현재 main bf416e0을 기존 작업 브랜치에 일반 merge하고, 보존한 미커밋 검증 기록도 같은 계획에 기록한다. 기존 commit/PR 이력의 강제 재작성, rebase, force push와 사용자 변경 삭제는 하지 않는다.
+
+동기화 전후 제품/계측/build/script 소스와 기존 APK/소스 pin을 실제 비교하고 JDK17 전체 검사를 실행한다. 문서와 이미 실행한 사실의 정리만 반영하므로 새 앱 성능 전후 계측은 적용 제외다. 기존 M1 원값과 현재 README의 정확4개/지정6항목/실제 코드/화면은 보존하며, 새 제품 해결 근거가 없어 사례를 교체하지 않는다. APK/source 동일성이 확인되지 않으면 검증 후보 pin을 바꾸지 않는다.
+
+현재 수동 화면 재개 조건은 충족하지 못했다. 이번 범위에서 새 C 실행, 독 선택, AVD 조작, 권한 변경, 위치 관찰/저장과 JDI를 하지 않는다. 과거91e9025의 CI/Codex나 이번 소스 검사 성공을 새 head의 최신 CI/리뷰 또는 미완료인 실제 C 두 테마와 ROOT_ACK runtime 성공으로 대신하지 않는다. 새 head의 필수 CI/Codex/미해결 상태를 따로 확인하고 PR75는 실제 수동 완료까지 열린 상태로 유지한다.
+
+
+이번 동기화 tree에서 JDK17.0.21 전체 ./scripts/verify.sh는 exit0과 네 BUILD SUCCESSFUL로 끝났다. 캐시/UP-TO-DATE 포함 결과이며 새 앱 성능/실기 표본이 아니다. 제품/계측/build/script와 README가91e9025와 동일하고, 등록한 QA 소스와 candidate/frozen APK의 실제 hash가 유지됨을 대조했다. 기존 UID/과거 창 해석의 수정과 실패/복구는 그 원래 실행의 근거로 보존하며 이번에 native를 다시 실행한 것으로 쓰지 않는다. 공식 공개 원문8개도 모두200/기준 hash 동일이었다. README의 네 사례와 여섯 항목 순서를 보존하고 새로운 제품 해결 사례나 측정 개선율을 추가하지 않았다. 새 head CI/Codex와 미해결 상태는 push 뒤 따로 확인한다.

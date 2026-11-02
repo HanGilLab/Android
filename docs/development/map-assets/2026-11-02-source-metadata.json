@@ -1,0 +1,134 @@
+{
+  "schema": 1,
+  "checked_at_utc": "2026-11-01T22:03:20.916906+00:00",
+  "app_baseline_commit": "dd4897880b24776c1599bb18096abc5bcc0a2219",
+  "upstream_styles_commit": "006ea5796803ba2df4330888836cb0a8f17473b4",
+  "scope": "Public style JSON, sprite JSON and license text metadata only; no tiles, glyph binaries or sprite PNG fetched",
+  "styles": [
+    {
+      "requested_url": "https://tiles.openfreemap.org/styles/liberty",
+      "response_url": "https://tiles.openfreemap.org/styles/liberty",
+      "http_status": 200,
+      "sha256": "408245464e76791801a64393c403433d09e8110eb9516040f8dc2b62584eee2a",
+      "bytes": 43311,
+      "name": null,
+      "id": null,
+      "version": 8,
+      "metadata": null,
+      "glyphs": "https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf",
+      "sprite": "https://tiles.openfreemap.org/sprites/ofm_f384/ofm",
+      "fontstack_values": [
+        [
+          "Noto Sans Bold"
+        ],
+        [
+          "Noto Sans Italic"
+        ],
+        [
+          "Noto Sans Regular"
+        ]
+      ]
+    },
+    {
+      "requested_url": "https://tiles.openfreemap.org/styles/dark",
+      "response_url": "https://tiles.openfreemap.org/styles/dark",
+      "http_status": 200,
+      "sha256": "c90dbfd0e428f7ea40740c29e789167c24f79e91327761960e08c44ca8f7795e",
+      "bytes": 20960,
+      "name": null,
+      "id": null,
+      "version": 8,
+      "metadata": null,
+      "glyphs": "https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf",
+      "sprite": "https://tiles.openfreemap.org/sprites/ofm_f384/ofm",
+      "fontstack_values": [
+        [
+          "Noto Sans Regular"
+        ]
+      ]
+    }
+  ],
+  "domain_replacement_comparison": [
+    {
+      "style": "liberty",
+      "source_url": "https://raw.githubusercontent.com/hyperknot/openfreemap-styles/006ea5796803ba2df4330888836cb0a8f17473b4/styles/liberty/style.json",
+      "domain_replacement_only_yields_full_json_equality": true,
+      "layers_json_identical": true,
+      "remaining_differences": []
+    },
+    {
+      "style": "dark",
+      "source_url": "https://raw.githubusercontent.com/hyperknot/openfreemap-styles/006ea5796803ba2df4330888836cb0a8f17473b4/styles/dark/style.json",
+      "domain_replacement_only_yields_full_json_equality": true,
+      "layers_json_identical": true,
+      "remaining_differences": []
+    }
+  ],
+  "sprite_metadata": [
+    {
+      "served_url": "https://tiles.openfreemap.org/sprites/ofm_f384/ofm.json",
+      "response_url": "https://tiles.openfreemap.org/sprites/ofm_f384/ofm.json",
+      "served_sha256": "73e75e58d8c7bb62cc25d9d150660500552f4d04f6eac5efa4e236076773c356",
+      "upstream_url": "https://raw.githubusercontent.com/hyperknot/openfreemap-styles/006ea5796803ba2df4330888836cb0a8f17473b4/sprites/sprites/ofm_f384/ofm.json",
+      "upstream_sha256": "73e75e58d8c7bb62cc25d9d150660500552f4d04f6eac5efa4e236076773c356",
+      "byte_identical": true,
+      "scope": "JSON metadata only, PNG not fetched"
+    },
+    {
+      "served_url": "https://tiles.openfreemap.org/sprites/ofm_f384/ofm@2x.json",
+      "response_url": "https://tiles.openfreemap.org/sprites/ofm_f384/ofm@2x.json",
+      "served_sha256": "82a4aaeed2c5ce6e98553915754dbe394ee66fd9a2aacc4318d25cdd74e8730b",
+      "upstream_url": "https://raw.githubusercontent.com/hyperknot/openfreemap-styles/006ea5796803ba2df4330888836cb0a8f17473b4/sprites/sprites/ofm_f384/ofm@2x.json",
+      "upstream_sha256": "82a4aaeed2c5ce6e98553915754dbe394ee66fd9a2aacc4318d25cdd74e8730b",
+      "byte_identical": true,
+      "scope": "JSON metadata only, PNG not fetched"
+    }
+  ],
+  "font_license_text_metadata": [
+    {
+      "url": "https://tiles.openfreemap.org/fonts/Noto%20Sans%20Regular/LICENSE.md",
+      "http_status": 200,
+      "sha256": "9f6ffa4d4ceb839c1d12b830273c1d9f01cb0f5e2535f6143b8f7befdd5650d5",
+      "bytes": 4300
+    },
+    {
+      "url": "https://raw.githubusercontent.com/maplibre/demotiles/601ae60796ceceda2cbd2ed3d2ea92d17a84be4b/font/Noto%20Sans%20Regular/LICENSE.md",
+      "http_status": 200,
+      "sha256": "9f6ffa4d4ceb839c1d12b830273c1d9f01cb0f5e2535f6143b8f7befdd5650d5",
+      "bytes": 4300
+    },
+    {
+      "url": "https://tiles.openfreemap.org/fonts/Noto%20Sans%20Bold/LICENSE.md",
+      "http_status": 200,
+      "sha256": "9f6ffa4d4ceb839c1d12b830273c1d9f01cb0f5e2535f6143b8f7befdd5650d5",
+      "bytes": 4300
+    },
+    {
+      "url": "https://raw.githubusercontent.com/maplibre/demotiles/601ae60796ceceda2cbd2ed3d2ea92d17a84be4b/font/Noto%20Sans%20Bold/LICENSE.md",
+      "http_status": 200,
+      "sha256": "9f6ffa4d4ceb839c1d12b830273c1d9f01cb0f5e2535f6143b8f7befdd5650d5",
+      "bytes": 4300
+    },
+    {
+      "url": "https://tiles.openfreemap.org/fonts/Noto%20Sans%20Italic/LICENSE.md",
+      "http_status": 200,
+      "sha256": "9f6ffa4d4ceb839c1d12b830273c1d9f01cb0f5e2535f6143b8f7befdd5650d5",
+      "bytes": 4300
+    },
+    {
+      "url": "https://raw.githubusercontent.com/maplibre/demotiles/601ae60796ceceda2cbd2ed3d2ea92d17a84be4b/font/Noto%20Sans%20Italic/LICENSE.md",
+      "http_status": 200,
+      "sha256": "9f6ffa4d4ceb839c1d12b830273c1d9f01cb0f5e2535f6143b8f7befdd5650d5",
+      "bytes": 4300
+    }
+  ],
+  "not_verified": [
+    "served glyph binaries, original font versions and build commit",
+    "sprite PNG bytes, complete atlas pixels and every icon source version",
+    "actual device attribution menu and design-credit accessibility",
+    "all resolved release dependency notices"
+  ],
+  "service_deployment_commit_attested": false,
+  "sprite_metadata_checked_at_utc": "2026-11-01T22:04:03.046341+00:00",
+  "font_license_checked_at_utc": "2026-11-01T22:04:23.999980+00:00"
+}
