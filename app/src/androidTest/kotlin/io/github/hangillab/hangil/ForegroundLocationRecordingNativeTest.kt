@@ -952,7 +952,9 @@ class ForegroundLocationRecordingNativeTest {
             displayId = checkNotNull(actualMain.display).also { check(it.isValid) }.displayId
         }
         val checkedEpoch = System.currentTimeMillis() / 1_000
-        check(h.liveAllowed() && !frameworkPermission()) { "The native pregrant proof requires current P, UX allowance and denied permission" }
+        check(
+            h.liveAllowed() && !frameworkPermission(),
+        ) { "The native pregrant proof requires current P, UX allowance and denied permission" }
         phase(
             "FOREGROUND_LOCATION_NATIVE_PREGRANT_READY|sdk_epoch=$checkedEpoch" +
                 "|pid=${android.os.Process.myPid()}|user=${android.os.Process.myUid() / 100_000}|display=${checkNotNull(displayId)}",
