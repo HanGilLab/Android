@@ -524,6 +524,7 @@ class FinishedSessionReviewFlowTest {
             .put("root_ack_state", "waiting")
             .put("product_ui_input_requested", false)
         persist()
+        capture("preinput-environment-unverified", true, "preinput-environment-not-native-admission")
         check(SystemClock.elapsedRealtime() < deadline)
         h.instrument.sendStatus(
             2,
@@ -1066,6 +1067,7 @@ class FinishedSessionReviewFlowTest {
     private fun capture(
         stage: String,
         diagnostic: Boolean,
+        scope: String = if (diagnostic) "failure-diagnostic-unverified" else "actual-Main-SDK-confirmed",
     ) {
         var first: Throwable? = null
 
@@ -1082,7 +1084,7 @@ class FinishedSessionReviewFlowTest {
         }
         val proof =
             JSONObject()
-                .put("scope", if (diagnostic) "failure-diagnostic-unverified" else "actual-Main-SDK-confirmed")
+                .put("scope", scope)
                 .put("captureDefaultDisplayOnly", true)
                 .put("pngSaved", false)
         var display: Int? = null
