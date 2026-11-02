@@ -160,102 +160,188 @@ flowchart TB
 
 상태 경합과 데이터 보존 문제를 해결한 실제 구현 사례 4개입니다.
 
-### 1. 화면 갱신보다 먼저 도착한 주행 상태로 상세 조작 차단
+### 1. 마친 연습의 원본을 복습까지 유지하고 무효 조회의 소유권 침범 차단
 
 **문제**
 
-주차 중 표시한 버튼이 화면에 남아 있는 순간 D 상태가 도착하면, UI 갱신 전에 눌린 상세 조작이 실행될 수 있습니다. 접힌 이력 상세를 펼치거나 화면에 다시 들어왔을 때 옛 버튼이 새 기록을 여는 경계도 함께 다뤘습니다. UX 제한 해제만으로 주차를 추정하지 않습니다.
+연습 마침 응답에는 종료한 기록 전체가 있었지만 화면은 완료 종류만 남기고 원본을 버렸습니다. 일반 이력은 진입 시 최신 기록을 골랐으므로, 다른 기록이 생겨도 방금 마친 연습을 그대로 복습한다는 의도를 전달할 경로가 없었습니다.
+
+같은 기록을 여는 연결을 구현하는 과정에서는 정상 A를 읽던 화면이 잠기거나 로딩에 남는 경합을 확인했습니다. 화면 수명이 끝났거나 거부된 cold collector도 정상 조회의 소유권을 가져가고, 종료하면서 공유 상태를 지울 수 있었습니다.
 
 **원인**
 
-차량 기어와 UX 제한은 서로 다른 상태 스트림이라 화면이 마지막으로 조합한 P와 최신 D 값이 잠시 다를 수 있었습니다. 펼침 콜백에서 로컬 expanded만 바꾸는 흐름을 추적하니 자식의 재구성이 부모 Route의 주차 판정을 다시 실행한다는 보장도 없었습니다. 정상 종료한 자료 스트림이 UI에 새 실패 상태를 발행하지 않으면 열린 상세가 남는 문제도 확인했습니다.
+ID와 완료 메시지만으로는 사용자가 마친 전체 원본, 저장소의 응답과 현재 조회 대상을 연결할 수 없었습니다. 세션 ID만 검사하는 종료 쓰기는 같은 ID의 metadata가 먼저 바뀐 경우 다른 원본을 마칠 수도 있었습니다. 쓰기 뒤 응답만 비교하면 잘못된 종료를 화면에서 숨길 뿐 이미 끝난 쓰기를 방어하지 못합니다.
+
+조회 쪽은 Job과 캡처한 host를 확인하기 전에 공유 reader와 상태를 설치했습니다. 잠금으로 코드 실행을 직렬화해도, 새 collector가 공유 소유권을 가질 자격이 있는지는 별도로 판단해야 했습니다.
 
 **해결**
 
-주차 확인과 UX 제한 해제를 모두 요구하는 판정을 domain에 두었습니다. 상세를 여는 순간과 내용을 구성하기 직전에 최신 차량 값, 표시한 원본과 조회 세대를 확인합니다. 화면의 STARTED 수명마다 새 소유권을 발급하고 STOP/폐기 뒤 옛 콜백은 다시 허용하지 않습니다. 거부한 펼침 의도는 버리고 접기는 항상 허용합니다. 자료 스트림의 정상 종료도 실패 상태로 발행하되 화면 이탈에 따른 취소는 오류로 바꾸지 않습니다.
+기존 API와 모델 ABI를 유지하며 expected fullsource를 받는 종료 overload를 추가했습니다. Room의 같은 트랜잭션에서 실제 행의 물리형과 전체 원본을 비교하고 쓰기 전후에 현재 허용 조건과 취소를 확인합니다. 같은 원본이 이미 끝났다면 최초 종료 시각을 그대로 반환합니다.
+
+마침 action과 저장소의 ACK를 분리하고, 검증한 ACK와 같은 종료 원본이 실제로 수신된 뒤에만 일회성 복습 버튼을 표시했습니다. 종료 Flow가 ACK보다 먼저 와도 응답을 확인할 기회는 유지하지만, Flow나 ACK 하나만으로 복습 대상을 만들지 않습니다. 앱은 [메모리 토큰과 전체 원본](app/src/main/kotlin/io/github/hangillab/hangil/FinishedReviewNavigationViewModel.kt#L14-L19)을 보관하고 [일치하는 토큰만 조회](app/src/main/kotlin/io/github/hangillab/hangil/MainActivity.kt#L76-L89)합니다. 구성 변경은 원본을 유지하고 프로세스 재생성으로 원본을 잃으면 Unavailable로 남습니다.
+
+일반 탐색과 exact 복습 진입을 구분하고, cold 조회를 시작하기 전에 expected source를 고정했습니다. 공유 reader를 설치하기 전 Job과 캡처한 RESUMED host를 확인하며, 거부된 collector는 자신의 Locked만 발행합니다. 상세 조작과 일회성 진입은 현재 P와 UX 해제, 원본과 조회 세대를 다시 확인합니다.
 
 **결과**
 
-화면이 이전 주차 상태를 표시해도 최신 D, 미확인, 연결 끊김이나 UX 제한에서는 상세를 새로 펼치지 않습니다. 다른 기록 선택과 화면 재진입 뒤에도 옛 버튼이 새 상세를 열지 않으며, P와 UX 허용으로 돌아와도 거부했던 요청이 자동 실행되지 않습니다. 현재 유효한 기록은 사용자가 다시 선택해 읽을 수 있습니다.
+마침 뒤 최신 기록이 바뀌어도 명시적으로 연 복습은 ACK의 같은 원본을 유지합니다. 이미 수신한 삭제와 전체 원형 변경, 이전 host의 action은 다른 기록을 빌려 열지 못합니다. 거부되거나 취소된 collector를 겹쳐도 정상 조회의 Ready와 상세 접근 권한은 유지됩니다.
+
+실제 Main 기본 라이트에서 사용자 시작과 마침, 같은 종료 원본의 명시 복습, SDK D 수신 중 잠금과 P 복귀 후 새 상세 조작, 구성 재생성과 원래 저장 자료 보존을 확인했습니다. 이 사례는 원본 전달과 조회 권한의 정확성 개선이며 **전후 성능 미측정**입니다. 새 복습 동선의 속도나 운전자 성과는 측정하지 않았습니다.
 
 **대체안/회고**
 
-버튼 비활성화나 부모 화면의 재구성에만 의존하면 처리 사이의 틈이 남습니다. rememberUpdatedState로 콜백을 최신 것으로 교체하는 방법은 옛 동작이 새 원본의 허용 조건을 빌릴 수 있어 사용하지 않았습니다. 열 때의 원본/수명과 현재 허용 조건을 함께 확인하는 방식을 택했습니다. 이미 수신한 상태를 기준으로 제한하며 아직 전달되지 않은 상태 전환을 예측하거나 차량을 제어하지는 않습니다.
+최신 기록을 다시 조회하거나 collection 뒤 ID를 선택하면 원래 의도가 다른 원본으로 바뀌거나 잠시 이전 내용을 표시할 수 있습니다. 불명확한 응답을 성공으로 바꾸는 대신 원본 분실과 오류를 구분하고, 사용할 수 없는 collector는 다른 조회의 상태를 변경하지 않게 했습니다.
+
+전체 논리 필드만으로는 관찰 없이 같은 값으로 삭제하고 다시 삽입한 행을 구분할 수 없습니다. UI가 아직 수신하지 않은 DB 변경을 즉시 감지한다고 보장하지도 않습니다. 버튼으로 시작하고 마친 연습과 앱이 수신한 차량 상태를 확인한 범위이며 실제 도로 구간, 현재 위치나 운전자 성과를 뜻하지 않습니다.
 
 **코드**
 
-[주차와 UX 조건을 함께 판단하는 상태](core/domain/src/main/kotlin/io/github/hangillab/hangil/core/domain/DrivingRestrictions.kt#L3-L9)
+[같은 Room 트랜잭션에서 전체 원본을 비교한 뒤 종료](core/database/src/main/kotlin/io/github/hangillab/hangil/core/database/RoomPracticeSessionRepository.kt#L99-L139)
 
 ```kotlin
-data class DrivingRestrictions(
-    val parkingState: ParkingState = ParkingState.UNKNOWN,
-    val uxRestrictionState: UxRestrictionState = UxRestrictionState.UNKNOWN,
+override suspend fun finish(
+    expectedSource: PracticeSession,
+    endedAtEpochMillis: Long,
+    canCommit: () -> Boolean,
+): SessionFinishResult {
+    if (endedAtEpochMillis <= 0) return SessionFinishResult.InvalidTime
+    if (!expectedSource.isActive) return SessionFinishResult.SourceChanged
+    return try {
+        database.withTransaction {
+            requireStrictPermission(canCommit)
+            val dao = database.practiceSessionDao()
+            val entity = dao.find(expectedSource.sessionId)
+            val result =
+                if (entity == null) {
+                    SessionFinishResult.Missing
+                } else {
+                    check(dao.countValidDeletionStorage(expectedSource.sessionId) == 1)
+                    val actual = entity.session()
+                    when {
+                        actual.copy(endedAtEpochMillis = null) != expectedSource -> SessionFinishResult.SourceChanged
+                        !actual.isActive -> SessionFinishResult.AlreadyFinished(actual)
+                        endedAtEpochMillis < actual.startedAtEpochMillis -> SessionFinishResult.InvalidTime
+                        else -> {
+                            check(dao.finish(expectedSource.sessionId, endedAtEpochMillis) == 1)
+                            SessionFinishResult.Finished(actual.copy(endedAtEpochMillis = endedAtEpochMillis))
+                        }
+                    }
+                }
+            requireStrictPermission(canCommit)
+            result
+        }
+    } catch (_: WriteBlocked) {
+        SessionFinishResult.Blocked
+    }
+}
+
+private suspend fun requireStrictPermission(canCommit: () -> Boolean) {
+    currentCoroutineContext().ensureActive()
+    if (!canCommit()) throw WriteBlocked()
+    currentCoroutineContext().ensureActive()
+}
+```
+
+[수신한 마침 응답의 원본과 결과 종류를 확인](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionViewModel.kt#L267-L303)
+
+```kotlin
+val source =
+    when (result) {
+        is SessionFinishResult.Finished -> result.session
+        is SessionFinishResult.AlreadyFinished -> result.session
+        else -> null
+    }
+val endedAt = source?.endedAtEpochMillis
+if (source != null && endedAt != null &&
+    endedAt >= source.startedAtEpochMillis && source.startedAtEpochMillis > 0 &&
+    source.copy(endedAtEpochMillis = null) == action.source &&
+    (result !is SessionFinishResult.Finished || endedAt == requestedTime)
 ) {
-    val allowsDetailedInteraction: Boolean
-        get() = parkingState == ParkingState.PARKED && uxRestrictionState == UxRestrictionState.UNRESTRICTED
+    acknowledgedFinish = source to
+        if (result is SessionFinishResult.Finished) {
+            SessionFinishReceipt.Kind.FINISHED
+        } else {
+            SessionFinishReceipt.Kind.ALREADY_FINISHED
+        }
+    operation.value =
+        SessionOperationState.Feedback(
+            if (result is SessionFinishResult.Finished) {
+                SessionFeedback.FINISHED
+            } else {
+                SessionFeedback.ALREADY_FINISHED
+            },
+        )
+} else {
+    operation.value =
+        SessionOperationState.Feedback(
+            when (result) {
+                SessionFinishResult.Missing -> SessionFeedback.MISSING
+                SessionFinishResult.Blocked -> SessionFeedback.BLOCKED
+                SessionFinishResult.InvalidTime -> SessionFeedback.INVALID_TIME
+                else -> SessionFeedback.SAVE_FAILED
+            },
+        )
 }
 ```
 
-[최신 차량 상태와 제한 상태 재확인](core/domain/src/main/kotlin/io/github/hangillab/hangil/core/domain/PracticeInteraction.kt#L4-L9)
+[현재 원본과 수명에 속한 복습 요청을 한 번만 소비](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionViewModel.kt#L339-L353)
 
 ```kotlin
-fun allowsPracticeInteraction(
-    vehicle: VehicleState,
-    restrictions: DrivingRestrictions,
-): Boolean =
-    restrictions.allowsDetailedInteraction &&
-        vehicle.toDrivingRestrictions(restrictions.uxRestrictionState).allowsDetailedInteraction
+fun consumeFinishedReview(
+    receipt: SessionFinishReceipt,
+    canKeepOpen: () -> Boolean,
+): PracticeSession? =
+    synchronized(disclosureLock) {
+        if (mutation.isLocked || operation.value == SessionOperationState.Saving ||
+            receipts.value !== receipt || !finishAccessLocked(canKeepOpen) || receipts.value !== receipt ||
+            currentFinishRecordsLocked()?.singleOrNull { it.sessionId == receipt.source.sessionId } != receipt.source
+        ) {
+            return@synchronized null
+        }
+        receipts.value = null
+        acknowledgedFinish = null
+        receipt.source
+    }
 ```
 
-[표시한 원본과 조회 세대를 최신 reader에서 재확인](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L121-L134)
+[살아 있는 collector만 공유 조회 소유권을 설치](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L106-L140)
 
 ```kotlin
-fun canRevealSummary(
-    expectedSessionId: String,
-    expectedGeneration: Long,
-): Boolean =
+val owner = Reader(checkNotNull(currentCoroutineContext()[Job]), entry, canKeepOpen)
+val installed =
     synchronized(lock) {
-        val owner = reader ?: return@synchronized false
-        val query = owner.query ?: return@synchronized false
-        if (!currentQuery(owner, query) || !canRead()) return@synchronized false
-        val current = published.value as? SessionHistoryUiState.Ready ?: return@synchronized false
-        val records = ended ?: return@synchronized false
-        !selectionLost && selectedId == expectedSessionId &&
-            current.session.sessionId == expectedSessionId && current.generation == expectedGeneration &&
-            records.getOrNull(current.index) == current.session && current.summary.source == current.session
+        owner.job.ensureActive()
+        if (entry is SessionHistoryEntry.FinishedReview && !hostAllowed(owner)) return@synchronized false
+        owner.job.ensureActive()
+        invalidateDeletionLocked()
+        reader = owner
+        ended = null
+        if (entry is SessionHistoryEntry.FinishedReview) {
+            if (reviewEntry != entry) {
+                reviewEntry = entry
+                reviewUnavailable = entry.expectedSource == null || entry.expectedSource.isActive
+            }
+            selectedId = entry.expectedSource?.sessionId
+            selectionLost = false
+        }
+        publishLocked(
+            when {
+                entry is SessionHistoryEntry.FinishedReview && reviewUnavailable -> SessionHistoryUiState.Unavailable
+                else -> SessionHistoryUiState.Loading
+            },
+        )
+        true
     }
-```
-
-[열 때의 수명과 허용 조건을 직접 캡처한 펼침 처리](core/designsystem/src/main/kotlin/io/github/hangillab/hangil/core/designsystem/ParkedDisclosure.kt#L76-L91)
-
-```kotlin
-val clickOwner = startedOwner
-
-fun ownsStartedContext(): Boolean = clickOwner.get() && lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
-
-fun mayRender(): Boolean = ownsStartedContext() && openingGuard?.invoke() == true && canExpand()
-val toggle: () -> Unit = {
-    if (expanded) {
-        // Closing is always permitted, including after a live denial or STOP.
-        collapse()
-    } else if (ownsStartedContext() && canExpand()) {
-        openingGuard = canExpand
-        expanded = true
-    } else {
-        collapse()
+if (!installed) {
+    emit(SessionHistoryUiState.Locked)
+    return@coroutineScope
+}
+val queryJob =
+    launch {
+        if (entry is SessionHistoryEntry.FinishedReview && reviewUnavailable) return@launch
+        if (!hostAllowed(owner)) return@launch
+        requests.flatMapLatest { watchAccess(owner, it) }.collect()
     }
-}
-```
-
-[내용 구성 직전 재검사와 거부한 의도 폐기](core/designsystem/src/main/kotlin/io/github/hangillab/hangil/core/designsystem/ParkedDisclosure.kt#L119-L124)
-
-```kotlin
-val renderExpanded = visibleExpanded && mayRender()
-if (renderExpanded) Column(verticalArrangement = Arrangement.spacedBy(HanGilSpacing.lg), content = content)
-SideEffect {
-    // A read-only guard failure must discard intent, not resurrect it after P returns.
-    if (expanded && !renderExpanded) collapse()
-}
 ```
 
 ### 2. 확인한 종료 기록만 연결 자료와 함께 원자적으로 삭제
@@ -298,7 +384,7 @@ data class SessionDeletionTarget(
 )
 ```
 
-[같은 확인 nonce의 중복 실행과 바뀐 선택을 차단](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L406-L424)
+[같은 확인 nonce의 중복 실행과 바뀐 선택을 차단](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L457-L475)
 
 ```kotlin
 fun confirmDeletion(nonce: Long): Boolean {
@@ -322,7 +408,7 @@ fun confirmDeletion(nonce: Long): Boolean {
 }
 ```
 
-[쓰기 순간의 job, reader/조회/선택과 최신 차량 조건 재확인](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L564-L602)
+[쓰기 순간의 job, reader/조회/선택과 최신 차량 조건 재확인](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L620-L658)
 
 ```kotlin
 private fun canCommitDeletion(
@@ -407,7 +493,7 @@ private suspend fun requirePermission(canProceed: () -> Boolean) {
 }
 ```
 
-[자기 삭제의 행 소실 통지를 결과 도착 전까지 보존](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L630-L646)
+[자기 삭제의 행 소실 통지를 결과 도착 전까지 보존](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L686-L702)
 
 ```kotlin
 private fun preserveDeletionReceiptLocked(
@@ -429,7 +515,7 @@ private fun preserveDeletionReceiptLocked(
 }
 ```
 
-[저장소가 반환한 명시적 삭제 결과에 따른 완료/실패 분기](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L512-L526)
+[저장소가 반환한 명시적 삭제 결과에 따른 완료/실패 분기](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L563-L582)
 
 ```kotlin
 when (result) {
@@ -439,7 +525,12 @@ when (result) {
         selectionLost = true
         // Preserve the deleted cursor until the user explicitly accepts another record.
         selectedId = action.session.sessionId
-        published.value = SessionHistoryUiState.SelectionChanged(nextGenerationLocked())
+        if (action.owner.entry is SessionHistoryEntry.FinishedReview) {
+            reviewUnavailable = true
+            publishLocked(SessionHistoryUiState.Unavailable)
+        } else {
+            published.value = SessionHistoryUiState.SelectionChanged(nextGenerationLocked())
+        }
         deletionPublished.value = SessionDeletionUiState.Deleted(action.nonce, action.session)
     }
     SessionDeletionResult.Missing -> failDeletionLocked(action, SessionDeletionUiState.FailureReason.MISSING)

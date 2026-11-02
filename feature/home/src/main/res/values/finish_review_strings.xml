@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="finish_review_open">마친 연습 복습하기</string>
+  <string name="finish_review_title">마친 연습 복습</string>
+  <string name="finish_review_unavailable">이 연습 기록을 확인할 수 없어요. 지난 연습에서 기록을 다시 선택해 주세요.</string>
+</resources>

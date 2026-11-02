@@ -2,11 +2,14 @@ package io.github.hangillab.hangil.core.database
 
 import androidx.room.withTransaction
 import io.github.hangillab.hangil.core.domain.PracticeCatalog
+import io.github.hangillab.hangil.core.domain.PracticeSession
 import io.github.hangillab.hangil.core.domain.PracticeSessionRepository
 import io.github.hangillab.hangil.core.domain.Preparation
 import io.github.hangillab.hangil.core.domain.PreparedPractice
 import io.github.hangillab.hangil.core.domain.SessionFinishResult
 import io.github.hangillab.hangil.core.domain.SessionStartResult
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.map
 import java.util.UUID
 import javax.inject.Inject
@@ -91,6 +94,48 @@ internal class RoomPracticeSessionRepository
             } catch (_: WriteBlocked) {
                 SessionFinishResult.Blocked
             }
+        }
+
+        override suspend fun finish(
+            expectedSource: PracticeSession,
+            endedAtEpochMillis: Long,
+            canCommit: () -> Boolean,
+        ): SessionFinishResult {
+            if (endedAtEpochMillis <= 0) return SessionFinishResult.InvalidTime
+            if (!expectedSource.isActive) return SessionFinishResult.SourceChanged
+            return try {
+                database.withTransaction {
+                    requireStrictPermission(canCommit)
+                    val dao = database.practiceSessionDao()
+                    val entity = dao.find(expectedSource.sessionId)
+                    val result =
+                        if (entity == null) {
+                            SessionFinishResult.Missing
+                        } else {
+                            check(dao.countValidDeletionStorage(expectedSource.sessionId) == 1)
+                            val actual = entity.session()
+                            when {
+                                actual.copy(endedAtEpochMillis = null) != expectedSource -> SessionFinishResult.SourceChanged
+                                !actual.isActive -> SessionFinishResult.AlreadyFinished(actual)
+                                endedAtEpochMillis < actual.startedAtEpochMillis -> SessionFinishResult.InvalidTime
+                                else -> {
+                                    check(dao.finish(expectedSource.sessionId, endedAtEpochMillis) == 1)
+                                    SessionFinishResult.Finished(actual.copy(endedAtEpochMillis = endedAtEpochMillis))
+                                }
+                            }
+                        }
+                    requireStrictPermission(canCommit)
+                    result
+                }
+            } catch (_: WriteBlocked) {
+                SessionFinishResult.Blocked
+            }
+        }
+
+        private suspend fun requireStrictPermission(canCommit: () -> Boolean) {
+            currentCoroutineContext().ensureActive()
+            if (!canCommit()) throw WriteBlocked()
+            currentCoroutineContext().ensureActive()
         }
 
         private fun requirePermission(canCommit: () -> Boolean) {
