@@ -35,6 +35,7 @@ import io.github.hangillab.hangil.core.domain.PracticeSession
 import io.github.hangillab.hangil.core.vehicle.FusedLocationPermission
 import io.github.hangillab.hangil.feature.course.CourseRoute
 import io.github.hangillab.hangil.feature.course.NextPracticeRoute
+import io.github.hangillab.hangil.feature.home.FinishedSessionReviewRoute
 import io.github.hangillab.hangil.feature.home.HomeRoute
 import io.github.hangillab.hangil.feature.home.LocationHistoryRoute
 import io.github.hangillab.hangil.feature.home.LocationRecordingRoute
@@ -51,6 +52,7 @@ class MainActivity : ComponentActivity() {
     private val locationControls: LocationRecordingViewModel by viewModels()
 
     @Inject lateinit var locationRecording: LocationRecordingController
+    private val finishedReviews: FinishedReviewNavigationViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -65,19 +67,30 @@ class MainActivity : ComponentActivity() {
         setContent {
             HanGilTheme {
                 val recordingState by recording.state.collectAsStateWithLifecycle()
+                val finishedReviewEntry by finishedReviews.entry.collectAsStateWithLifecycle()
                 val locationState by locationRecording.state.collectAsStateWithLifecycle()
                 var locationHistorySource by remember { mutableStateOf<PracticeSession?>(null) }
                 val navigation = rememberNavController()
                 Column(Modifier.fillMaxSize()) {
                     LocationRecordingStatusRow(locationState) { locationRecording.stop(it) }
                     NavHost(navigation, startDestination = "home", modifier = Modifier.weight(1f)) {
-                        composable("home") {
+                        composable("home") { homeEntry ->
                             HomeRoute(
                                 onPrepare = { navigation.navigate("preparation") { launchSingleTop = true } },
                                 onMapPreview = { navigation.navigate("map") { launchSingleTop = true } },
                                 onHistory = { navigation.navigate("history") { launchSingleTop = true } },
                                 onPrepareNext = { id ->
                                     navigation.navigate("preparation/next/${Uri.encode(id)}") { launchSingleTop = true }
+                                },
+                                onFinishedReview = openReview@{ source ->
+                                    if (navigation.currentBackStackEntry !== homeEntry ||
+                                        !lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) ||
+                                        !homeEntry.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+                                    ) {
+                                        return@openReview
+                                    }
+                                    val token = finishedReviews.open(source) ?: return@openReview
+                                    navigation.navigate("finished-review/$token") { launchSingleTop = true }
                                 },
                                 showDiagnostics = showDiagnostics,
                                 recordingState = recordingState,
@@ -91,6 +104,39 @@ class MainActivity : ComponentActivity() {
                                 onOpenLocations = { expected ->
                                     locationHistorySource = expected
                                     navigation.navigate("location-history") { launchSingleTop = true }
+                                },
+                            )
+                        }
+                        composable(
+                            "finished-review/{finishedReviewToken}",
+                            arguments = listOf(navArgument("finishedReviewToken") { type = NavType.StringType }),
+                        ) { reviewEntry ->
+                            val token = reviewEntry.arguments?.getString("finishedReviewToken")
+                            val expected = finishedReviewEntry?.takeIf { it.token == token }?.source
+                            FinishedSessionReviewRoute(
+                                expectedSource = expected,
+                                onOpenLocations = openLocations@{ source ->
+                                    if (navigation.currentBackStackEntry !== reviewEntry ||
+                                        !lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) ||
+                                        !reviewEntry.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) ||
+                                        expected != source ||
+                                        finishedReviews.entry.value
+                                            ?.takeIf { it.token == token }
+                                            ?.source != source
+                                    ) {
+                                        return@openLocations
+                                    }
+                                    locationHistorySource = source
+                                    navigation.navigate("location-history") { launchSingleTop = true }
+                                },
+                                onClose = {
+                                    if (navigation.currentBackStackEntry === reviewEntry &&
+                                        lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) &&
+                                        reviewEntry.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+                                    ) {
+                                        finishedReviews.clear(token)
+                                        navigation.popBackStack()
+                                    }
                                 },
                             )
                         }

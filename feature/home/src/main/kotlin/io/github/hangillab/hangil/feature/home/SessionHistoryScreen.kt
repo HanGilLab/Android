@@ -56,16 +56,33 @@ fun SessionHistoryRoute(
     viewModel: SessionHistoryViewModel = hiltViewModel(),
     onOpenLocations: (PracticeSession) -> Unit = {},
 ) {
-    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    SessionHistoryEntryContent(
+        entry = SessionHistoryEntry.Explore,
+        onClose = onClose,
+        viewModel = viewModel,
+        onOpenLocations = onOpenLocations,
+    )
+}
+
+@Composable
+internal fun SessionHistoryEntryContent(
+    entry: SessionHistoryEntry,
+    onClose: () -> Unit,
+    viewModel: SessionHistoryViewModel,
+    onOpenLocations: (PracticeSession) -> Unit,
+) {
+    val exact = entry is SessionHistoryEntry.FinishedReview
+    val requiredState = if (exact) Lifecycle.State.RESUMED else Lifecycle.State.STARTED
     val deletion by viewModel.deletionState.collectAsStateWithLifecycle()
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    var startedOwner by remember(viewModel, lifecycle) { mutableStateOf(AtomicBoolean(false) to AtomicLong(0)) }
-    DisposableEffect(viewModel, lifecycle) {
+    var startedOwner by remember(viewModel, lifecycle, entry) { mutableStateOf(AtomicBoolean(false) to AtomicLong(0)) }
+    DisposableEffect(viewModel, lifecycle, entry) {
         fun stopOwner() {
             val current = startedOwner
             current.first.set(false)
             val nonce = current.second.getAndSet(0)
             if (nonce > 0) viewModel.dismissDeletion(nonce)
+            if (exact) startedOwner = AtomicBoolean(false) to AtomicLong(0)
         }
 
         fun startOwner() {
@@ -75,13 +92,15 @@ fun SessionHistoryRoute(
         val observer =
             LifecycleEventObserver { _, event ->
                 when (event) {
-                    Lifecycle.Event.ON_START -> startOwner()
+                    Lifecycle.Event.ON_START -> if (!exact) startOwner()
+                    Lifecycle.Event.ON_RESUME -> if (exact) startOwner()
+                    Lifecycle.Event.ON_PAUSE -> if (exact) stopOwner()
                     Lifecycle.Event.ON_STOP, Lifecycle.Event.ON_DESTROY -> stopOwner()
                     else -> Unit
                 }
             }
         lifecycle.addObserver(observer)
-        if (lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) && !startedOwner.first.get()) startOwner()
+        if (lifecycle.currentState.isAtLeast(requiredState) && !startedOwner.first.get()) startOwner()
         onDispose {
             stopOwner()
             lifecycle.removeObserver(observer)
@@ -110,6 +129,30 @@ fun SessionHistoryRoute(
     }
     val locationClickOwner = locationOwner
     val clickOwner = startedOwner
+    val entryState =
+        remember(viewModel, entry, clickOwner.first, lifecycle) {
+            if (exact) {
+                viewModel.observeEntry(entry) {
+                    clickOwner.first.get() && lifecycle.currentState == Lifecycle.State.RESUMED
+                }
+            } else {
+                viewModel.uiState
+            }
+        }
+    val state by entryState.collectAsStateWithLifecycle(initialValue = SessionHistoryUiState.Loading, minActiveState = requiredState)
+    val presented =
+        if (exact && state is SessionHistoryUiState.Ready) {
+            val current = state as SessionHistoryUiState.Ready
+            if (current.session != (entry as SessionHistoryEntry.FinishedReview).expectedSource ||
+                !viewModel.canRevealSummary(current.session.sessionId, current.generation)
+            ) {
+                SessionHistoryUiState.Loading
+            } else {
+                current
+            }
+        } else {
+            state
+        }
     val close: () -> Unit = {
         locationClickOwner.set(false)
         clickOwner.first.set(false)
@@ -130,7 +173,7 @@ fun SessionHistoryRoute(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    stringResource(R.string.history_title),
+                    stringResource(if (exact) R.string.finish_review_title else R.string.history_title),
                     Modifier.weight(1f),
                     style = MaterialTheme.typography.titleLarge,
                 )
@@ -139,19 +182,30 @@ fun SessionHistoryRoute(
                     modifier = Modifier.heightIn(min = HanGilDimensions.secondaryActionMinHeight).testTag("history_close"),
                 ) { Text(stringResource(R.string.history_close), style = MaterialTheme.typography.titleMedium) }
             }
-            if (!viewModel.canRead() || state == SessionHistoryUiState.Locked) {
+            if (!viewModel.canRead() || presented == SessionHistoryUiState.Locked || (exact && !clickOwner.first.get())) {
                 Box(Modifier.testTag("history_locked")) { ParkedLockedNotice() }
             } else {
-                when (val current = state) {
+                when (val current = presented) {
                     SessionHistoryUiState.Locked -> Unit
                     SessionHistoryUiState.Loading -> HistoryMessage(R.string.history_loading, "history_loading")
                     SessionHistoryUiState.Empty -> HistoryMessage(R.string.history_empty, "history_empty")
+                    SessionHistoryUiState.Unavailable -> HistoryMessage(R.string.finish_review_unavailable, "finished_review_unavailable")
                     is SessionHistoryUiState.Failed -> {
                         HistoryMessage(R.string.history_failed, "history_failed")
+                        val retryClick = {
+                            if (exact) {
+                                viewModel.retryEntry(current) {
+                                    clickOwner.first.get() && lifecycle.currentState == Lifecycle.State.RESUMED
+                                }
+                            } else {
+                                viewModel.retry()
+                            }
+                            Unit
+                        }
                         ParkedButton(
-                            onClick = { viewModel.retry() },
+                            onClick = retryClick,
                             prominent = false,
-                            modifier = Modifier.testTag("history_retry"),
+                            modifier = Modifier.testTag("history_retry").frozenObservationClick(retryClick),
                         ) { Text(stringResource(R.string.history_retry), style = MaterialTheme.typography.titleLarge) }
                     }
                     is SessionHistoryUiState.SelectionChanged -> {
@@ -173,7 +227,7 @@ fun SessionHistoryRoute(
                                     val canKeepOpen =
                                         remember(clickOwner.first, lifecycle) {
                                             {
-                                                clickOwner.first.get() && lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+                                                clickOwner.first.get() && lifecycle.currentState.isAtLeast(requiredState)
                                             }
                                         }
                                     ParkedPanel {
@@ -199,7 +253,7 @@ fun SessionHistoryRoute(
                                 key(current.session, current.generation, clickOwner.first) {
                                     val canKeepOpen =
                                         remember(clickOwner.first, lifecycle) {
-                                            { clickOwner.first.get() && lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) }
+                                            { clickOwner.first.get() && lifecycle.currentState.isAtLeast(requiredState) }
                                         }
                                     ParkedPanel {
                                         ParkedDisclosure(
@@ -222,7 +276,7 @@ fun SessionHistoryRoute(
                                 key(current.session, current.generation, clickOwner.first) {
                                     val canKeepOpen =
                                         remember(clickOwner.first, lifecycle) {
-                                            { clickOwner.first.get() && lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) }
+                                            { clickOwner.first.get() && lifecycle.currentState.isAtLeast(requiredState) }
                                         }
                                     ParkedPanel {
                                         ParkedDisclosure(
@@ -242,7 +296,7 @@ fun SessionHistoryRoute(
                                 key(current.session, current.generation, clickOwner.first) {
                                     val canKeepOpen =
                                         remember(clickOwner.first, lifecycle) {
-                                            { clickOwner.first.get() && lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) }
+                                            { clickOwner.first.get() && lifecycle.currentState.isAtLeast(requiredState) }
                                         }
                                     ParkedPanel {
                                         ParkedDisclosure(
@@ -280,6 +334,7 @@ fun SessionHistoryRoute(
                                     )
                                 }
                             },
+                            allowBrowsing = !exact,
                             onDelete = {
                                 if (clickOwner.first.get() &&
                                     viewModel.requestDeletion(current.session.sessionId, current.generation) { clickOwner.first.get() }
@@ -339,6 +394,7 @@ private fun HistoryRecord(
     courseCompletion: @Composable () -> Unit,
     locations: @Composable () -> Unit,
     onDelete: () -> Unit,
+    allowBrowsing: Boolean = true,
 ) {
     val session = state.session
     val finished = checkNotNull(session.endedAtEpochMillis)
@@ -354,19 +410,21 @@ private fun HistoryRecord(
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(HanGilSpacing.lg)) {
-            ParkedButton(
-                onClick = onNewer,
-                enabled = state.canNewer,
-                prominent = false,
-                modifier = Modifier.weight(1f).testTag("history_newer"),
-            ) { Text(stringResource(R.string.history_newer), style = MaterialTheme.typography.titleLarge) }
-            ParkedButton(
-                onClick = onOlder,
-                enabled = state.canOlder,
-                prominent = false,
-                modifier = Modifier.weight(1f).testTag("history_older"),
-            ) { Text(stringResource(R.string.history_older), style = MaterialTheme.typography.titleLarge) }
+        if (allowBrowsing) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(HanGilSpacing.lg)) {
+                ParkedButton(
+                    onClick = onNewer,
+                    enabled = state.canNewer,
+                    prominent = false,
+                    modifier = Modifier.weight(1f).testTag("history_newer"),
+                ) { Text(stringResource(R.string.history_newer), style = MaterialTheme.typography.titleLarge) }
+                ParkedButton(
+                    onClick = onOlder,
+                    enabled = state.canOlder,
+                    prominent = false,
+                    modifier = Modifier.weight(1f).testTag("history_older"),
+                ) { Text(stringResource(R.string.history_older), style = MaterialTheme.typography.titleLarge) }
+            }
         }
         ParkedPanel {
             Text(

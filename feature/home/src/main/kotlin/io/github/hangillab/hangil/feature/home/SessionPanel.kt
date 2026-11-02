@@ -6,13 +6,21 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.hangillab.hangil.core.designsystem.HanGilDimensions
 import io.github.hangillab.hangil.core.designsystem.ParkedBadge
@@ -28,6 +36,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
 
 @Composable
 internal fun SessionRoute(
@@ -37,8 +46,46 @@ internal fun SessionRoute(
     recordingState: VehicleRecordingState,
     onRetryRecording: () -> Unit,
     viewModel: SessionViewModel = hiltViewModel(),
+    onFinishedReview: ((PracticeSession) -> Unit)? = null,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val finishAction by viewModel.finishActions.collectAsStateWithLifecycle()
+    val receipt by viewModel.finishReceipt.collectAsStateWithLifecycle()
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    var resumeOwner by remember(viewModel, lifecycle) { mutableStateOf(AtomicBoolean(false)) }
+    DisposableEffect(viewModel, lifecycle) {
+        fun retire() {
+            resumeOwner.set(false)
+            viewModel.setFinishHostResumed(false)
+        }
+
+        fun resume() {
+            retire()
+            resumeOwner = AtomicBoolean(true)
+            viewModel.setFinishHostResumed(true)
+        }
+        val observer =
+            LifecycleEventObserver { _, event ->
+                when (event) {
+                    Lifecycle.Event.ON_RESUME -> resume()
+                    Lifecycle.Event.ON_PAUSE, Lifecycle.Event.ON_STOP, Lifecycle.Event.ON_DESTROY -> retire()
+                    else -> Unit
+                }
+            }
+        lifecycle.addObserver(observer)
+        if (lifecycle.currentState == Lifecycle.State.RESUMED && !resumeOwner.get()) resume()
+        onDispose {
+            retire()
+            lifecycle.removeObserver(observer)
+        }
+    }
+    val clickOwner = resumeOwner
+    val canKeepOpen =
+        remember(clickOwner, lifecycle) {
+            { clickOwner.get() && lifecycle.currentState == Lifecycle.State.RESUMED }
+        }
+    val displayedAction = finishAction
+    val displayedReceipt = receipt
     val backgroundViewModel: BackgroundRecordingViewModel = hiltViewModel()
     val displayed = state
     val background by backgroundViewModel.state.collectAsStateWithLifecycle()
@@ -48,7 +95,11 @@ internal fun SessionRoute(
         SessionPanel(
             state,
             viewModel::start,
-            viewModel::finish,
+            { id ->
+                displayedAction
+                    ?.takeIf { it.source == displayed.active && it.source.sessionId == id }
+                    ?.let { viewModel.finish(it, canKeepOpen) }
+            },
             viewModel::retryLoading,
             onPrepare,
             { id -> if (viewModel.canPrepareNext(id)) onPrepareNext(id) },
@@ -58,6 +109,27 @@ internal fun SessionRoute(
             recordingState,
             onRetryRecording,
             allowRecordingRetry = !ownedBackgroundFailure,
+            finishedReviewContent = {
+                if (onFinishedReview != null && displayedReceipt != null && canKeepOpen() &&
+                    viewModel.canReviewFinished(displayedReceipt)
+                ) {
+                    val reviewClick = {
+                        viewModel.consumeFinishedReview(displayedReceipt, canKeepOpen)?.let(onFinishedReview)
+                        Unit
+                    }
+                    ParkedButton(
+                        onClick = reviewClick,
+                        modifier = Modifier.fillMaxWidth().testTag("session_finish_review").frozenObservationClick(reviewClick),
+                    ) {
+                        Text(
+                            stringResource(R.string.finish_review_open),
+                            Modifier.fillMaxWidth(),
+                            textAlign = TextAlign.Center,
+                            style = MaterialTheme.typography.titleLarge,
+                        )
+                    }
+                }
+            },
             backgroundContent = {
                 BackgroundRecordingRoute(
                     displayed.active,
@@ -84,6 +156,7 @@ internal fun SessionPanel(
     onRetryRecording: () -> Unit,
     allowRecordingRetry: Boolean = true,
     backgroundContent: @Composable () -> Unit = {},
+    finishedReviewContent: @Composable () -> Unit = {},
 ) {
     if (!state.allowsInteraction) return
     val outdated = (state.preparation as? PreparationLoadState.Loaded)?.preparation == Preparation.Outdated
@@ -141,16 +214,16 @@ internal fun SessionPanel(
                     Text(active.courseTitle, Modifier.testTag("session_course"), style = MaterialTheme.typography.headlineSmall)
                     if (active.courseReviewStatus == CourseReviewStatus.DEMO) ParkedBadge(stringResource(R.string.demo_course))
                     VehicleRecordingStatus(recordingState, onRetryRecording, allowRecordingRetry)
+                    val finishClick = { onFinish(active.sessionId) }
                     ParkedButton(
-                        onClick = {
-                            onFinish(active.sessionId)
-                        },
+                        onClick = finishClick,
                         enabled = state.canFinish,
                         modifier =
                             Modifier
                                 .fillMaxWidth()
                                 .heightIn(min = HanGilDimensions.primaryActionMinHeight)
-                                .testTag("session_finish"),
+                                .testTag("session_finish")
+                                .frozenObservationClick(finishClick, state.canFinish),
                     ) {
                         Text(stringResource(R.string.session_finish), style = MaterialTheme.typography.titleLarge)
                     }
@@ -197,6 +270,7 @@ internal fun SessionPanel(
                 }
             }
         }
+        finishedReviewContent()
         if (state.nextStep != HomeJourneyStep.PREPARE && state.nextStep != HomeJourneyStep.REPEAT && canPrepare) {
             ParkedButton(
                 onClick = onPrepare,

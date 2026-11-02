@@ -215,3 +215,19 @@ SDK 모델의 field-only 관찰 도구만 Java 전체 상한5→8초, host6→12
 현재 화면 제어 도구는 Mac 잠금을 감지해 직접 수동 해제를 요구했다. 잠금을 우회하지 않고 사용자에게 실제 잠금 해제만 요청했다. PR75의 새 준비 후보와 두 테마 ROOT_ACK/실제 UI는 별도 대기며, 이 상태를 PR74/75 병합 완료로 쓰지 않는다. PR74의 실제 위치 권한 허용, positive 실행과 관찰 창은 여전히0이다. 새 후보의 CI/Codex는 push 후 별도로 확인한다.
 
 이번 근거는 native 수동 검증 준비와 환경/상태 확인에 한정한다. 기존 README의 네 제품 사례보다 더 강한 실제 SDK 저장/수명 결과를 확보하지 못해 기존 사례 내용/순서와 지정 여섯 항목/실제 코드를 보존했다. 고정 A/B 원값과 미확정 성능 결론을 유지하고 새 성능 수치나 테스트 개수로 성과를 만들지 않는다. 필수19/54와 선택3개 제외를 유지하며 실제 수신/복구 전에는 관련 항목을 추가 체크하지 않는다.
+
+
+### 2026-11-03 PR75 병합 main과 전면 위치 기능의 통합
+
+PR75의 실제 두 테마/SDK/원형 검증과 최종 필수 CI/Codex 종료를 확인해 main0567808에 병합했다. PR74는 그 main을 일반 merge하며 기존 이력과 PR을 유지한다. 충돌은 Main의 전면 위치 컨트롤러와 exact 종료 원본 탐색, 이력 화면의 위치 기록 행동과 exact 탐색 제한이 겹친 두 파일에서 발생했다. 어느 기능도 지우지 않고 현재 RESUMED 탐색 항목/메모리 원본과 기존 P/UX/reader/source 소유권을 함께 보존한다. 일반/명시 복습 두 route 모두 실제 위치 이력 callback을 내부 content에 전달하며 같은 원본의 일회성 전달과 pause/resume stale action, D/UX 잠금, 원본 변경 뒤 차단을 기존 Compose 회귀에 추가한다.
+
+이는 기능 통합 정확성 변경이며 속도 개선이 아니다. 같은 기능의 전후 앱 성능을 주장하지 않고 기존 frozen M1/원형 자료와 미확정 결론을 유지한다. 필요한 검증은 JDK17 전체 verify/native APK 빌드, 실제 Compose/Room 경계와 관련 화면, 최신 head CI/Codex 및 원래 승인된 두 창의 실제 SDK 수신/복구다. PR75의 schema6 실기를 통합 schema7 후보의 실기 성공으로 쓰지 않는다.
+
+실제 위치 승인 소모 전에 비공개 host 검증 도구를 별도 감사했다. 기존 원장의 strict 필드 불일치, 원장 소비 뒤 native proof 이전 중단 복구 누락, verifier/baseline 세대 혼합과 중단 canonical 전송 복구 경계를 발견해 실기 진입 차단을 유지했다. 원래 단일 원장과 승인 횟수를 보존하고 복구 provenance 및 metadata 세대를 분리하는 수정은 실제 Android SELFTEST와 현재 후보 재바인딩을 통과한 뒤에만 적용한다. 합성 검사/컴파일을 위치 수신이나 물리 복구 성과로 계산하지 않는다. 실제 grant/positive/위치 창은0, 추가 JDI는1/1 소비와 금지를 유지한다.
+
+README는 자동 병합 후에도 정확 네 사례와 지정 여섯 항목을 유지한다. PR75에서 이미 강화한 원본/조회 소유권 사례1과 나머지 세 제품 사례를 보존하며 검증 도구 자체의 수정을 더 강한 제품 성과로 교체하지 않는다. 새 화면과 미측정 성능 수치, 테스트/CI 집계를 README에 추가하지 않는다.
+
+
+통합 첫 verify는 자동 병합이 놓친 HomeRouteContent의 onLocationRecording 전달 누락으로 실제 컴파일 실패했다. 기존 HomeRoute와 onFinishedReview를 받는 새 overload 양쪽이 내부 필수 callback으로 전달하도록 정정했다. 내부 no-op 기본값으로 오류를 숨기지 않았고 기존 Compose 회귀에 새 overload의 실제 버튼 전달과 현재 D/UX 거부를 추가했다. 위치 이력도 Explore와 exact route 모두 같은 원본 callback을 전달한다.
+
+수정 후 JDK17.0.21 spotlessApply, 전체 ./scripts/verify.sh와 :app:assembleDebugAndroidTest가 모두 exit0이었다. 전체 verify는 네 BUILD SUCCESSFUL을 확인했고 이전 컴파일 실패는 별도 보존했다. 이 결과는 자동 검사/빌드 성공이며 추가한 Compose 회귀의 실제 Android 실행, 통합한 제품의 실제 화면과 원래 승인된 SDK 두 창은 아직 별도 미실행이다. 새 후보의 CI/Codex도 push 뒤 별도 확인한다.
