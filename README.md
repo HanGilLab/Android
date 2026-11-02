@@ -178,7 +178,7 @@ ID와 완료 메시지만으로는 사용자가 마친 전체 원본, 저장소�
 
 기존 API와 모델 ABI를 유지하며 expected fullsource를 받는 종료 overload를 추가했습니다. Room의 같은 트랜잭션에서 실제 행의 물리형과 전체 원본을 비교하고 쓰기 전후에 현재 허용 조건과 취소를 확인합니다. 같은 원본이 이미 끝났다면 최초 종료 시각을 그대로 반환합니다.
 
-마침 action과 저장소의 ACK를 분리하고, 검증한 ACK와 같은 종료 원본이 실제로 수신된 뒤에만 일회성 복습 버튼을 표시했습니다. 종료 Flow가 ACK보다 먼저 와도 응답을 확인할 기회는 유지하지만, Flow나 ACK 하나만으로 복습 대상을 만들지 않습니다. 앱은 [메모리 토큰과 전체 원본](app/src/main/kotlin/io/github/hangillab/hangil/FinishedReviewNavigationViewModel.kt#L14-L19)을 보관하고 [일치하는 토큰만 조회](app/src/main/kotlin/io/github/hangillab/hangil/MainActivity.kt#L76-L89)합니다. 구성 변경은 원본을 유지하고 프로세스 재생성으로 원본을 잃으면 Unavailable로 남습니다.
+마침 action과 저장소의 ACK를 분리하고, 검증한 ACK와 같은 종료 원본이 실제로 수신된 뒤에만 일회성 복습 버튼을 표시했습니다. 종료 Flow가 ACK보다 먼저 와도 응답을 확인할 기회는 유지하지만, Flow나 ACK 하나만으로 복습 대상을 만들지 않습니다. 앱은 [메모리 토큰과 전체 원본](app/src/main/kotlin/io/github/hangillab/hangil/FinishedReviewNavigationViewModel.kt#L14-L19)을 보관하고 [일치하는 토큰만 조회](app/src/main/kotlin/io/github/hangillab/hangil/MainActivity.kt#L110-L117)합니다. 구성 변경은 원본을 유지하고 프로세스 재생성으로 원본을 잃으면 Unavailable로 남습니다.
 
 일반 탐색과 exact 복습 진입을 구분하고, cold 조회를 시작하기 전에 expected source를 고정했습니다. 공유 reader를 설치하기 전 Job과 캡처한 RESUMED host를 확인하며, 거부된 collector는 자신의 Locked만 발행합니다. 상세 조작과 일회성 진입은 현재 P와 UX 해제, 원본과 조회 세대를 다시 확인합니다.
 

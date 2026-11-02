@@ -615,6 +615,11 @@ class LocationRecordingFlowTest {
         var phase = "initial-stable-candidate-preparation"
         try {
             check(actualHost == null && actualHostDisplay == null)
+            phase = "initial-same-Catalog-resume-request"
+            val initialActivity = compose.activity
+            compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+            check(compose.activity === initialActivity) { "Preparation must retain the originally created Activity" }
+            phase = "initial-stable-candidate-preparation"
             val args = InstrumentationRegistry.getArguments()
             val expectedFont = args.getString("expectedFontScale")
             val expectedDark = args.getString("expectedDark")
