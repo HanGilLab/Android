@@ -275,3 +275,13 @@ README의 네 사례와 여섯 항목, 실제 코드/현재 유효 링크와 기
 - 앱 동작 변경이나 성능 최적화가 아닌 instrumentation 초기 준비의 수정이므로 앱 전후 성능 측정에서 제외한다. 새 native APK의 전체 JDK17 검사, 실제 권한 거부 단독 시나리오, 본래 위치 2회와 복구 검증, 최신 head 필수 CI/Codex를 다시 구분해 기록한다.
 
 - 같은 Main 초기 준비 수정 뒤 JDK17 `./scripts/verify.sh`와 `:app:assembleDebugAndroidTest`가 다시 각각 exit 0이었다. 실제 Main의 준비/포커스와 SDK 거부 시나리오의 재실행은 별도로 남아 있다.
+
+### 최신 검증과 인증/사용자 상태 인계
+
+- 제품/native 소스 `20fda0f`의 JDK17 전체 verify와 native APK 빌드, 같은 head 필수 CI 4개 및 Codex 완료/지적 없음, 미해결 스레드 0을 확인했다. 실제 설치 제품 APK와 native APK의 hash, 설치 전후 전체 권한/flags/설정의 원래 값 일치를 각각 확인했다. 이 결과가 실제 위치 수집 성공을 뜻하지는 않는다.
+- 새 Main 준비 소스의 권한 미허용 단독 실행은 JUnit 시작/완료가 없고 instrumentation shortMsg와 종료 코드 0만 남겨 실패로 분류했다. 종료 코드 0을 JUnit 성공으로 세지 않는다. 앱 target crash block만 통과시키는 읽기 전용 필터에서 해당 target block은 발견하지 못했으므로 앱 crash나 구체적 startup 원인은 미확정이다.
+- 메타데이터 prepare도 TransportError로 중단됐고 actual Android SELFTEST 및 첫/최종 prepared receipt는 생성되지 않았다. 이어 identity 단계만 분리해 같은 실패를 재현했다. 실제 콘솔 이름과 ADB 연결은 일치했고 두 QEMU property와 부팅 완료를 확인했지만 현재 사용자가 원래 승인 때 고정한 검증 사용자와 달랐다. 원래 사용자의 시작 상태 조회는 확인하지 못했다. 이를 다른 사용자/새 nonce/새 기기/새 승인 원장으로 바꾸어 통과시키지 않는다. 물리 canonical/권한/설정 최종 재대조와 수동 검증은 여전히 미완료다.
+- 화면 제어 도구가 현재 Mac 잠금을 감지해 사용자 수동 해제를 요구했다. 기존 잠금 해제 응답을 현재 인증 성공으로 재사용하지 않고 이 채팅에서 수동 해제를 요청했다. 현재 기기의 실제 UI와 원래 프로필을 확인하기 전에는 관련 실기와 병합을 완료하지 않는다.
+- 원래 승인된 grant 1회/positive invocation 1회/최대 20초씩 2개 창 원장은 미소비이며 실제 위치 권한 부여와 양성 위치 관찰은 각각 0회다. 추가 JDI는 실행하지 않았고 과거 추가 진단 1/1 소비와 재시도 금지를 유지한다. 이전 실패와 이번 실패, 새 준비 계획과 실제 실행 결과를 분리한다.
+- 사용자가 Mac 잠금을 해제한 뒤 같은 전용 기기와 원래 검증 프로필을 다시 확인하고, 새 active lease/현재 PID/최신 head와 원래 승인 연결을 검토한 binding으로 재개한다. 현재 prepared/permit은 없으며 과거 활성 binding의 실행 허가를 재사용하지 않는다. 원래 프로필과 거부 경로를 확인하고 actual SELFTEST/두 번 prepare/물리 복구가 끝난 다음에만 기존 두 창 검증을 진행한다.
+- 이번 변경은 검증 준비와 전제 수정이며 앱 성능 개선이 아니다. README는 기존 4개 사례와 순서를 보존하고 신규 성능 수치나 실기 성공을 추가하지 않는다. APP-04 전체와 PR #74는 미완료/미병합으로 유지한다.
