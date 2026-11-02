@@ -184,6 +184,12 @@ class ForegroundLocationRecordingNativeTest {
         }
         try {
             check(validMode) { "The second-window mode must be explicit" }
+            stage = "initial-real-Main-preparation"
+            val initialMain = compose.activity
+            check(actualMain === initialMain) { "Preparation must capture the originally created Main" }
+            report.put("nativePreparationMainResumeRequested", true)
+            compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+            check(compose.activity === initialMain) { "Preparation must retain the originally created Main" }
             stage = "initial-environment"
             h.assertEnvironment()
             stage = "initial-permission"
