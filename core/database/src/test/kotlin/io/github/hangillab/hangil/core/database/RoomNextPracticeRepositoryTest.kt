@@ -489,6 +489,208 @@ class RoomNextPracticeRepositoryTest {
         }
 
     /** Accept only documented coroutine recovery copies; repository wrapping or a lost cause fails. */
+    @Test fun `real course version pre write rejects and preserves all typed rows`() = checkSourceStorage("courseVersion = 1.5", false)
+
+    @Test fun `real course version post write rejects and rolls back all typed rows`() = checkSourceStorage("courseVersion = 1.5", true)
+
+    @Test fun `overflow briefing version pre write rejects and preserves all typed rows`() =
+        checkSourceStorage("briefingVersion = 4294967297", false)
+
+    @Test fun `overflow briefing version post write rejects and rolls back all typed rows`() =
+        checkSourceStorage("briefingVersion = 4294967297", true)
+
+    @Test fun `real start time pre write rejects and preserves all typed rows`() =
+        checkSourceStorage(
+            "startedAtEpochMillis = 1000.5",
+            false,
+        )
+
+    @Test fun `real start time post write rejects and rolls back all typed rows`() =
+        checkSourceStorage(
+            "startedAtEpochMillis = 1000.5",
+            true,
+        )
+
+    @Test fun `real end time pre write rejects and preserves all typed rows`() = checkSourceStorage("endedAtEpochMillis = 2000.5", false)
+
+    @Test fun `real end time post write rejects and rolls back all typed rows`() = checkSourceStorage("endedAtEpochMillis = 2000.5", true)
+
+    @Test fun `blob task title pre write rejects and preserves all typed rows`() =
+        checkSourceStorage("taskTitle = CAST(taskTitle AS BLOB)", false)
+
+    @Test fun `blob task title post write rejects and rolls back all typed rows`() =
+        checkSourceStorage("taskTitle = CAST(taskTitle AS BLOB)", true)
+
+    @Test fun `different latest blob row cannot borrow text source validation before write`() = checkBlobIdentityAlias(false)
+
+    @Test fun `different latest blob row cannot borrow text source validation after write`() = checkBlobIdentityAlias(true)
+
+    @Test fun `unfinished row without active slot rejects before write`() = checkUnfinishedSource(false)
+
+    @Test fun `unfinished row without active slot rejects after write`() = checkUnfinishedSource(true)
+
+    private fun checkSourceStorage(
+        mutation: String,
+        afterWrite: Boolean,
+    ) = runBlocking {
+        memoryDatabase().useDatabase { database ->
+            val fixture = fixture(database)
+            if (!afterWrite) {
+                database.openHelper.writableDatabase.execSQL("UPDATE practice_session SET $mutation")
+                if (!mutation.contains("BLOB")) assertEquals(fixture.source, database.practiceSessionDao().latestFinished()?.session())
+            }
+            val before = physicalTables(database)
+            var checks = 0
+            expectInvalidSourceStorage {
+                fixture.repository.saveSelection(fixture.seed, target) {
+                    if (++checks == 2 && afterWrite) {
+                        assertTargetWritten(database)
+                        database.openHelper.writableDatabase.execSQL("UPDATE practice_session SET $mutation")
+                    }
+                    true
+                }
+            }
+            assertEquals(if (afterWrite) 2 else 1, checks)
+            assertEquals(before, physicalTables(database))
+        }
+    }
+
+    private fun checkBlobIdentityAlias(afterWrite: Boolean) =
+        runBlocking {
+            memoryDatabase().useDatabase { database ->
+                val fixture = fixture(database)
+                val originalRow = checkNotNull(database.practiceSessionDao().latestFinished()).rowId
+                if (!afterWrite) {
+                    insertBlobIdentityAlias(database)
+                    val latestRow =
+                        database.openHelper.readableDatabase
+                            .query("SELECT rowId, typeof(sessionId) FROM practice_session ORDER BY rowId DESC LIMIT 1")
+                            .use { cursor ->
+                                assertTrue(cursor.moveToFirst())
+                                assertTrue(cursor.getLong(0) > originalRow)
+                                assertEquals("blob", cursor.getString(1))
+                                cursor.getLong(0)
+                            }
+                    assertEquals(1, database.practiceSessionDao().countValidDeletionStorage(fixture.source.sessionId))
+                    assertEquals(
+                        1,
+                        database.practiceSessionDao().countValidNextPracticeSourceStorage(originalRow, fixture.source.sessionId),
+                    )
+                    assertEquals(0, database.practiceSessionDao().countValidNextPracticeSourceStorage(latestRow, fixture.source.sessionId))
+                }
+                val before = physicalTables(database)
+                var checks = 0
+                expectInvalidSourceStorage {
+                    fixture.repository.saveSelection(fixture.seed, target) {
+                        if (++checks == 2 && afterWrite) {
+                            assertTargetWritten(database)
+                            insertBlobIdentityAlias(database)
+                        }
+                        true
+                    }
+                }
+                assertEquals(if (afterWrite) 2 else 1, checks)
+                assertEquals(before, physicalTables(database))
+            }
+        }
+
+    private fun checkUnfinishedSource(afterWrite: Boolean) =
+        runBlocking {
+            memoryDatabase().useDatabase { database ->
+                val fixture = fixture(database)
+
+                fun insertUnfinished() {
+                    cloneSource(database.openHelper.writableDatabase, "unfinished", 3_000, null)
+                    database.openHelper.writableDatabase.execSQL(
+                        "UPDATE practice_session SET activeSlot = NULL WHERE sessionId = 'unfinished'",
+                    )
+                }
+                if (!afterWrite) {
+                    insertUnfinished()
+                    assertEquals(null, database.practiceSessionDao().active())
+                    assertEquals(1L, database.practiceSessionDao().unfinishedCount())
+                }
+                val before = physicalTables(database)
+                var checks = 0
+                assertEquals(
+                    NextPracticeSaveResult.SourceChanged,
+                    fixture.repository.saveSelection(fixture.seed, target) {
+                        if (++checks == 2 && afterWrite) {
+                            assertTargetWritten(database)
+                            insertUnfinished()
+                        }
+                        true
+                    },
+                )
+                assertEquals(if (afterWrite) 2 else 1, checks)
+                assertEquals(before, physicalTables(database))
+            }
+        }
+
+    private suspend fun expectInvalidSourceStorage(block: suspend () -> Unit) {
+        try {
+            block()
+            fail("Invalid physical source must not produce a normal save result")
+        } catch (failure: IllegalStateException) {
+            assertEquals(IllegalStateException::class.java, failure.javaClass)
+        } catch (failure: SQLiteException) {
+            // Some native cursor implementations reject BLOB-to-string reads before entity construction.
+            assertEquals(SQLiteException::class.java, failure.javaClass)
+        }
+    }
+
+    private fun assertTargetWritten(database: PreparationDatabase) {
+        database.openHelper.readableDatabase
+            .query("SELECT COUNT(*) FROM preparation WHERE goalId = 'commute' AND courseId = 'neighborhood' AND taskId = 'arrival'")
+            .use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(1, cursor.getInt(0))
+            }
+    }
+
+    private fun insertBlobIdentityAlias(database: PreparationDatabase) {
+        database.openHelper.writableDatabase.execSQL(
+            "INSERT INTO practice_session(sessionId,goalId,courseId,courseVersion,briefingVersion,taskId," +
+                "goalTitle,courseTitle,taskTitle,courseReviewStatus,startedAtEpochMillis,endedAtEpochMillis,activeSlot) " +
+                "SELECT CAST(sessionId AS BLOB),goalId,courseId,courseVersion,briefingVersion,taskId," +
+                "goalTitle,courseTitle,taskTitle,courseReviewStatus,startedAtEpochMillis,endedAtEpochMillis,activeSlot " +
+                "FROM practice_session WHERE sessionId = 'next-source'",
+        )
+    }
+
+    /** All fixture table values, types, physical row order, schema and sqlite_sequence are compared. */
+    private fun physicalTables(database: PreparationDatabase): Map<String, List<List<String?>>> {
+        val sqlite = database.openHelper.readableDatabase
+
+        fun rows(sql: String): List<List<String?>> =
+            sqlite.query(sql).use { cursor ->
+                buildList {
+                    while (cursor.moveToNext()) {
+                        add(
+                            (0 until cursor.columnCount).map { column ->
+                                when (cursor.getType(column)) {
+                                    0 -> null
+                                    1 -> "integer:" + cursor.getLong(column)
+                                    2 -> "real:" + java.lang.Double.toHexString(cursor.getDouble(column))
+                                    3 -> "text:" + cursor.getString(column)
+                                    4 -> "blob:" + cursor.getBlob(column).joinToString("") { "%02x".format(it) }
+                                    else -> error("Unknown fixture storage type")
+                                }
+                            },
+                        )
+                    }
+                }
+            }
+        val tables =
+            sqlite.query("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").use { cursor ->
+                buildList { while (cursor.moveToNext()) add(cursor.getString(0)) }
+            }
+        return tables.associateWith { table ->
+            check(table.matches(Regex("[A-Za-z_][A-Za-z0-9_]*")))
+            rows("SELECT rowid, * FROM `$table` ORDER BY rowid")
+        } + mapOf("schema" to rows("SELECT type, name, tbl_name, rootpage, sql FROM sqlite_master ORDER BY type, name"))
+    }
+
     private fun assertOriginalCause(
         expected: Throwable,
         observed: Throwable,
