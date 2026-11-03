@@ -23,7 +23,13 @@ internal class RoomVehicleObservationRepository
         ): VehicleObservationAppendResult {
             if (observation.observedAtEpochMillis <= 0) return VehicleObservationAppendResult.InvalidTime
             return database.withTransaction {
-                val session = database.practiceSessionDao().find(sessionId)?.session()
+                val sessionDao = database.practiceSessionDao()
+                val entity = sessionDao.find(sessionId)
+                val session =
+                    entity?.let {
+                        check(sessionDao.countValidDeletionStorage(sessionId) == 1) { "Invalid stored observation source storage" }
+                        it.session()
+                    }
                 when {
                     session == null -> VehicleObservationAppendResult.MissingSession
                     !session.isActive -> VehicleObservationAppendResult.FinishedSession
