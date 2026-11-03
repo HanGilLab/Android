@@ -2,6 +2,7 @@ package io.github.hangillab.hangil
 
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.res.Configuration
+import android.content.res.Resources
 import android.graphics.Bitmap
 import android.graphics.Point
 import android.graphics.Rect
@@ -9,6 +10,8 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.util.DisplayMetrics
+import android.util.TypedValue
 import android.view.Display
 import android.view.PixelCopy
 import androidx.activity.compose.setContent
@@ -136,7 +139,9 @@ import io.github.hangillab.hangil.feature.home.R as HomeR
  * The Activity stays RESUMED. An injected LifecycleRegistry controls PAUSE/STOP Main-host policy;
  * this is not actual OS Main STOP, SDK callback receipt, a permission grant or an FGS test.
  * Every ViewModel is explicitly preseeded: this fixture never uses the production Hilt graph/DB.
- * Raw detail assertions use synthetic coordinates only. No screenshot, SDK, permission or provider mutation.
+ * Raw detail assertions and optional visuals use controlled data only, with no SDK, permission or provider mutation.
+ * An explicit resource scope changes this instrumented process before composition and restores shared resources.
+ * It does not prove OS setting transitions or the real SDK Main in dark mode.
  */
 @RunWith(AndroidJUnit4::class)
 @OptIn(InternalCoroutinesApi::class, ExperimentalForInheritanceCoroutinesApi::class)
@@ -147,6 +152,10 @@ class LocationRecordingFlowTest {
     private var actualHostDisplay: Int? = null
     private val activityNumbers = IdentityHashMap<ComponentCatalogActivity, Int>()
     private var originalGuardObservation: JSONObject? = null
+    private var catalogResourceOverrideRequested = false
+    private val catalogResourceOverrideApplied = AtomicBoolean(false)
+    private val catalogResourceOverrideRestored = AtomicBoolean(false)
+    private val catalogResourceOverride = AtomicReference<CatalogResourceOverride?>(null)
     private val visualEnabled get() = InstrumentationRegistry.getArguments().getString("manualLocationRecordingVisual") == "true"
     private val visualDirectory by lazy {
         File(instrument.targetContext.cacheDir, "screenshots/foreground-location-controlled-${UUID.randomUUID()}").apply { check(mkdirs()) }
@@ -327,6 +336,7 @@ class LocationRecordingFlowTest {
         }
 
     private fun fixture(block: (Fixture) -> Unit) {
+        catalogResourceOverrideRequested = requestedCatalogResourceOverride()
         assumeTrue(InstrumentationRegistry.getArguments().getString("manualLocationRecordingControlled") == "true")
         val originalFlags = instrument.uiAutomation.serviceInfo.flags
         val retrieve = AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
@@ -341,6 +351,7 @@ class LocationRecordingFlowTest {
         try {
             instrument.uiAutomation.serviceInfo = instrument.uiAutomation.serviceInfo.apply { flags = flags or retrieve }
             assertTrue(instrument.uiAutomation.serviceInfo.flags and retrieve != 0)
+            if (catalogResourceOverrideRequested) applyCatalogResourceOverride()
             prepareActualHost()
             val store = OwnedPracticeTestStore.create(instrument.targetContext)
             ownedStore = store
@@ -387,6 +398,8 @@ class LocationRecordingFlowTest {
                 compose.waitForIdle()
             }
             cleanup { ownedStore?.close() }
+            cleanup { restoreCatalogResourceOverride() }
+            cleanup { writeCatalogResourceOverrideResult() }
             cleanup {
                 val info = instrument.uiAutomation.serviceInfo
                 info.flags = if (originalFlags and retrieve != 0) info.flags or retrieve else info.flags and retrieve.inv()
@@ -395,6 +408,134 @@ class LocationRecordingFlowTest {
             }
             primary?.let { throw it }
         }
+    }
+
+    private fun requestedCatalogResourceOverride(): Boolean {
+        val args = InstrumentationRegistry.getArguments()
+        val requested = args.getString("manualCatalogConfigurationOverride")
+        check(requested == null || requested == "false" || requested == "true") { "Explicit resource override boolean required" }
+        if (requested != "true") return false
+        check(args.getString("manualLocationRecordingControlled") == "true" && args.getString("manualLocationRecordingVisual") == "true") {
+            "Resource override requires explicit controlled visual validation"
+        }
+        check(args.getString("expectedFontScale") in setOf("1.0", "1.3")) { "Explicit resource font scale required" }
+        check(args.getString("expectedDark") in setOf("false", "true")) { "Explicit resource theme required" }
+        return true
+    }
+
+    private fun catalogConfigurationScope(): String =
+        if (catalogResourceOverrideRequested) {
+            "actual-Android-resource-scoped-controlled-UI"
+        } else {
+            "actual-Activity-configuration-controlled-UI"
+        }
+
+    private class ResourceState(
+        val resources: Resources,
+    ) {
+        val configuration = Configuration(resources.configuration)
+        val metrics = DisplayMetrics().apply { setTo(resources.displayMetrics) }
+    }
+
+    private class ThemeState(
+        val theme: Resources.Theme,
+        val attributes: List<Int>,
+    )
+
+    private class CatalogResourceOverride(
+        val activity: ComponentCatalogActivity,
+        val target: ResourceState,
+        val related: List<ResourceState>,
+        val themes: List<ThemeState>,
+    )
+
+    /** Selected cache checks, not a claim that every framework theme attribute is covered. */
+    private fun themeAttributes(theme: Resources.Theme): List<Int> =
+        listOf(android.R.attr.colorBackground, android.R.attr.textColorPrimary, android.R.attr.windowBackground).flatMap { attribute ->
+            val value = TypedValue()
+            val resolved = theme.resolveAttribute(attribute, value, true)
+            listOf(if (resolved) 1 else 0, value.type, value.data, value.resourceId)
+        }
+
+    @Suppress("DEPRECATION")
+    private fun applyCatalogResourceOverride() {
+        check(catalogResourceOverrideRequested && !catalogResourceOverrideApplied.get() && catalogResourceOverride.get() == null)
+        check(actualHost == null && actualHostDisplay == null) { "Resource setup must precede host ownership" }
+        val args = InstrumentationRegistry.getArguments()
+        val scale = checkNotNull(args.getString("expectedFontScale")).toFloat()
+        val dark = args.getString("expectedDark") == "true"
+        instrument.runOnMainSync {
+            val activity = compose.activity
+            val contexts = listOf(activity, instrument.targetContext, activity.applicationContext, instrument.context)
+            val resources = IdentityHashMap<Resources, ResourceState>()
+            contexts.forEach { context -> resources.getOrPut(context.resources) { ResourceState(context.resources) } }
+            resources.getOrPut(Resources.getSystem()) { ResourceState(Resources.getSystem()) }
+            val themes = IdentityHashMap<Resources.Theme, ThemeState>()
+            contexts.forEach { context ->
+                val theme = context.theme
+                if (theme != null) themes.getOrPut(theme) { ThemeState(theme, themeAttributes(theme)) }
+            }
+            val target = checkNotNull(resources[activity.resources])
+            val saved = CatalogResourceOverride(activity, target, resources.values.toList(), themes.values.toList())
+            // Retain the originals before any mutation so finally can restore a partial application.
+            check(catalogResourceOverride.compareAndSet(null, saved)) { "Resource override is single-owner" }
+            val configuration =
+                Configuration(target.configuration).apply {
+                    fontScale = scale
+                    uiMode = (uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or
+                        if (dark) Configuration.UI_MODE_NIGHT_YES else Configuration.UI_MODE_NIGHT_NO
+                }
+            target.resources.updateConfiguration(configuration, DisplayMetrics().apply { setTo(target.metrics) })
+            saved.themes.forEach { it.theme.rebase() }
+            check(activity.resources === target.resources) { "Original Activity resources must remain owned" }
+            check(configurationMatches(activity.resources.configuration, scale, dark)) { "Actual resource override was not applied" }
+            check(
+                activity.resources.displayMetrics.widthPixels == target.metrics.widthPixels &&
+                    activity.resources.displayMetrics.heightPixels == target.metrics.heightPixels &&
+                    activity.resources.displayMetrics.densityDpi == target.metrics.densityDpi,
+            ) { "Physical display metrics must not change" }
+            check(catalogResourceOverrideApplied.compareAndSet(false, true)) { "Resource override cannot be replayed" }
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun restoreCatalogResourceOverride() {
+        val saved = catalogResourceOverride.get() ?: return
+        instrument.runOnMainSync {
+            check(catalogResourceOverride.get() === saved) { "Only the captured resource owner may restore" }
+            saved.target.resources.updateConfiguration(
+                Configuration(saved.target.configuration),
+                DisplayMetrics().apply { setTo(saved.target.metrics) },
+            )
+            check(saved.activity.resources === saved.target.resources) { "Original Activity resources must retain identity after restore" }
+            saved.themes.forEach { it.theme.rebase() }
+            saved.related.forEach { before ->
+                check(before.resources.configuration == before.configuration && before.resources.displayMetrics == before.metrics) {
+                    "Related context resources must be restored exactly"
+                }
+            }
+            saved.themes.forEach { check(themeAttributes(it.theme) == it.attributes) { "Selected theme attributes must be restored" } }
+            check(catalogResourceOverride.compareAndSet(saved, null)) { "Resource cleanup must not retire another owner" }
+            catalogResourceOverrideRestored.set(true)
+        }
+    }
+
+    private fun writeCatalogResourceOverrideResult() {
+        if (!catalogResourceOverrideRequested) return
+        val proof =
+            JSONObject()
+                .put("schema", 1)
+                .put("kind", "controlled-resource-override-restoration")
+                .put("configurationScope", catalogConfigurationScope())
+                .put("applied", catalogResourceOverrideApplied.get())
+                .put("restored", catalogResourceOverrideRestored.get())
+                .put("ownerReleased", catalogResourceOverride.get() == null)
+                .put("globalOsSettingsWrittenByFixture", false)
+                .put("actualSdkLocation", false)
+                .put("selectedThemeAttributesChecked", JSONArray(listOf("colorBackground", "textColorPrimary", "windowBackground")))
+        val output = File(visualDirectory, "resource-override-restoration.json")
+        check(!output.exists()) { "Resource restoration proof must not overwrite evidence" }
+        output.writeText(proof.toString(2))
     }
 
     private fun nodes(tag: String) =
@@ -464,6 +605,10 @@ class LocationRecordingFlowTest {
                     .put("actualSdkLocation", false)
                     .put("productionDatabaseUsed", false)
                     .put("permissionChanged", false)
+                    .put("configurationScope", catalogConfigurationScope())
+                    .put("catalogResourceOverrideRequested", catalogResourceOverrideRequested)
+                    .put("catalogResourceOverrideApplied", catalogResourceOverrideApplied.get())
+                    .put("globalOsSettingsWrittenByFixture", false)
                     .put("state", state)
                     .put("anchor", tag)
                     .put("defaultDisplayConfirmed", false)
@@ -777,6 +922,10 @@ class LocationRecordingFlowTest {
                 .put("observationBasis", "fresh-after-original-guard-failure-not-an-atomic-replay-of-the-failed-condition")
                 .put("primaryFailureClass", primary.javaClass.name)
                 .put("foregroundSuccessEvidence", false)
+                .put("configurationScope", catalogConfigurationScope())
+                .put("catalogResourceOverrideRequested", catalogResourceOverrideRequested)
+                .put("catalogResourceOverrideApplied", catalogResourceOverrideApplied.get())
+                .put("globalOsSettingsWrittenByFixture", false)
                 .put("actualSdkLocation", false)
                 .put("permissionChanged", false)
                 .put("pngStatus", "not-attempted")
