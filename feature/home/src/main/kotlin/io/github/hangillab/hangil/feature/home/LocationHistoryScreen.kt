@@ -211,6 +211,27 @@ private fun LocationHistoryReady(
             style = MaterialTheme.typography.titleLarge,
         )
         Text(
+            stringResource(
+                when (run.stopReason) {
+                    LocationRecordingStopReason.USER_STOP -> R.string.location_history_reason_user_stop
+                    LocationRecordingStopReason.HOST_STOPPED -> R.string.location_history_reason_host_stopped
+                    LocationRecordingStopReason.SESSION_FINISHED -> R.string.location_history_reason_session_finished
+                    LocationRecordingStopReason.SOURCE_CHANGED -> R.string.location_history_reason_source_changed
+                    LocationRecordingStopReason.PERMISSION_DENIED -> R.string.location_history_reason_permission_denied
+                    LocationRecordingStopReason.UNSUPPORTED -> R.string.location_history_reason_unsupported
+                    LocationRecordingStopReason.NO_UPDATE -> R.string.location_history_reason_no_update
+                    LocationRecordingStopReason.SDK_ERROR -> R.string.location_history_reason_sdk_error
+                    LocationRecordingStopReason.ADAPTER_ERROR -> R.string.location_history_reason_adapter_error
+                    LocationRecordingStopReason.WRITE_ERROR -> R.string.location_history_reason_write_error
+                    LocationRecordingStopReason.LIMIT_REACHED -> R.string.location_history_reason_limit_reached
+                    LocationRecordingStopReason.PROCESS_INTERRUPTED -> R.string.location_history_reason_process_interrupted
+                    null -> R.string.location_history_reason_unrecorded
+                },
+            ),
+            Modifier.fillMaxWidth().testTag("location_history_stop_reason"),
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        Text(
             stringResource(R.string.location_history_start_time, locationHistoryTime(run.startedAtEpochMillis)),
             modifier = Modifier.fillMaxWidth(),
             style = MaterialTheme.typography.bodyLarge,
