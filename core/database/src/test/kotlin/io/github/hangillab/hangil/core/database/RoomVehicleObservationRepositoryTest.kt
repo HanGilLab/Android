@@ -293,6 +293,28 @@ class RoomVehicleObservationRepositoryTest {
             }
         }
 
+    @Test fun `REAL source course version cannot be coerced into an appendable session`() =
+        assertNumericSourceRejected("courseVersion", 1.5, "real")
+
+    @Test fun `REAL source briefing version cannot be coerced into an appendable session`() =
+        assertNumericSourceRejected("briefingVersion", 1.5, "real")
+
+    @Test fun `REAL source start time cannot be coerced into an appendable session`() =
+        assertNumericSourceRejected("startedAtEpochMillis", 1000.5, "real")
+
+    @Test fun `REAL source active slot cannot be coerced into an appendable session`() =
+        assertNumericSourceRejected(
+            "activeSlot",
+            1.5,
+            "real",
+        )
+
+    @Test fun `overflow source course version cannot wrap into an appendable session`() =
+        assertNumericSourceRejected("courseVersion", (1L shl 32) + 1, "integer")
+
+    @Test fun `overflow source briefing version cannot wrap into an appendable session`() =
+        assertNumericSourceRejected("briefingVersion", (1L shl 32) + 1, "integer")
+
     @Test fun `SQLite insert failure propagates and rolls back without returning success`() =
         runBlocking {
             memoryDatabase().useDatabase { database ->
@@ -387,6 +409,78 @@ class RoomVehicleObservationRepositoryTest {
                 context.deleteDatabase(name)
             }
         }
+
+    private fun assertNumericSourceRejected(
+        column: String,
+        value: Number,
+        storageType: String,
+    ) = runBlocking {
+        check(column in setOf("courseVersion", "briefingVersion", "startedAtEpochMillis", "activeSlot"))
+        memoryDatabase().useDatabase { database ->
+            val repository = RoomVehicleObservationRepository(database)
+            val retained = "retained-observation-source"
+            seedSession(database, retained)
+            assertTrue(repository.append(retained, VehicleObservation(1_500, VehicleState())) is VehicleObservationAppendResult.Appended)
+            assertEquals(1, database.practiceSessionDao().finish(retained, 2_000))
+            seedSession(database)
+            assertTrue(repository.append(sessionId, VehicleObservation(2_000, VehicleState())) is VehicleObservationAppendResult.Appended)
+            val retainedBefore = repository.observe(retained).first()
+            val targetBefore = repository.observe(sessionId).first()
+            val sqlite = database.openHelper.writableDatabase
+            sqlite.execSQL("UPDATE practice_session SET $column = ? WHERE sessionId = ?", arrayOf(value, sessionId))
+            sqlite.query("SELECT typeof($column), $column FROM practice_session WHERE sessionId = ?", arrayOf(sessionId)).use { cursor ->
+                assertTrue("The numeric corruption fixture must exist", cursor.moveToFirst())
+                assertEquals("The physical numeric type must survive SQLite affinity", storageType, cursor.getString(0))
+                val stored = if (storageType == "real") cursor.getDouble(1) else cursor.getLong(1)
+                assertEquals("The physical numeric value must remain exact", value, stored)
+                assertTrue("Only the selected source may be corrupted", !cursor.moveToNext())
+            }
+            val before = physicalTables(database)
+            val attempted = runCatching { repository.append(sessionId, VehicleObservation(2_500, VehicleState())) }
+            val after = physicalTables(database)
+            assertTrue(
+                "Invalid numeric source must fail closed: result=${attempted.getOrNull()}, physicalTablesUnchanged=${before == after}",
+                attempted.exceptionOrNull() is IllegalStateException,
+            )
+            assertEquals("Rejected append must preserve every fixture value, type, row order, schema and sequence", before, after)
+            assertEquals("Existing target observations must remain unchanged", targetBefore, repository.observe(sessionId).first())
+            assertEquals("Other source observations must remain unchanged", retainedBefore, repository.observe(retained).first())
+            sqlite.query("PRAGMA foreign_key_check").use { assertEquals(0, it.count) }
+        }
+    }
+
+    /** Raw cursor types preserve REAL fractions and large INTEGER values instead of Room coercion. */
+    private fun physicalTables(database: PreparationDatabase): Map<String, List<List<String?>>> {
+        val sqlite = database.openHelper.readableDatabase
+
+        fun rows(sql: String): List<List<String?>> =
+            sqlite.query(sql).use { cursor ->
+                buildList {
+                    while (cursor.moveToNext()) {
+                        add(
+                            (0 until cursor.columnCount).map { column ->
+                                when (cursor.getType(column)) {
+                                    0 -> null
+                                    1 -> "integer:" + cursor.getLong(column)
+                                    2 -> "real:" + java.lang.Double.toHexString(cursor.getDouble(column))
+                                    3 -> "text:" + cursor.getString(column)
+                                    4 -> "blob:" + cursor.getBlob(column).joinToString("") { "%02x".format(it) }
+                                    else -> error("Unknown fixture storage type")
+                                }
+                            },
+                        )
+                    }
+                }
+            }
+        val tables =
+            sqlite.query("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").use { cursor ->
+                buildList { while (cursor.moveToNext()) add(cursor.getString(0)) }
+            }
+        return tables.associateWith { table ->
+            check(table.matches(Regex("[A-Za-z_][A-Za-z0-9_]*")))
+            rows("SELECT rowid, * FROM `$table` ORDER BY rowid")
+        } + mapOf("schema" to rows("SELECT type, name, tbl_name, rootpage, sql FROM sqlite_master ORDER BY type, name"))
+    }
 
     private suspend fun seedSession(
         database: PreparationDatabase,
