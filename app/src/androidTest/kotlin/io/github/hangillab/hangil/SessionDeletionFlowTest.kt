@@ -1,6 +1,7 @@
 package io.github.hangillab.hangil
 
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.content.res.Resources
 import android.graphics.Bitmap
@@ -393,6 +394,13 @@ class SessionDeletionFlowTest {
             InstrumentationRegistry.getArguments().getString("manualSessionDeletion") == "true",
         )
         val context = InstrumentationRegistry.getInstrumentation().targetContext
+        if (syntheticLocations) {
+            assertTrue(
+                "DELETE_LOCATION_FUSED_NOT_DENIED",
+                context.checkSelfPermission("pleos.car.permission.FUSED_LOCATION") == PackageManager.PERMISSION_DENIED,
+            )
+            emitDeletionPhase("FUSED_DENIED")
+        }
         val store = OwnedPracticeTestStore.create(context)
         var fixture: Fixture? = null
         var primary: Throwable? = null
