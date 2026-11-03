@@ -36,6 +36,23 @@ internal interface PracticeSessionDao {
     )
     suspend fun countValidDeletionStorage(sessionId: String): Int
 
+    @Query(
+        "SELECT COUNT(*) FROM practice_session WHERE rowId = :rowId AND sessionId = :sessionId " +
+            "AND typeof(rowId) = 'integer' AND rowId > 0 AND typeof(sessionId) = 'text' " +
+            "AND typeof(goalId) = 'text' AND typeof(courseId) = 'text' AND typeof(taskId) = 'text' " +
+            "AND typeof(goalTitle) = 'text' AND typeof(courseTitle) = 'text' AND typeof(taskTitle) = 'text' " +
+            "AND typeof(courseReviewStatus) = 'text' " +
+            "AND typeof(courseVersion) = 'integer' AND courseVersion BETWEEN 1 AND 2147483647 " +
+            "AND typeof(briefingVersion) = 'integer' AND briefingVersion BETWEEN 1 AND 2147483647 " +
+            "AND typeof(startedAtEpochMillis) = 'integer' " +
+            "AND (endedAtEpochMillis IS NULL OR typeof(endedAtEpochMillis) = 'integer') " +
+            "AND (activeSlot IS NULL OR (typeof(activeSlot) = 'integer' AND activeSlot = 1))",
+    )
+    suspend fun countValidNextPracticeSourceStorage(
+        rowId: Long,
+        sessionId: String,
+    ): Int
+
     @Insert
     suspend fun insert(entity: PracticeSessionEntity)
 

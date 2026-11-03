@@ -49,11 +49,18 @@ internal class RoomNextPracticeRepository
             val permitted = canCommit()
             currentCoroutineContext().ensureActive()
             if (!permitted) throw WriteRejected(NextPracticeSaveResult.Blocked)
-            if (database.practiceSessionDao().active() != null ||
-                database.practiceSessionDao().latestFinished()?.session() != seed.source
-            ) {
-                throw WriteRejected(NextPracticeSaveResult.SourceChanged)
-            }
+            val sessions = database.practiceSessionDao()
+            if (sessions.unfinishedCount() != 0L) throw WriteRejected(NextPracticeSaveResult.SourceChanged)
+            val latest = sessions.latestFinished()
+            val source =
+                latest?.let {
+                    // Room getters can coerce malformed values; bind the raw check to this exact row.
+                    check(sessions.countValidNextPracticeSourceStorage(it.rowId, it.sessionId) == 1) {
+                        "Invalid next practice source storage"
+                    }
+                    it.session()
+                }
+            if (source != seed.source) throw WriteRejected(NextPracticeSaveResult.SourceChanged)
             val fresh = NextPracticeSeed.resolve(catalog, seed.source)
             if (fresh == null || fresh != seed || !matchesTarget(fresh, selection)) {
                 throw WriteRejected(NextPracticeSaveResult.Unavailable)
