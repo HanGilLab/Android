@@ -45,8 +45,20 @@ fun HomeRoute(
     recordingState: VehicleRecordingState = VehicleRecordingState.Idle,
     onRetryRecording: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
+    onLocationRecording: () -> Unit = {},
 ) {
-    HomeRouteContent(onPrepare, onMapPreview, onHistory, onPrepareNext, null, showDiagnostics, recordingState, onRetryRecording, viewModel)
+    HomeRouteContent(
+        onPrepare,
+        onMapPreview,
+        onHistory,
+        onPrepareNext,
+        null,
+        showDiagnostics,
+        recordingState,
+        onRetryRecording,
+        viewModel,
+        onLocationRecording,
+    )
 }
 
 @Composable
@@ -60,6 +72,7 @@ fun HomeRoute(
     recordingState: VehicleRecordingState = VehicleRecordingState.Idle,
     onRetryRecording: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
+    onLocationRecording: () -> Unit = {},
 ) {
     HomeRouteContent(
         onPrepare,
@@ -71,6 +84,7 @@ fun HomeRoute(
         recordingState,
         onRetryRecording,
         viewModel,
+        onLocationRecording,
     )
 }
 
@@ -85,6 +99,7 @@ private fun HomeRouteContent(
     recordingState: VehicleRecordingState,
     onRetryRecording: () -> Unit,
     viewModel: HomeViewModel,
+    onLocationRecording: () -> Unit,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     HomeScreen(
@@ -110,6 +125,18 @@ private fun HomeRouteContent(
                 modifier = Modifier.fillMaxWidth().heightIn(min = HanGilDimensions.secondaryActionMinHeight).testTag("home_history"),
             ) {
                 Text(stringResource(R.string.history_open), style = MaterialTheme.typography.titleLarge)
+            }
+            ParkedButton(
+                onClick = { if (viewModel.canViewHistory()) onLocationRecording() },
+                prominent = false,
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(
+                            min = HanGilDimensions.secondaryActionMinHeight,
+                        ).testTag("home_location_recording"),
+            ) {
+                Text(stringResource(R.string.location_recording_open), style = MaterialTheme.typography.titleLarge)
             }
         },
     )

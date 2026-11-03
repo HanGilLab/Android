@@ -10,6 +10,12 @@ fun FinishedSessionReviewRoute(
     expectedSource: PracticeSession?,
     onClose: () -> Unit,
     viewModel: SessionHistoryViewModel = hiltViewModel(),
+    onOpenLocations: (PracticeSession) -> Unit = {},
 ) {
-    SessionHistoryEntryContent(SessionHistoryEntry.FinishedReview(expectedSource), onClose, viewModel)
+    SessionHistoryEntryContent(
+        entry = SessionHistoryEntry.FinishedReview(expectedSource),
+        onClose = onClose,
+        viewModel = viewModel,
+        onOpenLocations = onOpenLocations,
+    )
 }

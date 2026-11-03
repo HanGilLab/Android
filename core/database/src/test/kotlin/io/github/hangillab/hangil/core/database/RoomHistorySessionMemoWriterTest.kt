@@ -75,7 +75,7 @@ class RoomHistorySessionMemoWriterTest {
                 assertEquals(result.version, UUID.fromString(result.version).toString())
                 assertEquals(result, latest.observe(fixture.source.sessionId).first())
                 assertEquals(before, snapshot(db, excludingMemo = fixture.source.sessionId))
-                assertEquals(6, db.openHelper.readableDatabase.version)
+                assertEquals(7, db.openHelper.readableDatabase.version)
                 assertEquals(
                     SessionMemoWriteResult.SessionChanged,
                     latest.save(fixture.source.sessionId, "still old API", result.version) { true },
@@ -562,6 +562,7 @@ class RoomHistorySessionMemoWriterTest {
                         PreparationMigration3To4,
                         PreparationMigration4To5,
                         PreparationMigration5To6,
+                        PreparationMigration6To7,
                     ).build()
             try {
                 var expected: SessionMemo? = null
@@ -574,7 +575,7 @@ class RoomHistorySessionMemoWriterTest {
                 open().useDatabase { db ->
                     assertEquals(expected, RoomSessionMemoRepository(db).observe(checkNotNull(expected).sessionId).first())
                     assertEquals(retained, snapshot(db))
-                    assertEquals(6, db.openHelper.readableDatabase.version)
+                    assertEquals(7, db.openHelper.readableDatabase.version)
                     db.openHelper.readableDatabase
                         .query("PRAGMA foreign_key_check")
                         .use { assertEquals(0, it.count) }

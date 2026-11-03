@@ -40,7 +40,9 @@
 
 **목표 선택 → 코스와 과제 준비 → 연습 시작 → 마무리 기록 → 주차 후 메모 → 다음 과제 준비**
 
-실제 Pleos 에뮬레이터에서 동작을 확인한 앱 화면입니다. 코스와 과제는 고정 시연 내용입니다. 버튼을 누른 시각과 실제 SDK 차량 상태 관찰은 별도로 기록하며, 차량 상태는 기본적으로 활성 연습 중 앱 화면이 켜진 동안 기록하며, 사용자가 내비 중 기록을 켠 경우에만 화면 밖에서도 이어갑니다. 위치와 실제 경로는 수집하지 않습니다. 사진을 누르면 원본 크기로 볼 수 있습니다.
+실제 Pleos 에뮬레이터에서 동작을 확인한 앱 화면입니다. 코스와 과제는 고정 시연 내용입니다. 버튼을 누른 시각과 SDK 차량 상태 관찰을 구분해 기록합니다. 차량 상태는 기본적으로 활성 연습 중 한길 화면이 켜진 동안 기록하고, 사용자가 내비 중 기록을 켠 경우에만 화면 밖에서도 이어갑니다. 사진을 누르면 원본 크기로 볼 수 있습니다.
+
+위치 표본은 진행 중인 연습에서 주차, UX 허용과 위치 권한을 확인한 뒤 사용자가 별도로 켭니다. 한길 화면이 켜진 동안 SDK 업데이트 표본을 저장하며, 다른 앱으로 이동하면 멈추고 돌아와도 자동으로 다시 켜지지 않습니다. 저장한 표본은 주차 후 확인합니다. SDK 시각의 기준과 신뢰도 단위는 미확인이며 표본을 현재 위치나 실제 이동 경로로 해석하지 않습니다.
 
 | 홈과 연습 기록 | 목표 선택 |
 |:---:|:---:|
@@ -90,10 +92,12 @@
 | **준비 내용 저장과 복원** | 목표, 코스와 과제를 기기에 저장하고 앱을 다시 열어 이어서 확인합니다. |
 | **연습 시작과 마무리** | 시작과 종료 시각, 당시 코스와 과제를 저장하고 홈에서 최근 연습과 다음 행동을 확인합니다. |
 | **활성 연습의 차량 상태 관찰** | SDK가 전달한 기어, 방향지시등과 브레이크 상태를 활성 연습에 기록합니다. 기본은 앱 화면이 켜진 동안만 수집하며, 주차와 UX 허용을 확인하고 사용자가 내비 중 기록을 켠 경우에만 화면 밖에서도 이어갑니다. 미확인, 미지원, 거부와 오류를 보존합니다. |
+| **명시적으로 켠 전면 위치 표본 기록** | 진행 중인 연습에서 주차, UX 허용과 위치 권한을 확인한 뒤 직접 켭니다. 한길 화면이 켜진 동안 SDK 업데이트 표본을 기기에 저장하고, 화면 밖으로 나가거나 연습 변경/종료, 권한 상실, 오류 또는 저장 상한에서 멈춥니다. 복귀해도 자동으로 다시 켜지지 않습니다. |
+| **주차 후 위치 표본 확인** | 선택한 종료 연습의 위치 기록 실행과 표본, 표본 없는 콜백과 수집 상태를 저장 순서대로 확인합니다. SDK 시각과 신뢰도 원본값의 미확인 의미를 유지하며 현재 위치, 정확도나 실제 이동 경로로 표시하지 않습니다. |
 | **주차 후 차량 기록 확인** | 최근 종료 세션과 지난 연습에서 선택한 종료 기록의 저장된 SDK 관찰을 한 번에 하나씩 확인합니다. 당시 기어, 방향지시등과 브레이크, 연결과 앱 관찰 시각을 보고 이전/다음으로 저장 순서를 따라갑니다. |
 | **지난 연습 열람** | 종료 이력을 저장 순서대로 한 번에 하나씩 확인합니다. 당시 목표, 코스, 과제와 시작/마무리 버튼 시각을 보여 주며, 이탈과 주행 잠금 후에도 같은 기록으로 돌아옵니다. |
 | **저장된 배경 기록 실행 확인** | 선택한 종료 이력의 배경 기록 실행을 펼쳐 저장 순서와 시작/종료 기록을 읽습니다. 종료를 확인하지 못한 이전 실행을 계속 표시하며, 저장된 상태를 현재 수집 중이라는 의미나 실제 SDK 수집 구간으로 해석하지 않습니다. |
-| **기기 내 종료 기록 삭제** | 지난 연습에서 종료 기록을 직접 골라 확인 후 연결된 차량 관찰과 메모를 함께 지웁니다. 진행 중 연습, 다른 기록과 준비는 보존합니다. |
+| **기기 내 종료 기록 삭제** | 지난 연습에서 종료 기록을 직접 골라 확인 후 연결된 차량 관찰, 위치 표본과 수집 상태, 메모를 함께 지웁니다. 진행 중 연습, 다른 기록과 준비는 보존합니다. |
 | **코스별 마무리 기록 요약** | 저장 당시 목표, 코스, 버전과 표시 정보가 같은 마무리 기록을 모아 과제별 저장 기록 수를 확인합니다. |
 | **과정 마무리 직접 기록** | 선택한 종료 연습의 당시 목표, 시연 코스와 과제를 확인하고 마무리 선언을 한 번 저장합니다. 사용자 선언과 버튼 시각을 같은 기록에서 다시 읽으며 운전 능력 인증으로 표시하지 않습니다. |
 | **같은 코스의 다음 과제 준비** | 최근 마무리한 연습의 목표와 시연 코스를 다시 확인하고 다음 과제 하나를 직접 골라 저장합니다. 선택이나 취소만으로 기존 준비를 바꾸지 않으며 새 연습은 별도로 시작합니다. |
@@ -116,6 +120,7 @@
 | 의존성 주입 | Hilt 2.57.2 |
 | 로컬 저장 | Room 2.8.5, SQLite |
 | 차량 상태 | Pleos Vehicle SDK 2.3.2 |
+| 위치 입력 | Pleos FusedLocation SDK 1.1.3 |
 | 지도 표시 | MapLibre Android 13.5.0 |
 | 기본 내비 화면 | Pleos NaviHelper 3.0.5 |
 | 빌드 구성 | Gradle Kotlin DSL, Version Catalog, convention plugin |
@@ -178,7 +183,7 @@ ID와 완료 메시지만으로는 사용자가 마친 전체 원본, 저장소�
 
 기존 API와 모델 ABI를 유지하며 expected fullsource를 받는 종료 overload를 추가했습니다. Room의 같은 트랜잭션에서 실제 행의 물리형과 전체 원본을 비교하고 쓰기 전후에 현재 허용 조건과 취소를 확인합니다. 같은 원본이 이미 끝났다면 최초 종료 시각을 그대로 반환합니다.
 
-마침 action과 저장소의 ACK를 분리하고, 검증한 ACK와 같은 종료 원본이 실제로 수신된 뒤에만 일회성 복습 버튼을 표시했습니다. 종료 Flow가 ACK보다 먼저 와도 응답을 확인할 기회는 유지하지만, Flow나 ACK 하나만으로 복습 대상을 만들지 않습니다. 앱은 [메모리 토큰과 전체 원본](app/src/main/kotlin/io/github/hangillab/hangil/FinishedReviewNavigationViewModel.kt#L14-L19)을 보관하고 [일치하는 토큰만 조회](app/src/main/kotlin/io/github/hangillab/hangil/MainActivity.kt#L76-L89)합니다. 구성 변경은 원본을 유지하고 프로세스 재생성으로 원본을 잃으면 Unavailable로 남습니다.
+마침 action과 저장소의 ACK를 분리하고, 검증한 ACK와 같은 종료 원본이 실제로 수신된 뒤에만 일회성 복습 버튼을 표시했습니다. 종료 Flow가 ACK보다 먼저 와도 응답을 확인할 기회는 유지하지만, Flow나 ACK 하나만으로 복습 대상을 만들지 않습니다. 앱은 [메모리 토큰과 전체 원본](app/src/main/kotlin/io/github/hangillab/hangil/FinishedReviewNavigationViewModel.kt#L14-L19)을 보관하고 [일치하는 토큰만 조회](app/src/main/kotlin/io/github/hangillab/hangil/MainActivity.kt#L110-L117)합니다. 구성 변경은 원본을 유지하고 프로세스 재생성으로 원본을 잃으면 Unavailable로 남습니다.
 
 일반 탐색과 exact 복습 진입을 구분하고, cold 조회를 시작하기 전에 expected source를 고정했습니다. 공유 reader를 설치하기 전 Job과 캡처한 RESUMED host를 확인하며, 거부된 collector는 자신의 Locked만 발행합니다. 상세 조작과 일회성 진입은 현재 P와 UX 해제, 원본과 조회 세대를 다시 확인합니다.
 
@@ -372,7 +377,7 @@ UI 버튼 잠금이나 프로세스 내부 Mutex만으로는 다른 저장 경�
 
 **코드**
 
-[확인 조회에서 고정하는 종료 원본과 연결 자료 버전](core/domain/src/main/kotlin/io/github/hangillab/hangil/core/domain/SessionDeletionTarget.kt#L4-L10)
+[확인 조회에서 고정하는 종료 원본과 연결 자료 버전](core/domain/src/main/kotlin/io/github/hangillab/hangil/core/domain/SessionDeletionTarget.kt#L4-L11)
 
 ```kotlin
 data class SessionDeletionTarget(
@@ -381,6 +386,7 @@ data class SessionDeletionTarget(
     val memoVersion: String?,
     val recordingRuns: List<VehicleRecordingRun> = emptyList(),
     val completionDeclaration: CourseCompletionDeclaration? = null,
+    val locationRecording: LocationRecordingSnapshot = LocationRecordingSnapshot(emptyList(), emptyList()),
 )
 ```
 
@@ -482,7 +488,7 @@ override suspend fun delete(
     }
 ```
 
-[쓰기 전후 허용 조건과 코루틴 취소 확인](core/database/src/main/kotlin/io/github/hangillab/hangil/core/database/RoomSessionDeletionRepository.kt#L90-L95)
+[쓰기 전후 허용 조건과 코루틴 취소 확인](core/database/src/main/kotlin/io/github/hangillab/hangil/core/database/RoomSessionDeletionRepository.kt#L91-L96)
 
 ```kotlin
 private suspend fun requirePermission(canProceed: () -> Boolean) {

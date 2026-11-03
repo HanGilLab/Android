@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="location_recording_open">위치 표본 기록</string>
+    <string name="location_history_navigation_open">저장한 위치 표본</string>
+</resources>

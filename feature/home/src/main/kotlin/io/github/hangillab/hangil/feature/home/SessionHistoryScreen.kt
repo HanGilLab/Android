@@ -45,6 +45,7 @@ import io.github.hangillab.hangil.core.designsystem.ParkedLockedNotice
 import io.github.hangillab.hangil.core.designsystem.ParkedPage
 import io.github.hangillab.hangil.core.designsystem.ParkedPanel
 import io.github.hangillab.hangil.core.domain.CourseReviewStatus
+import io.github.hangillab.hangil.core.domain.PracticeSession
 import io.github.hangillab.hangil.core.domain.SessionDeletionTarget
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
@@ -53,8 +54,14 @@ import java.util.concurrent.atomic.AtomicLong
 fun SessionHistoryRoute(
     onClose: () -> Unit,
     viewModel: SessionHistoryViewModel = hiltViewModel(),
+    onOpenLocations: (PracticeSession) -> Unit = {},
 ) {
-    SessionHistoryEntryContent(SessionHistoryEntry.Explore, onClose, viewModel)
+    SessionHistoryEntryContent(
+        entry = SessionHistoryEntry.Explore,
+        onClose = onClose,
+        viewModel = viewModel,
+        onOpenLocations = onOpenLocations,
+    )
 }
 
 @Composable
@@ -62,6 +69,7 @@ internal fun SessionHistoryEntryContent(
     entry: SessionHistoryEntry,
     onClose: () -> Unit,
     viewModel: SessionHistoryViewModel,
+    onOpenLocations: (PracticeSession) -> Unit,
 ) {
     val exact = entry is SessionHistoryEntry.FinishedReview
     val requiredState = if (exact) Lifecycle.State.RESUMED else Lifecycle.State.STARTED
@@ -98,6 +106,28 @@ internal fun SessionHistoryEntryContent(
             lifecycle.removeObserver(observer)
         }
     }
+    var locationOwner by remember(viewModel, lifecycle) { mutableStateOf(AtomicBoolean(false)) }
+    DisposableEffect(viewModel, lifecycle) {
+        fun resume() {
+            locationOwner.set(false)
+            locationOwner = AtomicBoolean(true)
+        }
+        val observer =
+            LifecycleEventObserver { _, event ->
+                when (event) {
+                    Lifecycle.Event.ON_RESUME -> resume()
+                    Lifecycle.Event.ON_PAUSE, Lifecycle.Event.ON_STOP, Lifecycle.Event.ON_DESTROY -> locationOwner.set(false)
+                    else -> Unit
+                }
+            }
+        lifecycle.addObserver(observer)
+        if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) resume()
+        onDispose {
+            locationOwner.set(false)
+            lifecycle.removeObserver(observer)
+        }
+    }
+    val locationClickOwner = locationOwner
     val clickOwner = startedOwner
     val entryState =
         remember(viewModel, entry, clickOwner.first, lifecycle) {
@@ -124,6 +154,7 @@ internal fun SessionHistoryEntryContent(
             state
         }
     val close: () -> Unit = {
+        locationClickOwner.set(false)
         clickOwner.first.set(false)
         val nonce = clickOwner.second.getAndSet(0)
         if (nonce > 0) viewModel.dismissDeletion(nonce)
@@ -281,6 +312,28 @@ internal fun SessionHistoryEntryContent(
                                     }
                                 }
                             },
+                            locations = {
+                                val action = remember(current, locationClickOwner) { AtomicBoolean(true) }
+                                val open: () -> Unit = {
+                                    if (locationClickOwner.get() && clickOwner.first.get() &&
+                                        lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) &&
+                                        viewModel.canRevealSummary(current.session.sessionId, current.generation) &&
+                                        action.compareAndSet(true, false)
+                                    ) {
+                                        onOpenLocations(current.session)
+                                    }
+                                }
+                                ParkedButton(
+                                    onClick = open,
+                                    prominent = false,
+                                    modifier = Modifier.fillMaxWidth().testTag("history_location_recording").frozenObservationClick(open),
+                                ) {
+                                    Text(
+                                        stringResource(R.string.location_history_navigation_open),
+                                        style = MaterialTheme.typography.titleLarge,
+                                    )
+                                }
+                            },
                             allowBrowsing = !exact,
                             onDelete = {
                                 if (clickOwner.first.get() &&
@@ -339,6 +392,7 @@ private fun HistoryRecord(
     memo: @Composable () -> Unit,
     recordingRuns: @Composable () -> Unit,
     courseCompletion: @Composable () -> Unit,
+    locations: @Composable () -> Unit,
     onDelete: () -> Unit,
     allowBrowsing: Boolean = true,
 ) {
@@ -412,6 +466,7 @@ private fun HistoryRecord(
         }
         recordingRuns()
         courseCompletion()
+        locations()
         ParkedButton(
             onClick = onDelete,
             prominent = false,

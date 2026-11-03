@@ -197,7 +197,7 @@ class FinishSourceReviewRoomFlowTest {
                 }
             }
             attempt { f.ui?.dispose() }
-            attempt { check(f.store.schemaVersion() == 6 && f.store.foreignKeyViolationCount() == 0) }
+            attempt { check(f.store.schemaVersion() == 7 && f.store.foreignKeyViolationCount() == 0) }
             attempt {
                 check(f.ui == null || f.ui!!.isStopped)
                 f.store.close()
@@ -216,7 +216,7 @@ class FinishSourceReviewRoomFlowTest {
         fun seed() =
             runBlocking {
                 check(
-                    store.schemaVersion() == 6 &&
+                    store.schemaVersion() == 7 &&
                         store.sessions
                             .observeSessions()
                             .first()

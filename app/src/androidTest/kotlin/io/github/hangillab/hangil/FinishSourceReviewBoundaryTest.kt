@@ -144,6 +144,10 @@ class FinishSourceReviewBoundaryTest {
                 }
             }
             fixture(sessions, children) { f ->
+                f.touch("home_location_recording")
+                check(f.locationRecordingNavigation.get() == 1) { "The finish-aware Home route must forward the location action" }
+                check(children.totalReads() == 0) { "Forwarding the location action must not open stored child readers" }
+                check(f.navigation.isEmpty() && sessions.finishes.get() == 0)
                 f.touch("session_finish")
                 f.waitReceipt()
                 val receipt = checkNotNull(f.session.finishReceipt.value)
@@ -175,7 +179,23 @@ class FinishSourceReviewBoundaryTest {
             sessions.rows.value = listOf(ended)
             SessionFinishResult.Finished(ended)
         }
-        fixture(sessions, Children()) { f ->
+        val children = Children()
+        fixture(sessions, children) { f ->
+            val blockedLocation = f.action("home_location_recording")
+            compose.runOnIdle { f.live.silent(driving()) }
+            f.invoke(blockedLocation)
+            check(f.locationRecordingNavigation.get() == 0) { "A captured Home location action must reject the current non-P value" }
+            compose.runOnIdle {
+                f.live.silent(parked())
+                f.restrictions.value = DrivingRestrictions(ParkingState.PARKED, UxRestrictionState.RESTRICTED)
+            }
+            f.invoke(blockedLocation)
+            check(f.locationRecordingNavigation.get() == 0) { "A captured Home location action must reject the current UX restriction" }
+            check(children.totalReads() == 0) { "Rejected location actions must not open stored child readers" }
+            compose.runOnIdle {
+                f.restrictions.value = DrivingRestrictions(ParkingState.PARKED, UxRestrictionState.UNRESTRICTED)
+            }
+            f.waitTag("session_finish")
             val oldFinish = f.action("session_finish")
             f.move(Lifecycle.State.STARTED)
             f.invoke(oldFinish)
@@ -260,14 +280,50 @@ class FinishSourceReviewBoundaryTest {
             val expected = source(A, TIME + 90_000)
             f.openExact(expected)
             f.ready(expected)
+            val openedLocation = f.action("history_location_recording")
+            f.touch("history_location_recording")
+            f.invoke(openedLocation)
+            check(f.locationNavigation == listOf(expected)) { "The exact ended source must be forwarded once, never the newer record" }
+            check(children.totalReads() == 0) { "Opening the location route must not reveal another stored detail" }
+
+            f.openExact(expected)
+            f.ready(expected)
+            val pausedLocation = f.action("history_location_recording")
+            f.move(Lifecycle.State.STARTED)
+            f.invoke(pausedLocation)
+            f.move(Lifecycle.State.RESUMED)
+            f.ready(expected)
+            f.invoke(pausedLocation)
+            check(f.locationNavigation == listOf(expected)) { "A retired host cannot forward a location source after resuming" }
+
+            val drivingLocation = f.action("history_location_recording")
+            compose.runOnIdle { f.live.silent(driving()) }
+            f.invoke(drivingLocation)
+            check(f.locationNavigation == listOf(expected)) { "The current non-P value must block a captured location action" }
+            compose.runOnIdle { f.live.silent(parked()) }
+            f.openExact(expected)
+            f.ready(expected)
+            val restrictedLocation = f.action("history_location_recording")
+            compose.runOnIdle {
+                f.restrictions.value = DrivingRestrictions(ParkingState.PARKED, UxRestrictionState.RESTRICTED)
+            }
+            f.invoke(restrictedLocation)
+            check(f.locationNavigation == listOf(expected)) { "A current UX restriction must block a captured location action" }
+            compose.runOnIdle {
+                f.restrictions.value = DrivingRestrictions(ParkingState.PARKED, UxRestrictionState.UNRESTRICTED)
+            }
+            f.openExact(expected)
+            f.ready(expected)
+            val oldLocation = f.action("history_location_recording")
             val oldMemo = f.action("history_memo")
             compose.runOnIdle {
                 sessions.rows.value =
                     listOf(source(B, TIME + 150_000), expected.copy(taskTitle = "changed controlled source"))
             }
             f.waitTag("finished_review_unavailable")
-            f.invoke(oldMemo)
+            f.invoke(oldMemo, oldLocation)
             check(children.memoQueries.isEmpty() && f.nodes("history_ready").isEmpty())
+            check(f.locationNavigation == listOf(expected)) { "A changed exact source cannot forward a captured location action" }
             compose.runOnIdle { sessions.rows.value = listOf(source(B, TIME + 150_000)) }
             f.openExact(expected)
             f.waitTag("finished_review_unavailable")
@@ -342,6 +398,8 @@ class FinishSourceReviewBoundaryTest {
         val live = SilentVehicle(parked())
         val restrictions = MutableStateFlow(DrivingRestrictions(ParkingState.PARKED, UxRestrictionState.UNRESTRICTED))
         val navigation = mutableListOf<PracticeSession>()
+        val locationNavigation = mutableListOf<PracticeSession>()
+        val locationRecordingNavigation = AtomicInteger(0)
         val historyReads = AtomicInteger(0)
         private val activeReads = AtomicInteger(0)
         private val activeWrites = AtomicInteger(0)
@@ -475,7 +533,12 @@ class FinishSourceReviewBoundaryTest {
                             if (visible.value) {
                                 key(entryEpoch.value) {
                                     if (exact.value) {
-                                        FinishedSessionReviewRoute(target.value, { exact.value = false }, history)
+                                        FinishedSessionReviewRoute(
+                                            expectedSource = target.value,
+                                            onClose = { exact.value = false },
+                                            viewModel = history,
+                                            onOpenLocations = { locationNavigation += it },
+                                        )
                                     } else {
                                         HomeRoute(
                                             onPrepare = { error("Unexpected preparation navigation") },
@@ -488,6 +551,7 @@ class FinishSourceReviewBoundaryTest {
                                                 exact.value = true
                                                 entryEpoch.value++
                                             },
+                                            onLocationRecording = { locationRecordingNavigation.incrementAndGet() },
                                             viewModel = checkNotNull(models[HomeViewModel::class.java]) as HomeViewModel,
                                         )
                                     }
