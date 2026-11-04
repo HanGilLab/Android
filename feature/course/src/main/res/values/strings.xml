@@ -14,6 +14,10 @@
     <string name="next">다음으로</string>
     <string name="saving">저장하고 있어요…</string>
     <string name="save_failed">저장하지 못했어요. 선택은 유지되니 다시 시도해 주세요.</string>
+    <string name="preparation_read_loading">준비 내용을 불러오고 있어요.</string>
+    <string name="preparation_read_failed">준비 내용을 확인하지 못했어요.</string>
+    <string name="preparation_read_retry">다시 불러오기</string>
+    <string name="preparation_read_outdated">저장된 준비가 바뀌었어요. 다시 선택해 주세요.</string>
     <string name="demo_details">시연 안내</string>
     <string name="course_details">코스 내용: %1$s</string>
     <string name="next_practice_title">다음 과제 고르기</string>

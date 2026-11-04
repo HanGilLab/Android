@@ -20,6 +20,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -358,6 +361,367 @@ class CourseViewModelTest {
             assertEquals(0, repository.calls)
         }
 
+    @Test fun `fresh preparation edit retains the stored selection without reselection or implicit writes`() =
+        runTest {
+            val stored = PracticeSelection("b", "c", 2, 3, "u")
+            repository.selection.value = stored
+            val model = model(SavedStateHandle())
+            observe(model)
+            assertEquals(PreparationStep.GOAL, model.uiState.value.step)
+            assertEquals(
+                "b",
+                model.uiState.value.goal
+                    ?.id,
+            )
+            assertEquals(
+                "c",
+                model.uiState.value.course
+                    ?.id,
+            )
+            assertEquals("u", model.uiState.value.taskId)
+            assertTrue(model.uiState.value.canContinue)
+            assertEquals(0, repository.calls)
+            assertEquals(stored, repository.selection.value)
+            model.next()
+            runCurrent()
+            assertEquals(PreparationStep.COURSE, model.uiState.value.step)
+            assertEquals(
+                "c",
+                model.uiState.value.course
+                    ?.id,
+            )
+            assertTrue(model.uiState.value.canContinue)
+            model.next()
+            runCurrent()
+            assertEquals(PreparationStep.BRIEFING, model.uiState.value.step)
+            assertEquals("u", model.uiState.value.taskId)
+            assertTrue(model.uiState.value.canContinue)
+            assertTrue(model.back())
+            assertTrue(model.back())
+            assertFalse(model.back())
+            runCurrent()
+            assertFalse(model.uiState.value.allowsInteraction)
+            assertEquals(0, repository.calls)
+            assertEquals(stored, repository.selection.value)
+        }
+
+    @Test fun `the stored selection is read once and later emissions cannot overwrite an owned edit`() =
+        runTest {
+            val stored = PracticeSelection("b", "c", 2, 3, "u")
+            repository.selection.value = stored
+            val model = model()
+            val observer = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { model.uiState.collect {} }
+            runCurrent()
+            assertEquals(1, repository.readCalls)
+            repository.selection.value = PracticeSelection("a", "c", 2, 3, "t")
+            runCurrent()
+            assertEquals(
+                "b",
+                model.uiState.value.goal
+                    ?.id,
+            )
+            assertEquals("u", model.uiState.value.taskId)
+            model.selectGoal("a")
+            runCurrent()
+            assertEquals(
+                "a",
+                model.uiState.value.goal
+                    ?.id,
+            )
+            assertNull(model.uiState.value.course)
+            assertNull(model.uiState.value.taskId)
+            observer.cancel()
+            runCurrent()
+            observe(model)
+            assertEquals(1, repository.readCalls)
+            assertEquals(
+                "a",
+                model.uiState.value.goal
+                    ?.id,
+            )
+            assertNull(model.uiState.value.course)
+            assertEquals(0, repository.calls)
+        }
+
+    @Test fun `owned partial and invalid drafts do not backfill from a different stored selection`() =
+        runTest {
+            repository.selection.value = PracticeSelection("b", "c", 2, 3, "u")
+            repository.read = { error("An owned draft must not query storage") }
+            for ((state, expectedGoal) in listOf(
+                SavedStateHandle(mapOf("goal" to "a")) to "a",
+                SavedStateHandle(mapOf("goal" to "missing")) to null,
+            )) {
+                val model = model(state)
+                observe(model)
+                assertEquals(PreparationReadState.READY, model.uiState.value.preparationRead)
+                assertEquals(PreparationStep.GOAL, model.uiState.value.step)
+                assertEquals(
+                    expectedGoal,
+                    model.uiState.value.goal
+                        ?.id,
+                )
+                assertNull(model.uiState.value.course)
+                assertNull(model.uiState.value.taskId)
+                assertEquals(0, repository.readCalls)
+                assertEquals(0, repository.calls)
+            }
+        }
+
+    @Test fun `a delayed first read blocks edits and duplicate retry until it installs a valid selection`() =
+        runTest {
+            val stored = PracticeSelection("b", "c", 2, 3, "u")
+            repository.selection.value = stored
+            val gate = CompletableDeferred<Unit>()
+            repository.read = {
+                flow {
+                    gate.await()
+                    emit(stored)
+                }
+            }
+            val model = model()
+            observe(model)
+            assertEquals(PreparationReadState.LOADING, model.uiState.value.preparationRead)
+            assertTrue(model.uiState.value.allowsInteraction)
+            assertFalse(model.uiState.value.canContinue)
+            model.selectGoal("a")
+            model.next()
+            model.selectCourse("c")
+            model.selectTask("t")
+            model.retryPreparationRead()
+            runCurrent()
+            assertEquals(PreparationStep.GOAL, model.uiState.value.step)
+            assertNull(model.uiState.value.goal)
+            assertNull(model.uiState.value.course)
+            assertNull(model.uiState.value.taskId)
+            assertFalse(model.canRevealDetails(model.uiState.value))
+            assertEquals(1, repository.readCalls)
+            assertEquals(0, repository.calls)
+            gate.complete(Unit)
+            runCurrent()
+            assertEquals(PreparationReadState.READY, model.uiState.value.preparationRead)
+            assertEquals(
+                "b",
+                model.uiState.value.goal
+                    ?.id,
+            )
+            assertEquals("u", model.uiState.value.taskId)
+            assertTrue(model.uiState.value.canContinue)
+            assertEquals(stored, repository.selection.value)
+            assertEquals(0, repository.calls)
+        }
+
+    @Test fun `read failure stays failed across a stopped reader and only explicit retry starts a new read`() =
+        runTest {
+            val stored = PracticeSelection("b", "c", 2, 3, "u")
+            repository.selection.value = stored
+            repository.read = { flow { error("read unavailable") } }
+            val state = SavedStateHandle()
+            val model = model(state)
+            val observer = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { model.uiState.collect {} }
+            runCurrent()
+            assertEquals(PreparationReadState.FAILED, model.uiState.value.preparationRead)
+            assertTrue(model.uiState.value.allowsInteraction)
+            assertFalse(model.uiState.value.canContinue)
+            model.selectGoal("a")
+            model.next()
+            runCurrent()
+            assertNull(model.uiState.value.goal)
+            assertFalse(state.contains("step"))
+            assertFalse(state.contains("initialPreparationOutdated"))
+            observer.cancel()
+            runCurrent()
+            observe(model)
+            assertEquals(PreparationReadState.FAILED, model.uiState.value.preparationRead)
+            assertEquals(1, repository.readCalls)
+            repository.read = { flowOf(stored) }
+            model.retryPreparationRead()
+            model.retryPreparationRead()
+            runCurrent()
+            assertEquals(2, repository.readCalls)
+            assertEquals(PreparationReadState.READY, model.uiState.value.preparationRead)
+            assertEquals(
+                "b",
+                model.uiState.value.goal
+                    ?.id,
+            )
+            assertEquals("u", model.uiState.value.taskId)
+            assertEquals(stored, repository.selection.value)
+            assertEquals(0, repository.calls)
+        }
+
+    @Test fun `completion without a value is a failed read while an explicit null is a known empty preparation`() =
+        runTest {
+            repository.read = { emptyFlow() }
+            val model = model()
+            observe(model)
+            assertEquals(PreparationReadState.FAILED, model.uiState.value.preparationRead)
+            assertFalse(model.uiState.value.canContinue)
+            repository.read = { flowOf(null) }
+            model.retryPreparationRead()
+            runCurrent()
+            assertEquals(PreparationReadState.READY, model.uiState.value.preparationRead)
+            assertEquals(PreparationStep.GOAL, model.uiState.value.step)
+            assertNull(model.uiState.value.goal)
+            assertNull(model.uiState.value.course)
+            assertNull(model.uiState.value.taskId)
+            assertEquals(2, repository.readCalls)
+            assertEquals(0, repository.calls)
+        }
+
+    @Test fun `a cancelled old read cannot fail or replace a later successful reader`() =
+        runTest {
+            val oldGate = CompletableDeferred<Unit>()
+            repository.read = {
+                flow {
+                    withContext(NonCancellable) { oldGate.await() }
+                    error("cancelled old read failed late")
+                }
+            }
+            val model = model()
+            val oldObserver = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { model.uiState.collect {} }
+            runCurrent()
+            assertEquals(PreparationReadState.LOADING, model.uiState.value.preparationRead)
+            oldObserver.cancel()
+            runCurrent()
+            val replacement = PracticeSelection("b", "c", 2, 3, "u")
+            repository.read = { flowOf(replacement) }
+            observe(model)
+            assertEquals(PreparationReadState.READY, model.uiState.value.preparationRead)
+            assertEquals(
+                "b",
+                model.uiState.value.goal
+                    ?.id,
+            )
+            oldGate.complete(Unit)
+            runCurrent()
+            assertEquals(PreparationReadState.READY, model.uiState.value.preparationRead)
+            assertEquals(
+                "b",
+                model.uiState.value.goal
+                    ?.id,
+            )
+            assertEquals("u", model.uiState.value.taskId)
+            assertEquals(2, repository.readCalls)
+            assertEquals(0, repository.calls)
+        }
+
+    @Test fun `closing during a delayed read cannot install a draft or reopen the reader`() =
+        runTest {
+            val gate = CompletableDeferred<Unit>()
+            val stored = PracticeSelection("b", "c", 2, 3, "u")
+            repository.selection.value = stored
+            repository.read = {
+                flow {
+                    withContext(NonCancellable) { gate.await() }
+                    emit(stored)
+                }
+            }
+            val state = SavedStateHandle()
+            val model = model(state)
+            val observer = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { model.uiState.collect {} }
+            runCurrent()
+            model.leave()
+            gate.complete(Unit)
+            runCurrent()
+            assertFalse(model.uiState.value.allowsInteraction)
+            assertEquals(PreparationReadState.LOADING, model.uiState.value.preparationRead)
+            assertNull(model.uiState.value.goal)
+            assertNull(model.uiState.value.taskId)
+            assertFalse(state.contains("step"))
+            assertFalse(state.contains("initialPreparationOutdated"))
+            observer.cancel()
+            runCurrent()
+            observe(model)
+            model.retryPreparationRead()
+            model.selectGoal("a")
+            runCurrent()
+            assertFalse(model.uiState.value.allowsInteraction)
+            assertEquals(1, repository.readCalls)
+            assertEquals(stored, repository.selection.value)
+            assertEquals(0, repository.calls)
+        }
+
+    @Test fun `an outdated stored selection stays distinct and never upgrades itself or overwrites storage`() =
+        runTest {
+            val outdated = PracticeSelection("b", "c", 1, 3, "u")
+            repository.selection.value = outdated
+            val state = SavedStateHandle()
+            val model = model(state)
+            observe(model)
+            assertEquals(PreparationReadState.OUTDATED, model.uiState.value.preparationRead)
+            assertNull(model.uiState.value.goal)
+            assertNull(model.uiState.value.course)
+            assertNull(model.uiState.value.taskId)
+            assertFalse(model.uiState.value.canContinue)
+            assertEquals(true, state.get<Boolean>("initialPreparationOutdated"))
+            val restored = model(state)
+            observe(restored)
+            assertEquals(PreparationReadState.OUTDATED, restored.uiState.value.preparationRead)
+            assertEquals(1, repository.readCalls)
+            restored.selectGoal("a")
+            runCurrent()
+            assertEquals(PreparationReadState.READY, restored.uiState.value.preparationRead)
+            assertEquals(false, state.get<Boolean>("initialPreparationOutdated"))
+            assertEquals(
+                "a",
+                restored.uiState.value.goal
+                    ?.id,
+            )
+            assertNull(restored.uiState.value.course)
+            assertNull(restored.uiState.value.taskId)
+            assertEquals(outdated, repository.selection.value)
+            assertEquals(0, repository.calls)
+        }
+
+    @Test fun `retry and edits use current P and UX before combined state catches up`() =
+        runTest {
+            repository.read = { flow { error("read unavailable") } }
+            val model = model()
+            observe(model)
+            assertEquals(PreparationReadState.FAILED, model.uiState.value.preparationRead)
+            vehicle.state.value = vehicle.state.value.copy(gear = VehicleReading.Available(GearPosition.DRIVE))
+            model.retryPreparationRead()
+            runCurrent()
+            assertEquals(1, repository.readCalls)
+            vehicle.state.value = vehicle.state.value.copy(gear = VehicleReading.Available(GearPosition.PARK))
+            restrictions.restrictions.value = DrivingRestrictions(ParkingState.PARKED, UxRestrictionState.UNKNOWN)
+            model.retryPreparationRead()
+            runCurrent()
+            assertEquals(1, repository.readCalls)
+            restrictions.restrictions.value = DrivingRestrictions(ParkingState.PARKED, UxRestrictionState.UNRESTRICTED)
+            val gate = CompletableDeferred<Unit>()
+            val stored = PracticeSelection("b", "c", 2, 3, "u")
+            repository.read = {
+                flow {
+                    gate.await()
+                    emit(stored)
+                }
+            }
+            model.retryPreparationRead()
+            runCurrent()
+            assertEquals(2, repository.readCalls)
+            vehicle.state.value = vehicle.state.value.copy(gear = VehicleReading.Available(GearPosition.DRIVE))
+            gate.complete(Unit)
+            runCurrent()
+            assertEquals(PreparationReadState.READY, model.uiState.value.preparationRead)
+            assertFalse(model.uiState.value.allowsInteraction)
+            model.selectGoal("a")
+            model.next()
+            runCurrent()
+            assertEquals(PreparationStep.GOAL, model.uiState.value.step)
+            assertEquals(
+                "b",
+                model.uiState.value.goal
+                    ?.id,
+            )
+            assertEquals("u", model.uiState.value.taskId)
+            vehicle.state.value = vehicle.state.value.copy(gear = VehicleReading.Available(GearPosition.PARK))
+            runCurrent()
+            assertTrue(model.uiState.value.allowsInteraction)
+            assertTrue(model.uiState.value.canContinue)
+            assertEquals(0, repository.calls)
+        }
+
     @Test fun `draft restores only matching catalog versions`() =
         runTest {
             val state = SavedStateHandle()
@@ -366,11 +730,13 @@ class CourseViewModelTest {
             prepare(first)
             val restored = model(state)
             observe(restored)
+            assertEquals(1, repository.readCalls)
             assertEquals(PreparationStep.BRIEFING, restored.uiState.value.step)
             assertEquals("t", restored.uiState.value.taskId)
             state["briefingVersion"] = 1
             val outdated = model(state)
             observe(outdated)
+            assertEquals(1, repository.readCalls)
             assertEquals(PreparationStep.COURSE, outdated.uiState.value.step)
             assertNull(outdated.uiState.value.course)
         }
