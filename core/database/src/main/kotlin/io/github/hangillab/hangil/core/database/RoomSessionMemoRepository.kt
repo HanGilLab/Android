@@ -1,6 +1,7 @@
 package io.github.hangillab.hangil.core.database
 
 import androidx.room.withTransaction
+import io.github.hangillab.hangil.core.domain.PracticeSession
 import io.github.hangillab.hangil.core.domain.SessionMemoPolicy
 import io.github.hangillab.hangil.core.domain.SessionMemoRepository
 import io.github.hangillab.hangil.core.domain.SessionMemoWriteResult
@@ -66,7 +67,7 @@ internal class RoomSessionMemoRepository
                 database.withTransaction {
                     currentCoroutineContext().ensureActive()
                     requirePermission(canCommit)
-                    val session = database.practiceSessionDao().find(sessionId)?.session()
+                    val session = findCheckedSession(sessionId)
                     val result =
                         when {
                             session == null -> SessionMemoWriteResult.MissingSession
@@ -86,6 +87,21 @@ internal class RoomSessionMemoRepository
             } catch (_: WriteBlocked) {
                 SessionMemoWriteResult.Blocked
             }
+
+        private suspend fun findCheckedSession(sessionId: String): PracticeSession? {
+            val dao = database.practiceSessionDao()
+            val entity = dao.find(sessionId) ?: return null
+            // Reject original storage before Room coercion can hide invalid source values.
+            check(dao.countValidDeletionStorage(sessionId) == 1) { "Invalid latest memo source storage" }
+            val source = entity.session()
+            val selection = source.selection
+            check(
+                source.sessionId.isNotBlank() && selection.goalId.isNotBlank() && selection.courseId.isNotBlank() &&
+                    selection.taskId.isNotBlank() && source.goalTitle.isNotBlank() && source.courseTitle.isNotBlank() &&
+                    source.taskTitle.isNotBlank(),
+            ) { "Invalid latest memo source snapshot" }
+            return source
+        }
 
         private fun requirePermission(canCommit: () -> Boolean) {
             if (!canCommit()) throw WriteBlocked()
