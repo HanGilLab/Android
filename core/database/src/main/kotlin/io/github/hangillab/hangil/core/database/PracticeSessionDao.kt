@@ -10,6 +10,12 @@ internal interface PracticeSessionDao {
     @Query("SELECT * FROM practice_session ORDER BY rowId DESC")
     fun observe(): Flow<List<PracticeSessionEntity>>
 
+    @Query(PracticeSessionStorageSql.CHECKED_SELECT + " ORDER BY rowId DESC")
+    fun observeChecked(): Flow<List<PracticeSessionRow>>
+
+    @Query(PracticeSessionStorageSql.CHECKED_SELECT + " WHERE activeSlot = 1 LIMIT 1")
+    suspend fun activeChecked(): PracticeSessionRow?
+
     @Query("SELECT * FROM practice_session WHERE activeSlot = 1 LIMIT 1")
     suspend fun active(): PracticeSessionEntity?
 

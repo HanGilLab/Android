@@ -201,7 +201,7 @@ ID와 완료 메시지만으로는 사용자가 마친 전체 원본, 저장소�
 
 **코드**
 
-[같은 Room 트랜잭션에서 전체 원본을 비교한 뒤 종료](core/database/src/main/kotlin/io/github/hangillab/hangil/core/database/RoomPracticeSessionRepository.kt#L104-L144)
+[같은 Room 트랜잭션에서 전체 원본을 비교한 뒤 종료](core/database/src/main/kotlin/io/github/hangillab/hangil/core/database/RoomPracticeSessionRepository.kt#L107-L147)
 
 ```kotlin
 override suspend fun finish(
