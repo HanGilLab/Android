@@ -42,7 +42,7 @@ class CourseViewModelTest {
     private val catalog =
         object : PracticeCatalog {
             override val goals = listOf(PracticeGoal("a", "목표 A", ""), PracticeGoal("b", "목표 B", ""))
-            override val courses =
+            override var courses =
                 listOf(
                     PracticeCourse(
                         "c",
@@ -273,6 +273,88 @@ class CourseViewModelTest {
             )
             assertNull(model.uiState.value.course)
             assertNull(model.uiState.value.taskId)
+            assertEquals(0, repository.calls)
+        }
+
+    @Test fun `reselecting the same course after going back retains the chosen task until explicit save`() =
+        runTest {
+            val model = model()
+            observe(model)
+            prepare(model)
+            runCurrent()
+            assertEquals("t", model.uiState.value.taskId)
+            assertTrue(model.back())
+            runCurrent()
+            assertEquals(PreparationStep.COURSE, model.uiState.value.step)
+            model.selectCourse("c")
+            model.next()
+            runCurrent()
+            assertEquals(PreparationStep.BRIEFING, model.uiState.value.step)
+            assertEquals("t", model.uiState.value.taskId)
+            assertTrue(model.uiState.value.canContinue)
+            assertEquals(0, repository.calls)
+            assertNull(repository.selection.value)
+            model.next()
+            runCurrent()
+            assertEquals(PracticeSelection("a", "c", 2, 3, "t"), repository.selection.value)
+            assertEquals(1, repository.calls)
+        }
+
+    @Test fun `selecting another course clears the old task even when the task ID also exists there`() =
+        runTest {
+            catalog.courses = catalog.courses + catalog.courses.single().copy(id = "other")
+            val model = model()
+            observe(model)
+            prepare(model)
+            assertTrue(model.back())
+            model.selectCourse("other")
+            model.next()
+            runCurrent()
+            assertEquals(
+                "other",
+                model.uiState.value.course
+                    ?.id,
+            )
+            assertEquals(PreparationStep.BRIEFING, model.uiState.value.step)
+            assertNull(model.uiState.value.taskId)
+            assertFalse(model.uiState.value.canContinue)
+            assertEquals(0, repository.calls)
+        }
+
+    @Test fun `changed course or briefing versions require the task to be selected again`() =
+        runTest {
+            val original = catalog.courses.single()
+            for (changed in listOf(original.copy(version = 3), original.copy(briefingVersion = 4))) {
+                catalog.courses = listOf(original)
+                val model = model()
+                observe(model)
+                prepare(model)
+                assertTrue(model.back())
+                catalog.courses = listOf(changed)
+                model.selectCourse("c")
+                model.next()
+                runCurrent()
+                assertEquals(changed, model.uiState.value.course)
+                assertEquals(PreparationStep.BRIEFING, model.uiState.value.step)
+                assertNull(model.uiState.value.taskId)
+                assertFalse(model.uiState.value.canContinue)
+                assertEquals(0, repository.calls)
+            }
+        }
+
+    @Test fun `a task removed from the unchanged course cannot survive reselection`() =
+        runTest {
+            val model = model()
+            observe(model)
+            prepare(model)
+            assertTrue(model.back())
+            catalog.courses = catalog.courses.map { course -> course.copy(tasks = course.tasks.filterNot { it.id == "t" }) }
+            model.selectCourse("c")
+            model.next()
+            runCurrent()
+            assertEquals(PreparationStep.BRIEFING, model.uiState.value.step)
+            assertNull(model.uiState.value.taskId)
+            assertFalse(model.uiState.value.canContinue)
             assertEquals(0, repository.calls)
         }
 

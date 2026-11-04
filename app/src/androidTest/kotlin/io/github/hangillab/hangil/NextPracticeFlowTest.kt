@@ -10,6 +10,7 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -141,6 +142,10 @@ class NextPracticeFlowTest {
                 verifyNormalPreparationAndCancel(original)
                 assertDataUnchanged(graph, before, original)
 
+                assertTrue("다음 과제는 상단 주행동 하나로 표시해야 합니다", nodes("home_next_practice").size == 1)
+                val nextBounds = compose.onNodeWithTag("home_next_practice").getUnclippedBoundsInRoot()
+                val repeatBounds = compose.onNodeWithTag("session_start").getUnclippedBoundsInRoot()
+                assertTrue("다음 과제는 같은 과제 반복보다 먼저 보여야 합니다", nextBounds.top < repeatBounds.top)
                 touch("home_next_practice")
                 assertReady(seed, selectedTaskId = null)
                 assertAbsent("next_practice_goal")

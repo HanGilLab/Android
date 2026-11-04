@@ -92,8 +92,14 @@ class CourseViewModel
 
         fun selectCourse(id: String) {
             if (!canEdit() || draft.value.step != PreparationStep.COURSE) return
-            val course = catalog.courses.find { it.id == id && draft.value.goalId in it.goalIds } ?: return
-            update(draft.value.copy(courseId = id, courseVersion = course.version, briefingVersion = course.briefingVersion, taskId = null))
+            val current = draft.value
+            val course = catalog.courses.find { it.id == id && current.goalId in it.goalIds } ?: return
+            if (current.courseId == course.id && current.courseVersion == course.version &&
+                current.briefingVersion == course.briefingVersion && course.tasks.any { it.id == current.taskId }
+            ) {
+                return
+            }
+            update(current.copy(courseId = id, courseVersion = course.version, briefingVersion = course.briefingVersion, taskId = null))
         }
 
         fun selectTask(id: String) {
