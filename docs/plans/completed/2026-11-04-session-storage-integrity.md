@@ -1,6 +1,6 @@
 # 세션 관찰 원본과 단일 활성 연습 무결성
 
-- 상태: 진행 중
+- 상태: 완료. PR93의 최신 CI/Codex와 실제 병합, main ff-only 및 병합 브랜치 정리를 확인했다. 실제 Android 기기/SDK는 미실행이다.
 - 요구사항: APP-03/08의 세션 소유권과 이력 요약, QA-01/02의 저장 경계
 - 기준 main: `0565d8d23d327721138102c81f64134963dad380`
 
@@ -19,7 +19,7 @@
 - [x] 조회에서 누락된 비정상 미종료 원본과 복수 미종료 원본이 있으면 새 시작/정상 소유 응답을 거부한다.
 - [x] 정상 이력 순서/버전 맥락, Empty/AlreadyActive/준비/권한/취소/동시성 계약과 전체 fixture 값/타입/행 순서/schema/sequence를 유지한다.
 - [x] JDK17 동일 focused/전체 verify와 독립 검토를 확인한다.
-- [ ] 최신 PR CI4/Codex/미해결/정책과 실제 병합/main ff-only/병합 브랜치 정리 뒤 계획을 종료한다.
+- [x] 최신 PR CI4/Codex/미해결/정책과 실제 병합/main ff-only/병합 브랜치 정리 뒤 계획을 종료한다.
 
 ## 구현 단계
 
@@ -39,7 +39,7 @@
 | 기준 focused | 실제 RED 확인 | 전체14개 중12개 실패/정상2개 통과, 오류/건너뜀0. 숫자6종의 요약 혼입과 비정상 슬롯 누락→두 번째 논리 소유자 생성, 잘못된 AlreadyActive 확인 |
 | 같은 검증 소스 수정 후 | 실제 GREEN 확인 | 기준과 바이트 동일한 source14개 통과, 실패/오류/건너뜀0. 원본/전체 Flow와 단일 소유자 거부 및 raw 자료 보존 |
 | JDK17 전체 verify/기존 회귀 | 재실행 통과 | 진단 문자열 포맷 수정 뒤 최종 소스의 품질/모듈 경계/Lint/build-logic/JVM/debug/unsigned release, cache/up-to-date 포함 가능. 첫 품질 실패와 이후 단계 미실행은 별도 |
-| 최신 PR CI/Codex/정책 | 미실행 | 대기/실패는 승인 아님 |
+| 최신 PR CI/Codex/정책 | 통과 | PR93 정확5fc886e의 필수 CI4/App15368와 같은 head Codex 완료/지적 없음, 스레드/변경 요청0 및 원래 strict 정책 |
 | 실제 기기/SDK/화면 | 미실행, 이번 저장 경계 대상 아님 | 기기 진단/호출과 UI는 변경하지 않음 |
 
 ## README 사례 비교
@@ -48,13 +48,13 @@
 
 ## 남은 문제와 인계
 
-미실행/실패/성공을 나누고 기준/수정 후 검증 전에는 해결 완료로 쓰지 않는다. 실제 사용자 DB/SDK/기기와 운전 성과를 관찰하지 않는다. 기존 앱 PR의 수동 미완료와 전체19/54/선택3개 제외는 별도로 유지한다. 이번 범위 완료 전 계획은 active다.
+미실행/실패/성공을 나누고 기준/수정 후 검증 전에는 해결 완료로 쓰지 않는다. 실제 사용자 DB/SDK/기기와 운전 성과를 관찰하지 않는다. 기존 앱 PR의 수동 미완료와 전체19/54/선택3개 제외는 별도로 유지한다. 아래 실제 종료 근거로 이번 저장 경계만 완료하며 전체 앱과 기존 PR 수동 검증은 별도로 유지한다.
 
 ## 기준 실행과 최소 구현
 
 제품 미변경14개에서 손상12개는 실제 fixture 타입/값과 active 조회/미종료 수 확인 뒤 기대 오류 assertion에서 실패했고 정상2개는 통과했다. 숫자 버전6개는 정상 종료 원본과 같은 맥락으로 합산됐으며, REAL 슬롯은 raw active 조회에 없는데도 Started를 반환해 논리 미종료2개와 원시 자료/sequence 변경이 생겼다. 손상 active/복수 미종료는 정상 AlreadyActive로 응답했다. 컴파일/fixture 오류나 취소를 RED로 계산하지 않았으며 원래 소스/XML/로그를 비공개로 보존했다.
 
-확인 후 같은 SQL에서 원래 자료형/버전 범위를 판정하는 `PracticeSessionRow`와 공통 SELECT를 추가했다. 원래 타입을 검사하기 전에 일부 행을 제외/복구하지 않고 전체 관찰을 오류로 전파한다. 시작은 같은 transaction에서 checked active 모델과 실제 미종료 수0/1의 일치를 확인해 조회에서 누락된 소유자나 복수 소유자를 정상으로 인정하지 않는다. 정상 active는 이전처럼 무관한 준비를 읽지 않고 AlreadyActive와 두 권한 확인을 유지한다. raw DAO/Entity/schema/기존 쓰기 guard/화면/SDK는 바꾸지 않았다. 기준과 바이트 동일한 검증 source의 수정 후14개가 모두 통과했다. 이후 진단 문구만 같은 내용으로 나누고 포맷한 최종 소스의 전체 verify 재실행도4단계 성공/종료0이다. 기존 준비/시작 경합/권한/취소/마이그레이션 회귀를 포함하며 최신 PR CI/Codex와 실제 병합은 별도로 확인한다.
+확인 후 같은 SQL에서 원래 자료형/버전 범위를 판정하는 `PracticeSessionRow`와 공통 SELECT를 추가했다. 원래 타입을 검사하기 전에 일부 행을 제외/복구하지 않고 전체 관찰을 오류로 전파한다. 시작은 같은 transaction에서 checked active 모델과 실제 미종료 수0/1의 일치를 확인해 조회에서 누락된 소유자나 복수 소유자를 정상으로 인정하지 않는다. 정상 active는 이전처럼 무관한 준비를 읽지 않고 AlreadyActive와 두 권한 확인을 유지한다. raw DAO/Entity/schema/기존 쓰기 guard/화면/SDK는 바꾸지 않았다. 기준과 바이트 동일한 검증 source의 수정 후14개가 모두 통과했다. 이후 진단 문구만 같은 내용으로 나누고 포맷한 최종 소스의 전체 verify 재실행도4단계 성공/종료0이다. 기존 준비/시작 경합/권한/취소/마이그레이션 회귀를 포함하며 최신 PR CI/Codex와 실제 병합은 아래 종료 근거로 확인했다.
 
 README는 기존 strict finish와 권한 helper의 소스 anchor 한 곳만 실제107~147행으로 보정했다. 이를 원래104~144행으로 되돌리면 기준 README와 바이트 동일하며 네 사례/여섯 항목/실제 발췌/화면은 그대로다.
 
@@ -63,3 +63,9 @@ README는 기존 strict finish와 권한 helper의 소스 anchor 한 곳만 실�
 진단 문자열의 같은 내용 연결식 수정 뒤 두 번째 SpotlessApply가 종료0으로 통과했다. 제품 처리나 테스트 assertion/fixture는 바꾸지 않았고 포맷된 최종 소스로 전체 검증을 다시 실행한다.
 
 최종 독립 코드/문서 검토에서 추가 구체 지적은 없었다. 처음 실패한 formatter/품질 실행과 실제 focused GREEN, 포맷 후 전체 재실행을 분리했고 새 Android 기기/SDK 성공으로 대신 계산하지 않았다.
+
+## PR93 병합과 계획 종료
+
+[PR93](https://github.com/HanGilLab/Android/pull/93)의 정확한 head `5fc886e75cb74efea23d27bd8687d251cdf70cbe`에서 [필수 CI4개](https://github.com/HanGilLab/Android/actions/runs/41827341927)와 [동일 head Codex 완료/지적 없음](https://github.com/HanGilLab/Android/pull/93#issuecomment-6630292058), 스레드/변경 요청0 및 active strict/no bypass/PR/squash/linear 정책을 확인했다. 검증한 noreply 작성자를 명시한 정상 squash로 `bff912f97912d1c1ab490ce26200bfce696176eb`에 병합했다. 실제 PR tip/병합 tree 일치, 단일 부모와 main ff-only, 해당 병합 로컬/원격 브랜치 정리를 확인했다. 다른 미병합 PR83/86/87과 작업 공간은 보존했다.
+
+이 후속 변경은 종료 근거와 계획 위치만 정리한다. 제품/검증 소스와 README는 PR93 실제 병합본과 동일하다. 앱 실행 성능과 무관한 문서 정리이므로 새 성능 측정이나 전체 verify를 반복하지 않고 공개 내용/링크/JDK17 품질/후속 PR 최신 CI와 Codex를 확인한다. 제품 main push와 후속 문서 PR 최종 상태는 PR/CI/Notion에 별도로 남기며 진행 중을 통과로 바꾸지 않는다. 실제 Android 기기/SDK 미실행과 기존 앱 PR 수동 검증 미완료, 필수19/54/선택3개 제외는 그대로다.
