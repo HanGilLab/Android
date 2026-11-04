@@ -11,7 +11,7 @@ internal class RoomPracticeRepository
     constructor(
         private val database: PreparationDatabase,
     ) : PracticeRepository {
-        override fun observeSelection() = database.preparationDao().observe().map { it?.selection() }
+        override fun observeSelection() = database.preparationDao().observeChecked().map { it?.selection() }
 
         override suspend fun saveSelection(
             selection: PracticeSelection,

@@ -4,7 +4,10 @@ plugins {
     id("hangil.android.hilt")
 }
 
-android { namespace = "io.github.hangillab.hangil.feature.home" }
+android {
+    namespace = "io.github.hangillab.hangil.feature.home"
+    testOptions.unitTests.isIncludeAndroidResources = true
+}
 
 dependencies {
     implementation(project(":core:domain"))
@@ -14,5 +17,8 @@ dependencies {
     implementation(libs.hilt.navigation.compose)
     implementation(libs.coroutines.core)
     testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.compose.ui.test.junit4)
+    debugImplementation(libs.compose.ui.test.manifest)
     testImplementation(libs.coroutines.test)
 }

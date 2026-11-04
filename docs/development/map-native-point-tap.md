@@ -6,7 +6,7 @@
 
 지점은 고정된 공개 OSM 장소 경계 중심이다. 도로 구간, 출입구, 실제 위치와 내비 목적지가 아니다. 실제 도로 구간 선택, 경로/내비 연결과 MAP-03 전체 완료는 이번 범위에 포함하지 않는다. DB 스키마, 원래 준비/세션/관찰/메모, 위치 API와 권한은 변경하지 않는다. 선택 자체는 카메라를 움직이지 않는다.
 
-이 문서는 구현된 처리 경계와 실행 절차를 설명한다. 최종 제품 `0786ccfa9202b84010a25b6ec3dabd39a5e2a9db`의 JDK17 전체 검증, 확대 다크의 제어 native 10개와 실제 outline 집중 검사, 실제 Main/SDK 기본 라이트와 확대 다크 각각 한 번의 시나리오가 통과했다. 초기 제어 native의 8개 통과/2개 실패와 수정 전 outline RED는 별도로 보존한다. 첫 순차 비교 B1→F1과 사전 고정한 추가 진단 B2→F2를 각각5회 워밍업+30회 본 표본으로 완료했다. 첫 비교는 중앙값 +28.8074475254%로 느렸고, 반복 비교는 −4.1901813255%로 짧았으나 IQR이 겹친다. 같은 기준 제품의 B1→B2도 +26.48043088496% 변했다. 모든 회차를 보존하며 성능 향상, 인과 저하나 동등성/무회귀를 확정하지 않는다. 이번 고정 시연 탭 기능의 구현/로컬 검증 완료와 성능 향상 완료는 구분한다. 제품 [PR56](https://github.com/HanGilLab/Android/pull/56)은 동일 최종 head의 필수 CI와 Codex 리뷰를 통과해 정상 병합했고 브랜치 정리와 Notion readback을 마쳤다. 이번 종료 문서 PR의 검사와 리뷰는 별도 대기다.
+현재 입력 계약과 실제 측정 조건을 설명한다. 구현 검토와 검증 이력은 [제품 PR56](https://github.com/HanGilLab/Android/pull/56)에 남기고, 아래에는 재현 절차와 확인된 한계를 유지한다. 지도 진입의 순차 비교는 성능 향상이나 인과적인 저하를 확정하는 근거가 아니다.
 
 ## SDK 콜백 대신 DOWN의 의도를 고정하는 이유
 
@@ -214,36 +214,12 @@ adb -s "$HANGIL_TEST_SERIAL" shell am instrument --user "$HANGIL_TEST_USER" -w -
 
 캡처와 익명 JSON은 실행별 `screenshots/map-point-tap-<소유 nonce>/`에 저장한다. 원시 PNG에는 원문/시각이 포함될 수 있으므로 공개 사진으로 간주하지 않는다. 실제 전면과 글자/줄/물리 viewport 검사를 통과한 앱 영역 crop도 먼저 비공개로 검토한다. 이 문서에는 미완성 공개 이미지나 빈 사진 자리를 추가하지 않는다. 입력 증거의 `withinProductTapDuration`은 실제 경과가 0 이상이고 long-press 한도 미만인지 나타내며 성능 표본이나 lifecycle 단일 요인 증거가 아니다.
 
-## 현재 검증 기록과 README 판단
+## 검증 범위와 한계
 
-현재 실제 기록은 다음처럼 분리한다. 테스트/빌드 개수와 소요 시간은 앱 성능 수치가 아니다.
+구현 검토와 초기 실패, 최종 제어 native 및 실제 Main/SDK 두 테마의 근거는 [제품 PR56](https://github.com/HanGilLab/Android/pull/56)에 모았다. 확대 테두리의 실제 RED/GREEN과 초기 camera 조건, 진입 비용의 모든 순차 표본과 해석 한계는 앞 절에 남긴다. 테스트나 빌드 통과 수를 앱 성능으로 사용하지 않는다.
 
-| 실행 | 실제 결과와 범위 |
-|---|---|
-| 제품 변경 전 기준 계측 | 고정 제품/지원 출처의 워밍업 5개와 본 표본 30개 통과. 통계는 앞 절에 기록 |
-| 기준 제품의 실제 current hit 탭 양성 | 기존 직접 탭 선택 경로가 없어 선택/ACK 대기 30초에서 예상 실패. SDK 결함 재현이나 탭 속도 비교가 아님 |
-| 설치 전 최초 APK hash 읽기 준비 | 추가 quality와 ADB 읽기를 겹쳐 ADB read가 30초 timeout. 계측은 시작하지 않았고 데이터/권한을 바꾸지 않음. 실패 보존 후 Gradle 종료 뒤 순차 읽기에서 hash 대조 성공 |
-| 최초 테스트 컴파일 | `MapPointHitTestTest`의 null 인자 오버로드 실패를 명시 `JsonObject` 타입 한 줄로 수정. 실패 자체도 보존 |
-| 초기 후보 단위/전체 검증 | tracker 19개, hit 27개, epoch 18개 통과. 이어 JDK17 전체 검증에서 44 suites/614개 단위의 실패/오류/건너뜀 0과 debug/unsigned release, AndroidTest APK 통과. 가시 범위 판정 정리 뒤 quality 재통과 |
-| 그 뒤 제품 source 대조 보강 | Java source 캐시 대신 현재 native source 목록을 검증하도록 수정. 아래 최종0786의 전체/실기 검증에 포함되며 초기 후보 결과와 구분 |
-| 최초 후보 제어 native | 10개 중 8개 통과/2개 실패, 건너뜀 0. 원래 실행을 보존하고 성공으로 합산하지 않음 |
-| padding 수정 전 strict 하네스 제어 native | 같은 제품 APK에서 10개 모두 통과, 실패/건너뜀 0. 초기 2개 실패는 별도 보존 |
-| padding 수정 전 실제 Main/SDK 기본 라이트와 확대 다크 | 각각 한 번 PASS/건너뜀 0. 각 3지점, 목록 대체, lifecycle과 실제 DDS D/P를 확인했지만 뒤이어 확대 outline 결함 발견 |
-| 확대 outline 집중 검사 | 미커밋 후보의 현재 rendered geometry 3개에서 최소 -1.0267333984375px/요구 4px로 실제 RED |
-| 최종 제품 `0786ccfa9202b84010a25b6ec3dabd39a5e2a9db` 전체 | JDK17 verify 4단계 PASS, 44 suites/614개 실패/오류/건너뜀 0, debug/unsigned release/AndroidTest APK 통과 |
-| 최종 제어 native와 실제 집중 검사 | font1.3/다크의 제어10개와 실제 outline1개 모두 PASS/건너뜀0. 집중 최소4.974212646484375px/요구4px |
-| 최종 실제 Main/SDK 두 테마 | 기본1.0/라이트와 확대1.3/다크 각각1PASS/건너뜀0. 실제 DDS D/P와 원래 자료 보존/직접 화면 검토 완료 |
-| PNG 추가 색상 분석 | Pillow 의존성을 사용할 수 없어 미실행. 이미지 분석 성공으로 세지 않고 실제 native geometry 검사와 직접 화면 검토를 구분 |
-| 테마 전환의 전면 관찰 | 기본 내비가 전면에 나타난 기록을 보존. 실제 Main 전면을 별도로 확인한 검증 결과와 구분하며 관찰만으로 앱 결함이나 복구 성공을 추정하지 않음 |
-| 첫 성능 비교 B1/F1 | 단계별5warm/30표본 모두 PASS, 실패/누락/제외/0시간0. 중앙값 +506.7550625ms/+28.8074475254%, IQR 구간 비중첩이며 인과 원인은 미분리 |
-| 추가 진단 B2/F2 | 각각5warm/30표본 모두 PASS, 실패/누락/제외/0시간0. 중앙값 −93.228666ms/−4.1901813255%, IQR 겹침. 같은 기준 B1→B2도 +465.82025ms/+26.48043088496% 이동해 단일 원인 미확정 |
-| 최종 보존/정리 | 제품0786 설치 복귀, 원래 전체 SQLite 값/자료형/순서/sequence와 권한/설정 exact 일치 재확인. 소유 AVD/포워딩/DDS 탭 정리, 원본 APK/artifact/archive 보존 |
-| 제품 PR56 | 최종 head `e9b6806e1ad7d8895479c9fb2f74523333b344fb`의 Codex completed/지적 없음, 필수 CI4개 통과 후 정상 병합. main ff-only 동기화, 로컬/원격 브랜치 정리와 Notion readback 완료. 이번 종료 문서 PR의 검사와 리뷰는 별도 대기 |
+무방출 P는 실제 수신 통지를 생략하는 fixture다. 제어 검사는 공개 무동작 key dispatch로 새 허용 세대의 시각 하한을 확립한 뒤 옛 UP의 거부와 새 DOWN의 양성 대조를 수행한다. 음성 입력은 현재 native circle hit, metadata와 가시 범위를 먼저 확인하며, 준비 실패를 임의 point 이동이나 정상 기본값으로 대신하지 않는다.
 
-실패한 흐름은 `nativePointUpDeniedBySilentDDoesNotReviveAfterSilentP`의 무방출 P 뒤 fresh tap 선택/ACK 30초 대기와, 현재 `backgroundCancelLongPressDragReturnAndMultiplePointersNeverBecomePointChoices`로 연결되는 음성 입력 흐름의 실제 current circle hit 확인이다. 후자의 정확한 실패 호출 단계는 기존 로그만으로 확정하지 못했으므로 카메라 복원, SDK 결함이나 제품 결함 하나로 원인을 단정하지 않는다.
+STOP/START와 같은 preview의 과제 교체는 새 View/style 준비로 long-press 시간 제한과 소유권 거부가 겹칠 수 있다. 해당 검사만으로 소유권의 효과를 단독 분리하지 않는다. 다중 포인터 음성은 실제 지점 중심의 첫 손가락과 둘째 손가락의 접촉/제거만 전달하고 MOVE를 만들지 않는다. 시작/끝 hit, 첫 지점 투영의 x/y 각각 1px 이내 유지와 long-press 한도 미만을 대조하며, 별도 pinch 양성 대조로 해석하지 않는다.
 
-보강한 하네스는 무방출 P가 실제 수신 통지를 생략하는 fixture라는 점을 반영해 공개 무동작 key dispatch로 새 허용 세대의 시각 하한을 먼저 확립한다. 그 뒤 같은 옛 UP의 거부와 새 DOWN의 양성 대조를 수행하며, 제품 timestamp floor나 입력 거부 조건은 약화하지 않는다. 음성 흐름은 입력 전에 같은 실제 current circle hit/metadata/가시 범위를 최대 30초의 엄격한 준비 polling으로 확인한다. 임의 point 이동, null 허용이나 성공 기본값으로 대신하지 않는다. 이 보강 뒤 같은 제품 APK에서 strict 재검증 10개가 통과했다. 그 뒤 확대 padding을 수정한 최종0786에서도 같은10개와 별도의 실제 outline GREEN을 확인했으며 각 실행을 나눠 보존한다. [작업 계획](../plans/completed/2026-10-31-map-native-point-tap.md)에 실제 후속 결과를 따로 남긴다.
-
-README의 네 사례와 순서는 보존한다. 기존1번은 화면 갱신보다 빠른 실제 상태 변화와 fail-closed 판단, 2번은 확인 snapshot의 CAS와 파괴적 연결 삭제 트랜잭션, 3번은 reader/query/renderer/native 입력의 소유권 연결, 4번은 SQLite 실제 자료형과 손상 데이터 변환의 경계를 설명한다. 이번 탭 기능은 그중3번의 이미 입증한 소유권 계약을 확장한다. 약1px의 실제 테두리 침범을 좁혀 수정한 근거는 가시성 품질에는 의미가 있지만, 위 비동기/파괴적 데이터/자료형 경계보다 독립적으로 더 깊은 판단을 입증하는 대체 사례가 되지는 않는다. 첫 진입비용 비교는 느렸고 반복 비교는 짧았으나 분포가 겹쳤으며 같은 기준 코드도 크게 이동했다. 단일 원인/성능 향상이 미확정이므로 이를 개선 성과나 사례 교체 근거로 쓰지 않는다. 새로움, 코드량이나 검사 수를 교체 근거로 삼지 않으며, 더 설득력 있는 독립 근거가 확보될 때만 해당 사례를 교체/강화한다. 최종 개수는4개로 유지하고 회귀 개수/목록과 JUnit/CI 설명을 README에 추가하지 않는다.
-
-제어 native의 STOP/START와 같은 preview 과제 교체도 새 View/style 준비 대기로 long-press 시간 제한과 소유권 거부가 겹칠 수 있다. 해당 검사만으로 소유권의 효과를 단독 분리했다고 쓰지 않는다. 다중 포인터 음성은 실제 지점 중심에 첫 손가락을 고정하고 둘째 손가락의 접촉/제거만 전달하며 MOVE를 만들지 않는다. 시작/끝 실제 hit, 첫 지점 투영의 x/y 각각 1px 이내 유지와 long-press 한도 미만을 검사해 drag/시간 초과 거부와 구분한다. 완전한 pinch 확대 동작의 별도 양성 대조와 혼동하지 않는다.
+기존 README 네 사례와 화면은 유지한다. 탭 연결과 가시성 보완만으로 기존 사례보다 강한 독립 원인 규명이나 확인된 성능 향상을 확보했다고 보지 않는다.
