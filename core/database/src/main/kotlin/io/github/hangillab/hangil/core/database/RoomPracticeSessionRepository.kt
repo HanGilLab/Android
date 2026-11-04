@@ -32,7 +32,12 @@ internal class RoomPracticeSessionRepository
                 database.withTransaction {
                     requirePermission(canCommit)
                     val active = database.practiceSessionDao().active()
-                    val prepared = catalog.resolve(database.preparationDao().current()?.selection()) as? Preparation.Ready
+                    val prepared =
+                        if (active == null) {
+                            catalog.resolve(database.preparationDao().currentChecked()?.selection()) as? Preparation.Ready
+                        } else {
+                            null
+                        }
                     val result =
                         when {
                             active != null -> SessionStartResult.AlreadyActive(active.session())
