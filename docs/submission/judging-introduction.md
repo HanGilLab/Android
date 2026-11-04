@@ -1,6 +1,6 @@
 # 한길졸업 심사용 소개 초안
 
-공식 접수양식의 02 앱 프로젝트 소개에 옮길 본문이다. 2026-11-02의 [main 기준 bf416e0](https://github.com/HanGilLab/Android/commit/bf416e0e0172a9bb374ce0f35638ce000e933e4e)에 맞췄으며 PR #74와 #75의 미완료 검증을 포함해 표시했다. 참가 정보 확정, 동의와 서명, 최종 첨부물과 실제 발송은 별도로 남아 있다.
+공식 접수양식의 02 앱 프로젝트 소개에 옮길 본문이다. 2026-11-05의 [main 기준 cabcb8f](https://github.com/HanGilLab/Android/commit/cabcb8f4087afab1a8e6b4e1322829280da5945a)에 반영된 구현과 미병합 개선, 후속 범위를 구분했다. 참가 정보 확정, 동의와 서명, 최종 앱/첨부물 대조와 실제 발송은 별도로 남아 있다.
 
 앱명 / 프로젝트명: **한길졸업**
 
@@ -14,15 +14,15 @@
 
 ## 3. 앱 주요 기능 및 차량 특화 요소
 
-현재 목표, 고정 시연 코스와 과제 준비, 연습 시작과 종료, 지원되는 차량 상태의 저장과 주차 후 열람, 사용자 메모, 같은 코스의 다음 과제 준비를 연결했습니다. Vehicle SDK로 연결, 기어, 방향지시등과 브레이크 상태를 다루며 P와 UX 제한 해제가 모두 확인돼야 상세 조작을 허용합니다. 기본 내비 화면을 요청할 수 있고 사용자가 별도로 켜면 내비 사용 중 차량 상태를 배경 기록합니다. 위치나 경로의 배경 수집은 하지 않습니다. 누락과 중단을 정상 기록으로 채우지 않으며, 시연 지점과 실제 관찰, 사용자 메모의 출처를 구분합니다.
+목표, 고정 시연 코스와 과제 준비, 연습 시작과 마침, 차량 관찰과 사용자 메모의 저장/열람, 최근 종료 연습의 다음 과제 준비를 연결했습니다. 명시적으로 켠 전면 위치 표본 기록과 주차 후 열람도 구현했습니다. 상세 조작은 P와 UX 허용을 모두 확인해야 하며, 위치 수집에는 위치 권한도 필요합니다. 별도로 켠 차량 상태 기록만 화면 밖에서 이어가며 위치나 경로를 배경 수집하지 않습니다. 시연 자료, 실제 관찰과 사용자 메모의 출처 및 미확인을 구분합니다.
 
 ## 4. 주요 사용 시나리오
 
-운전 공백이 있는 사용자가 주차한 뒤 목표와 시연 코스를 보고 오늘의 과제를 하나 골라 준비를 저장합니다. 홈에서 연습을 시작하고 필요하면 배경 차량 기록을 켠 뒤 기본 내비 화면을 요청합니다. 주행 중 상세 입력은 잠깁니다. 한길로 돌아와 P와 UX 허용을 확인한 뒤 연습을 마무리하고 차량 관찰과 메모를 확인합니다. 최근 종료 연습에서 같은 코스의 다음 과제를 골라 준비합니다. 지도는 시연 지점을 보여 주며 실제 주행 경로가 아닙니다. 내비 요청에 목적지나 코스를 전달하지 않습니다.
+주차한 뒤 목표와 시연 코스를 보고 과제 하나를 골라 준비를 저장합니다. 연습을 시작하고 필요하면 차량 상태 배경 기록을 켜거나 기본 내비 화면 전환을 요청합니다. 위치 표본은 사용자가 직접 켠 경우 한길 화면이 켜진 동안만 기록하며, 화면 이탈, 권한 상실이나 연습 종료 등에서 멈추고 자동 재개하지 않습니다. 주차 후 마침 응답에 연결된 복습 버튼으로 같은 종료 원본의 저장된 관찰, 위치 기록과 메모를 확인합니다. 다음 과제는 최근 종료 연습의 같은 코스에서 준비합니다. 시연 지도와 위치 표본은 실제 주행 경로가 아니며 내비에 목적지나 코스를 전달하지 않습니다.
 
 ## 5. 개발 계획
 
-Kotlin과 Compose 화면, 순수 도메인 계약, Pleos와 AAOS 어댑터, Room 저장소를 분리했습니다. Vehicle SDK, CarUxRestrictions와 NaviHelper 화면 요청을 연결했습니다. 현재 main의 FusedLocation은 debug용 마지막 위치 조회 진단이며 연속 경로 저장이 아닙니다. 전면 위치 표본 기록과 종료 원본에 고정한 복습 연결은 각각 PR #74와 #75에서 검증 중이며 미병합입니다. 11월 10일 한국 시간까지 이 경계의 실제 검증, 도로 구간 복습과 다음 과제 연결, 내비 전환, 확대 글자와 다크 화면, 최종 제출 자료를 우선 확인할 계획입니다. 검증되지 않은 연결을 완료 기능으로 포함하지 않습니다.
+Kotlin과 Compose 화면, 순수 도메인 계약, Pleos와 AAOS 어댑터, Room 저장소를 분리했습니다. Vehicle SDK, CarUxRestrictions, NaviHelper 화면 요청과 FusedLocation 전면 표본 기록을 연결했습니다. 과거 이력의 다음 준비와 준비 편집 시 저장값 미리 채우기 등 미병합 개선은 현재 완료 기능에 포함하지 않습니다. 11월 10일까지 현재 구현과 검증 범위를 최종 시연, APK와 출품 자료에 맞추고 11월 11~14일에는 완료 기능의 오류와 불필요한 구성을 정리할 계획입니다. 실제 도로 경로, 구간 복습과 내비 목적지 연결은 후속 범위입니다.
 
 ## 6. 기대효과 및 발전 가능성
 
@@ -30,7 +30,7 @@ Kotlin과 Compose 화면, 순수 도메인 계약, Pleos와 AAOS 어댑터, Room
 
 ## 7. 참고자료
 
-구현 소스와 실제 앱 화면: https://github.com/HanGilLab/Android ; 전체 사용 흐름과 미완료 연결: https://github.com/HanGilLab/Android/blob/main/docs/development/app-usage-flow.md . 최종 시연 영상과 제출용 APK 링크는 이 초안에 아직 첨부하지 않았습니다.
+구현 소스와 기존 검증 화면: https://github.com/HanGilLab/Android ; 전체 사용 흐름과 미완료 연결: https://github.com/HanGilLab/Android/blob/main/docs/development/app-usage-flow.md . 최종 시연 영상과 제출용 APK 링크는 이 초안에 아직 첨부하지 않았습니다.
 
 ## 8. 숏폼 링크
 
@@ -49,7 +49,10 @@ Kotlin과 Compose 화면, 순수 도메인 계약, Pleos와 AAOS 어댑터, Room
 | 명시적인 배경 차량 기록 | [BackgroundRecordingRoute](../../feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/BackgroundRecordingRoute.kt), [VehicleRecordingService](../../app/src/main/kotlin/io/github/hangillab/hangil/VehicleRecordingService.kt) | 기본 전면 기록과 별도로 켠다. 위치와 경로를 수집하지 않으며 앱 종료와 중간 상태의 연속 수집은 보장하지 않는다 |
 | 관찰 복습, 메모와 다음 과제 | [SessionHistoryScreen](../../feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryScreen.kt), [NextPracticeViewModel](../../feature/course/src/main/kotlin/io/github/hangillab/hangil/feature/course/NextPracticeViewModel.kt) | 다음 과제는 최근 종료 연습의 같은 목표, 코스와 버전에 한한다. 실제 도로 구간 기반 추천이나 운전 실력 평가는 아니다 |
 | 과정 마무리와 삭제 | [RoomCourseCompletionRepository](../../core/database/src/main/kotlin/io/github/hangillab/hangil/core/database/RoomCourseCompletionRepository.kt), [RoomSessionDeletionRepository](../../core/database/src/main/kotlin/io/github/hangillab/hangil/core/database/RoomSessionDeletionRepository.kt) | 과정 마무리는 선택한 연습의 사용자 선언이다. 삭제는 확인한 종료 연습과 연결 자료에 한한다 |
-| 현재 위치 진단과 후속 연결 | [LocationProbeViewModel](../../feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/LocationProbeViewModel.kt), [PR #74](https://github.com/HanGilLab/Android/pull/74), [PR #75](https://github.com/HanGilLab/Android/pull/75) | main은 debug용 마지막 위치 조회 진단이다. PR의 전면 위치 표본 저장과 종료 원본 복습은 최신 수동 검증 전 미병합이며 실제 도로 복습 지도와 경로 일치는 후속 범위다 |
+| 명시적 전면 위치 표본 기록과 열람 | [전면 위치 controller](../../core/domain/src/main/kotlin/io/github/hangillab/hangil/core/domain/ForegroundLocationRecordingController.kt), [위치 기록 화면](../../feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/LocationHistoryScreen.kt) | 배경 위치 수집, 현재 위치나 실제 경로가 아니다. SDK 시각과 신뢰도 원본값의 미확인 의미를 유지한다 |
+| 마친 연습 원본에 고정한 복습 | [마침 응답 처리](../../feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionViewModel.kt), [원본 메모리 토큰](../../app/src/main/kotlin/io/github/hangillab/hangil/FinishedReviewNavigationViewModel.kt) | 최신 기록으로 대체하지 않는다. 프로세스 재생성으로 원본을 잃으면 이용 불가이며 실제 도로 구간 복습은 아니다 |
+
+준비 편집 시 저장값 미리 채우기 [PR #98](https://github.com/HanGilLab/Android/pull/98), 과거 기록의 다음 준비 [PR #87](https://github.com/HanGilLab/Android/pull/87), 위치 중단 원인 표시 [PR #86](https://github.com/HanGilLab/Android/pull/86)와 삭제 확인의 위치 고지 [PR #83](https://github.com/HanGilLab/Android/pull/83)는 미병합 검증 범위로 남아 있으며 위 현재 기능에 포함하지 않았다.
 
 ## 심사 항목과 확인할 가설
 
@@ -59,7 +62,7 @@ Kotlin과 Compose 화면, 순수 도메인 계약, Pleos와 AAOS 어댑터, Room
 |---|---|---|
 | 차량 특화 경험 | 차량 상태 관찰, 주차/UX 잠금, 내비 화면 요청과 명시적인 배경 기록 | 최종 앱에서 내비 전환과 수집 중단, 복귀와 기록 출처를 실제 확인 |
 | 창의성 | 운전 공백 사용자의 오늘 과제와 다음 연습을 연결하는 문제 설정 | 대상 고객의 불편과 기존 방법 대비 가치를 실제 인터뷰와 이용 관찰로 검증 |
-| SDK/API 활용 | Vehicle, AAOS UX 제한, NaviHelper와 FusedLocation의 구현 경계 | 미완료 위치와 복습 연결을 현재 검증으로 구분하고 확정 기능만 시연 |
+| SDK/API 활용 | Vehicle, AAOS UX 제한, NaviHelper와 FusedLocation의 구현 경계 | 전면 위치 표본과 종료 원본 복습의 구현/과거 실기를 구분하고 최종 앱에서 확정한 범위만 시연 |
 | 사업성과 발전 가능성 | 호환 차량 사용자와 교육기관 연계의 가설, 새 생활 경로의 후속 코스 | 고객 획득 경로, 체험 기회와 다음 연습 행동을 확인한 뒤 규모와 유지율 추정 |
 
 ## 최종 양식 반영 전 확인
