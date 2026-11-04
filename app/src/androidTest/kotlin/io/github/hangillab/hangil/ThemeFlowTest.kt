@@ -36,13 +36,15 @@ class ThemeFlowTest {
         assertEnvironment()
         waitFor("home_prepare")
         waitFor("saved_course")
+        val primaryTag = if (exists("home_step_repeat")) "home_next_practice" else "home_prepare"
+        waitFor(primaryTag)
         val expectedLayout = checkNotNull(InstrumentationRegistry.getArguments().getString("home_layout"))
         check(expectedLayout == "wide" || expectedLayout == "stacked")
         compose.onNodeWithTag("home_dashboard_$expectedLayout").assertExists()
         compose.onNodeWithTag("home_illustration").assertExists()
         val savedCourse = text("saved_course")
         val savedTask = text("saved_task")
-        val actionBounds = compose.onNodeWithTag("home_prepare").getUnclippedBoundsInRoot()
+        val actionBounds = compose.onNodeWithTag(primaryTag).getUnclippedBoundsInRoot()
         val courseBounds = compose.onNodeWithTag("saved_course").getUnclippedBoundsInRoot()
         if (expectedLayout == "wide") {
             assertTrue("Preparation must occupy the other column", courseBounds.left >= actionBounds.right)
@@ -51,7 +53,7 @@ class ThemeFlowTest {
         }
         // The primary action is immediately visible in the wide dashboard. Expanded text may
         // require scrolling in the stacked dashboard, but must never clip or hide the action.
-        if (expectedLayout == "wide") compose.onNodeWithTag("home_prepare").assertIsDisplayed()
+        if (expectedLayout == "wide") compose.onNodeWithTag(primaryTag).assertIsDisplayed()
         capture("home-heading")
         compose.onNodeWithTag("home_journey_flow").assertDoesNotExist()
         touch("home_record_guide")
@@ -64,7 +66,7 @@ class ThemeFlowTest {
         touch("home_preparation_details")
         compose.onNodeWithTag("saved_goal").assertDoesNotExist()
         compose
-            .onNodeWithTag("home_prepare")
+            .onNodeWithTag(primaryTag)
             .performScrollTo()
             .assertIsDisplayed()
             .assertHeightIsAtLeast(64.dp)
