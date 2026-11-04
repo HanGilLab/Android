@@ -1,6 +1,6 @@
 # 저장된 준비 원본이 정상 연습 시작으로 변환되는 경계 차단
 
-- 상태: 진행 중
+- 상태: 완료. PR91 최신 필수 CI/Codex와 실제 병합, main ff-only 및 병합 브랜치 정리를 확인했다. 실제 Android 기기/SDK 계측은 미실행이다.
 - 요구사항: ENV-07/APP-02/03의 준비 복원과 시작 원본, QA-01/02의 저장 경계
 - 기준 main: `c1af1f28c5c12e367d59124ff11c2f7460841eba`
 
@@ -18,8 +18,8 @@
 - [x] 같은 projection의 원래 타입/범위 검사로 관찰과 시작을 모두 차단하고 원시 자료/행 순서/schema/sequence를 보존한다.
 - [x] 정상 시작, Empty, 타입이 유효한 Outdated, AlreadyActive와 권한 거부/롤백의 기존 계약을 유지한다.
 - [x] JDK17 focused 동일 검증과 전체 verify, 독립 코드 검토를 확인한다.
-- [ ] 최신 PR head CI4/Codex 및 미해결 지적과 정책을 확인한다.
-- [ ] 실제 병합/head/tree/main ff-only/병합 브랜치 정리 뒤 계획을 종료한다.
+- [x] 최신 PR head CI4/Codex 및 미해결 지적과 정책을 확인한다.
+- [x] 실제 병합/head/tree/main ff-only/병합 브랜치 정리 뒤 계획을 종료한다.
 
 ## 구현 단계
 
@@ -39,7 +39,7 @@
 | 같은 fixture의 기준 실행 | 실제 RED 확인 | 보강13개 중 숫자6개 실패, 기존 계약/BLOB7개 통과, 오류/건너뜀0. typeof/원값 확인 뒤 Ready/Started 및 자료 변경 assertion |
 | 수정 후 focused 검증 | 실제 GREEN 확인 | 보강 기준과 바이트 동일한 검증 소스13개 통과, 실패/오류/건너뜀0. 원래 타입/값/행/schema/sequence 보존 |
 | 기존 준비/시작 회귀와 전체 verify | 통과 | JDK17, 최종 포맷 소스의 품질/모듈 경계/Lint/build-logic/JVM/debug/unsigned release, cache/up-to-date 포함 가능 |
-| 최신 PR CI/Codex/정책 | 미실행 | 대기/실패는 승인 아님 |
+| 최신 PR CI/Codex/정책 | 통과 | PR91 정확4a900b4의 CI4/App15368와 같은 head Codex 완료/지적 없음, 스레드/변경 요청0 및 원래 정책 확인 |
 | 실제 Android 계측/SDK/화면 | 미실행, 이번 저장 경계 대상 아님 | 기존 화면과 SDK는 변경하지 않음 |
 
 ## README 사례 비교
@@ -48,7 +48,7 @@
 
 ## 남은 문제와 인계
 
-기준 재현과 수정 후 검증 전에는 결함 해결로 확정하지 않는다. 실제 사용자 DB/기기/SDK를 사용하지 않으며 Room/Robolectric과 JVM/build를 실제 Android 계측으로 쓰지 않는다. 관련 전체 기능과 기존 앱 PR 수동 검증은 별도다. 필수19/54/선택3개 제외를 유지하고 완료 조건 전 계획을 active에 둔다.
+기준 재현과 수정 후 검증 전에는 결함 해결로 확정하지 않는다. 실제 사용자 DB/기기/SDK를 사용하지 않으며 Room/Robolectric과 JVM/build를 실제 Android 계측으로 쓰지 않는다. 관련 전체 기능과 기존 앱 PR 수동 검증은 별도다. 필수19/54/선택3개 제외를 유지하고 아래 실제 종료 근거로 이 저장 경계 범위만 완료했으며 전체 기능과 기존 앱 PR 수동 검증은 별도로 유지한다.
 
 ## 기준 실행과 독립 검토 보완
 
@@ -60,6 +60,14 @@
 
 활성 세션 control을 포함한 제품 미변경13개도 숫자 손상6개가 실제 Ready/Started와 원시 자료 변경으로 실패했고, 나머지7개는 통과했다. 모든 실패는 fixture 타입/값 확인 뒤 기대 거부 assertion이며 오류/건너뜀은0이다. 첫12개와 보강13개의 원문/소스/XML을 분리해 보존했다.
 
-그 뒤 preparation의 같은 SQL statement에서 모델/원래 타입/Long 값을 함께 읽는 `PreparationRow`를 추가했다. 세 식별자의 text 타입과 두 버전의 integer 타입/전체 signed Int 범위를 확인한 뒤 selection으로 변환한다. 기존 raw DAO/Entity/schema를 바꾸지 않고 제품의 관찰과 새 세션 시작 읽기 두 곳만 checked projection을 쓴다. 기존 활성 세션이 있으면 무관한 준비 읽기를 먼저 하지 않고 원래 AlreadyActive 및 두 권한 확인을 유지한다. 타입이 유효한 미지원 버전의 Outdated와 빈 준비의 Empty를 강제 정상화하거나 새 양수 제약으로 바꾸지 않는다. 보강한 기준과 바이트 동일한 검증 소스의 수정 후13개가 모두 통과했다. 이후 포맷한 최종 소스와 source anchor 수정의 JDK17 전체 verify도4단계 성공/종료0이다. 기존 준비3개와 시작15개를 포함한 회귀도 통과했고 독립 코드/문서 검토의 추가 지적은 없다. 최신 PR 검사/리뷰와 실제 병합은 별도로 확인한다.
+그 뒤 preparation의 같은 SQL statement에서 모델/원래 타입/Long 값을 함께 읽는 `PreparationRow`를 추가했다. 세 식별자의 text 타입과 두 버전의 integer 타입/전체 signed Int 범위를 확인한 뒤 selection으로 변환한다. 기존 raw DAO/Entity/schema를 바꾸지 않고 제품의 관찰과 새 세션 시작 읽기 두 곳만 checked projection을 쓴다. 기존 활성 세션이 있으면 무관한 준비 읽기를 먼저 하지 않고 원래 AlreadyActive 및 두 권한 확인을 유지한다. 타입이 유효한 미지원 버전의 Outdated와 빈 준비의 Empty를 강제 정상화하거나 새 양수 제약으로 바꾸지 않는다. 보강한 기준과 바이트 동일한 검증 소스의 수정 후13개가 모두 통과했다. 이후 포맷한 최종 소스와 source anchor 수정의 JDK17 전체 verify도4단계 성공/종료0이다. 기존 준비3개와 시작15개를 포함한 회귀도 통과했고 독립 코드/문서 검토의 추가 지적은 없다. 최신 PR 검사/리뷰와 실제 병합은 아래 실제 종료 근거로 확인했다.
 
 README의 네 사례/본문/코드/화면은 보존하며 시작 함수의 줄 이동으로 영향을 받은 기존 strict finish 소스 링크 한 곳만 실제104~144행에 맞췄다. 링크를 원래 anchor로 되돌리면 기준 README와 바이트 동일함을 확인했다. 사례 교체나 성능/회귀 집계 추가는 없다.
+
+## PR91 병합과 계획 종료
+
+[PR91](https://github.com/HanGilLab/Android/pull/91)의 정확한 head `4a900b416eb4f4e9ab875f07ed51f288b11a0026`에서 [필수 CI4개](https://github.com/HanGilLab/Android/actions/runs/41804610106)와 [동일 head Codex 완료/지적 없음](https://github.com/HanGilLab/Android/pull/91#issuecomment-6626980155), 미해결 스레드/변경 요청0 및 active strict/no bypass/PR/squash/linear 정책을 확인했다. 검증한 noreply 작성자를 명시한 정상 squash로 `83e9e4f0d76b02707b5f766c976e7554b9e0d461`에 병합했다. 실제 PR tip/병합 tree 일치, 단일 부모와 main ff-only, 해당 병합 로컬/원격 브랜치 정리를 확인했다. 기존 미병합 PR83/86/87과 작업 공간은 보존했다.
+
+이 후속 변경은 실제 종료 근거와 계획 위치만 정리한다. 제품/검증 소스와 README는 PR91 실제 병합본과 동일하다. 앱 실행 성능과 무관한 문서 정리로 새 성능 측정이나 전체 verify를 반복하지 않고 공개 내용/링크/JDK17 품질/후속 PR 최신 CI와 Codex를 확인한다. 제품 main push와 후속 문서 PR의 실제 최종 상태는 PR/CI/Notion에 별도로 기록하며 진행 중을 통과로 바꾸지 않는다. 실제 Android 기기/SDK 미실행과 기존 앱 PR 수동 검증 미완료, 필수19/54/선택3개 제외는 그대로다.
+
+종료 문서의 JDK17 `./scripts/verify.sh quality`도 실제 통과했다. 공개 내용/링크/독립 검토에서 추가 지적은 없으며 제품/검증 소스와 README는 PR91 실제 병합본과 동일하다. 후속 문서 PR의 최신 CI/Codex와 실제 병합은 해당 PR 기록으로 확인한다.
