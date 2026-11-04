@@ -20,7 +20,7 @@ internal class RoomPracticeSessionRepository
         private val database: PreparationDatabase,
         private val catalog: PracticeCatalog,
     ) : PracticeSessionRepository {
-        override fun observeSessions() = database.practiceSessionDao().observe().map { entities -> entities.map { it.session() } }
+        override fun observeSessions() = database.practiceSessionDao().observeChecked().map { rows -> rows.map { it.session() } }
 
         override suspend fun start(
             practice: PreparedPractice,
@@ -31,7 +31,10 @@ internal class RoomPracticeSessionRepository
             return try {
                 database.withTransaction {
                     requirePermission(canCommit)
-                    val active = database.practiceSessionDao().active()
+                    val dao = database.practiceSessionDao()
+                    val active = dao.activeChecked()?.session()
+                    val expectedUnfinishedCount = if (active == null) 0L else 1L
+                    check(dao.unfinishedCount() == expectedUnfinishedCount) { "Invalid unfinished session ownership" }
                     val prepared =
                         if (active == null) {
                             catalog.resolve(database.preparationDao().currentChecked()?.selection()) as? Preparation.Ready
@@ -40,7 +43,7 @@ internal class RoomPracticeSessionRepository
                         }
                     val result =
                         when {
-                            active != null -> SessionStartResult.AlreadyActive(active.session())
+                            active != null -> SessionStartResult.AlreadyActive(active)
                             prepared?.practice != practice -> SessionStartResult.PreparationChanged
                             else -> {
                                 val entity =
