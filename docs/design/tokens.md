@@ -91,5 +91,5 @@ Compose 조건과 native 활성 패키지 확인을 통과해도 실제 Pleos �
 장면 일러스트는 [일러스트 안내](illustrations.md), 버튼, 상태 패널은 [공통 컴포넌트](components.md)에 기록한다.
 전체 화면 재설계, 최종 사용성 점검은 별도 체크 항목이다.
 
-PR #32의 실제 홈/준비 기본/1.6배/다크와 주차 잠금 전환 검증은 [가독성 개선 완료 계획](../plans/completed/2026-10-29-parked-ui-polish.md)에 기록한다.
+PR #32의 실제 홈/준비 기본/1.6배/다크와 주차 잠금 전환 검증은 [PR32 구현과 검증 기록](https://github.com/HanGilLab/Android/pull/32)에 기록한다.
 이 문서 정정 자체는 새 화면이나 실기 검증 결과가 아니다.
