@@ -58,6 +58,9 @@ class NextPracticeViewModel
     ) : ViewModel() {
         private val lock = Any()
         private val sourceId = (savedState.get<Any?>("nextPracticeSourceId") as? String)?.takeIf { it.isNotBlank() }
+        private val historyArgumentPresent = savedState.contains("historyNextToken")
+        private val historyToken = (savedState.get<Any?>("historyNextToken") as? String)?.takeIf { it.isNotBlank() }
+        private var pinnedEntry: EntryKey? = null
         private val published = MutableStateFlow<NextPracticeUiState>(NextPracticeUiState.Loading)
         private val requests = MutableStateFlow(0L)
         private val savedEvents = MutableSharedFlow<Long>(replay = 0)
@@ -76,14 +79,53 @@ class NextPracticeViewModel
         private var completion: Completion? = null
 
         internal val uiState =
+            observe(Entry.Latest)
+                .stateIn(viewModelScope, SharingStarted.WhileSubscribed(0, 0), NextPracticeUiState.Loading)
+
+        /** The caller supplies a fresh, irrevocable host receipt for each resumed history entry. */
+        internal fun observeHistory(
+            expectedSource: PracticeSession?,
+            isEntryCurrent: () -> Boolean,
+            canKeepOpen: () -> Boolean,
+        ): Flow<NextPracticeUiState> =
+            flow {
+                val token = historyToken
+                if (token == null || expectedSource == null || expectedSource.isActive ||
+                    expectedSource.sessionId != sourceId || !safeGuard(isEntryCurrent) || !safeGuard(canKeepOpen)
+                ) {
+                    // A malformed request must neither query latest nor replace another live owner.
+                    emit(NextPracticeUiState.SourceChanged(-1))
+                    return@flow
+                }
+                emitAll(observe(Entry.History(token, expectedSource, isEntryCurrent, canKeepOpen)))
+            }
+
+        private fun observe(entry: Entry): Flow<NextPracticeUiState> =
             flow {
                 coroutineScope {
-                    val owner = Reader(checkNotNull(currentCoroutineContext()[Job]))
-                    synchronized(lock) {
-                        reader = owner
-                        invalidateActionLocked()
-                        received = null
-                        publishLocked(if (closed) NextPracticeUiState.Locked else NextPracticeUiState.Loading)
+                    val owner = Reader(checkNotNull(currentCoroutineContext()[Job]), entry)
+                    val accepted =
+                        synchronized(lock) {
+                            if (!entryCurrent(owner) || (entry == Entry.Latest && historyArgumentPresent)) return@synchronized false
+                            val previous = reader
+                            reader = owner
+                            invalidateActionLocked()
+                            previous?.query?.job?.cancel()
+                            val key = entry.key()
+                            if (pinnedEntry != key) {
+                                pinnedEntry = key
+                                pinned = null
+                                taskId = null
+                                expired = null
+                            }
+                            received = null
+                            requests.value = ++epoch
+                            publishLocked(if (closed) NextPracticeUiState.Locked else NextPracticeUiState.Loading)
+                            true
+                        }
+                    if (!accepted) {
+                        emit(NextPracticeUiState.SourceChanged(-1))
+                        return@coroutineScope
                     }
                     val queryJob = launch { requests.flatMapLatest { watchAccess(owner, it) }.collect() }
                     try {
@@ -101,9 +143,10 @@ class NextPracticeViewModel
                         queryJob.cancel()
                     }
                 }
-            }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(0, 0), NextPracticeUiState.Loading)
+            }
 
-        fun canInteract(): Boolean = synchronized(lock) { !closed && reader?.job?.isActive == true && permitted() }
+        fun canInteract(): Boolean =
+            synchronized(lock) { !closed && reader?.let { it.job.isActive && entryCurrent(it) } == true && permitted() }
 
         /** A detail callback remains bound to its displayed source and manually selected generation. */
         fun canRevealSource(
@@ -184,7 +227,11 @@ class NextPracticeViewModel
         fun retry(): Boolean =
             synchronized(lock) {
                 val owner = reader ?: return@synchronized false
-                if (closed || expired != null || !owner.job.isActive || !permitted() || activeAction != null) return@synchronized false
+                if (closed || expired != null || !owner.job.isActive || !entryCurrent(owner) || !permitted() ||
+                    activeAction != null
+                ) {
+                    return@synchronized false
+                }
                 val oldQuery = owner.query
                 owner.query = null
                 received = null
@@ -198,7 +245,7 @@ class NextPracticeViewModel
         fun leaveForNormalPreparation(expectedGeneration: Long): Boolean =
             synchronized(lock) {
                 val owner = reader ?: return@synchronized false
-                if (closed || !owner.job.isActive || !permitted()) return@synchronized false
+                if (closed || !owner.job.isActive || !entryCurrent(owner) || !permitted()) return@synchronized false
                 val currentGeneration =
                     when (val state = published.value) {
                         is NextPracticeUiState.SourceChanged -> state.generation
@@ -227,7 +274,11 @@ class NextPracticeViewModel
         private suspend fun performSave(action: Action) {
             try {
                 if (!canCommit(action)) return
-                val result = nextRepository.saveSelection(action.seed, action.selection) { canCommit(action) }
+                val result =
+                    when (action.owner.entry) {
+                        Entry.Latest -> nextRepository.saveSelection(action.seed, action.selection) { canCommit(action) }
+                        is Entry.History -> nextRepository.saveHistorySelection(action.seed, action.selection) { canCommit(action) }
+                    }
                 currentCoroutineContext().ensureActive()
                 val token =
                     synchronized(lock) {
@@ -426,7 +477,14 @@ class NextPracticeViewModel
             try {
                 val records = rows.toList()
                 validate(records)
-                val source = records.firstOrNull { !it.isActive }
+                val source =
+                    when (val entry = owner.entry) {
+                        Entry.Latest -> records.firstOrNull { !it.isActive }
+                        is Entry.History ->
+                            records
+                                .singleOrNull { it.sessionId == entry.source.sessionId }
+                                ?.takeIf { it == entry.source }
+                    }
                 if (records.any { it.isActive } || source == null || source.sessionId != sourceId) {
                     expireLocked(owner, query, ExpiredKind.SOURCE_CHANGED)
                     return@synchronized
@@ -443,6 +501,11 @@ class NextPracticeViewModel
                     }
                 if (previous != null && previous != seed) {
                     expireLocked(owner, query, ExpiredKind.UNAVAILABLE)
+                    return@synchronized
+                }
+                if (!currentQuery(owner, query)) return@synchronized
+                if (!permitted()) {
+                    restartDeniedLocked(owner, query)
                     return@synchronized
                 }
                 if (previous == null) {
@@ -535,7 +598,7 @@ class NextPracticeViewModel
             requestEpoch: Long,
         ): Boolean =
             !closed && reader === owner &&
-                owner.job.isActive && epoch == requestEpoch
+                owner.job.isActive && epoch == requestEpoch && entryCurrent(owner)
 
         private fun currentQuery(
             owner: Reader,
@@ -563,6 +626,11 @@ class NextPracticeViewModel
         /** Bundle-safe field boundaries/counts preserve complete equality without toString/hashCode. */
         private fun binding(seed: NextPracticeSeed): ArrayList<String> {
             val fields = arrayListOf<String>()
+            val entry = reader?.entry
+            if (entry is Entry.History) {
+                fields.add("history-entry-v1")
+                fields.add(entry.token)
+            }
             val source = seed.source
             val selection = source.selection
             fields.add(source.sessionId)
@@ -636,11 +704,48 @@ class NextPracticeViewModel
             }
         }
 
+        private fun entryCurrent(owner: Reader): Boolean {
+            if (owner.revoked) return false
+            val current =
+                when (val entry = owner.entry) {
+                    Entry.Latest -> true
+                    is Entry.History -> safeGuard(entry.isEntryCurrent) && safeGuard(entry.canKeepOpen)
+                }
+            if (!current) owner.revoked = true
+            return current
+        }
+
+        private fun safeGuard(guard: () -> Boolean): Boolean = runCatching(guard).getOrDefault(false)
+
+        private sealed interface Entry {
+            data object Latest : Entry
+
+            data class History(
+                val token: String,
+                val source: PracticeSession,
+                val isEntryCurrent: () -> Boolean,
+                val canKeepOpen: () -> Boolean,
+            ) : Entry
+
+            fun key(): EntryKey =
+                when (this) {
+                    Latest -> EntryKey(null, null)
+                    is History -> EntryKey(token, source)
+                }
+        }
+
+        private data class EntryKey(
+            val token: String?,
+            val source: PracticeSession?,
+        )
+
         private class Reader(
             val job: Job,
+            val entry: Entry,
         ) {
             var query: Query? = null
             var receiving = false
+            var revoked = false
         }
 
         private class Query(

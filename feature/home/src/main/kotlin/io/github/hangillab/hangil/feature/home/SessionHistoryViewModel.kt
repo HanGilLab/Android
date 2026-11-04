@@ -184,6 +184,33 @@ class SessionHistoryViewModel
                     records.getOrNull(current.index) == current.session && current.summary.source == current.session
             }
 
+        fun canPrepareNext(
+            expected: PracticeSession,
+            expectedGeneration: Long,
+        ): Boolean =
+            synchronized(lock) {
+                receivedHasActiveSession == false && canRead() &&
+                    deletion?.phase !in listOf(DeletionPhase.PREPARING, DeletionPhase.CONFIRMING, DeletionPhase.DELETING) &&
+                    selectionSnapshotLocked(expected.sessionId, expectedGeneration)?.session == expected
+            }
+
+        /** Return only the displayed whole source; observed denial retires this query immediately. */
+        fun nextPracticeSource(
+            expected: PracticeSession,
+            expectedGeneration: Long,
+        ): PracticeSession? =
+            synchronized(lock) {
+                val owner = reader ?: return@synchronized null
+                val query = owner.query ?: return@synchronized null
+                if (selectionSnapshotLocked(expected.sessionId, expectedGeneration)?.session != expected) return@synchronized null
+                if (!canRead()) {
+                    restartDeniedQueryLocked(owner, query)
+                    return@synchronized null
+                }
+                if (!canPrepareNext(expected, expectedGeneration)) return@synchronized null
+                expected
+            }
+
         /** A rejected old detail opening cannot borrow a new P context after observing denial. */
         fun canRevealStoredObservations(
             expectedSessionId: String,

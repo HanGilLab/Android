@@ -529,6 +529,423 @@ class RoomNextPracticeRepositoryTest {
 
     @Test fun `unfinished row without active slot rejects after write`() = checkUnfinishedSource(true)
 
+    @Test fun `history selection uses the older full source while latest selection still rejects it`() =
+        runBlocking {
+            for (hasPreparation in listOf(false, true)) {
+                memoryDatabase().useDatabase { database ->
+                    val fixture = historyFixture(database, hasPreparation)
+                    val before = physicalTables(database)
+                    assertEquals(NextPracticeSaveResult.SourceChanged, fixture.repository.saveSelection(fixture.seed, target) { true })
+                    assertEquals(before, physicalTables(database))
+                    assertEquals(NextPracticeSaveResult.Saved, fixture.repository.saveHistorySelection(fixture.seed, target) { true })
+                    assertEquals(target, database.preparationDao().current()?.selection())
+                    assertEquals(before - "preparation", physicalTables(database) - "preparation")
+                    assertEquals(fixture.source, database.practiceSessionDao().find(fixture.source.sessionId)?.session())
+                }
+            }
+        }
+
+    @Test fun `history selection does not follow an unrelated ended insertion during the post check`() =
+        runBlocking {
+            memoryDatabase().useDatabase { database ->
+                val fixture = historyFixture(database)
+                val before = physicalTables(database)
+                var expectedOtherRows: Map<String, List<List<String?>>>? = null
+                var checks = 0
+                assertEquals(
+                    NextPracticeSaveResult.Saved,
+                    fixture.repository.saveHistorySelection(fixture.seed, target) {
+                        if (++checks == 2) {
+                            assertTargetWritten(database)
+                            cloneSource(database.openHelper.writableDatabase, "history-post-newer", 300, 400)
+                            expectedOtherRows = physicalTables(database) - "preparation"
+                        }
+                        true
+                    },
+                )
+                assertEquals(2, checks)
+                assertEquals(target, database.preparationDao().current()?.selection())
+                assertEquals(expectedOtherRows, physicalTables(database) - "preparation")
+                assertEquals(before["vehicle_observation"], physicalTables(database)["vehicle_observation"])
+                assertEquals(before["session_memo"], physicalTables(database)["session_memo"])
+                assertEquals(fixture.source, database.practiceSessionDao().find(fixture.source.sessionId)?.session())
+                assertEquals("history-post-newer", database.practiceSessionDao().latestFinished()?.sessionId)
+            }
+        }
+
+    @Test fun `history selection rejects wrong missing active and changed same ID sources without replacing them`() =
+        runBlocking {
+            val changes: List<(SupportSQLiteDatabase) -> Unit> =
+                listOf(
+                    { it.execSQL("DELETE FROM practice_session WHERE sessionId = 'next-source'") },
+                    { it.execSQL("UPDATE practice_session SET goalTitle = 'changed goal' WHERE sessionId = 'next-source'") },
+                    { it.execSQL("UPDATE practice_session SET taskId = 'arrival' WHERE sessionId = 'next-source'") },
+                    { it.execSQL("UPDATE practice_session SET endedAtEpochMillis = 2500 WHERE sessionId = 'next-source'") },
+                    { it.execSQL("UPDATE practice_session SET endedAtEpochMillis = NULL, activeSlot = 1 WHERE sessionId = 'next-source'") },
+                    {
+                        cloneSource(it, "replacement-holder", 3_000, 4_000)
+                        it.execSQL("DELETE FROM practice_session WHERE sessionId = 'next-source'")
+                        it.execSQL("UPDATE practice_session SET sessionId = 'next-source' WHERE sessionId = 'replacement-holder'")
+                    },
+                )
+            for (hasPreparation in listOf(false, true)) {
+                for (afterWrite in listOf(false, true)) {
+                    for (change in changes) {
+                        memoryDatabase().useDatabase { database ->
+                            val fixture = historyFixture(database, hasPreparation)
+                            if (!afterWrite) change(database.openHelper.writableDatabase)
+                            val before = physicalTables(database)
+                            var checks = 0
+                            assertEquals(
+                                NextPracticeSaveResult.SourceChanged,
+                                fixture.repository.saveHistorySelection(fixture.seed, target) {
+                                    if (++checks == 2 && afterWrite) {
+                                        assertTargetWritten(database)
+                                        change(database.openHelper.writableDatabase)
+                                    }
+                                    true
+                                },
+                            )
+                            assertEquals(if (afterWrite) 2 else 1, checks)
+                            assertEquals(before, physicalTables(database))
+                        }
+                    }
+                }
+                memoryDatabase().useDatabase { database ->
+                    val fixture = historyFixture(database, hasPreparation)
+                    val before = physicalTables(database)
+                    for (source in listOf(fixture.source.copy(sessionId = "missing"), fixture.source.copy(taskTitle = "wrong receipt"))) {
+                        val seed = fixture.seed.copy(source = source)
+                        assertEquals(NextPracticeSaveResult.SourceChanged, fixture.repository.saveHistorySelection(seed, target) { true })
+                        assertEquals(before, physicalTables(database))
+                    }
+                }
+            }
+        }
+
+    @Test fun `history selection rejects an unfinished row without an active slot before and after the write`() =
+        runBlocking {
+            for (hasPreparation in listOf(false, true)) {
+                for (afterWrite in listOf(false, true)) {
+                    memoryDatabase().useDatabase { database ->
+                        val fixture = historyFixture(database, hasPreparation)
+
+                        fun corrupt() {
+                            val sqlite = database.openHelper.writableDatabase
+                            cloneSource(sqlite, "hidden-unfinished", 3_000, null)
+                            sqlite.execSQL("UPDATE practice_session SET activeSlot = NULL WHERE sessionId = 'hidden-unfinished'")
+                            sqlite
+                                .query(
+                                    "SELECT endedAtEpochMillis, activeSlot FROM practice_session WHERE sessionId = 'hidden-unfinished'",
+                                ).use {
+                                    assertTrue(it.moveToFirst())
+                                    assertTrue(it.isNull(0) && it.isNull(1))
+                                }
+                        }
+                        if (!afterWrite) {
+                            corrupt()
+                            assertEquals(null, database.practiceSessionDao().active())
+                            assertEquals(1L, database.practiceSessionDao().unfinishedCount())
+                        }
+                        val before = physicalTables(database)
+                        var checks = 0
+                        assertEquals(
+                            NextPracticeSaveResult.SourceChanged,
+                            fixture.repository.saveHistorySelection(fixture.seed, target) {
+                                if (++checks == 2 && afterWrite) {
+                                    assertTargetWritten(database)
+                                    corrupt()
+                                }
+                                true
+                            },
+                        )
+                        assertEquals(if (afterWrite) 2 else 1, checks)
+                        assertEquals(before, physicalTables(database))
+                    }
+                }
+            }
+        }
+
+    @Test fun `history selection checks physical storage of the selected older row before and after writing`() =
+        runBlocking {
+            val corruptions =
+                listOf(
+                    Triple("courseVersion", "1.5", "real"),
+                    Triple("briefingVersion", "4294967297", "integer"),
+                    Triple("startedAtEpochMillis", "1000.5", "real"),
+                    Triple("endedAtEpochMillis", "2000.5", "real"),
+                    Triple("taskTitle", "CAST(taskTitle AS BLOB)", "blob"),
+                )
+            for (hasPreparation in listOf(false, true)) {
+                for (afterWrite in listOf(false, true)) {
+                    for ((column, value, storageType) in corruptions) {
+                        memoryDatabase().useDatabase { database ->
+                            val fixture = historyFixture(database, hasPreparation)
+
+                            fun corrupt() {
+                                val sqlite = database.openHelper.writableDatabase
+                                sqlite.execSQL("UPDATE practice_session SET $column = $value WHERE sessionId = 'next-source'")
+                                sqlite.query("SELECT typeof($column), $column FROM practice_session WHERE sessionId = 'next-source'").use {
+                                    assertTrue(it.moveToFirst())
+                                    assertEquals(storageType, it.getString(0))
+                                    when (storageType) {
+                                        "real" -> assertEquals(value.toDouble(), it.getDouble(1), 0.0)
+                                        "integer" -> assertEquals(value.toLong(), it.getLong(1))
+                                        "blob" ->
+                                            assertEquals(
+                                                fixture.source.taskTitle
+                                                    .toByteArray()
+                                                    .toList(),
+                                                it.getBlob(1).toList(),
+                                            )
+                                    }
+                                }
+                            }
+                            if (!afterWrite) corrupt()
+                            val before = physicalTables(database)
+                            var checks = 0
+                            expectInvalidSourceStorage {
+                                fixture.repository.saveHistorySelection(fixture.seed, target) {
+                                    if (++checks == 2 && afterWrite) {
+                                        assertTargetWritten(database)
+                                        corrupt()
+                                    }
+                                    true
+                                }
+                            }
+                            assertEquals(if (afterWrite) 2 else 1, checks)
+                            assertEquals(before, physicalTables(database))
+                            assertEquals(
+                                1,
+                                database.practiceSessionDao().countValidNextPracticeSourceStorage(
+                                    checkNotNull(database.practiceSessionDao().find("history-newer")).rowId,
+                                    "history-newer",
+                                ),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+    @Test fun `history selection binds the TEXT row and never substitutes its BLOB identity alias`() =
+        runBlocking {
+            memoryDatabase().useDatabase { database ->
+                val fixture = historyFixture(database)
+                insertBlobIdentityAlias(database)
+                val before = physicalTables(database)
+                assertEquals(NextPracticeSaveResult.Saved, fixture.repository.saveHistorySelection(fixture.seed, target) { true })
+                assertEquals(before - "preparation", physicalTables(database) - "preparation")
+                val afterHistory = physicalTables(database)
+                expectInvalidSourceStorage { fixture.repository.saveSelection(fixture.seed, target) { true } }
+                assertEquals(afterHistory, physicalTables(database))
+                database.openHelper.writableDatabase.execSQL("DELETE FROM practice_session WHERE sessionId = 'next-source'")
+                val withoutTextSource = physicalTables(database)
+                assertEquals(
+                    NextPracticeSaveResult.SourceChanged,
+                    fixture.repository.saveHistorySelection(fixture.seed, sourceSelection) { true },
+                )
+                assertEquals(withoutTextSource, physicalTables(database))
+            }
+        }
+
+    @Test fun `history permission denial has priority and post denial rolls back absent or existing preparation`() =
+        runBlocking {
+            for (hasPreparation in listOf(false, true)) {
+                memoryDatabase().useDatabase { database ->
+                    val fixture = historyFixture(database, hasPreparation)
+                    val before = physicalTables(database)
+                    assertEquals(
+                        NextPracticeSaveResult.Blocked,
+                        fixture.repository.saveHistorySelection(fixture.seed, target.copy(taskId = "missing")) { false },
+                    )
+                    assertEquals(before, physicalTables(database))
+                    var checks = 0
+                    assertEquals(
+                        NextPracticeSaveResult.Blocked,
+                        fixture.repository.saveHistorySelection(fixture.seed, target) {
+                            if (++checks == 2) assertTargetWritten(database)
+                            checks == 1
+                        },
+                    )
+                    assertEquals(2, checks)
+                    assertEquals(before, physicalTables(database))
+                }
+            }
+        }
+
+    @Test fun `history catalog or target changes never commit a partially validated preparation`() =
+        runBlocking {
+            for (hasPreparation in listOf(false, true)) {
+                for (afterWrite in listOf(false, true)) {
+                    for (change in catalogEdits()) {
+                        memoryDatabase().useDatabase { database ->
+                            val fixture = historyFixture(database, hasPreparation)
+                            if (!afterWrite) change(fixture.catalog)
+                            val before = physicalTables(database)
+                            var checks = 0
+                            assertEquals(
+                                NextPracticeSaveResult.Unavailable,
+                                fixture.repository.saveHistorySelection(fixture.seed, target) {
+                                    if (++checks == 2 && afterWrite) {
+                                        assertTargetWritten(database)
+                                        change(fixture.catalog)
+                                    }
+                                    true
+                                },
+                            )
+                            assertEquals(if (afterWrite) 2 else 1, checks)
+                            assertEquals(before, physicalTables(database))
+                        }
+                    }
+                }
+                memoryDatabase().useDatabase { database ->
+                    val fixture = historyFixture(database, hasPreparation)
+                    val before = physicalTables(database)
+                    for (selection in listOf(
+                        target.copy(goalId = "shopping"),
+                        target.copy(courseVersion = 2),
+                        target.copy(taskId = "missing"),
+                    )) {
+                        assertEquals(
+                            NextPracticeSaveResult.Unavailable,
+                            fixture.repository.saveHistorySelection(fixture.seed, selection) { true },
+                        )
+                        assertEquals(before, physicalTables(database))
+                    }
+                }
+            }
+        }
+
+    @Test fun `history post write predicate catalog and cancellation failures retain their causes and roll back`() =
+        runBlocking {
+            for (hasPreparation in listOf(false, true)) {
+                for (kind in listOf("predicate", "catalog", "cancellation")) {
+                    memoryDatabase().useDatabase { database ->
+                        val fixture = historyFixture(database, hasPreparation)
+                        val before = physicalTables(database)
+                        val failure =
+                            if (kind ==
+                                "cancellation"
+                            ) {
+                                CancellationException("history cancellation")
+                            } else {
+                                IOException("history $kind failure")
+                            }
+                        var checks = 0
+                        try {
+                            fixture.repository.saveHistorySelection(fixture.seed, target) {
+                                if (++checks == 2) {
+                                    assertTargetWritten(database)
+                                    if (kind == "catalog") fixture.catalog.failure = failure else throw failure
+                                }
+                                true
+                            }
+                            fail("History failures must propagate instead of returning a normal result")
+                        } catch (observed: Exception) {
+                            assertOriginalCause(failure, observed)
+                        }
+                        assertEquals(2, checks)
+                        assertEquals(before, physicalTables(database))
+                    }
+                }
+            }
+        }
+
+    @Test fun `history owner cancellation from a true post predicate cannot commit`() =
+        runBlocking {
+            memoryDatabase().useDatabase { database ->
+                val fixture = historyFixture(database)
+                val before = physicalTables(database)
+                val cancelled = CancellationException("history owner cancellation")
+                val attempt =
+                    async(Dispatchers.Default) {
+                        val owner = checkNotNull(currentCoroutineContext()[Job])
+                        var checks = 0
+                        fixture.repository.saveHistorySelection(fixture.seed, target) {
+                            if (++checks == 2) {
+                                assertTargetWritten(database)
+                                owner.cancel(cancelled)
+                            }
+                            true
+                        }
+                    }
+                try {
+                    attempt.await()
+                    fail("Cancelled history owner must not receive Saved")
+                } catch (observed: CancellationException) {
+                    assertOriginalCause(cancelled, observed)
+                }
+                assertEquals(before, physicalTables(database))
+                assertEquals(NextPracticeSaveResult.Saved, fixture.repository.saveHistorySelection(fixture.seed, target) { true })
+            }
+        }
+
+    @Test fun `history SQLite write failure propagates and preserves all physical rows and schema`() =
+        runBlocking {
+            for (hasPreparation in listOf(false, true)) {
+                memoryDatabase().useDatabase { database ->
+                    val fixture = historyFixture(database, hasPreparation)
+                    for (operation in listOf("INSERT", "UPDATE")) {
+                        database.openHelper.writableDatabase.execSQL(
+                            "CREATE TRIGGER reject_history_$operation AFTER $operation ON preparation " +
+                                "BEGIN SELECT RAISE(ABORT, 'history write failure'); END",
+                        )
+                    }
+                    val before = physicalTables(database)
+                    try {
+                        fixture.repository.saveHistorySelection(fixture.seed, target) { true }
+                        fail("History SQLite failure must propagate")
+                    } catch (_: SQLiteException) {
+                        assertEquals(before, physicalTables(database))
+                    }
+                }
+            }
+        }
+
+    @Test fun `history selection and concurrent session start keep serialized outcomes without changing old source data`() =
+        runBlocking {
+            memoryDatabase().useDatabase { database ->
+                val fixture = historyFixture(database)
+                RoomPracticeRepository(database).saveSelection(sourceSelection) { true }
+                val childRows = tables(database, includePreparation = false) - "practice_session" - "sqlite_sequence"
+                val gate = CompletableDeferred<Unit>()
+                val next =
+                    async(Dispatchers.Default) {
+                        gate.await()
+                        fixture.repository.saveHistorySelection(fixture.seed, target) { true }
+                    }
+                val start =
+                    async(Dispatchers.Default) {
+                        gate.await()
+                        RoomPracticeSessionRepository(database, fixture.catalog).start(fixture.seed.practice, 3_000) { true }
+                    }
+                gate.complete(Unit)
+                val nextResult = withTimeout(10_000) { next.await() }
+                val startResult = withTimeout(10_000) { start.await() }
+                if (nextResult == NextPracticeSaveResult.Saved) {
+                    assertEquals(SessionStartResult.PreparationChanged, startResult)
+                    assertEquals(null, database.practiceSessionDao().active())
+                    assertEquals(target, database.preparationDao().current()?.selection())
+                } else {
+                    assertEquals(NextPracticeSaveResult.SourceChanged, nextResult)
+                    assertTrue(startResult is SessionStartResult.Started)
+                    assertEquals(sourceSelection, database.preparationDao().current()?.selection())
+                }
+                assertEquals(fixture.source, database.practiceSessionDao().find(fixture.source.sessionId)?.session())
+                assertEquals(childRows, tables(database, includePreparation = false) - "practice_session" - "sqlite_sequence")
+            }
+        }
+
+    private suspend fun historyFixture(
+        database: PreparationDatabase,
+        hasPreparation: Boolean = true,
+    ): Fixture =
+        fixture(database, hasPreparation).also {
+            cloneSource(database.openHelper.writableDatabase, "history-newer", 100, 200)
+            assertEquals("history-newer", database.practiceSessionDao().latestFinished()?.sessionId)
+        }
+
     private fun checkSourceStorage(
         mutation: String,
         afterWrite: Boolean,

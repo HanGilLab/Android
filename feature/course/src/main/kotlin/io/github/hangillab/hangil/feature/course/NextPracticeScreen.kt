@@ -39,35 +39,81 @@ import io.github.hangillab.hangil.core.designsystem.ParkedLockedNotice
 import io.github.hangillab.hangil.core.designsystem.ParkedPage
 import io.github.hangillab.hangil.core.designsystem.ParkedPanel
 import io.github.hangillab.hangil.core.domain.CourseReviewStatus
+import io.github.hangillab.hangil.core.domain.PracticeSession
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
+import java.util.concurrent.atomic.AtomicBoolean
 
 @Composable
 fun NextPracticeRoute(
     onClose: () -> Unit,
     onPrepareNormally: () -> Unit,
     viewModel: NextPracticeViewModel = hiltViewModel(),
+    expectedHistorySource: PracticeSession? = null,
+    historyEntryRequired: Boolean = false,
+    isHistoryEntryCurrent: () -> Boolean = { false },
 ) {
-    val state by viewModel.uiState.collectAsStateWithLifecycle()
     val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val historyReceipt =
+        remember(viewModel, lifecycle, expectedHistorySource, isHistoryEntryCurrent) {
+            mutableStateOf<AtomicBoolean?>(null)
+        }
+    val state by if (historyEntryRequired) {
+        val observation =
+            remember(viewModel, lifecycle, expectedHistorySource, isHistoryEntryCurrent) {
+                flow {
+                    val resumed = AtomicBoolean(true)
+                    historyReceipt.value = resumed
+                    try {
+                        emitAll(
+                            viewModel.observeHistory(
+                                expectedSource = expectedHistorySource,
+                                isEntryCurrent = isHistoryEntryCurrent,
+                                canKeepOpen = { resumed.get() && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) },
+                            ),
+                        )
+                    } finally {
+                        resumed.set(false)
+                        if (historyReceipt.value === resumed) historyReceipt.value = null
+                    }
+                }
+            }
+        observation.collectAsStateWithLifecycle(
+            initialValue = NextPracticeUiState.Loading,
+            minActiveState = Lifecycle.State.RESUMED,
+        )
+    } else {
+        viewModel.uiState.collectAsStateWithLifecycle()
+    }
     val currentOnClose by rememberUpdatedState(onClose)
     val currentOnPrepareNormally by rememberUpdatedState(onPrepareNormally)
     var closing by remember(viewModel) { mutableStateOf(false) }
+    val closeReceipt = historyReceipt.value
     val close: () -> Unit = {
-        if (!closing) {
+        val historyCanClose =
+            !historyEntryRequired ||
+                (
+                    closeReceipt?.get() == true && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) &&
+                        runCatching(isHistoryEntryCurrent).getOrDefault(false)
+                )
+        if (!closing && historyCanClose) {
             closing = true
             viewModel.leave()
             currentOnClose()
         }
     }
+    val currentClose by rememberUpdatedState(close)
     val normal: (Long) -> Unit = { generation ->
         if (!closing && viewModel.leaveForNormalPreparation(generation)) {
             closing = true
             currentOnPrepareNormally()
         }
     }
-    LaunchedEffect(viewModel, lifecycle) {
-        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            viewModel.saved.collect { token -> if (viewModel.consumeSaved(token)) close() }
+    LaunchedEffect(viewModel, lifecycle, historyEntryRequired) {
+        val minimumState = if (historyEntryRequired) Lifecycle.State.RESUMED else Lifecycle.State.STARTED
+        lifecycle.repeatOnLifecycle(minimumState) {
+            viewModel.saved.collect { token -> if (viewModel.consumeSaved(token)) currentClose() }
         }
     }
     BackHandler(onBack = close)
@@ -112,7 +158,7 @@ fun NextPracticeRoute(
                         ) { Text(stringResource(R.string.next_practice_retry), style = MaterialTheme.typography.titleLarge) }
                         GeneralPreparationButton { normal(current.generation) }
                     }
-                    is NextPracticeUiState.Ready -> NextPracticeChoices(current, viewModel)
+                    is NextPracticeUiState.Ready -> NextPracticeChoices(current, viewModel, historyEntryRequired)
                 }
             }
         }
@@ -123,13 +169,14 @@ fun NextPracticeRoute(
 private fun NextPracticeChoices(
     state: NextPracticeUiState.Ready,
     viewModel: NextPracticeViewModel,
+    historyEntry: Boolean,
 ) {
     val source = state.seed.source
     Column(Modifier.testTag("next_practice_ready"), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.lg)) {
         Text(stringResource(R.string.next_practice_scope), style = MaterialTheme.typography.bodyLarge)
         ParkedPanel(Modifier.testTag("next_practice_source")) {
             Text(
-                stringResource(R.string.next_practice_source_label),
+                stringResource(if (historyEntry) R.string.next_practice_history_source_label else R.string.next_practice_source_label),
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

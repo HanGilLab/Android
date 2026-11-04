@@ -55,12 +55,14 @@ fun SessionHistoryRoute(
     onClose: () -> Unit,
     viewModel: SessionHistoryViewModel = hiltViewModel(),
     onOpenLocations: (PracticeSession) -> Unit = {},
+    onPrepareNext: ((PracticeSession) -> Unit)? = null,
 ) {
     SessionHistoryEntryContent(
         entry = SessionHistoryEntry.Explore,
         onClose = onClose,
         viewModel = viewModel,
         onOpenLocations = onOpenLocations,
+        onPrepareNext = onPrepareNext,
     )
 }
 
@@ -70,6 +72,7 @@ internal fun SessionHistoryEntryContent(
     onClose: () -> Unit,
     viewModel: SessionHistoryViewModel,
     onOpenLocations: (PracticeSession) -> Unit,
+    onPrepareNext: ((PracticeSession) -> Unit)? = null,
 ) {
     val exact = entry is SessionHistoryEntry.FinishedReview
     val requiredState = if (exact) Lifecycle.State.RESUMED else Lifecycle.State.STARTED
@@ -334,6 +337,27 @@ internal fun SessionHistoryEntryContent(
                                     )
                                 }
                             },
+                            nextPractice = {
+                                if (!exact && onPrepareNext != null) {
+                                    val action = remember(current, locationClickOwner) { AtomicBoolean(true) }
+                                    val open: () -> Unit = {
+                                        if (locationClickOwner.get() && clickOwner.first.get() &&
+                                            lifecycle.currentState == Lifecycle.State.RESUMED &&
+                                            action.compareAndSet(true, false)
+                                        ) {
+                                            viewModel.nextPracticeSource(current.session, current.generation)?.let(onPrepareNext)
+                                        }
+                                    }
+                                    ParkedButton(
+                                        onClick = open,
+                                        enabled = viewModel.canPrepareNext(current.session, current.generation),
+                                        prominent = false,
+                                        modifier = Modifier.fillMaxWidth().testTag("history_prepare_next").frozenObservationClick(open),
+                                    ) {
+                                        Text(stringResource(R.string.history_prepare_next), style = MaterialTheme.typography.titleLarge)
+                                    }
+                                }
+                            },
                             allowBrowsing = !exact,
                             onDelete = {
                                 if (clickOwner.first.get() &&
@@ -393,6 +417,7 @@ private fun HistoryRecord(
     recordingRuns: @Composable () -> Unit,
     courseCompletion: @Composable () -> Unit,
     locations: @Composable () -> Unit,
+    nextPractice: @Composable () -> Unit,
     onDelete: () -> Unit,
     allowBrowsing: Boolean = true,
 ) {
@@ -467,6 +492,7 @@ private fun HistoryRecord(
         recordingRuns()
         courseCompletion()
         locations()
+        nextPractice()
         ParkedButton(
             onClick = onDelete,
             prominent = false,

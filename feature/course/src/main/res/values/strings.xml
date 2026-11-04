@@ -19,6 +19,7 @@
     <string name="next_practice_title">다음 과제 고르기</string>
     <string name="next_practice_scope">같은 코스에서 연습할 과제를 직접 골라요.</string>
     <string name="next_practice_source_label">기준이 되는 지난 연습</string>
+    <string name="next_practice_history_source_label">선택한 지난 연습</string>
     <string name="next_practice_source_details">지난 준비 보기</string>
     <string name="next_practice_source_goal">목표: %1$s</string>
     <string name="next_practice_previous_task">지난 과제: %1$s</string>

@@ -1137,6 +1137,332 @@ class NextPracticeViewModelTest {
             assertEquals(1, f.next.calls)
         }
 
+    @Test fun `history explicitly selects an older ended source and keeps it when a newer record arrives`() =
+        runTest {
+            val f = historyFixture()
+            f.sessions.values.value = listOf(source("newer"), source())
+            val h = watchHistory(f)
+            val displayed = historyReady(h)
+            assertEquals(source(), displayed.seed.source)
+            assertNull(displayed.taskId)
+            assertFalse(f.model.save("source", displayed.generation))
+            assertTrue(f.model.selectTask("next", "source", displayed.generation))
+            val chosen = historyReady(h)
+            f.sessions.values.value = listOf(source("newest"), source("newer"), source())
+            runCurrent()
+            assertEquals(chosen, historyReady(h))
+            val events = events(f)
+            assertTrue(f.model.save("source", chosen.generation))
+            runCurrent()
+            assertEquals(1, f.next.historyCalls)
+            assertEquals(0, f.next.latestCalls)
+            assertEquals(
+                source(),
+                f.next.seeds
+                    .single()
+                    .source,
+            )
+            assertEquals("next", f.next.stored?.taskId)
+            assertEquals(0, f.sessions.writes)
+            assertEquals(1, events.size)
+            assertTrue(f.model.consumeSaved(events.single()))
+            assertFalse(f.model.consumeSaved(events.single()))
+        }
+
+    @Test fun `history mutation deletion and active sessions expire the selected source without latest fallback`() =
+        runTest {
+            for (rows in listOf(
+                listOf(source("newer")),
+                listOf(source("newer"), source().copy(taskTitle = "변경한 과제")),
+                listOf(source("active", ended = null), source()),
+            )) {
+                val f = historyFixture()
+                val h = watchHistory(f)
+                val old = historyChoose(f, h)
+                f.sessions.values.value = rows
+                runCurrent()
+                assertTrue(h.state.value is NextPracticeUiState.SourceChanged)
+                assertFalse(f.model.canRevealSource("source", old.generation))
+                assertFalse(f.model.selectTask("old", "source", old.generation))
+                assertFalse(f.model.save("source", old.generation))
+                assertFalse(f.model.retry())
+                assertEquals(0, f.next.calls)
+                assertEquals(0, f.sessions.writes)
+                h.job.cancelAndJoin()
+                runCurrent()
+            }
+        }
+
+    @Test fun `history old catalog versions stay unavailable and never convert to current seed`() =
+        runTest {
+            val f = historyFixture()
+            f.catalog.courses = f.catalog.courses.map { it.copy(version = 2) }
+            val h = watchHistory(f)
+            assertTrue(h.state.value is NextPracticeUiState.Unavailable)
+            assertEquals(0, f.next.calls)
+            assertFalse(f.model.retry())
+        }
+
+    @Test fun `invalid history requests never displace an existing latest reader`() =
+        runTest {
+            val f = Fixture()
+            val latest = watch(f)
+            val current = choose(f)
+            val calls = f.sessions.calls
+            for (expected in listOf(null, source("other"), source(ended = null), source())) {
+                val h = watchHistory(f, expected = expected)
+                assertTrue(h.state.value is NextPracticeUiState.SourceChanged)
+                assertEquals(current, ready(f))
+                assertTrue(f.model.canRevealSource("source", current.generation))
+                assertEquals(calls, f.sessions.calls)
+                h.job.cancelAndJoin()
+                runCurrent()
+            }
+            latest.cancelAndJoin()
+        }
+
+    @Test fun `invalid selected or latest collectors cannot displace a healthy history owner`() =
+        runTest {
+            val f = historyFixture()
+            val h = watchHistory(f)
+            val current = historyChoose(f, h)
+            val calls = f.sessions.calls
+            val accidentalLatest = watch(f)
+            assertEquals(current, historyReady(h))
+            assertEquals(calls, f.sessions.calls)
+            accidentalLatest.cancelAndJoin()
+            runCurrent()
+            for (request in 0..2) {
+                val invalid =
+                    watchHistory(
+                        f,
+                        expected = if (request == 0) null else source(),
+                        isCurrent = { request != 1 },
+                        canKeepOpen = { request != 2 },
+                    )
+                assertTrue(invalid.state.value is NextPracticeUiState.SourceChanged)
+                assertEquals(current, historyReady(h))
+                assertTrue(f.model.canRevealSource("source", current.generation))
+                assertEquals(calls, f.sessions.calls)
+                invalid.job.cancelAndJoin()
+                runCurrent()
+            }
+        }
+
+    @Test fun `missing memory malformed tokens and absent history source never query latest`() =
+        runTest {
+            for (token in listOf(null, "", " ", 42)) {
+                val f = historyFixture(token = token)
+                val h = watchHistory(f)
+                assertTrue(h.state.value is NextPracticeUiState.SourceChanged)
+                assertEquals(0, f.sessions.calls)
+                assertFalse(f.model.canInteract())
+                h.job.cancelAndJoin()
+                runCurrent()
+            }
+            for (request in 0..2) {
+                val f = historyFixture()
+                val h =
+                    watchHistory(
+                        f,
+                        expected = if (request == 0) null else source(),
+                        isCurrent = { request != 1 },
+                        canKeepOpen = { request != 2 },
+                    )
+                assertTrue(h.state.value is NextPracticeUiState.SourceChanged)
+                assertEquals(0, f.sessions.calls)
+                assertFalse(f.model.canInteract())
+                h.job.cancelAndJoin()
+                runCurrent()
+            }
+            val f = historyFixture()
+            val latest = watch(f)
+            assertEquals(0, f.sessions.calls)
+            assertFalse(f.model.canInteract())
+            latest.cancelAndJoin()
+        }
+
+    @Test fun `history host and navigation receipts revoke pending writes immediately and cannot revive`() =
+        runTest {
+            for (revokeHost in listOf(false, true)) {
+                val f = historyFixture()
+                var host = true
+                var entry = true
+                val h = watchHistory(f, isCurrent = { entry }, canKeepOpen = { host })
+                val selected = historyChoose(f, h)
+                val events = events(f)
+                val release = CompletableDeferred<Unit>()
+                f.next.waitFor(release, ignoreCancellation = true)
+                assertTrue(f.model.save("source", selected.generation))
+                runCurrent()
+                val guard = f.next.guards.single()
+                assertTrue(guard())
+                if (revokeHost) host = false else entry = false
+                assertFalse(guard())
+                assertFalse(f.model.canInteract())
+                assertFalse(f.model.canRevealSource("source", selected.generation))
+                assertFalse(f.model.selectTask("old", "source", selected.generation))
+                host = true
+                entry = true
+                assertFalse(guard())
+                assertFalse(f.model.save("source", selected.generation))
+                release.complete(Unit)
+                runCurrent()
+                assertNull(f.next.stored)
+                assertTrue(events.isEmpty())
+                h.job.cancelAndJoin()
+                runCurrent()
+            }
+        }
+
+    @Test fun `history requires both P and unrestricted UX at callbacks and cannot acknowledge a revoked entry`() =
+        runTest {
+            for (blockVehicle in listOf(false, true)) {
+                val f = historyFixture()
+                val h = watchHistory(f)
+                val selected = historyChoose(f, h)
+                if (blockVehicle) {
+                    f.vehicleState.value = driving()
+                } else {
+                    f.restrictionState.value = permitted().copy(uxRestrictionState = UxRestrictionState.RESTRICTED)
+                }
+                assertFalse(f.model.canRevealSource("source", selected.generation))
+                assertFalse(f.model.save("source", selected.generation))
+                runCurrent()
+                assertEquals(NextPracticeUiState.Locked, h.state.value)
+                assertEquals(0, f.next.calls)
+                h.job.cancelAndJoin()
+                runCurrent()
+            }
+            val f = historyFixture()
+            var entry = true
+            val h = watchHistory(f, isCurrent = { entry })
+            val chosen = historyChoose(f, h)
+            val events = events(f)
+            f.model.save("source", chosen.generation)
+            runCurrent()
+            assertEquals(1, events.size)
+            entry = false
+            assertFalse(f.model.consumeSaved(events.single()))
+            entry = true
+            assertFalse(f.model.consumeSaved(events.single()))
+            assertEquals(1, f.next.historyCalls)
+        }
+
+    @Test fun `history cancellation rejects old IO and acknowledgement before fresh resumed owner`() =
+        runTest {
+            val f = historyFixture()
+            val old = watchHistory(f)
+            val chosen = historyChoose(f, old)
+            val events = events(f)
+            val release = CompletableDeferred<Unit>()
+            f.next.waitFor(release, ignoreCancellation = true)
+            f.model.save("source", chosen.generation)
+            runCurrent()
+            val oldGuard = f.next.guards.single()
+            old.job.cancel()
+            assertFalse(oldGuard())
+            assertFalse(f.model.canRevealSource("source", chosen.generation))
+            val fresh = watchHistory(f)
+            val resumed = historyReady(fresh)
+            assertEquals("next", resumed.taskId)
+            assertNotEquals(chosen.generation, resumed.generation)
+            assertFalse(f.model.save("source", chosen.generation))
+            release.complete(Unit)
+            runCurrent()
+            assertNull(f.next.stored)
+            assertTrue(events.isEmpty())
+            f.next.handler = f.next.defaultHandler
+            assertTrue(f.model.save("source", resumed.generation))
+            runCurrent()
+            val token = events.single()
+            fresh.job.cancelAndJoin()
+            runCurrent()
+            val final = watchHistory(f)
+            assertEquals("next", historyReady(final).taskId)
+            assertFalse(f.model.consumeSaved(token))
+            assertFalse(f.model.canRevealSource("source", resumed.generation))
+            assertEquals(2, f.next.historyCalls)
+            assertEquals(0, f.sessions.writes)
+        }
+
+    @Test fun `history task restoration binds mode token and full source while process memory stays mandatory`() =
+        runTest {
+            val f = historyFixture()
+            val h = watchHistory(f)
+            historyChoose(f, h)
+            val state = copyState(f.handle)
+            h.job.cancelAndJoin()
+            runCurrent()
+            val same = Fixture(state = copyState(state))
+            val resumed = watchHistory(same)
+            assertEquals("next", historyReady(resumed).taskId)
+            resumed.job.cancelAndJoin()
+            runCurrent()
+            val changedToken = copyState(state)
+            changedToken["historyNextToken"] = "another-token"
+            val newEntry = Fixture(state = changedToken)
+            val newWatch = watchHistory(newEntry)
+            assertNull(historyReady(newWatch).taskId)
+            newWatch.job.cancelAndJoin()
+            runCurrent()
+            val changedSource = source().copy(startedAtEpochMillis = 999)
+            val changed = Fixture(state = copyState(state))
+            changed.sessions.values.value = listOf(changedSource)
+            val changedWatch = watchHistory(changed, expected = changedSource)
+            assertNull(historyReady(changedWatch).taskId)
+            changedWatch.job.cancelAndJoin()
+            runCurrent()
+            val missingMemory = Fixture(state = copyState(state))
+            val missing = watchHistory(missingMemory, expected = null)
+            assertTrue(missing.state.value is NextPracticeUiState.SourceChanged)
+            assertEquals(0, missingMemory.sessions.calls)
+            missing.job.cancelAndJoin()
+            val latestState = copyState(state)
+            latestState.remove<Any?>("historyNextToken")
+            val latest = Fixture(state = latestState)
+            watch(latest)
+            assertNull(ready(latest).taskId)
+            assertEquals(0, latest.next.calls)
+        }
+
+    private fun historyFixture(token: Any? = "history-token"): Fixture =
+        Fixture(state = SavedStateHandle(mapOf("nextPracticeSourceId" to "source", "historyNextToken" to token)))
+
+    private fun TestScope.watchHistory(
+        f: Fixture,
+        expected: PracticeSession? = source(),
+        isCurrent: () -> Boolean = { true },
+        canKeepOpen: () -> Boolean = { true },
+    ): HistoryWatch {
+        val state = MutableStateFlow<NextPracticeUiState>(NextPracticeUiState.Loading)
+        val job =
+            backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+                f.model.observeHistory(expected, isCurrent, canKeepOpen).collect { state.value = it }
+            }
+        runCurrent()
+        return HistoryWatch(state, job)
+    }
+
+    private fun TestScope.historyReady(h: HistoryWatch): NextPracticeUiState.Ready {
+        runCurrent()
+        return h.state.value as NextPracticeUiState.Ready
+    }
+
+    private fun TestScope.historyChoose(
+        f: Fixture,
+        h: HistoryWatch,
+    ): NextPracticeUiState.Ready {
+        val current = historyReady(h)
+        assertTrue(f.model.selectTask("next", "source", current.generation))
+        return historyReady(h)
+    }
+
+    private data class HistoryWatch(
+        val state: StateFlow<NextPracticeUiState>,
+        val job: Job,
+    )
+
     private fun TestScope.ready(f: Fixture): NextPracticeUiState.Ready {
         runCurrent()
         return f.model.uiState.value as NextPracticeUiState.Ready
@@ -1253,6 +1579,8 @@ class NextPracticeViewModelTest {
         val seeds = mutableListOf<NextPracticeSeed>()
         val guards = mutableListOf<() -> Boolean>()
         var calls = 0
+        var latestCalls = 0
+        var historyCalls = 0
         var stored: PracticeSelection? = null
         val defaultHandler: suspend (NextPracticeSeed, PracticeSelection, () -> Boolean) -> NextPracticeSaveResult = ::writeAllowed
         var handler = defaultHandler
@@ -1282,6 +1610,24 @@ class NextPracticeViewModelTest {
         }
 
         override suspend fun saveSelection(
+            seed: NextPracticeSeed,
+            selection: PracticeSelection,
+            canCommit: () -> Boolean,
+        ): NextPracticeSaveResult {
+            latestCalls++
+            return record(seed, selection, canCommit)
+        }
+
+        override suspend fun saveHistorySelection(
+            seed: NextPracticeSeed,
+            selection: PracticeSelection,
+            canCommit: () -> Boolean,
+        ): NextPracticeSaveResult {
+            historyCalls++
+            return record(seed, selection, canCommit)
+        }
+
+        private suspend fun record(
             seed: NextPracticeSeed,
             selection: PracticeSelection,
             canCommit: () -> Boolean,
