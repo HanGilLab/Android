@@ -1,6 +1,6 @@
 # 선택한 종료 이력의 수동 과정 마무리 선언
 
-선택한 종료 연습에 사용자의 명시적인 과정 마무리 선언을 저장하고 다시 읽는 기능을 연결했다. PR #69의 삭제 취소/준비 실패 뒤 펼침이 비는 문제까지 수정한 최종 제품과 native 원본은 `d1bd59dc5969ca44b94db976032260cd92d71f79`이며 고정 product-v3/test-v5 APK로 검증했다. 전체 자동 검사, 제어 Compose/소유 Room 및 실제 Main 읽기의 양 테마, 고정 계측 APK의 최종 M0/M1 비교와 원본/환경 보존을 확인했다. 기준 A, 리뷰 전 중간 B1과 수정 후 최종 B2를 구분한다. 성능 향상/동등성/무회귀는 확정하지 않는다. 최종 PR head `3f896a5616a9339febed4448f032d2f1af8f1e23`의 필수 CI4개/Codex와 지적 해결을 확인한 뒤 정상 병합하고 main 동기화/브랜치 정리를 마쳤다. 병합 main의 별도 push CI4개도 통과해 [작업 계획](../plans/completed/2026-11-01-manual-course-completion.md)을 completed로 이동했다. 독립 제품 검증과 전체 APP-08 완료를 구분한다.
+선택한 종료 연습에 사용자의 명시적인 과정 마무리 선언을 저장하고 다시 읽는다. 현재 저장/읽기 계약과 실제 측정 조건을 설명하며, 구현 검토와 검증 이력은 [제품 PR69](https://github.com/HanGilLab/Android/pull/69)에 남긴다. 독립 제품 범위와 APP-08 전체 완료, 기능 검증과 성능 향상을 구분한다.
 
 ## 선택한 최소 정책
 
@@ -45,48 +45,15 @@ source 삭제는 FK CASCADE로 연결 선언도 지운다. [SessionDeletionTarge
 
 Loading, Locked, Unavailable, 실제 부재, 조회/저장 실패와 Ready를 구분한다. 조회 예외, 조회의 독립 취소, 유한 stream 완료와 손상된 선언은 명시적인 조회 재시도 전까지 실패다. 반복 null 통지가 진행 중 확인이나 저장을 초기화하거나, 미확인 저장 결과를 새 부재로 바꾸지 않게 했다.
 
-## 현재 검증 상태와 보완 이력
+## 검증 범위와 한계
 
-| 범위 | 현재 실제 결과 |
-|---|---|
-| domain/실제 Room 타깃 | 통과. 전체 source, idempotence, 다른 활성 연습, 시각 역행, 물리형, 삭제 CAS와 migration 경계 포함 |
-| 앱 debug 빌드 | 통과. 실제 Hilt 연결과 생산 UI/VM 컴파일 확인 |
-| feature 첫 실행 | 테스트 Pair/Flow 타입 추론 오류로 컴파일 실패. 테스트 본문은 미실행 |
-| feature 재실행 | 제네릭 타입만 명시한 뒤 통과. 새 ViewModel/reader 41개 포함, 검증 조건 완화 없음 |
-| 리뷰 지적의 focused JVM | 원래 5개에서 실제 4실패/1통과를 재현하고, 같은 source 바이트로 수정 후 5통과. 이후 전체 feature386개 실패0 |
-| 전체 verify / native APK 컴파일 | 최종 d1bd59의 JDK17 전체4단계와 APK 컴파일 통과. 제품 모듈 JVM57 suites/876개와 별도 build-logic1 suite/4개 각각 실패/오류/건너뜀0 |
-| 제어 Compose A | 최종 d1bd59 첫 실행6PASS. 실제 Compose와 합성 lifecycle/source/저장소/gate |
-| 소유 Room B | 최종 d1bd59 첫 실행 기본 라이트3PASS/확대 다크3PASS. 별도 UUID DB/production 저장소와 실제 Route |
-| 실제 Main C | 최종 d1bd59 첫 실행 기본 라이트1PASS/확대 다크1PASS. 실제 SDK/생산 Room의 읽기/확인 취소/P-D-P와 선언0 검증 |
-| M0/M1 공통 비교 | A/B1/B2 여섯 보고서 각각5warm/30본 완료, 모두 valid와 실패/누락/미실행/제외0. 동일 입력/환경/고정 계측 APK 확인 |
-| 새 저장 M2 | 미측정. 동일한 최초 저장 반복 fixture와 metric 계약 미확정 |
-| PR #69 CI/Codex / 병합 | 최종3f896a의 필수 CI4개 success/Codex completed/no findings와 P2 native 해결을 확인하고824140e로 정상 병합. main ff-only 동기화/브랜치 정리 확인. 병합 main push CI41252576739 attempt1/App15368 필수4개 success |
+[제어 Compose](../../app/src/androidTest/kotlin/io/github/hangillab/hangil/ManualCourseCompletionBoundaryTest.kt)는 합성 lifecycle/source/저장소/gate를, [소유 Room](../../app/src/androidTest/kotlin/io/github/hangillab/hangil/ManualCourseCompletionRoomFlowTest.kt)은 별도 UUID DB의 최초 저장/중복과 재열람을 검증한다. 합성 입력을 실제 OS PAUSE나 SDK 장애 주입 성공으로 해석하지 않는다.
 
-[feature 타깃 소스](../../feature/home/src/test/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryCourseCompletionViewModelTest.kt)는 cold 조회, 부모/전체 source/활성 unknown, 옛 token/nonce, silent gate와 host 만료, 오류/유한 stream, ACK/Flow 순서와 취소 뒤 저장 원형 재조회를 제어 입력으로 검사한다. 이 타깃 통과를 실제 SDK나 실제 화면 통과로 바꾸지 않는다.
+[실제 Main 읽기](../../app/src/androidTest/kotlin/io/github/hangillab/hangil/ManualCourseCompletionFlowTest.kt)는 생산 자료의 읽기, 확인 취소와 P-D-P를 확인하고 생산 선언은 만들지 않았다. 저장 성공은 소유 fixture의 근거다. 생산 앱에서 선언 저장 후 프로세스 종료/재실행한 검증은 미실행이다.
 
-독립 읽기 검토에서 두 번째 live 검사로 Locked/Unavailable를 발행한 뒤 후속 Absent/오류가 덮을 수 있는 경계를 발견해 이미 폐기된 owner의 후속 발행을 막았다. 이를 실행 RED나 실제 장치 재현으로 주장하지 않는다. 별도 debug 소유 저장소의 reopen도 새 handle의 열기와 첫 정리가 모두 실패할 때 참조를 잃지 않도록 새 handle 생성 직후 필드에 보관했다. 실제 사용자 DB와 분리된 UUID 자원의 정리 보완이며, 해당 오류 재현이나 close 재시도 성공까지 확인했다는 뜻은 아니다.
+삭제 확인 취소/준비 실패 뒤 읽기가 비던 결함과 문구 가로 넘침은 수정 후 다시 확인했다. 초기 컴파일/준비 조건 실패와 수정 후 검증은 [PR69](https://github.com/HanGilLab/Android/pull/69)에서 구분한다. 기본 라이트와 확대 다크의 실제 글자/출처/버튼 검토를 합성 검사나 빌드 성공으로 대신하지 않는다.
 
-실제 UI 쓰기 검증은 별도 UUID 소유 Room과 production 저장소/route로 수행했다. 실제 Main/SDK/생산 Room은 원래 자료 읽기, 확인 취소와 gate만 검증하고 생산 선언0개를 유지했다. 저장 성공은 소유 fixture의 근거이며 생산 자료에 선언을 쓴 성공을 주장하지 않는다.
-
-## 최종 native 결과와 이전 실패의 구분
-
-최종 제품/native 원본 `d1bd59dc5969ca44b94db976032260cd92d71f79`의 product-v3/test-v5에서 [A 제어 Compose](../../app/src/androidTest/kotlin/io/github/hangillab/hangil/ManualCourseCompletionBoundaryTest.kt)6개, [B 소유 실제 Room](../../app/src/androidTest/kotlin/io/github/hangillab/hangil/ManualCourseCompletionRoomFlowTest.kt)기본1.0/라이트3개와 확대1.3/다크3개, [C 실제 Main 읽기](../../app/src/androidTest/kotlin/io/github/hangillab/hangil/ManualCourseCompletionFlowTest.kt)라이트/확대 다크 각각1개가 모두 첫 실행에 통과했다. A는 실제 Compose/Activity와 제어 lifecycle/source/저장소/gate의 근거이며 실제 OS PAUSE나 SDK 장애 주입 성공이 아니다.
-
-B는 별도 UUID Room의 최초 저장, 새 ViewModel과 실제 Room handle 재개방/재열람, 원형/중복과 결과 취소 뒤 복원에 더해, 실제 삭제 준비/취소 뒤 부재/저장된 선언을 다시 읽는 경계를 검사한다. 차량/UX 입력은 합성이다. 생산 앱에서 선언 저장 후 process death/재실행한 검증은 원래 DB 쓰기0 정책상 미실행이다.
-
-C는 실제 Main/SDK/생산 Room에서 삭제 준비와 확인 취소 뒤 같은 펼침의 Absent가 새 읽기로 복원되고, 새 과정 확인창을 열어 다시 취소하는 경계를 추가 확인했다. source 이동/재생성, 실제 SDK P+UX와 DDS P-D-P, 원래 자료 및 생산 선언0도 유지했다. 삭제와 선언의 최종 확인은 어느 쪽도 누르지 않았다. 다크 실행 전 촬영된 내비 화면은 Main 성공 증거가 아니며, 실제 C 본문의 strict Main/focused window 검사와 별도 capture가 통과한 근거를 사용한다.
-
-리뷰 전 B1 제품 a639/product-v2의 A4, B 라이트3/다크 재시도3, C b179의 양 테마 성공도 각 원래 source의 과거 기록으로 보존한다. 그때 C 파일/공용 실제 읽기 Harness/제품이 9f1950에서 바이트 동일했던 확인을 최종 d1bd59의 새 실행과 혼동하지 않는다.
-
-첫 C 라이트는 요청 문구의 한 줄180×34px에서 가로 overflow true/세로 false/ellipsis 없음으로 실패했다. 확인 취소/P-D-P까지 통과한 실행으로 세지 않았다. 요청/확인/취소/재조회 Text를 실제 가용 폭에 가운데 정렬하고 글자/간격을 줄이지 않은 제품에서 같은 원문/가시성/넘침 검사로 양 테마가 통과했다. 이 배치 정합 보완을 성능 향상으로 해석하지 않는다.
-
-초기 A의 dialog footer 스크롤 실패와 이후 실제 host 개입/AX 미확인, 수정 제품 A의3PASS/1mount foreign 실패 두 회, B 다크의2PASS/1초기 host 실패를 각각 보존했다. 리뷰 전9f 첫 B 다크도2PASS/1setup 실패로, 실제 Catalog 준비 조건을20초 안에 확인하지 못했다. 동일 APK와 동일 검사로 재시도한3PASS와 원래 실패를 분리한다. 정확한 플랫폼 전환 원인은 미확정이며 제품 저장 실패/성공으로 바꾸지 않는다.
-
-최신 준비 gate는 실제 Catalog RESUMED/유효 display/window focus를 확인한 뒤에만 제어 owner/observer를 만든다. 본문과 확인창의 실제 focused package/같은 display/host 개입/옛 token 검사를 유지하며 알려진 다른 앱은 실패다. 미확인을 기대 package나 정상값으로 채우지 않는다. A의 합성 lifecycle을 실제 OS PAUSE 성공으로 부르지 않는다.
-
-C 확인창 라이트/다크와 B 저장 완료 라이트/다크의 비공개 원본 이미지4개를 직접 검토했다. 원문/출처/큰 글자/버튼/선언 시각을 읽었으며 TextLayout overflow/ellipsis 검사는 보조 근거다. 합성 저장 화면을 실제 SDK가 생산 자료에 쓴 증거로 표시하거나 공개 이미지로 추가하지 않았다.
-
-native 종료 시점에 모든 원래 v5 table/row/field/물리형/순서/sequence와 grants/runtime/원래 font/night/IME/proxy가 exact 일치했다. 의도한 차이는 schema6의 빈 선언 테이블이며 생산 선언은0개다. 원래 준비/세션/관찰/메모/run에 쓰지 않고 소유 UUID DB에만 저장했다. 비교 계측 뒤의 최종 원본/환경/소유 자원 대조도 완료했으며 아래 계측 결과와 구분해 기록한다.
+원래 자료와 SQLite 물리형/순서/sequence의 보존은 계측의 domain snapshot 일치와 별도로 대조했다. 의도한 차이는 schema6의 빈 선언 테이블이며, 아래 공통 흐름 측정 중에도 생산 선언은 만들지 않았다.
 
 ## 제품 변경 전 M0/M1 기준
 
@@ -184,7 +151,7 @@ M2는 아직 동일 반복 fixture와 metric을 확정하지 않았고 하네스
 
 신규 저장에는 이전 대응 행동이 없으므로 변경 전을 0, 이전 실패 대기 시간 또는 M0/M1로 두지 않는다. 신규 저장 M2의 after 수치나 개선율도 없다. 정확성 검사의 실행 시간과 통과 수를 신규 저장 성능으로 사용하지 않는다. 이 작업의 주 비교 지표는 기존 M0/M1이며 위 실제 전후 표본과 분포를 제한된 의미로 해석한다.
 
-전체 verify/계측 APK 컴파일과 위 범위의 A/B/C, 실제 네 이미지 검토, M0/M1 실제 비교와 최종 원본/설정/선언0/원형 baseline 보존 및 소유 자원 정리를 확인했다. PR #69 최종 동일 head의 필수 CI/Codex, 구체 지적 처리와 정상 병합/main ff-only 동기화/로컬 및 원격 브랜치 정리도 확인했다. 병합 main의 별도 push CI4개도 통과해 이 독립 범위를 완료하고 계획을 completed로 이동했다. 생산 앱의 선언 저장 후 프로세스 종료/재실행은 원래 DB 쓰기0 정책상 미실행이다. 원문 source/식별자/시각, 설치/환경 자료와 개발 중 이미지는 비공개로 보존한다.
+생산 앱에서 선언 저장 후 프로세스 종료/재실행한 검증은 미실행이다. 원래 자료/설정과 빈 생산 선언, 측정 baseline의 보존을 별도로 확인했으며 구현 검증 이력은 [PR69](https://github.com/HanGilLab/Android/pull/69)에 남긴다.
 
 ## PR 리뷰 뒤 삭제 취소와 읽기 복원
 
@@ -192,6 +159,6 @@ M2는 아직 동일 반복 fixture와 metric을 확정하지 않았고 하네스
 
 삭제 작업이 terminal Failed를 발행한 뒤 안내를 명시적으로 닫으면 현재 context에서 새 읽기를 한 번 허용한다. 이는 예외 때 COMMIT 결과를 확정하는 동작이 아니라 현재 저장 원형을 다시 읽는 동작이다. Missing/관찰된 sourceAbsent/Deleted는 재조회하지 않는다. DELETING 중 명시 취소가 job과 commit predicate를 폐기하는 기존 계약은 유지하며, COMMIT/응답이 불확실한 취소에 자동 읽기를 만들지 않는다. 이 경우 기존 부모 이력 결과와 사용자의 명시적인 펼침 재열람으로 돌아간다. 부모 query/generation, 기존 네 펼침 및 저장소 계약을 바꾸지 않았다.
 
-[원래 focused JVM 재현](../../feature/home/src/test/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryCourseCompletionDeletionBoundaryTest.kt)은 실제5개 중4실패/1통과에서 같은 source 바이트의5통과로 바뀌었고 [추가 guard](../../feature/home/src/test/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryCourseCompletionDeletionRecoveryGuardTest.kt)와 기존 취소 검사를 포함한 feature386개가 통과했다. 포맷 전 이 source 동일 GREEN을 확보했고 뒤의 줄바꿈 수정은 기대를 바꾸지 않았다. 최종 d1bd59의 전체 verify와 A6/B 양 테마3/C 양 테마1 및 최종 B2를 위 결과로 구분해 확인했다. [원래 지적 답글](https://github.com/HanGilLab/Android/pull/69#discussion_r4433638300)과 native 해결을 확인했다. 최종 head3f896a의 [PR CI](https://github.com/HanGilLab/Android/actions/runs/41252100840) attempt1 필수4개 success 및 exact-head Codex completed/no findings 뒤 우회 없이824140e로 정상 병합했다. 정식 리뷰2건에 CHANGES_REQUESTED는 없었고 main ff-only 동기화와 로컬/원격 작업 브랜치 정리를 확인했다. [병합 main CI](https://github.com/HanGilLab/Android/actions/runs/41252576739) attempt1/App15368 필수4개 success도 확인했다.
+삭제 취소 뒤 읽기 복원의 재현과 수정 검토는 [PR69의 원래 지적](https://github.com/HanGilLab/Android/pull/69#discussion_r4433638300)에 남긴다. 이 복원은 새 저장 동의를 만들거나 COMMIT 결과를 추정하는 처리가 아니다.
 
 fresh process/Activity 조건은 각 metric 전에 앱 프로세스를 외부에서 새로 시작했다는 뜻이며 기기 cold boot를 동일하게 통제했다는 뜻이 아니다. 검증/빌드/AVD 재시작을 사이에 거쳤고 OS/서비스 부하, 장치 uptime과 캐시/컴파일 프로필 동등성은 입증하지 못했다. 같은 기록 입력/계측/가용 영역과 명시한 조건의 관측값으로만 해석한다.
