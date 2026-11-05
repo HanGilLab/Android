@@ -8,7 +8,7 @@
 
 | 컴포넌트 | 역할과 조건 |
 |---|---|
-| `PracticePage / PracticeColumns` | 기본 스크롤 페이지와 넓은 화면의 두 열 배치. 기본 바깥32dp, 최대폭1440dp |
+| `PracticePage` | 기본 스크롤 페이지. 기본 바깥32dp, 최대폭1440dp |
 | `ParkedPage / ParkedPanel / ParkedBadge` | 홈/준비의 바깥48dp와 최대폭1600dp, 내부32/36dp 카드, 민트/크림 배지. 정확한 역할은 [토큰](tokens.md) 참고 |
 | `PracticePanel / PracticeBadge` | 둥근 정보 카드와 문구 배지. 배지 색만으로 상태를 전달하지 않음 |
 | `PracticeButton` | Material 주요 버튼, 높이76dp와 너비64dp 이상의 토큰과 `enabled`, `onClick`, `RowScope` 내용 슬롯 |

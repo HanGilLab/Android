@@ -33,7 +33,7 @@ bind가 false이거나 예외여도 생성된 dispatcher를 정리하며 이미 
 
 전용 AVD와 P+UX 허용 상태에서 아래 시나리오를 개별 실행한다.
 일반 계측 발견 실행에서는 임시 허용 옵션을 전달하지 않는다. 명시 옵션이 없는 허용 계측의 건너뜀은 실제 허용 경로 통과가 아니다.
-현재 DB v2의 준비, 세션 데이터를 보존하려면 main의 마이그레이션을 포함한 APK를 사용한다. v1 전용 과거 APK로 되돌리거나 데이터를 지우지 않는다.
+기존 준비, 세션 데이터를 보존하려면 현재 main의 마이그레이션을 포함한 호환 APK를 사용한다. 과거 스키마 전용 APK로 되돌리거나 데이터를 지우지 않는다.
 권한이 없는 상태에서 `missingPermissionIsExplicitAndRecreationClearsTheProbe`, 사용자가 권한을 허용한 뒤 `grantedPermissionIdentifiesTheActualSdkResponse`를 실행한다.
 이어 `grantedReadThenLeaveAndRetryUsesFreshUiState`로 읽기 직후 이탈, 재진입, 재시도를,
 `grantedResponseThenRecreationReturnsIdleWithoutAutomaticQuery`로 응답 후 재생성의 초기 상태를 확인한다.
