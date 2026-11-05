@@ -3,7 +3,6 @@ package io.github.hangillab.hangil.core.designsystem
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -55,26 +54,6 @@ fun PracticePage(
                 verticalArrangement = Arrangement.spacedBy(verticalSpacing),
                 content = content,
             )
-        }
-    }
-}
-
-@Composable
-fun PracticeColumns(
-    first: @Composable () -> Unit,
-    second: @Composable () -> Unit,
-) {
-    BoxWithConstraints(Modifier.fillMaxWidth()) {
-        if (maxWidth >= HanGilDimensions.wideBreakpoint) {
-            Row(horizontalArrangement = Arrangement.spacedBy(HanGilSpacing.xl)) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.lg)) { first() }
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.lg)) { second() }
-            }
-        } else {
-            Column(verticalArrangement = Arrangement.spacedBy(HanGilSpacing.xl)) {
-                first()
-                second()
-            }
         }
     }
 }
