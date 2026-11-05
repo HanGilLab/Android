@@ -201,95 +201,7 @@ ID와 완료 메시지만으로는 사용자가 마친 전체 원본, 저장소�
 
 **코드**
 
-[같은 Room 트랜잭션에서 전체 원본을 비교한 뒤 종료](core/database/src/main/kotlin/io/github/hangillab/hangil/core/database/RoomPracticeSessionRepository.kt#L99-L139)
-
-```kotlin
-override suspend fun finish(
-    expectedSource: PracticeSession,
-    endedAtEpochMillis: Long,
-    canCommit: () -> Boolean,
-): SessionFinishResult {
-    if (endedAtEpochMillis <= 0) return SessionFinishResult.InvalidTime
-    if (!expectedSource.isActive) return SessionFinishResult.SourceChanged
-    return try {
-        database.withTransaction {
-            requireStrictPermission(canCommit)
-            val dao = database.practiceSessionDao()
-            val entity = dao.find(expectedSource.sessionId)
-            val result =
-                if (entity == null) {
-                    SessionFinishResult.Missing
-                } else {
-                    check(dao.countValidDeletionStorage(expectedSource.sessionId) == 1)
-                    val actual = entity.session()
-                    when {
-                        actual.copy(endedAtEpochMillis = null) != expectedSource -> SessionFinishResult.SourceChanged
-                        !actual.isActive -> SessionFinishResult.AlreadyFinished(actual)
-                        endedAtEpochMillis < actual.startedAtEpochMillis -> SessionFinishResult.InvalidTime
-                        else -> {
-                            check(dao.finish(expectedSource.sessionId, endedAtEpochMillis) == 1)
-                            SessionFinishResult.Finished(actual.copy(endedAtEpochMillis = endedAtEpochMillis))
-                        }
-                    }
-                }
-            requireStrictPermission(canCommit)
-            result
-        }
-    } catch (_: WriteBlocked) {
-        SessionFinishResult.Blocked
-    }
-}
-
-private suspend fun requireStrictPermission(canCommit: () -> Boolean) {
-    currentCoroutineContext().ensureActive()
-    if (!canCommit()) throw WriteBlocked()
-    currentCoroutineContext().ensureActive()
-}
-```
-
-[수신한 마침 응답의 원본과 결과 종류를 확인](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionViewModel.kt#L267-L303)
-
-```kotlin
-val source =
-    when (result) {
-        is SessionFinishResult.Finished -> result.session
-        is SessionFinishResult.AlreadyFinished -> result.session
-        else -> null
-    }
-val endedAt = source?.endedAtEpochMillis
-if (source != null && endedAt != null &&
-    endedAt >= source.startedAtEpochMillis && source.startedAtEpochMillis > 0 &&
-    source.copy(endedAtEpochMillis = null) == action.source &&
-    (result !is SessionFinishResult.Finished || endedAt == requestedTime)
-) {
-    acknowledgedFinish = source to
-        if (result is SessionFinishResult.Finished) {
-            SessionFinishReceipt.Kind.FINISHED
-        } else {
-            SessionFinishReceipt.Kind.ALREADY_FINISHED
-        }
-    operation.value =
-        SessionOperationState.Feedback(
-            if (result is SessionFinishResult.Finished) {
-                SessionFeedback.FINISHED
-            } else {
-                SessionFeedback.ALREADY_FINISHED
-            },
-        )
-} else {
-    operation.value =
-        SessionOperationState.Feedback(
-            when (result) {
-                SessionFinishResult.Missing -> SessionFeedback.MISSING
-                SessionFinishResult.Blocked -> SessionFeedback.BLOCKED
-                SessionFinishResult.InvalidTime -> SessionFeedback.INVALID_TIME
-                else -> SessionFeedback.SAVE_FAILED
-            },
-        )
-}
-```
-
-[현재 원본과 수명에 속한 복습 요청을 한 번만 소비](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionViewModel.kt#L339-L353)
+[현재 원본과 접근 권한을 확인한 뒤 복습 요청을 한 번만 소비](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionViewModel.kt#L325-L339)
 
 ```kotlin
 fun consumeFinishedReview(
@@ -309,44 +221,15 @@ fun consumeFinishedReview(
     }
 ```
 
-[살아 있는 collector만 공유 조회 소유권을 설치](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L106-L140)
+공유 조회 소유권을 설치하기 직전의 검사만 발췌했습니다. [전체 조회 수명](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L106-L140)
 
 ```kotlin
-val owner = Reader(checkNotNull(currentCoroutineContext()[Job]), entry, canKeepOpen)
-val installed =
-    synchronized(lock) {
-        owner.job.ensureActive()
-        if (entry is SessionHistoryEntry.FinishedReview && !hostAllowed(owner)) return@synchronized false
-        owner.job.ensureActive()
-        invalidateDeletionLocked()
-        reader = owner
-        ended = null
-        if (entry is SessionHistoryEntry.FinishedReview) {
-            if (reviewEntry != entry) {
-                reviewEntry = entry
-                reviewUnavailable = entry.expectedSource == null || entry.expectedSource.isActive
-            }
-            selectedId = entry.expectedSource?.sessionId
-            selectionLost = false
-        }
-        publishLocked(
-            when {
-                entry is SessionHistoryEntry.FinishedReview && reviewUnavailable -> SessionHistoryUiState.Unavailable
-                else -> SessionHistoryUiState.Loading
-            },
-        )
-        true
-    }
-if (!installed) {
-    emit(SessionHistoryUiState.Locked)
-    return@coroutineScope
-}
-val queryJob =
-    launch {
-        if (entry is SessionHistoryEntry.FinishedReview && reviewUnavailable) return@launch
-        if (!hostAllowed(owner)) return@launch
-        requests.flatMapLatest { watchAccess(owner, it) }.collect()
-    }
+owner.job.ensureActive()
+if (entry is SessionHistoryEntry.FinishedReview && !hostAllowed(owner)) return@synchronized false
+owner.job.ensureActive()
+invalidateDeletionLocked()
+reader = owner
+ended = null
 ```
 
 ### 2. 확인한 종료 기록만 연결 자료와 함께 원자적으로 삭제
@@ -377,172 +260,25 @@ UI 버튼 잠금이나 프로세스 내부 Mutex만으로는 다른 저장 경�
 
 **코드**
 
-[확인 조회에서 고정하는 종료 원본과 연결 자료 버전](core/domain/src/main/kotlin/io/github/hangillab/hangil/core/domain/SessionDeletionTarget.kt#L4-L11)
+확인한 스냅샷을 다시 비교하고 쓰기 전후 허용 조건을 확인하는 트랜잭션 본문입니다. [전체 삭제 구현](core/database/src/main/kotlin/io/github/hangillab/hangil/core/database/RoomSessionDeletionRepository.kt#L40-L64)
 
 ```kotlin
-data class SessionDeletionTarget(
-    val session: PracticeSession,
-    val observationCount: Long,
-    val memoVersion: String?,
-    val recordingRuns: List<VehicleRecordingRun> = emptyList(),
-    val completionDeclaration: CourseCompletionDeclaration? = null,
-    val locationRecording: LocationRecordingSnapshot = LocationRecordingSnapshot(emptyList(), emptyList()),
-)
-```
-
-[같은 확인 nonce의 중복 실행과 바뀐 선택을 차단](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L457-L475)
-
-```kotlin
-fun confirmDeletion(nonce: Long): Boolean {
-    val work =
-        synchronized(lock) {
-            val action = deletion?.takeIf { it.nonce == nonce } ?: return@synchronized null
-            if (action.phase != DeletionPhase.CONFIRMING) return@synchronized null
-            if (!currentDeletionContextLocked(action)) {
-                invalidateDeletionLocked()
-                return@synchronized null
+database.withTransaction {
+    requirePermission(canCommit)
+    val actual = findCheckedSession(target.session.sessionId)
+    val result =
+        when {
+            actual == null -> SessionDeletionResult.Missing
+            actual.isActive -> SessionDeletionResult.Active
+            actual != target.session -> SessionDeletionResult.Changed
+            readTarget(actual) != target -> SessionDeletionResult.Changed
+            else -> {
+                check(database.practiceSessionDao().deleteFinished(actual.sessionId) == 1)
+                SessionDeletionResult.Deleted
             }
-            val target = action.target ?: return@synchronized null
-            val job = viewModelScope.launch(start = CoroutineStart.LAZY) { deleteSession(action, target) }
-            action.phase = DeletionPhase.DELETING
-            action.job = job
-            deletionPublished.value = SessionDeletionUiState.Deleting(nonce, target)
-            job
-        } ?: return false
-    work.start()
-    return true
-}
-```
-
-[쓰기 순간의 job, reader/조회/선택과 최신 차량 조건 재확인](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L620-L658)
-
-```kotlin
-private fun canCommitDeletion(
-    action: DeletionAction,
-    job: Job,
-): Boolean =
-    synchronized(lock) {
-        action.phase == DeletionPhase.DELETING && action.job === job && job.isActive && currentDeletionContextLocked(action)
-    }
-
-private fun currentDeletionOwnerLocked(action: DeletionAction): Boolean =
-    deletion === action && currentQuery(action.owner, action.query) &&
-        selectedId == action.session.sessionId && canRead() && action.canKeepOpen()
-
-private fun currentDeletionContextLocked(action: DeletionAction): Boolean =
-    currentDeletionOwnerLocked(action) && !selectionLost &&
-        currentSelectionLocked(action.session.sessionId, action.generation)?.session == action.session
-
-private fun currentSelectionLocked(
-    expectedSessionId: String,
-    expectedGeneration: Long,
-): SessionHistoryUiState.Ready? {
-    if (!canRead()) return null
-    return selectionSnapshotLocked(expectedSessionId, expectedGeneration)
-}
-
-/** Same received source check, without conflating a denied live value with an expired source. */
-private fun selectionSnapshotLocked(
-    expectedSessionId: String,
-    expectedGeneration: Long,
-): SessionHistoryUiState.Ready? {
-    val owner = reader ?: return null
-    val query = owner.query ?: return null
-    if (!currentQuery(owner, query) || selectionLost || selectedId != expectedSessionId) return null
-    val current = published.value as? SessionHistoryUiState.Ready ?: return null
-    val records = ended ?: return null
-    return current.takeIf {
-        it.session.sessionId == expectedSessionId && it.generation == expectedGeneration &&
-            records.getOrNull(it.index) == it.session && it.summary.source == it.session
-    }
-}
-```
-
-[실제 DB에서 확인 스냅샷을 재비교한 뒤 연결 자료까지 삭제](core/database/src/main/kotlin/io/github/hangillab/hangil/core/database/RoomSessionDeletionRepository.kt#L40-L64)
-
-```kotlin
-override suspend fun delete(
-    target: SessionDeletionTarget,
-    canCommit: () -> Boolean,
-): SessionDeletionResult =
-    try {
-        database.withTransaction {
-            requirePermission(canCommit)
-            val actual = findCheckedSession(target.session.sessionId)
-            val result =
-                when {
-                    actual == null -> SessionDeletionResult.Missing
-                    actual.isActive -> SessionDeletionResult.Active
-                    actual != target.session -> SessionDeletionResult.Changed
-                    readTarget(actual) != target -> SessionDeletionResult.Changed
-                    else -> {
-                        check(database.practiceSessionDao().deleteFinished(actual.sessionId) == 1)
-                        SessionDeletionResult.Deleted
-                    }
-                }
-            requirePermission(canCommit)
-            result
         }
-    } catch (_: WriteBlocked) {
-        SessionDeletionResult.Blocked
-    }
-```
-
-[쓰기 전후 허용 조건과 코루틴 취소 확인](core/database/src/main/kotlin/io/github/hangillab/hangil/core/database/RoomSessionDeletionRepository.kt#L91-L96)
-
-```kotlin
-private suspend fun requirePermission(canProceed: () -> Boolean) {
-    currentCoroutineContext().ensureActive()
-    val allowed = canProceed()
-    currentCoroutineContext().ensureActive()
-    if (!allowed) throw WriteBlocked()
-}
-```
-
-[자기 삭제의 행 소실 통지를 결과 도착 전까지 보존](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L686-L702)
-
-```kotlin
-private fun preserveDeletionReceiptLocked(
-    owner: Reader,
-    query: Query,
-    records: List<PracticeSession>,
-): Boolean {
-    val action = deletion ?: return false
-    if (action.owner !== owner || action.query !== query || !currentDeletionOwnerLocked(action)) return false
-    val source = records.singleOrNull { it.sessionId == action.session.sessionId }
-    return when {
-        action.phase == DeletionPhase.DELETING && source == null -> {
-            action.sourceAbsent = true
-            true
-        }
-        action.phase == DeletionPhase.DELETED && (source == null || source == action.session) -> true
-        else -> false
-    }
-}
-```
-
-[저장소가 반환한 명시적 삭제 결과에 따른 완료/실패 분기](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L563-L582)
-
-```kotlin
-when (result) {
-    SessionDeletionResult.Deleted -> {
-        action.phase = DeletionPhase.DELETED
-        action.job = null
-        selectionLost = true
-        // Preserve the deleted cursor until the user explicitly accepts another record.
-        selectedId = action.session.sessionId
-        if (action.owner.entry is SessionHistoryEntry.FinishedReview) {
-            reviewUnavailable = true
-            publishLocked(SessionHistoryUiState.Unavailable)
-        } else {
-            published.value = SessionHistoryUiState.SelectionChanged(nextGenerationLocked())
-        }
-        deletionPublished.value = SessionDeletionUiState.Deleted(action.nonce, action.session)
-    }
-    SessionDeletionResult.Missing -> failDeletionLocked(action, SessionDeletionUiState.FailureReason.MISSING)
-    SessionDeletionResult.Active -> failDeletionLocked(action, SessionDeletionUiState.FailureReason.ACTIVE)
-    SessionDeletionResult.Changed -> failDeletionLocked(action, SessionDeletionUiState.FailureReason.CHANGED)
-    SessionDeletionResult.Blocked -> failDeletionLocked(action, SessionDeletionUiState.FailureReason.BLOCKED)
+    requirePermission(canCommit)
+    result
 }
 ```
 
@@ -579,7 +315,7 @@ OnTouchListener나 Compose 버튼 잠금만으로 자식 입력까지 막을 수
 
 **코드**
 
-[현재 View와 준비 소유권을 연결한 입력 허용 판정](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/MapViewModel.kt#L118-L131)
+[현재 View, 준비 소유권과 최신 허용 조건을 함께 확인](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/MapViewModel.kt#L118-L131)
 
 ```kotlin
 fun canInteractWithMap(
@@ -598,89 +334,23 @@ fun canInteractWithMap(
 }
 ```
 
-[reader와 조회 세대의 소유권](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/MapViewModel.kt#L257-L261), [입력 DOWN과 후속 이벤트의 소유권](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/MapInputEpoch.kt#L50-L79)도 같은 경계에서 확인합니다.
-
-[SDK로 전달하기 직전의 실제 touch 진입점](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/ParkedMapView.kt#L260-L306)
+[허용된 DOWN과 같은 세대, 시각, 장치와 출처의 후속 입력만 허용](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/MapInputEpoch.kt#L69-L79)
 
 ```kotlin
-private inline fun deliverTouch(
-    event: MotionEvent,
-    deliver: () -> Boolean,
-): Boolean {
-    if (released) return true
-    recheckInput()
-    if (event.actionMasked == MotionEvent.ACTION_CANCEL) {
-        cancelNativeTouch()
-        input.endTouch()
-        return true
-    }
-    val allowed = livePermission() && input.owns(input.epoch)
-    val accepted =
-        if (event.actionMasked == MotionEvent.ACTION_DOWN) {
-            cancelNativeTouch()
-            input.beginTouch(
-                event.downTime,
-                event.eventTime,
-                SystemClock.uptimeMillis(),
-                event.deviceId,
-                event.source,
-            )
-        } else {
-            input.ownsTouch(
-                event.downTime,
-                event.eventTime,
-                SystemClock.uptimeMillis(),
-                event.deviceId,
-                event.source,
-            )
-        }
-    if (!allowed || !accepted) {
-        if (!allowed) recheckInput()
-        return true
-    }
-    rememberTouch(event)
-    val deliveredTouch = lastTouch
-    val deliveredEpoch = input.epoch
-    return try {
-        deliver()
-    } finally {
-        if (event.actionMasked == MotionEvent.ACTION_UP) {
-            input.endTouch(deliveredEpoch, event.downTime, event.deviceId, event.source)
-            if (lastTouch === deliveredTouch) forgetTouch()
-        }
-    }
-}
+fun ownsTouch(
+    downTime: Long,
+    eventTime: Long,
+    now: Long,
+    deviceId: Int,
+    source: Int,
+): Boolean =
+    validTime(downTime, eventTime, now) && downTime >= permittedAt &&
+        touch?.let {
+            owns(it.epoch) && it.downTime == downTime && it.deviceId == deviceId && it.source == source
+        } == true
 ```
 
-[주행 잠금과 수명 종료에서 공개 SDK 작업 정리](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/ParkedMapView.kt#L459-L483)
-
-```kotlin
-private fun cancelNativeInput() {
-    if (released || revoking) return
-    revoking = true
-    try {
-        cancelNativeTouch()
-        input.endTouch()
-        cancelPendingInputEvents()
-        val now = SystemClock.uptimeMillis()
-        val cancel = MotionEvent.obtain(now, now, MotionEvent.ACTION_CANCEL, 0f, 0f, 0)
-        cancel.source = InputDevice.SOURCE_TRACKBALL
-        try {
-            // Bypass our unsupported-input entrypoint to cancel any SDK timeout safely.
-            super.onTrackballEvent(cancel)
-        } finally {
-            cancel.recycle()
-        }
-        currentAttribution?.onStop()
-        boundMap?.let {
-            it.cancelTransitions()
-            it.cancelAllVelocityAnimations()
-        }
-    } finally {
-        revoking = false
-    }
-}
-```
+이 판정은 [네이티브 입력 전달 직전](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/ParkedMapView.kt#L260-L306)에 적용합니다.
 
 ### 4. 기록 소유권을 반환하는 순서가 복귀 화면의 정상 상태를 덮는 문제 해결
 
@@ -722,31 +392,7 @@ SDK 처리와 이번 최종 수정의 성능은 동일 조건의 수정 전후 �
 
 **코드**
 
-[owner 반환이 일반 전면 수집을 즉시 다시 시작시킬 수 있는 경계](core/domain/src/main/kotlin/io/github/hangillab/hangil/core/domain/PracticeRecordingController.kt#L128-L146)
-
-```kotlin
-override suspend fun recordWhileStarted() =
-    host.withLock {
-        val sourceOwner = Any()
-        try {
-            recovered.await() // Recovery failure does not disable ordinary foreground recording.
-            owner.collectLatest { request ->
-                if (request == null) {
-                    work.withLock { recordForeground(sourceOwner) }
-                } else {
-                    awaitCancellation()
-                }
-            }
-        } finally {
-            synchronized(guard) {
-                if (markerSource.value?.owner === sourceOwner) setMarkerSource(null)
-                if (owner.value == null) currentState.value = VehicleRecordingState.Paused
-            }
-        }
-    }
-```
-
-[이미 정리된 run의 소유권도 상태 준비 뒤 마지막에 반환](core/domain/src/main/kotlin/io/github/hangillab/hangil/core/domain/PracticeRecordingController.kt#L195-L208)
+[정리된 실행은 상태를 먼저 갱신하고 마지막에 소유권 반환](core/domain/src/main/kotlin/io/github/hangillab/hangil/core/domain/PracticeRecordingController.kt#L195-L208)
 
 ```kotlin
 override fun stopBackground(expectedRunId: String): Boolean =
@@ -765,211 +411,8 @@ override fun stopBackground(expectedRunId: String): Boolean =
     }
 ```
 
-[native ACK를 확인한 뒤 Active로 전환하고 수집 정리가 끝날 때까지 대기](core/domain/src/main/kotlin/io/github/hangillab/hangil/core/domain/PracticeRecordingController.kt#L217-L253)
+같은 순서는 [일반 종료의 정리 분기](core/domain/src/main/kotlin/io/github/hangillab/hangil/core/domain/PracticeRecordingController.kt#L510-L546)에도 적용합니다.
 
-```kotlin
-override suspend fun recordInService(
-    runId: String,
-    sessionId: String,
-) {
-    val request =
-        synchronized(guard) {
-            val candidate = owner.value
-            if (candidate == null || candidate.runId != runId || candidate.source.sessionId != sessionId ||
-                !candidate.opened || !candidate.dispatched || candidate.ending != null || candidate.recording != null
-            ) {
-                return
-            }
-            if (!allowsStart(candidate.canStart)) {
-                requestEnd(candidate, End(RecordingRunStatus.FAILED, BackgroundRecordingState.Reason.BLOCKED, knownEnd = true))
-                return
-            }
-            candidate.timeout?.cancel()
-            candidate.canStart = null
-            currentBackground.value = BackgroundRecordingState.Active(runId, sessionId)
-            candidate.recording = scope.launch(start = CoroutineStart.LAZY) { recordBackground(candidate) }
-            candidate.recording?.start()
-            candidate
-        }
-    try {
-        request.completed.await()
-    } finally {
-        val cleanup =
-            synchronized(guard) {
-                if (!request.completed.isCompleted && request.ending == null) {
-                    requestEnd(request, End(RecordingRunStatus.FAILED, BackgroundRecordingState.Reason.OBSERVATION, knownEnd = false))
-                }
-                request.cleanup
-            }
-        // The service lifetime cannot return while its recorder or pending append still runs.
-        withContext(NonCancellable) { cleanup?.join() }
-    }
-}
-```
-
-[진행 중 작업을 모두 정리한 뒤 모든 소유권 반환 분기에서 상태를 먼저 기록](core/domain/src/main/kotlin/io/github/hangillab/hangil/core/domain/PracticeRecordingController.kt#L467-L549)
-
-```kotlin
-private suspend fun finish(
-    request: Request,
-    end: End,
-) {
-    var failure = end.reason
-    var cleanupFailed = false
-    try {
-        request.preparing?.cancelAndJoin()
-        request.recording?.cancelAndJoin()
-        request.timeout?.cancelAndJoin()
-        if (request.opened) {
-            val endedAt = if (end.knownEnd) runCatching { clock.millis() }.getOrNull() else null
-            val status = if (end.knownEnd && endedAt == null) RecordingRunStatus.FAILED else end.status
-            var saved =
-                try {
-                    runRepository.finish(request.runId, processId, status, endedAt)
-                } catch (_: Exception) {
-                    false
-                }
-            if (!saved && endedAt != null) {
-                saved =
-                    try {
-                        runRepository.finish(request.runId, processId, RecordingRunStatus.FAILED, null)
-                    } catch (_: Exception) {
-                        false
-                    }
-                failure = BackgroundRecordingState.Reason.PERSISTENCE
-                cleanupFailed = true
-            }
-            if (!saved || (end.knownEnd && endedAt == null)) {
-                failure = BackgroundRecordingState.Reason.PERSISTENCE
-                cleanupFailed = true
-            }
-        }
-        if (request.dispatched) {
-            try {
-                stopService(request.runId)
-            } catch (_: Exception) {
-                failure = BackgroundRecordingState.Reason.SERVICE_STOP
-                cleanupFailed = true
-            }
-        }
-    } finally {
-        synchronized(guard) {
-            if (owner.value === request) {
-                if (markerSource.value?.owner === request) setMarkerSource(null)
-                // Every release must follow these writes so reentrant foreground state survives.
-                if (request.optOutRequested) {
-                    currentBackground.value =
-                        if (cleanupFailed) {
-                            BackgroundRecordingState.Failed(null, request.source.sessionId, checkNotNull(failure))
-                        } else {
-                            BackgroundRecordingState.Disabled
-                        }
-                    currentState.value = VehicleRecordingState.Paused
-                    owner.value = null
-                } else if (end.releaseForeground && !request.opened) {
-                    currentBackground.value =
-                        BackgroundRecordingState.Failed(
-                            null,
-                            request.source.sessionId,
-                            failure ?: BackgroundRecordingState.Reason.RECOVERY,
-                        )
-                    currentState.value = VehicleRecordingState.Paused
-                    owner.value = null
-                } else if (end.optOut && failure == null) {
-                    currentBackground.value = BackgroundRecordingState.Disabled
-                    currentState.value = VehicleRecordingState.Paused
-                    owner.value = null
-                } else {
-                    currentBackground.value =
-                        BackgroundRecordingState.Failed(
-                            request.runId,
-                            request.source.sessionId,
-                            failure ?: BackgroundRecordingState.Reason.PERSISTENCE,
-                        )
-                    currentState.value = VehicleRecordingState.Failed(end.recordingReason)
-                }
-            }
-            request.completed.complete(Unit)
-        }
-    }
-}
-```
-
-[native 작업의 완료와 정리를 같은 run의 수명에 연결](app/src/main/kotlin/io/github/hangillab/hangil/VehicleRecordingService.kt#L87-L119)
-
-```kotlin
-runId = requested
-lateinit var current: Job
-current =
-    scope.launch(start = CoroutineStart.LAZY) {
-        try {
-            recording.recordInService(requested, session)
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (_: Exception) {
-            recording.startFailed(requested)
-        } finally {
-            if (runId == requested && work === current) {
-                runId = null
-                work = null
-                if (host.detach(requested)) {
-                    stopForeground(STOP_FOREGROUND_REMOVE)
-                    stopSelf()
-                }
-            }
-        }
-    }
-work = current
-try {
-    host.attach(requested) { if (runId == requested && work === current) current.cancel() }
-    current.start()
-} catch (_: Exception) {
-    work = null
-    runId = null
-    current.cancel()
-    recording.startFailed(requested)
-    stopForeground(STOP_FOREGROUND_REMOVE)
-    stopSelfResult(startId)
-}
-```
-
-[같은 run과 process의 OPEN 행만 변경하는 저장소 조건부 갱신](core/database/src/main/kotlin/io/github/hangillab/hangil/core/database/VehicleRecordingRunDao.kt#L45-L55)
-
-```kotlin
-@Query(
-    "UPDATE vehicle_recording_run SET status = :status, endedAtEpochMillis = :endedAtEpochMillis, openSessionId = NULL " +
-        "WHERE runId = :runId AND processId = :processId AND status = 'OPEN' AND openSessionId = sessionId " +
-        "AND endedAtEpochMillis IS NULL",
-)
-suspend fun finish(
-    runId: String,
-    processId: String,
-    status: String,
-    endedAtEpochMillis: Long?,
-): Int
-```
-
-[이전 process의 미종료 marker는 종료 시각을 만들지 않고 INTERRUPTED로 복원](core/database/src/main/kotlin/io/github/hangillab/hangil/core/database/RoomRecordingRunRepository.kt#L92-L108)
-
-```kotlin
-override suspend fun recoverInterrupted(processId: String) {
-    require(processId.isNotBlank()) { "Invalid recording process identity" }
-    database.withTransaction {
-        currentCoroutineContext().ensureActive()
-        val dao = database.vehicleRecordingRunDao()
-        // Decode before changing anything; malformed storage is never repaired into normal state.
-        val runs = dao.all().map { it.run() }
-        for (run in runs) {
-            if (run.processId != processId && run.status == RecordingRunStatus.OPEN) {
-                check(dao.finish(run.runId, run.processId, RecordingRunStatus.INTERRUPTED.name, null) == 1) {
-                    "Recording recovery update was not applied"
-                }
-            }
-        }
-        currentCoroutineContext().ensureActive()
-    }
-}
-```
 
 <br />
 

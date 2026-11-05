@@ -248,16 +248,18 @@ class SessionFinishReviewViewModelTest {
             runCurrent()
         }
 
-    @Test fun `new legacy finish mutation also retires a previous review acknowledgement`() =
+    @Test fun `replaying a consumed finish action cannot retire a valid review acknowledgement`() =
         runTest {
             val f = Fixture().also { it.attach(this) }
-            f.model.finish(f.action()) { true }
+            val action = f.action()
+            assertTrue(f.model.finish(action) { true })
             runCurrent()
-            val old = checkNotNull(f.model.finishReceipt.value)
-            f.model.finish(f.active.sessionId)
+            val receipt = checkNotNull(f.model.finishReceipt.value)
+            assertFalse(f.model.finish(action) { true })
             runCurrent()
-            assertNull(f.model.finishReceipt.value)
-            assertNull(f.model.consumeFinishedReview(old) { true })
+            assertEquals(1, f.finishes)
+            assertSame(receipt, f.model.finishReceipt.value)
+            assertEquals(f.ended, f.model.consumeFinishedReview(receipt) { true })
         }
 
     @Test fun `source deletion then identical recreation cannot restore an observed old receipt`() =
@@ -383,7 +385,7 @@ class SessionFinishReviewViewModelTest {
                     sessionId: String,
                     endedAtEpochMillis: Long,
                     canCommit: () -> Boolean,
-                ): SessionFinishResult = SessionFinishResult.Blocked
+                ): SessionFinishResult = error("unexpected legacy finish")
 
                 override suspend fun finish(
                     expectedSource: PracticeSession,

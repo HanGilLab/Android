@@ -160,6 +160,7 @@ internal fun SessionPanel(
 ) {
     if (!state.allowsInteraction) return
     val outdated = (state.preparation as? PreparationLoadState.Loaded)?.preparation == Preparation.Outdated
+    val nextPracticeSource = state.latestFinished.takeIf { state.nextStep == HomeJourneyStep.REPEAT }
     ParkedPanel(
         Modifier.testTag("home_journey"),
         emphasized = true,
@@ -174,16 +175,21 @@ internal fun SessionPanel(
         }
         if (state.nextStep == HomeJourneyStep.PREPARE || state.nextStep == HomeJourneyStep.REPEAT) {
             ParkedButton(
-                onClick = onPrepare,
-                enabled = canPrepare && state.operation != SessionOperationState.Saving,
+                onClick = {
+                    if (nextPracticeSource != null) onPrepareNext(nextPracticeSource.sessionId) else onPrepare()
+                },
+                enabled = (nextPracticeSource != null || canPrepare) && state.operation != SessionOperationState.Saving,
                 prominent = true,
                 modifier =
-                    Modifier.fillMaxWidth().heightIn(min = HanGilDimensions.primaryActionMinHeight).testTag("home_prepare"),
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = HanGilDimensions.primaryActionMinHeight)
+                        .testTag(if (nextPracticeSource != null) "home_next_practice" else "home_prepare"),
             ) {
                 Text(
                     stringResource(
                         when {
-                            state.nextStep == HomeJourneyStep.REPEAT -> R.string.journey_prepare_again
+                            state.nextStep == HomeJourneyStep.REPEAT -> R.string.next_practice_open
                             outdated -> R.string.journey_prepare_update
                             state.latestFinished != null -> R.string.journey_prepare_again
                             else -> R.string.prepare_start
@@ -249,7 +255,18 @@ internal fun SessionPanel(
                                             .heightIn(min = HanGilDimensions.primaryActionMinHeight)
                                             .testTag("session_start"),
                                 ) {
-                                    Text(stringResource(R.string.session_start), style = MaterialTheme.typography.titleLarge)
+                                    Text(
+                                        stringResource(
+                                            if (state.nextStep ==
+                                                HomeJourneyStep.REPEAT
+                                            ) {
+                                                R.string.session_repeat_task
+                                            } else {
+                                                R.string.session_start
+                                            },
+                                        ),
+                                        style = MaterialTheme.typography.titleLarge,
+                                    )
                                 }
                             }
                         }
@@ -271,14 +288,19 @@ internal fun SessionPanel(
             }
         }
         finishedReviewContent()
-        if (state.nextStep != HomeJourneyStep.PREPARE && state.nextStep != HomeJourneyStep.REPEAT && canPrepare) {
+        if (state.nextStep != HomeJourneyStep.PREPARE && canPrepare) {
             ParkedButton(
                 onClick = onPrepare,
                 enabled = state.operation != SessionOperationState.Saving,
                 prominent = false,
                 modifier = Modifier.testTag("home_prepare"),
             ) {
-                Text(stringResource(R.string.prepare_change), style = MaterialTheme.typography.titleMedium)
+                Text(
+                    stringResource(
+                        if (state.nextStep == HomeJourneyStep.REPEAT) R.string.prepare_change_course else R.string.prepare_change,
+                    ),
+                    style = MaterialTheme.typography.titleMedium,
+                )
             }
         }
         key(state.nextStep, state.active) {
@@ -376,7 +398,7 @@ private fun LatestSessionPanel(
                     SessionMemoEditorRoute(latest.sessionId)
                 }
             }
-            if (state.active == null) {
+            if (state.active == null && state.nextStep != HomeJourneyStep.REPEAT) {
                 ParkedButton(
                     onClick = { onPrepareNext(latest.sessionId) },
                     enabled = state.operation != SessionOperationState.Saving,

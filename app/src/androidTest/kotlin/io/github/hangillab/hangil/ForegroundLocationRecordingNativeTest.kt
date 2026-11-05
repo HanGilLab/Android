@@ -93,17 +93,19 @@ class ForegroundLocationRecordingNativeTest {
         runCase(approved = false, driving = false, validMode = true)
     }
 
-    /** A NEW external approval is required. The optional handshake waits for a host grant and grants nothing. */
+    /** A NEW external approval and an already matching actual permission grant are required. */
     @Test fun newlyApprovedTwoBoundedWindowsStoreSdkSamplesInOwnedRoomAndNeverRestartAutomatically() {
         val args = InstrumentationRegistry.getArguments()
         assumeTrue(args.getString("manualForegroundLocationRecordingNative") == "true")
         assumeTrue(args.getString("manualPermissionApproved") == "true")
+        check(args.getString("manualPermissionHostHandshake") != "true") {
+            "The native pregrant handshake is retired"
+        }
         val mode = args.getString("foregroundLocationSecondWindowMode")
         runCase(
             approved = true,
             driving = mode == "driving",
             validMode = mode == "parked" || mode == "driving",
-            awaitExternalGrant = args.getString("manualPermissionHostHandshake") == "true",
         )
     }
 
@@ -111,7 +113,6 @@ class ForegroundLocationRecordingNativeTest {
         approved: Boolean,
         driving: Boolean,
         validMode: Boolean,
-        awaitExternalGrant: Boolean = false,
     ) = runBlocking {
         val report =
             JSONObject()
@@ -194,26 +195,6 @@ class ForegroundLocationRecordingNativeTest {
             h.assertEnvironment()
             stage = "initial-permission"
             check(h.graph.locationUpdates() is PleosLocationUpdateGateway) { "The real Hilt SDK adapter is required" }
-            if (awaitExternalGrant) {
-                check(approved) { "Only the explicitly approved positive case may wait for a host grant" }
-                check(!frameworkPermission() && !h.graph.locationUpdates().hasPermission()) {
-                    "The native handshake must begin with the actual permission denied"
-                }
-                stage = "fresh-native-pregrant-P-UX"
-                h.awaitAllowed()
-                requireActualForeground()
-                nativePregrantPhase()
-                withTimeout(30_000) {
-                    while (!frameworkPermission()) {
-                        check(h.liveAllowed()) { "Park or UX changed while waiting for the external grant" }
-                        requireActualForeground()
-                        delay(100)
-                    }
-                }
-                check(h.liveAllowed()) { "Both actual P and UX allowance are required after the external grant" }
-                requireActualForeground()
-                stage = "host-grant-confirmed"
-            }
             check(frameworkPermission() == approved) { "Actual framework permission differs from the selected scenario" }
             check(h.graph.locationUpdates().hasPermission() == approved) { "The actual Hilt permission read must agree" }
             stage = "initial-live-P-UX"
@@ -947,24 +928,6 @@ class ForegroundLocationRecordingNativeTest {
             check(SystemClock.elapsedRealtime() < deadline) { "Actual Main focused package remained unknown" }
             delay(25)
         }
-    }
-
-    private fun nativePregrantPhase() {
-        var displayId: Int? = null
-        h.instrument.runOnMainSync {
-            check(actualMain.lifecycle.currentState == Lifecycle.State.RESUMED && actualMain.hasWindowFocus()) {
-                "The pregrant proof requires the same focused and resumed actual Main"
-            }
-            displayId = checkNotNull(actualMain.display).also { check(it.isValid) }.displayId
-        }
-        val checkedEpoch = System.currentTimeMillis() / 1_000
-        check(
-            h.liveAllowed() && !frameworkPermission(),
-        ) { "The native pregrant proof requires current P, UX allowance and denied permission" }
-        phase(
-            "FOREGROUND_LOCATION_NATIVE_PREGRANT_READY|sdk_epoch=$checkedEpoch" +
-                "|pid=${android.os.Process.myPid()}|user=${android.os.Process.myUid() / 100_000}|display=${checkNotNull(displayId)}",
-        )
     }
 
     private fun frameworkPermission(): Boolean =

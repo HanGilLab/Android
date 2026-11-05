@@ -43,6 +43,11 @@ internal fun HomeJourneyGuide(state: SessionUiState) {
             HomeJourneyStep.RECOVER -> R.string.journey_recover
             HomeJourneyStep.LOCKED -> return
         }
+    val firstPreparation =
+        step == HomeJourneyStep.PREPARE &&
+            (state.records as? SessionLoadState.Loaded)?.sessions?.isEmpty() == true &&
+            (state.preparation as? PreparationLoadState.Loaded)?.preparation == Preparation.Empty
+    val illustration = if (firstPreparation) DesignR.drawable.il_hangil_first_prepare else DesignR.drawable.il_hangil_prepare
     val fontScale = LocalDensity.current.fontScale
     val showScene = step == HomeJourneyStep.PREPARE || step == HomeJourneyStep.READY || step == HomeJourneyStep.REPEAT
     BoxWithConstraints(Modifier.fillMaxWidth()) {
@@ -56,7 +61,7 @@ internal fun HomeJourneyGuide(state: SessionUiState) {
                 ) {
                     HomeJourneyTitle(title, step, Modifier.weight(1f))
                     Image(
-                        painterResource(DesignR.drawable.il_hangil_prepare),
+                        painterResource(illustration),
                         contentDescription = null,
                         modifier =
                             Modifier.width(HanGilDimensions.parkedIllustrationWidth).aspectRatio(1.5f).testTag("home_illustration"),
