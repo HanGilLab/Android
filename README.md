@@ -201,7 +201,7 @@ ID와 완료 메시지만으로는 사용자가 마친 전체 원본, 저장소�
 
 **코드**
 
-[현재 원본과 접근 권한을 확인한 뒤 복습 요청을 한 번만 소비](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionViewModel.kt#L339-L353)
+[현재 원본과 접근 권한을 확인한 뒤 복습 요청을 한 번만 소비](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionViewModel.kt#L325-L339)
 
 ```kotlin
 fun consumeFinishedReview(
