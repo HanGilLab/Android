@@ -6,9 +6,11 @@ import androidx.room.Room
 import io.github.hangillab.hangil.core.domain.CourseCompletionRepository
 import io.github.hangillab.hangil.core.domain.HistorySessionMemoWriter
 import io.github.hangillab.hangil.core.domain.LocationRecordingRepository
+import io.github.hangillab.hangil.core.domain.NextPracticeRepository
 import io.github.hangillab.hangil.core.domain.PracticeCatalog
 import io.github.hangillab.hangil.core.domain.PracticeRepository
 import io.github.hangillab.hangil.core.domain.PracticeSessionRepository
+import io.github.hangillab.hangil.core.domain.RecordingRunRepository
 import io.github.hangillab.hangil.core.domain.SessionDeletionRepository
 import io.github.hangillab.hangil.core.domain.SessionMemoRepository
 import io.github.hangillab.hangil.core.domain.VehicleObservationRepository
@@ -28,6 +30,8 @@ class OwnedPracticeTestStore private constructor(
 ) : Closeable {
     val catalog: PracticeCatalog = LocalPracticeCatalog()
     val preparation: PracticeRepository get() = RoomPracticeRepository(database)
+    val nextPractice: NextPracticeRepository get() = RoomNextPracticeRepository(database, catalog)
+    val recordingRuns: RecordingRunRepository get() = RoomRecordingRunRepository(database)
     val sessions: PracticeSessionRepository get() = RoomPracticeSessionRepository(database, catalog)
     val observations: VehicleObservationRepository get() = RoomVehicleObservationRepository(database)
     val memos: SessionMemoRepository get() = RoomSessionMemoRepository(database)

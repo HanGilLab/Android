@@ -335,6 +335,141 @@ class LocationRecordingFlowTest {
             phase("CONTROLLED_TYPED_HISTORY_NULL_STATES_UNKNOWN_END_AND_RAW_FENCING")
         }
 
+    @Test fun storedStopReasonsRemainDistinctAcrossSelectionLocksAndReadOnlyHistory() =
+        fixture { f ->
+            val expected =
+                listOf(
+                    LocationRecordingStopReason.USER_STOP to HomeR.string.location_history_reason_user_stop,
+                    LocationRecordingStopReason.HOST_STOPPED to HomeR.string.location_history_reason_host_stopped,
+                    LocationRecordingStopReason.SESSION_FINISHED to HomeR.string.location_history_reason_session_finished,
+                    LocationRecordingStopReason.SOURCE_CHANGED to HomeR.string.location_history_reason_source_changed,
+                    LocationRecordingStopReason.PERMISSION_DENIED to HomeR.string.location_history_reason_permission_denied,
+                    LocationRecordingStopReason.UNSUPPORTED to HomeR.string.location_history_reason_unsupported,
+                    LocationRecordingStopReason.NO_UPDATE to HomeR.string.location_history_reason_no_update,
+                    LocationRecordingStopReason.SDK_ERROR to HomeR.string.location_history_reason_sdk_error,
+                    LocationRecordingStopReason.ADAPTER_ERROR to HomeR.string.location_history_reason_adapter_error,
+                    LocationRecordingStopReason.WRITE_ERROR to HomeR.string.location_history_reason_write_error,
+                    LocationRecordingStopReason.LIMIT_REACHED to HomeR.string.location_history_reason_limit_reached,
+                    LocationRecordingStopReason.PROCESS_INTERRUPTED to HomeR.string.location_history_reason_process_interrupted,
+                )
+            assertEquals(LocationRecordingStopReason.entries.toSet(), expected.map { it.first }.toSet())
+            val labels =
+                (expected.map { it.second } + HomeR.string.location_history_reason_unrecorded).map {
+                    instrument.targetContext.getString(it)
+                }
+            assertEquals(
+                "Every stored reason and unrecorded state must have its own displayed meaning",
+                labels.size,
+                labels.distinct().size,
+            )
+            val source = f.startOwned()
+            f.awaitSource(source)
+            val open = f.seedStopReasonHistory(source, expected.map { it.first })
+            val ended = f.finishOwned(source)
+            val before = f.snapshot(ended)
+            val sessionsBefore =
+                runBlocking {
+                    f.store.sessions
+                        .observeSessions()
+                        .first()
+                }
+            val preparationBefore =
+                runBlocking {
+                    f.store.preparation
+                        .observeSelection()
+                        .first()
+                }
+            val sequencesBefore = f.store.sequenceSnapshot()
+            assertEquals(expected.map { it.first }, before.runs.dropLast(1).map { it.stopReason })
+            assertEquals(open, before.runs.last())
+            assertEquals(LocationRecordingRunStatus.OPEN, open.status)
+            assertEquals(null, open.stopReason)
+            assertEquals(null, open.endedAtEpochMillis)
+            f.gateway.permission.set(false) // Reading these stored fixtures must not request location access.
+            val permissionBefore = f.gateway.permission.get()
+            compose.runOnIdle { f.screen.value = Screen.History }
+            waitTag("history_location_recording")
+            click("history_location_recording")
+            waitTag("location_history_content")
+            assertEquals(ended, f.selectedHistory)
+            assertText("location_history_run_state", HomeR.string.location_history_open)
+            assertText("location_history_stop_reason", HomeR.string.location_history_reason_unrecorded)
+            waitTag("location_history_unknown_end")
+            visual("stored-reason-unrecorded", "location_history_stop_reason", "location_history_unknown_end")
+
+            val stalePrevious = clickAction("location_history_run_previous")
+            click("location_history_run_previous")
+            assertText("location_history_stop_reason", HomeR.string.location_history_reason_process_interrupted)
+            invoke(stalePrevious)
+            assertText("location_history_stop_reason", HomeR.string.location_history_reason_process_interrupted)
+            expected.asReversed().forEachIndexed { index, (reason, resource) ->
+                assertText("location_history_stop_reason", resource)
+                if (reason == LocationRecordingStopReason.PROCESS_INTERRUPTED) waitTag("location_history_unknown_end")
+                if (reason ==
+                    LocationRecordingStopReason.LIMIT_REACHED
+                ) {
+                    assertTrue(hasTextNode(instrument.targetContext.getString(HomeR.string.location_history_limit)))
+                }
+                visual("stored-reason-${reason.name.lowercase()}", "location_history_stop_reason")
+                assertEquals("Selection is a stored read, never a source mutation", before, f.snapshot(ended))
+                if (index < expected.lastIndex) click("location_history_run_previous")
+            }
+            val staleDriveNext = clickAction("location_history_run_next")
+            f.drive(true)
+            waitTag("location_history_locked")
+            assertTrue(nodes("location_history_stop_reason").isEmpty())
+            invoke(staleDriveNext)
+            f.drive(false)
+            waitTag("location_history_locked")
+            invoke(staleDriveNext)
+            assertTrue("A retired D/P callback cannot reveal a stored reason", nodes("location_history_stop_reason").isEmpty())
+            click("location_history_back")
+            click("history_location_recording")
+            waitTag("location_history_content")
+            assertText("location_history_stop_reason", HomeR.string.location_history_reason_unrecorded)
+
+            val staleUxPrevious = clickAction("location_history_run_previous")
+            instrument.runOnMainSync { f.ux.value = DrivingRestrictions(ParkingState.PARKED, UxRestrictionState.RESTRICTED) }
+            compose.waitForIdle()
+            waitTag("location_history_locked")
+            assertTrue(nodes("location_history_stop_reason").isEmpty())
+            invoke(staleUxPrevious)
+            instrument.runOnMainSync { f.ux.value = DrivingRestrictions(ParkingState.PARKED, UxRestrictionState.UNRESTRICTED) }
+            compose.waitForIdle()
+            waitTag("location_history_locked")
+            invoke(staleUxPrevious)
+            assertTrue("UX becoming allowed cannot revive an old reason callback", nodes("location_history_stop_reason").isEmpty())
+            click("location_history_back")
+            click("history_location_recording")
+            waitTag("location_history_content")
+            assertText("location_history_stop_reason", HomeR.string.location_history_reason_unrecorded)
+            waitTag("location_history_unknown_end")
+            assertEquals(before, f.snapshot(ended))
+            assertEquals(
+                sessionsBefore,
+                runBlocking {
+                    f.store.sessions
+                        .observeSessions()
+                        .first()
+                },
+            )
+            assertEquals(
+                preparationBefore,
+                runBlocking {
+                    f.store.preparation
+                        .observeSelection()
+                        .first()
+                },
+            )
+            assertEquals(sequencesBefore, f.store.sequenceSnapshot())
+            assertEquals(0, f.store.foreignKeyViolationCount())
+            assertEquals(permissionBefore, f.gateway.permission.get())
+            assertTrue("Stored reads must never create a location update stream", f.gateway.streams.isEmpty())
+            assertEquals(0, f.gateway.active.get())
+            f.assertNoPlatformActions()
+            phase("CONTROLLED_STORED_STOP_REASONS_OPEN_LOCKS_AND_PRESERVATION")
+        }
+
     private fun fixture(block: (Fixture) -> Unit) {
         catalogResourceOverrideRequested = requestedCatalogResourceOverride()
         assumeTrue(InstrumentationRegistry.getArguments().getString("manualLocationRecordingControlled") == "true")
@@ -1238,6 +1373,7 @@ class LocationRecordingFlowTest {
         lateinit var locationHistoryModel: LocationHistoryViewModel
         private val navigationCalls = AtomicInteger()
         private val backgroundCalls = AtomicInteger()
+        private var historyOpenRunForCleanup: LocationRecordingRun? = null
 
         suspend fun prepare() {
             store.preparation.saveSelection(selection()) { true }
@@ -1559,6 +1695,74 @@ class LocationRecordingFlowTest {
                 store.locationRecordings.recoverInterrupted(processId)
             }
 
+        fun seedStopReasonHistory(
+            source: PracticeSession,
+            reasons: List<LocationRecordingStopReason>,
+        ): LocationRecordingRun =
+            runBlocking {
+                compose.waitUntil(20_000) { controller.state.value == LocationRecordingState.Idle }
+
+                suspend fun begin(owner: String) =
+                    (
+                        store.locationRecordings.begin(
+                            source,
+                            UUID.randomUUID().toString(),
+                            owner,
+                            clock.millis(),
+                            elapsed.incrementAndGet(),
+                        ) { true } as LocationRecordingBeginResult.Begun
+                    ).run
+
+                for (reason in reasons) {
+                    val run =
+                        begin(
+                            if (reason ==
+                                LocationRecordingStopReason.PROCESS_INTERRUPTED
+                            ) {
+                                UUID.randomUUID().toString()
+                            } else {
+                                processId
+                            },
+                        )
+                    val reading =
+                        if (reason ==
+                            LocationRecordingStopReason.USER_STOP
+                        ) {
+                            sample(12.5)
+                        } else {
+                            LocationUpdateReading.Empty(elapsed.incrementAndGet())
+                        }
+                    assertTrue(
+                        store.locationRecordings.append(source, run, reading, clock.millis()) { true } is
+                            io.github.hangillab.hangil.core.domain.LocationRecordingAppendResult.Appended,
+                    )
+                    if (reason == LocationRecordingStopReason.PROCESS_INTERRUPTED) {
+                        // Interrupted is recovery metadata, never a fabricated ordinary end time.
+                        store.locationRecordings.recoverInterrupted(processId)
+                    } else {
+                        assertTrue(
+                            store.locationRecordings.end(
+                                run,
+                                reason.status,
+                                reason,
+                                clock.millis(),
+                                elapsed.incrementAndGet(),
+                            ) is LocationRecordingEndResult.Ended,
+                        )
+                    }
+                    val stored =
+                        store.locationRecordings
+                            .observe(source.sessionId)
+                            .first()
+                            .runs
+                            .last()
+                    assertEquals(reason, stored.stopReason)
+                    assertEquals(reason.status, stored.status)
+                }
+                // Keep this owned OPEN immutable during all read assertions; close it only during fixture disposal.
+                begin(processId).also { historyOpenRunForCleanup = it }
+            }
+
         fun assertNoPlatformActions() {
             assertEquals(0, platformPermissionRequests.get())
             assertEquals(0, navigationCalls.get())
@@ -1569,6 +1773,18 @@ class LocationRecordingFlowTest {
             runBlocking {
                 hostJob?.cancelAndJoin()
                 scopeJob.cancelAndJoin()
+                historyOpenRunForCleanup?.let { run ->
+                    check(
+                        store.locationRecordings.end(
+                            run,
+                            LocationRecordingRunStatus.STOPPED,
+                            LocationRecordingStopReason.USER_STOP,
+                            clock.millis(),
+                            elapsed.incrementAndGet(),
+                        ) is LocationRecordingEndResult.Ended,
+                    ) { "The read-only OPEN fixture must close only through its exact stored owner" }
+                    historyOpenRunForCleanup = null
+                }
                 check(gateway.active.get() == 0) { "Controlled location collector must close before owned DB cleanup" }
                 store.sessions.observeSessions().first().forEach { source ->
                     check(
