@@ -338,7 +338,7 @@ internal fun SessionHistoryEntryContent(
                                 }
                             },
                             nextPractice = {
-                                if (!exact && onPrepareNext != null) {
+                                if (onPrepareNext != null) {
                                     val action = remember(current, locationClickOwner) { AtomicBoolean(true) }
                                     val open: () -> Unit = {
                                         if (locationClickOwner.get() && clickOwner.first.get() &&

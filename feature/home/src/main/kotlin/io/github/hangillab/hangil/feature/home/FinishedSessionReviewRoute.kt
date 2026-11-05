@@ -11,11 +11,13 @@ fun FinishedSessionReviewRoute(
     onClose: () -> Unit,
     viewModel: SessionHistoryViewModel = hiltViewModel(),
     onOpenLocations: (PracticeSession) -> Unit = {},
+    onPrepareNext: ((PracticeSession) -> Unit)? = null,
 ) {
     SessionHistoryEntryContent(
         entry = SessionHistoryEntry.FinishedReview(expectedSource),
         onClose = onClose,
         viewModel = viewModel,
         onOpenLocations = onOpenLocations,
+        onPrepareNext = onPrepareNext,
     )
 }

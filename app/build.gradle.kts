@@ -8,7 +8,12 @@ android {
     namespace = "io.github.hangillab.hangil"
     defaultConfig {
         applicationId = "io.github.hangillab.hangil"
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner =
+            if (providers.gradleProperty("controlledMainUi").orNull == "true") {
+                "io.github.hangillab.hangil.HiltUiTestRunner"
+            } else {
+                "androidx.test.runner.AndroidJUnitRunner"
+            }
         versionCode =
             providers
                 .gradleProperty("releaseVersionCode")
@@ -58,6 +63,8 @@ dependencies {
     androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation(libs.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.hilt.android.testing)
+    add("kspAndroidTest", libs.hilt.compiler)
     androidTestImplementation(libs.androidx.test.junit)
     androidTestImplementation(project(":core:domain"))
     androidTestImplementation(libs.coroutines.core)

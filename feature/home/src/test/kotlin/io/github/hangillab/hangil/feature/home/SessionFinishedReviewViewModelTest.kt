@@ -47,6 +47,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -141,6 +142,47 @@ class SessionFinishedReviewViewModelTest {
             assertFalse(f.model.newer(ready.session.sessionId, ready.generation))
             assertFalse(f.model.resetToLatest(ready.generation))
             assertEquals(f.a, f.ready().session)
+        }
+
+    @Test fun `exact next preparation keeps the whole reviewed source only while its receipt remains current`() =
+        runTest {
+            val f = Fixture()
+            var live = true
+            val subscription = f.attach(this, host = { live })
+            val reviewed = f.ready()
+            assertEquals(f.a, f.model.nextPracticeSource(reviewed.session, reviewed.generation))
+            assertNull(f.model.nextPracticeSource(f.b, reviewed.generation))
+
+            live = false
+            assertNull(f.model.nextPracticeSource(reviewed.session, reviewed.generation))
+            subscription.cancel()
+            runCurrent()
+            f.attach(this)
+            val reopened = f.ready()
+            assertTrue(reopened.generation > reviewed.generation)
+            assertNull(f.model.nextPracticeSource(reviewed.session, reviewed.generation))
+            assertEquals(f.a, f.model.nextPracticeSource(reopened.session, reopened.generation))
+            assertNull(f.model.nextPracticeSource(f.a.copy(taskTitle = "different source"), reopened.generation))
+
+            f.values.value = listOf(session("active").copy(endedAtEpochMillis = null), f.b, f.a)
+            runCurrent()
+            val active = f.ready()
+            assertEquals(f.a, active.session)
+            assertFalse(f.model.canPrepareNext(active.session, active.generation))
+            assertNull(f.model.nextPracticeSource(active.session, active.generation))
+            f.values.value = listOf(f.b, f.a)
+            runCurrent()
+            val available = f.ready()
+            assertNull(f.model.nextPracticeSource(active.session, active.generation))
+            assertEquals(f.a, f.model.nextPracticeSource(available.session, available.generation))
+
+            val replacement = f.a.copy(taskTitle = "replacement")
+            f.values.value = listOf(f.b, replacement)
+            runCurrent()
+            assertEquals(SessionHistoryUiState.Unavailable, f.state)
+            assertNull(f.model.nextPracticeSource(available.session, available.generation))
+            assertNull(f.model.nextPracticeSource(replacement, available.generation))
+            assertEquals(0, f.writes)
         }
 
     @Test fun `general history still defaults to newest and explicitly browses older`() =
