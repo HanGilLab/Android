@@ -41,6 +41,8 @@
     <string name="demo_course">가상 시연 코스, 도로 검토 전</string>
     <string name="prepare_start">연습 준비하기</string>
     <string name="prepare_change">준비 내용 바꾸기</string>
+    <string name="prepare_change_course">목표나 코스 바꾸기</string>
+    <string name="session_repeat_task">같은 과제로 다시 연습</string>
     <string name="today_one">오늘의 과제 하나</string>
     <string name="one_task_intro">한 번에 하나만 기억해요</string>
     <string name="one_task_description">브리핑에서 내가 살펴보고 싶은 내용 하나를 고를 수 있어요.</string>
@@ -80,7 +82,7 @@
     <string name="journey_loading">연습을 불러오고 있어요…</string>
     <string name="journey_recover">다시 불러온 뒤 이어가요</string>
     <string name="journey_flow">준비 → 시작 → 차량 상태 기록 → 주차 후 마무리</string>
-    <string name="journey_scope">복습 메모와 다음 과제 연결은 아직 준비 중이에요.</string>
+    <string name="journey_scope">마친 연습의 차량 기록과 메모를 확인하고, 같은 코스로 다음 과제를 준비할 수 있어요. 실제 도로 경로와 구간 복습은 아직 준비 중이에요.</string>
     <string name="journey_prepare_again">다음 연습 준비하기</string>
     <string name="journey_prepare_update">코스와 과제 다시 선택하기</string>
     <string name="journey_repeat_hint">최근 기록을 살펴보거나, 같은 준비 내용으로 다시 시작할 수도 있어요.</string>
@@ -146,7 +148,7 @@
     <string name="history_retry">다시 읽기</string>
     <string name="history_selection_changed">보고 있던 기록이 바뀌었어요.</string>
     <string name="history_reset">최근 기록부터 보기</string>
-    <string name="next_practice_open">같은 코스로 다음 과제 고르기</string>
+    <string name="next_practice_open">다음 과제 고르기</string>
     <string name="history_summary_title">이 코스에 남긴 기록</string>
     <string name="history_summary_count">마무리 기록 %1$d개</string>
     <string name="history_summary_tasks">과제별 기록</string>

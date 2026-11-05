@@ -1,12 +1,22 @@
 # 선택한 지난 연습의 저장 차량 관찰
 
-이 문서는 로컬 구현과 검증이 끝난 독립 읽기 경계, 실제 측정과 재현 조건을 기록한다. 제품65221b4의 실제 두 테마와 최종 제어 검증이 통과했고, 제품 PR58도 동일 최종 head의 필수 CI/Codex를 확인해 정상 병합했다. 병합 main의 별도 push CI도 확인했으며 이번 종료 문서 PR의 검사는 별도 후속으로 구분한다. 작업 기준은 [계획](../plans/completed/2026-10-31-history-stored-observations.md)이다.
+선택한 종료 기록의 저장 차량 관찰을 읽는 경계와 실제 측정/재현 조건을 설명한다. 구현 검토와 검증 이력은 [제품 PR58](https://github.com/HanGilLab/Android/pull/58)에 남긴다.
 
 ## 실제 제품 공백과 선택한 범위
 
 기존 이력 화면은 과거 종료 기록의 당시 목표, 코스/과제, 버튼 시각과 과정 요약을 확인하지만 해당 차량 관찰을 열 수 없었다. 홈의 최근 종료 기록에서만 열리던 저장 관찰을 이력의 선택 기록에도 연결한다. 저장소가 이미 제공하는 sessionId별 Room 조회를 사용하고 실제 SDK를 다시 수집하거나 위치/경로를 생성하지 않는다. 조회 자료가 없음을 정상 주행이나 관찰값0으로 해석하지 않는다.
 
 목표는 읽기 경로 연결이며 최신 기록 전용 경로의 선택 계약은 유지한다. 메모 쓰기, 종료 기록 삭제, DB 스키마, 준비/카탈로그, 위치 권한과 내비는 변경하지 않는다. 실제 도로 구간 복습과 APP-06/APP-08 전체 완료를 대신하지 않는다.
+
+## 최근 종료 기록 경로와의 차이
+
+홈의 ‘기록 자세히’는 최근 종료 세션을, 이력 상세는 사용자가 선택한 종료 세션을 읽는다. 두 경로 모두 마지막 저장 관찰에서 시작해 저장 ID 증가 순서로 이전/다음을 이동한다. 벽시계가 역행해도 시각으로 정렬하지 않는다. 최근 source가 바뀌면 이전 조회를 다른 연습에 표시하지 않는다.
+
+최근 경로도 실제 P와 UX 허용 아래 펼친 동안만 cold Flow를 수집하고, 접기/이탈/잠금에서 취소한다. 재시도는 이전 조회 취소가 끝난 뒤 시작하며 이전/다음과 재시도 동작은 최신 허용 조건을 다시 확인한다. 내부 조회 취소/예외/정상 stream 종료는 실패이고 부모 lifecycle 취소는 전파한다. 열람 경로에는 append/start/finish가 없다.
+
+두 화면의 관찰 시각은 앱의 상태 관찰 시각이며 SDK 이벤트 발생 시각이나 각 값의 개별 수신 시각이 아니다. StateFlow가 생략한 중간/동일 상태를 복원하거나 전체 조작 횟수로 해석하지 않는다. Available의 실제 false/OFF와 Unknown/Unsupported/PermissionDenied/Error, 빈 결과와 조회 실패를 구분한다.
+
+최근 경로의 별도 실기는 [StoredVehicleObservationFlowTest](../../app/src/androidTest/kotlin/io/github/hangillab/hangil/StoredVehicleObservationFlowTest.kt)의 manualStoredReview=true 명시 옵션을 사용한다. STORED_REVIEW_AWAIT_D/STORED_REVIEW_AWAIT_P에서 실제 SDK 수신과 잠금/접힌 상세의 새 열기를 확인한다. 아래와 같은 원본 보존/전면/P+UX 전제가 필요하며 건너뜀을 통과로 세지 않는다.
 
 ## 현재 선택과 상세 reader의 소유권
 
@@ -30,30 +40,16 @@
 
 변경 전 본 표본 중앙값284.1812085ms, Q1/Q3 260.741667/312.910542ms, IQR52.168875ms, min/max241.669292/483.016417ms이며5warm+30표본의 실패/누락/제외0이다. 이 기준값을 기록할 당시에는 비교가 미측정이었다. 최종 비교와 한계는 아래에 별도로 기록하며 향상/저하/동등성/무회귀를 확정하지 않는다. 원형/APK hash/식별자/원문은 ignored 로컬에 보존하고 공개에는 timing과 익명 조건만 기록한다.
 
-초기 로컬 helper 파일 문맥 누락은 계측 시작 전 오류다. 실제 계측1개 PASS 뒤의 사용자 문맥 누락은 결과 export 오류이며 이미 완료한 측정을 다시 실행하지 않고 원형만 회수했다. 앱 실패 표본이나 성공 개선율로 바꾸지 않는다.
-
 JVM의 동시성/터미널/오염 입력, 제어 native의 합성 무방출/선택/STOP과 실제 Main/SDK/Room의 원래 자료 열람 및 DDS D-P를 각각 구분해 확인했다. 당시 실행 전 계획과 최종 결과를 분리하고 미실행 조건은 성공으로 기록하지 않는다. 실제 SDK last-known 위치/내비/독립 UX 오류 주입과 실제 SDK의 강제 늦은 callback은 이 기능의 검증 범위가 아니다. JVM의 늦은 행 방출과 제어 UI의 옛 callback 재생은 별도의 소유권 검사다.
 
-최종 JDK17 전체4단계/45suites654개 실패/오류/건너뜀0, debug/unsigned release 및 AndroidTest APK는 통과했다. 최초 파일 이름 품질 실패와 stateIn 전달 시점 기대를 정정한 JVM 실패는 계획에 분리했다. 이 전체 자동 검사 시점에는 제어 native와 실제 Main 시나리오가 미실행이었다. 이후 최종 실기를 아래에 별도로 기록하며 자동 검사만으로 실기를 대신하지 않는다.
 
+## 검증 범위와 한계
 
-## 실제 최종 검증과 과거 실패의 구분
+제어 검사는 합성 P/UX/저장 자료의 오래된 generation/action 거부와 구독 종료를 확인한다. 무방출 P 값만으로 SDK 통지를 대신하지 않으며, 명시적인 D 통지와 Locked 뒤 P 통지를 받아 새 generation에서 다시 펼친다. 합성 검사와 실제 차량 SDK 장애 주입은 구분한다.
 
-제품은 `65221b4deeb2f457d48567bb9aeaed7a1eb66f13`이고 최종 제어 하네스는 `5eb81d78f4d80717eb9e0ab45d85c955763f669e`다. 하네스 수정 전후 제품 코드, 실제 Main 계측 소스와 고정 진입 측정 지원4d는 불변이다.
+실제 Main/SDK/Room 검증은 기본 라이트와 확대 다크에서 원래 종료 기록의 관찰/빈 결과, 순서와 페이지, 재생성/STOP/닫기, DDS D-P 및 홈의 최근 경로를 확인했다. 초기 준비/하네스 실패와 이후 결과는 [PR58](https://github.com/HanGilLab/Android/pull/58)에 구분해 남긴다. 실제 SDK의 강제 늦은 callback이나 독립 UX 오류 주입까지 검증한 것은 아니다.
 
-| 검증 | 실제 결과와 한계 |
-|---|---|
-| JDK17 전체 검증 | verify4단계, 45suites/654 JVM의 실패/오류/건너뜀0과 debug/unsigned release/AndroidTest APK 통과. 하네스 정정 뒤 quality/계측 APK도 재통과 |
-| 최초 품질/JVM | 새 함수 파일 PascalCase 이름 실패와 stateIn 전달 전 Locked 기대 실패1개를 보존. 동기 action 거부와 scheduler 뒤 표시를 분리해 재검증했으며 제품 gate를 약화하지 않음 |
-| 최초 제어 native | 3PASS/1FAIL. silent D 거부 뒤 통지하지 않은 P만으로 자동 Ready가 된다고 가정한 하네스 대기 실패 |
-| 하네스 보강 뒤 첫 제어 실행 | 3PASS/1FAIL. 첫 검사 NoComposeHierarchy/STOPPED host와 실행 후 기본 내비 전면을 관찰. 이 상태만으로 앱 결함이나 복구 성공을 단정하지 않음 |
-| 최종 제어 native | 실제 Main 전면 복원 뒤 같은 코드/APK에서4PASS/건너뜀0. 합성 P/UX/저장 자료를 사용한 새 관찰 경계3개와 기존 요약 경계1개이며 실제 차량 SDK 오류 주입과 구분 |
-| 실제 기본1.0/라이트 | Main/SDK/Room 시나리오1PASS/건너뜀0. 원래9개 종료/15개 관찰/빈 기록, 원문과 순서/페이지/재생성/STOP/닫기/실제DDS D-P/홈 최신 열람 확인 |
-| 실제 확대1.3/다크 | 같은 범위1PASS/건너뜀0. 각 테마5개 비공개 PNG를 별도 보존하고 실제 글자/빈 결과/기록/잠금 화면을 직접 검토 |
-
-합성 복구 검사는 옛 generation/action 거부와 구독0/열림 수 불변을 먼저 확인한다. 명시적 D 통지→idle/Locked→P 통지 뒤 새 generation Ready와 fresh 펼침을 확인하며, 값만 바꾼 P를 실제 SDK 통지로 바꾸어 설명하지 않는다. 이전 callback을 새 token으로 업데이트하거나 실패를 성공 기본값으로 대신하지 않는다.
-
-원래 SQLite 전체 값/물리 자료형/순서/sequence와 권한/runtime/설정 보존은 외부 실행자가 별도 대조한다. 계측의 domain snapshot 일치만으로 SQLite 물리형식/sequence/권한까지 검증했다고 주장하지 않는다. 마지막 비교 뒤 외부 helper의 설정 복원/snapshot-after/종료는 모두 exit0이었다. 원래 모든 table/row/field/물리 자료형/순서/sequence/grants/runtime/font/night/IME/proxy의 정확한 보존을 확인했고 이번 소유 AVD/forward/DDS만 정리했다. 비공개 run-state에도 원본 환경 복원/소유 AVD와 forward 종료/DDS 탭 닫기의 세 상태가 모두 true다.
+계측의 domain snapshot 일치만으로 SQLite의 물리형/sequence나 권한/설정 보존을 주장하지 않는다. 해당 원형은 외부 대조로 별도 확인한다. 실제 자료를 수정해 빈 기록이나 오류 상태를 만들지 않으며, 존재하지 않는 입력의 검증을 통과로 기록하지 않는다.
 
 ## 고정 진입 비용의 최종 전후 결과
 
@@ -83,17 +79,4 @@ JVM의 동시성/터미널/오염 입력, 제어 native의 합성 무방출/선�
 6. 제어 경계는 [SessionHistoryObservationBoundaryTest](../../app/src/androidTest/kotlin/io/github/hangillab/hangil/SessionHistoryObservationBoundaryTest.kt)의3개 메서드에 `manualHistoryObservationBoundary=true`를 사용한다. 기존 [SessionHistoryDisclosureBoundaryTest.staleDisclosureCallbackCannotExpandAfterSilentLiveDOrRememberDeniedIntent](../../app/src/androidTest/kotlin/io/github/hangillab/hangil/SessionHistoryDisclosureBoundaryTest.kt)는 `manualHistoryDisclosureBoundary=true`다. 합성 소스/가드/실패를 명시하며 실제 원래 Room 자료나 차량 SDK 장애 재현으로 부르지 않는다.
 7. 최종 domain 자료와 외부 SQLite/sequence/권한/설정을 각각 대조하고 복원한다. 원형/실패/비공개 캡처를 보존한 뒤 이번 소유 AVD/forward/DDS만 정리한다. 이 문서는 새 권한이나 데이터 삭제를 승인하지 않는다.
 
-기능 검증과 제품 PR58의 동일 최종 head 필수 CI/Codex, 정상 병합/브랜치 정리/Notion readback을 완료했다. 병합 main의 별도 push CI도 통과했고 이번 종료 문서 PR의 검사는 아직 별도 확인 대상이다. APP-06/APP-08 전체, 지도 복습/실제 도로/위치 연속/내비 수집과 독립 UX 오류 주입의 미완료는 유지한다.
-
-## 이미지 원본 재확인
-
-확대 다크 홈 복귀의 축소 미리보기에서 일부 문구가 비어 보였지만, 같은 해시의 원본 크기 이미지와 별도 검토, 실제 PNG 픽셀에서 출처 배지와 관찰 문구가 모두 존재함을 확인했다. 제품 결함이나 수정 성과로 기록하지 않는다. 이미 시작한 같은 제품652/하네스5eb의 추가 다크 시나리오도1PASS/건너뜀0으로 마쳤으며 새 비공개 PNG5개를 따로 보존했다. 추가 홈 PNG는 최초 원본과 바이트가 완전히 같았다. 추가 실행은 새 성능 표본이 아니며 앞선70개 timing에 섞지 않았다. 원래 모든 자료/권한/설정을 다시 대조하고 소유 AVD/forward/DDS 탭을 종료했다.
-
-
-## 제품 PR58의 실제 종료 기록
-
-[PR58](https://github.com/HanGilLab/Android/pull/58)의 실제 최종 head는 `966f7c1f41731c7644d8234aa313f429203b153e`다. Codex 댓글 `6539543593`이 completed/지적 없음이며 native review 스레드/별도 formal review는 각각0개다. GitHub App15368의 실제 `pull_request` run `41172554771`/attempt1에서 필수 CI4개가 success였고 최신 동일 head gate를 재확인해 보호 규칙 우회 없이 정상 병합했다.
-
-실제 병합 커밋은 `4bc702622cbccdd7e8de0b391f48167f3cbe4917`이다. head/병합 tree 동일, parent016245c와 noreply를 확인하고 main ff-only 동기화 및 로컬/원격 작업 브랜치 정리를 마쳤다. Notion 갱신 후 readback은 필수19/54, 선택3개 제외이며 APP06/APP08 전체는 미체크다. 실제 GitHub README의4개 사례/17개 펼친 코드/18개 이미지 로드와1280px 폭의 가로 넘침 없음을 확인했다. 성능 향상 미확정과 기존 네 사례 보존, 이미지 원본 재확인 근거는 변경하지 않는다.
-
-병합 main4bc7026의 실제 [push/main CI](https://github.com/HanGilLab/Android/actions/runs/41172920062) run41172920062/attempt1과 같은 SHA의 App15368 필수4개 success를 별도로 확인했다. 이 종료 문서 작성 시점에 종료 문서 PR의 CI/Codex는 별도 후속이다. 최종 결과는 해당 PR과 Notion에 관리한다. 종료 문서의 JDK17 quality, 상대 링크, 공개 콘텐츠와 제품/계측 소스/README/CSV 불변 확인은 통과했다. 종료 문서 PR의 검사를 제품 PR58이나 main의 완료로 대신하거나 과거 실패/미실행 기록을 지우지 않는다.
+APP-06/APP-08 전체, 지도 복습/실제 도로/위치 연속/내비 수집과 독립 UX 오류 주입은 이 읽기 연결의 완료 범위에 포함하지 않는다.

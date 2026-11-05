@@ -1,6 +1,6 @@
 # 지난 연습의 저장된 배경 기록 실행
 
-종료한 연습 이력에 ‘배경 기록 실행’ 영역을 별도로 연결했다. 선택한 연습에 실제 저장된 실행 목록, 상태와 앱의 마커 시각을 읽는다. 최종 제품 `c226c569ab963939d54b992e5e039a041fb4cc18`에서 자동 검사, 제어 Compose 경계, 실제 Main/SDK/Room의 기본 라이트와 확대 다크, 기존 흐름의 전후 계측 및 새 영역의 변경 후 계측을 완료했다. [PR #67](https://github.com/HanGilLab/Android/pull/67)의 최신 커밋 CI/Codex와 관련 검증을 확인해 정상 병합했고, 실제 main 동기화와 작업 브랜치 정리를 마쳤다. [완료 계획](../plans/completed/2026-11-01-history-recording-runs.md)에 이 독립 구현 범위의 근거를 기록한다.
+종료한 연습 이력에 ‘배경 기록 실행’ 영역을 별도로 연결했다. 선택한 연습에 실제 저장된 실행 목록, 상태와 앱의 마커 시각을 읽는다. 최종 제품 `c226c569ab963939d54b992e5e039a041fb4cc18`에서 자동 검사, 제어 Compose 경계, 실제 Main/SDK/Room의 기본 라이트와 확대 다크, 기존 흐름의 전후 계측 및 새 영역의 변경 후 계측을 완료했다. [PR #67](https://github.com/HanGilLab/Android/pull/67)의 최신 커밋 CI/Codex와 관련 검증을 확인해 정상 병합했고, 실제 main 동기화와 작업 브랜치 정리를 마쳤다. [PR67 구현과 검증 기록](https://github.com/HanGilLab/Android/pull/67)에 이 독립 구현 범위의 근거를 기록한다.
 
 ## 제품 공백과 읽기 범위
 
