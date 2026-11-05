@@ -43,6 +43,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -99,7 +100,11 @@ class SessionViewModelTest {
         Long,
         () -> Boolean,
     ) -> SessionStartResult = { _, _, _ -> error("unexpected start") }
-    private var finishAction: suspend (String, Long, () -> Boolean) -> SessionFinishResult = { _, _, _ -> error("unexpected finish") }
+    private var finishAction: suspend (
+        PracticeSession,
+        Long,
+        () -> Boolean,
+    ) -> SessionFinishResult = { _, _, _ -> error("unexpected finish") }
     private val repository =
         object : PracticeSessionRepository {
             override fun observeSessions(): Flow<List<PracticeSession>> =
@@ -122,9 +127,15 @@ class SessionViewModelTest {
                 sessionId: String,
                 endedAtEpochMillis: Long,
                 canCommit: () -> Boolean,
+            ): SessionFinishResult = error("unexpected legacy finish")
+
+            override suspend fun finish(
+                expectedSource: PracticeSession,
+                endedAtEpochMillis: Long,
+                canCommit: () -> Boolean,
             ): SessionFinishResult {
                 finishCalls += 1
-                return finishAction(sessionId, endedAtEpochMillis, canCommit)
+                return finishAction(expectedSource, endedAtEpochMillis, canCommit)
             }
         }
 
@@ -155,8 +166,9 @@ class SessionViewModelTest {
             val model = model()
             observe(model)
             assertTrue(model.uiState.value.canFinish)
+            val action = checkNotNull(model.finishActions.value)
             restrictions.restrictions.value = DrivingRestrictions(ParkingState.PARKED, UxRestrictionState.RESTRICTED)
-            model.finish("session")
+            assertFalse(model.finish(action) { true })
             assertTrue(model.uiState.value.canFinish)
             runCurrent()
             assertEquals(0, finishCalls)
@@ -196,16 +208,17 @@ class SessionViewModelTest {
             }
             val model = model()
             observe(model)
-            model.finish(active.sessionId)
+            assertTrue(model.finish(checkNotNull(model.finishActions.value)) { true })
             runCurrent()
             restrictions.restrictions.value = DrivingRestrictions()
             resume.complete(Unit)
             runCurrent()
-            assertFeedback(model, SessionFeedback.BLOCKED)
+            assertFeedback(model, SessionFeedback.SAVE_FAILED)
+            assertNull(model.finishReceipt.value)
             assertEquals(listOf(active), records.value)
         }
 
-    @Test fun `duplicate starts and finish clicks cannot enter a second mutation`() =
+    @Test fun `duplicate starts enter one mutation and never offer a finish action`() =
         runTest {
             val resume = CompletableDeferred<Unit>()
             startAction = { _, _, _ ->
@@ -216,7 +229,7 @@ class SessionViewModelTest {
             observe(model)
             model.start()
             model.start()
-            model.finish("session")
+            assertNull(model.finishActions.value)
             runCurrent()
             assertEquals(1, startCalls)
             assertEquals(0, finishCalls)
@@ -236,8 +249,9 @@ class SessionViewModelTest {
             }
             val model = model()
             observe(model)
-            model.finish("session")
-            model.finish("session")
+            val action = checkNotNull(model.finishActions.value)
+            assertTrue(model.finish(action) { true })
+            assertFalse(model.finish(action) { true })
             runCurrent()
             assertEquals(1, finishCalls)
             resume.complete(Unit)
@@ -252,7 +266,7 @@ class SessionViewModelTest {
             observe(model)
             assertEquals(SessionLoadState.Failed, model.uiState.value.records)
             model.start()
-            model.finish("session")
+            assertNull(model.finishActions.value)
             runCurrent()
             assertEquals(0, startCalls)
             assertEquals(0, finishCalls)
@@ -385,18 +399,21 @@ class SessionViewModelTest {
             assertEquals(3, startCalls)
         }
 
-    @Test fun `finish preserves the requested ID and raw time for repository validation`() =
+    @Test fun `finish sends the full displayed source and raw time for repository validation`() =
         runTest {
-            records.value = listOf(session("current"))
-            finishAction = { id, time, canCommit ->
-                assertEquals("old-session-id", id)
+            val active = session("current")
+            records.value = listOf(active)
+            finishAction = { source, time, canCommit ->
+                assertEquals(active, source)
                 assertEquals(500L, time)
                 assertTrue(canCommit())
                 SessionFinishResult.InvalidTime
             }
             val model = model(500L)
             observe(model)
-            model.finish("old-session-id")
+            val action = checkNotNull(model.finishActions.value)
+            assertEquals(active, action.source)
+            assertTrue(model.finish(action) { true })
             runCurrent()
             assertFeedback(model, SessionFeedback.INVALID_TIME)
             assertEquals(
@@ -417,11 +434,15 @@ class SessionViewModelTest {
                 SessionFinishResult.Blocked to SessionFeedback.BLOCKED,
                 SessionFinishResult.AlreadyFinished(active.copy(endedAtEpochMillis = 2_000L)) to SessionFeedback.ALREADY_FINISHED,
             )) {
-                finishAction = { _, _, _ -> result }
-                model.finish(active.sessionId)
+                finishAction = { source, _, _ ->
+                    assertEquals(active, source)
+                    result
+                }
+                assertTrue(model.finish(checkNotNull(model.finishActions.value)) { true })
                 runCurrent()
                 assertFeedback(model, feedback)
                 assertEquals(active, model.uiState.value.active)
+                assertNull(model.finishReceipt.value)
             }
         }
 
@@ -431,16 +452,17 @@ class SessionViewModelTest {
             val ended = active.copy(endedAtEpochMillis = 2_000L)
             selected.value = null
             records.value = listOf(active)
-            finishAction = { id, time, _ ->
-                assertEquals(active.sessionId, id)
+            finishAction = { source, time, canCommit ->
+                assertEquals(active, source)
                 assertEquals(2_000L, time)
+                assertTrue(canCommit())
                 records.value = listOf(ended)
                 SessionFinishResult.Finished(ended)
             }
             val model = model(2_000L)
             observe(model)
             assertTrue(model.uiState.value.canFinish)
-            model.finish(active.sessionId)
+            assertTrue(model.finish(checkNotNull(model.finishActions.value)) { true })
             runCurrent()
             assertFeedback(model, SessionFeedback.FINISHED)
             assertEquals(null, model.uiState.value.active)
@@ -539,7 +561,7 @@ class SessionViewModelTest {
             assertTrue(model.canExpandGuide(HomeJourneyStep.ACTIVE, active))
             assertTrue(model.canExpandRecent(recent))
             assertFalse(model.canPrepareNext(recent.sessionId))
-            model.finish(active.sessionId)
+            assertTrue(model.finish(checkNotNull(model.finishActions.value)) { true })
             runCurrent()
             assertEquals(SessionOperationState.Saving, model.uiState.value.operation)
             repeat(10) {
@@ -805,6 +827,8 @@ class SessionViewModelTest {
 
     private fun TestScope.observe(model: SessionViewModel): Job {
         val observation = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { model.uiState.collect {} }
+        runCurrent()
+        model.setFinishHostResumed(true)
         runCurrent()
         return observation
     }
