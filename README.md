@@ -183,7 +183,7 @@ ID와 완료 메시지만으로는 사용자가 마친 전체 원본, 저장소�
 
 기존 API와 모델 ABI를 유지하며 expected fullsource를 받는 종료 overload를 추가했습니다. Room의 같은 트랜잭션에서 실제 행의 물리형과 전체 원본을 비교하고 쓰기 전후에 현재 허용 조건과 취소를 확인합니다. 같은 원본이 이미 끝났다면 최초 종료 시각을 그대로 반환합니다.
 
-마침 action과 저장소의 ACK를 분리하고, 검증한 ACK와 같은 종료 원본이 실제로 수신된 뒤에만 일회성 복습 버튼을 표시했습니다. 종료 Flow가 ACK보다 먼저 와도 응답을 확인할 기회는 유지하지만, Flow나 ACK 하나만으로 복습 대상을 만들지 않습니다. 앱은 [메모리 토큰과 전체 원본](app/src/main/kotlin/io/github/hangillab/hangil/FinishedReviewNavigationViewModel.kt#L14-L19)을 보관하고 [일치하는 토큰만 조회](app/src/main/kotlin/io/github/hangillab/hangil/MainActivity.kt#L124-L131)합니다. 구성 변경은 원본을 유지하고 프로세스 재생성으로 원본을 잃으면 Unavailable로 남습니다.
+마침 action과 저장소의 ACK를 분리하고, 검증한 ACK와 같은 종료 원본이 실제로 수신된 뒤에만 일회성 복습 버튼을 표시했습니다. 종료 Flow가 ACK보다 먼저 와도 응답을 확인할 기회는 유지하지만, Flow나 ACK 하나만으로 복습 대상을 만들지 않습니다. 앱은 메모리 토큰과 전체 원본을 보관하고 일치하는 토큰만 조회합니다. 구성 변경은 원본을 유지하고 프로세스 재생성으로 원본을 잃으면 Unavailable로 남습니다.
 
 일반 탐색과 exact 복습 진입을 구분하고, cold 조회를 시작하기 전에 expected source를 고정했습니다. 공유 reader를 설치하기 전 Job과 캡처한 RESUMED host를 확인하며, 거부된 collector는 자신의 Locked만 발행합니다. 상세 조작과 일회성 진입은 현재 P와 UX 해제, 원본과 조회 세대를 다시 확인합니다.
 
@@ -201,7 +201,7 @@ ID와 완료 메시지만으로는 사용자가 마친 전체 원본, 저장소�
 
 **코드**
 
-[현재 원본과 접근 권한을 확인한 뒤 복습 요청을 한 번만 소비](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionViewModel.kt#L325-L339)
+현재 원본과 접근 권한을 확인한 뒤 복습 요청을 한 번만 소비
 
 ```kotlin
 fun consumeFinishedReview(
@@ -221,7 +221,7 @@ fun consumeFinishedReview(
     }
 ```
 
-공유 조회 소유권을 설치하기 직전의 검사만 발췌했습니다. [전체 조회 수명](feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryViewModel.kt#L106-L140)
+공유 조회 소유권을 설치하기 직전의 검사만 발췌했습니다. 전체 조회 수명
 
 ```kotlin
 owner.job.ensureActive()
@@ -252,7 +252,7 @@ ended = null
 
 확인 뒤 메모, 선택, 조회나 화면 수명이 바뀌면 옛 확인을 버리고 새 확인을 요구합니다. 쓰기 뒤 차단된 요청은 부모와 연결 자료를 되돌리고, 다른 종료 기록, 진행 중 연습과 준비는 보존합니다. 저장소의 `Deleted` 결과를 받은 경우만 완료로 표시하며 다른 기록을 자동 선택하지 않습니다.
 
-같은 이력 진입을 Android14/API34 Pleos/JDK17 debug/font1.0/라이트에서 전후 각각 워밍업5회 뒤 웜30회 측정했습니다. 중앙값263.03→260.93ms, 차이−2.11ms(−0.80%)로 관찰됐지만 사분위 분포가 겹치고 순차 실행의 캐시/발열을 통제하지 못해 성능 향상은 확정하지 않았습니다. 입력/동기화/표시 확인 비용을 포함한 [조건과 원값](docs/development/ended-session-deletion.md)을 남겼습니다. 이 값은 기존 이력 진입의 관찰이며, 이전에 없던 삭제 동작의 속도 전후 비교나 개선율을 뜻하지 않습니다.
+같은 이력 진입을 Android14/API34 Pleos/JDK17 debug/font1.0/라이트에서 전후 각각 워밍업5회 뒤 웜30회 측정했습니다. 중앙값263.03→260.93ms, 차이−2.11ms(−0.80%)로 관찰됐지만 사분위 분포가 겹치고 순차 실행의 캐시/발열을 통제하지 못해 성능 향상은 확정하지 않았습니다. 입력/동기화/표시 확인 비용을 포함한 조건과 원값을 남겼습니다. 이 값은 기존 이력 진입의 관찰이며, 이전에 없던 삭제 동작의 속도 전후 비교나 개선율을 뜻하지 않습니다.
 
 **대체안/회고**
 
@@ -260,7 +260,7 @@ UI 버튼 잠금이나 프로세스 내부 Mutex만으로는 다른 저장 경�
 
 **코드**
 
-확인한 스냅샷을 다시 비교하고 쓰기 전후 허용 조건을 확인하는 트랜잭션 본문입니다. [전체 삭제 구현](core/database/src/main/kotlin/io/github/hangillab/hangil/core/database/RoomSessionDeletionRepository.kt#L40-L64)
+확인한 스냅샷을 다시 비교하고 쓰기 전후 허용 조건을 확인하는 트랜잭션 본문입니다. 전체 삭제 구현
 
 ```kotlin
 database.withTransaction {
@@ -304,7 +304,7 @@ STARTED와 허용 상태의 입력 수명을 구분하고, 허용된 DOWN의 시
 
 같은 실제 MapView에 옛 P 표시가 남아 있어도 최신 D에서 drag와 wheel이 camera를 바꾸지 않으며, P의 직접 이동과 pinch는 유지했습니다. STOP 전의 입력과 출처 창 콜백은 재개한 화면의 권한을 빌려 실행되지 않습니다. 실제 DDS의 P-D-P에서도 지도 제거와 주차 후 복귀, 코스 교체/화면 재생성/닫기와 재진입을 기본/확대 다크에서 확인했습니다.
 
-동일 지도 진입 계측은 각 워밍업5회 뒤30회, Android14/API34 Pleos/JDK17 debug/font1.0/라이트에서 중앙값2127.52→2000.33ms로 관찰됐습니다. 차이는−127.19ms(−5.98%)지만 사분위 분포가 겹치고 캐시/실행 순서 영향이 남아 있어 성능 향상은 미확정입니다. 입력 전달과 실제 렌더 확인/스크롤/검사 비용을 포함한 [측정 조건과 시각 원값](docs/development/map-live-input-boundary.md)을 함께 남겼습니다.
+동일 지도 진입 계측은 각 워밍업5회 뒤30회, Android14/API34 Pleos/JDK17 debug/font1.0/라이트에서 중앙값2127.52→2000.33ms로 관찰됐습니다. 차이는−127.19ms(−5.98%)지만 사분위 분포가 겹치고 캐시/실행 순서 영향이 남아 있어 성능 향상은 미확정입니다. 입력 전달과 실제 렌더 확인/스크롤/검사 비용을 포함한 측정 조건과 시각 원값을 함께 남겼습니다.
 
 
 **대체안/회고**
@@ -315,7 +315,7 @@ OnTouchListener나 Compose 버튼 잠금만으로 자식 입력까지 막을 수
 
 **코드**
 
-[현재 View, 준비 소유권과 최신 허용 조건을 함께 확인](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/MapViewModel.kt#L118-L131)
+현재 View, 준비 소유권과 최신 허용 조건을 함께 확인
 
 ```kotlin
 fun canInteractWithMap(
@@ -334,7 +334,7 @@ fun canInteractWithMap(
 }
 ```
 
-[허용된 DOWN과 같은 세대, 시각, 장치와 출처의 후속 입력만 허용](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/MapInputEpoch.kt#L69-L79)
+허용된 DOWN과 같은 세대, 시각, 장치와 출처의 후속 입력만 허용
 
 ```kotlin
 fun ownsTouch(
@@ -350,7 +350,7 @@ fun ownsTouch(
         } == true
 ```
 
-이 판정은 [네이티브 입력 전달 직전](feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/ParkedMapView.kt#L260-L306)에 적용합니다.
+이 판정은 네이티브 입력 전달 직전에 적용합니다.
 
 ### 4. 기록 소유권을 반환하는 순서가 복귀 화면의 정상 상태를 덮는 문제 해결
 
@@ -370,9 +370,9 @@ controller는 `owner` StateFlow가 `null`이 되면 일반 전면 수집을 다�
 
 소유권 반환을 상태 전이의 마지막 쓰기로 옮겼습니다. 종료할 백그라운드 상태와 일반 상태를 먼저 준비한 뒤 `owner.value = null`을 발행합니다. 반환으로 일반 수집자가 즉시 재진입해 새 상태를 내보내더라도, 이전 실행의 정리 코드가 뒤에서 그 값을 덮지 않도록 모든 반환 분기의 순서를 맞췄습니다. 활성 연습이 있으면 일반 수집자가 Recording을 결정하고, 없으면 Idle을 결정하는 기존 책임은 유지했습니다.
 
-수집 수명은 한 controller와 하나의 recorder가 소유합니다. 일반 STARTED 수집과 명시적으로 켠 service 수집은 같은 작업 잠금을 사용하고, 종료할 때는 준비 작업, recorder와 시작 시간 제한 작업의 `cancelAndJoin()`이 끝난 뒤 marker를 저장합니다. 서비스 시작 요청만으로 Active를 표시하지 않고 [실제 native foreground 승격](app/src/main/kotlin/io/github/hangillab/hangil/VehicleRecordingService.kt#L62-L86) 뒤 정확한 run과 source의 ACK를 받습니다. 시작과 ACK 사이에 P, UX 제한이나 요청 호스트가 바뀌면 시작을 허용하지 않습니다.
+수집 수명은 한 controller와 하나의 recorder가 소유합니다. 일반 STARTED 수집과 명시적으로 켠 service 수집은 같은 작업 잠금을 사용하고, 종료할 때는 준비 작업, recorder와 시작 시간 제한 작업의 `cancelAndJoin()`이 끝난 뒤 marker를 저장합니다. 서비스 시작 요청만으로 Active를 표시하지 않고 실제 native foreground 승격 뒤 정확한 run과 source의 ACK를 받습니다. 시작과 ACK 사이에 P, UX 제한이나 요청 호스트가 바뀌면 시작을 허용하지 않습니다.
 
-[Room의 종료 트랜잭션](core/database/src/main/kotlin/io/github/hangillab/hangil/core/database/RoomRecordingRunRepository.kt#L67-L90)과 조건부 UPDATE는 같은 `runId`, `processId`와 OPEN 상태에만 적용합니다. 오래된 실행의 종료가 새 실행을 덮지 못하게 하고, 프로세스가 사라져 관찰할 수 없었던 종료는 재실행 시 INTERRUPTED와 `null` 종료 시각으로 남깁니다. 과거 중단 근거를 지우거나 자동 재시작하지 않고 새 명시적 선택을 요구합니다. foreground service를 끄는 동작은 해당 기록 실행을 정리하며 연습 자체를 끝내지 않습니다.
+Room의 종료 트랜잭션과 조건부 UPDATE는 같은 `runId`, `processId`와 OPEN 상태에만 적용합니다. 오래된 실행의 종료가 새 실행을 덮지 못하게 하고, 프로세스가 사라져 관찰할 수 없었던 종료는 재실행 시 INTERRUPTED와 `null` 종료 시각으로 남깁니다. 과거 중단 근거를 지우거나 자동 재시작하지 않고 새 명시적 선택을 요구합니다. foreground service를 끄는 동작은 해당 기록 실행을 정리하며 연습 자체를 끝내지 않습니다.
 
 **결과**
 
@@ -392,7 +392,7 @@ SDK 처리와 이번 최종 수정의 성능은 동일 조건의 수정 전후 �
 
 **코드**
 
-[정리된 실행은 상태를 먼저 갱신하고 마지막에 소유권 반환](core/domain/src/main/kotlin/io/github/hangillab/hangil/core/domain/PracticeRecordingController.kt#L195-L208)
+정리된 실행은 상태를 먼저 갱신하고 마지막에 소유권 반환
 
 ```kotlin
 override fun stopBackground(expectedRunId: String): Boolean =
@@ -411,7 +411,7 @@ override fun stopBackground(expectedRunId: String): Boolean =
     }
 ```
 
-같은 순서는 [일반 종료의 정리 분기](core/domain/src/main/kotlin/io/github/hangillab/hangil/core/domain/PracticeRecordingController.kt#L510-L546)에도 적용합니다.
+같은 순서는 일반 종료의 정리 분기에도 적용합니다.
 
 
 <br />
