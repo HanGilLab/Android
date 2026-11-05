@@ -1,11 +1,13 @@
 package io.github.hangillab.hangil
 
 import android.content.res.Configuration
+import android.graphics.Bitmap
 import android.os.Bundle
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.getOrNull
@@ -16,6 +18,7 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -65,6 +68,7 @@ import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.abs
@@ -80,6 +84,7 @@ class PreparationEditFlowTest {
     private val modelJobs = mutableListOf<Job>()
     private var expectedScale = Float.NaN
     private var expectedDark = false
+    private var imageIndex = 0
 
     @Test fun savedPreparationPrefillsCancelsAndExplicitlySavesThroughTheRealRoute() {
         val args = InstrumentationRegistry.getArguments()
@@ -376,6 +381,10 @@ class PreparationEditFlowTest {
     }
 
     private fun assertTextFits(node: SemanticsNodeInteraction) {
+        val image = compose.onRoot().captureToImage().asAndroidBitmap()
+        File(instrument.targetContext.cacheDir, "preparation-edit-$expectedScale-$expectedDark-${imageIndex++}.png").outputStream().use {
+            check(image.compress(Bitmap.CompressFormat.PNG, 100, it))
+        }
         val root = node.fetchSemanticsNode()
         val textNodes = mutableListOf<SemanticsNode>()
 
