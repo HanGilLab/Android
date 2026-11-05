@@ -211,20 +211,6 @@ class SessionViewModel
             }
         }
 
-        fun finish(sessionId: String) {
-            if (!canCommit() || uiState.value.records !is SessionLoadState.Loaded) return
-            mutate {
-                when (sessions.finish(sessionId, clock.millis(), ::canCommit)) {
-                    is SessionFinishResult.Finished -> SessionFeedback.FINISHED
-                    is SessionFinishResult.AlreadyFinished -> SessionFeedback.ALREADY_FINISHED
-                    SessionFinishResult.SourceChanged -> SessionFeedback.SAVE_FAILED
-                    SessionFinishResult.Missing -> SessionFeedback.MISSING
-                    SessionFinishResult.Blocked -> SessionFeedback.BLOCKED
-                    SessionFinishResult.InvalidTime -> SessionFeedback.INVALID_TIME
-                }
-            }
-        }
-
         /** Lifecycle presentation ownership is separate from a durable finish acknowledgement. */
         fun setFinishHostResumed(resumed: Boolean) =
             synchronized(disclosureLock) {
