@@ -97,6 +97,8 @@ class ThemeFlowTest {
         capture("home")
         touch("home_prepare")
         waitFor("goal_commute")
+        // This scenario intentionally starts a new draft instead of retaining a saved task.
+        touch("goal_shopping")
         touch("goal_commute")
         compose.onNodeWithTag("goal_commute").assertIsSelected()
         capture("goal-selected")

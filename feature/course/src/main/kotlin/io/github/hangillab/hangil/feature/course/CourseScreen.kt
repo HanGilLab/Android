@@ -42,6 +42,7 @@ import io.github.hangillab.hangil.core.designsystem.ParkedChoice
 import io.github.hangillab.hangil.core.designsystem.ParkedDisclosure
 import io.github.hangillab.hangil.core.designsystem.ParkedLockedNotice
 import io.github.hangillab.hangil.core.designsystem.ParkedPage
+import io.github.hangillab.hangil.core.designsystem.ParkedPanel
 
 @Composable
 fun CourseRoute(
@@ -64,7 +65,15 @@ fun CourseRoute(
     }
     val back = { if (!viewModel.back()) close() }
     BackHandler(onBack = back)
-    CourseScreen(state, viewModel::selectGoal, viewModel::selectCourse, viewModel::selectTask, viewModel::next, back) {
+    CourseScreen(
+        state,
+        viewModel::selectGoal,
+        viewModel::selectCourse,
+        viewModel::selectTask,
+        viewModel::next,
+        back,
+        onRetryPreparationRead = viewModel::retryPreparationRead,
+    ) {
         viewModel.canRevealDetails(state)
     }
 }
@@ -77,6 +86,7 @@ internal fun CourseScreen(
     onTask: (String) -> Unit,
     onNext: () -> Unit,
     onBack: () -> Unit,
+    onRetryPreparationRead: () -> Unit,
     canExpandDetails: () -> Boolean,
 ) {
     key(state.allowsInteraction, state.step) {
@@ -84,7 +94,29 @@ internal fun CourseScreen(
             PreparationHeader(state, onBack)
             if (!state.allowsInteraction) {
                 ParkedLockedNotice()
+            } else if (state.preparationRead == PreparationReadState.LOADING) {
+                ParkedPanel(Modifier.testTag("preparation_read_loading")) {
+                    Text(stringResource(R.string.preparation_read_loading), style = MaterialTheme.typography.titleLarge)
+                }
+            } else if (state.preparationRead == PreparationReadState.FAILED) {
+                ParkedPanel(Modifier.testTag("preparation_read_failed")) {
+                    Text(stringResource(R.string.preparation_read_failed), style = MaterialTheme.typography.titleLarge)
+                    ParkedButton(
+                        onClick = onRetryPreparationRead,
+                        modifier = Modifier.fillMaxWidth().testTag("preparation_read_retry"),
+                    ) {
+                        Text(stringResource(R.string.preparation_read_retry), style = MaterialTheme.typography.titleLarge)
+                    }
+                }
             } else {
+                if (state.preparationRead == PreparationReadState.OUTDATED) {
+                    Text(
+                        stringResource(R.string.preparation_read_outdated),
+                        Modifier.testTag("preparation_read_outdated"),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 when (state.step) {
                     PreparationStep.GOAL -> {
                         PreparationChoices(state.goals.size, Modifier.testTag("goal_choices")) { index, modifier ->
@@ -223,7 +255,7 @@ private fun PreparationHeader(
                 Text(stringResource(R.string.course_back), style = MaterialTheme.typography.titleMedium)
             }
         }
-        if (state.allowsInteraction) {
+        if (state.allowsInteraction && state.preparationRead.allowsEditing) {
             Column(verticalArrangement = Arrangement.spacedBy(HanGilSpacing.xs)) {
                 Text(
                     stringResource(R.string.course_steps, state.step.ordinal + 1),

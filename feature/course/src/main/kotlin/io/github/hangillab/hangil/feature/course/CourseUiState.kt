@@ -13,9 +13,10 @@ internal data class CourseUiState(
     val taskId: String? = null,
     val saving: Boolean = false,
     val saveFailed: Boolean = false,
+    val preparationRead: PreparationReadState = PreparationReadState.LOADING,
 ) {
     val canContinue: Boolean get() =
-        allowsInteraction && !saving &&
+        allowsInteraction && preparationRead.allowsEditing && !saving &&
             when (step) {
                 PreparationStep.GOAL -> goal != null
                 PreparationStep.COURSE -> course != null
