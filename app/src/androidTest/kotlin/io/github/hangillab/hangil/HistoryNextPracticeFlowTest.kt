@@ -97,6 +97,7 @@ class HistoryNextPracticeFlowTest {
         expectedFontScale = expectedScale
         expectedNight = expectedDark
         assertHost()
+        val hostLifecycle = compose.activity.lifecycle
         val configuration = compose.activity.resources.configuration
         assertTrue(abs(configuration.fontScale - expectedScale) < 0.01f)
         assertEquals(expectedDark, configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES)
@@ -198,7 +199,8 @@ class HistoryNextPracticeFlowTest {
                                 isHistoryEntryCurrent = {
                                     opened.value === entry &&
                                         memory.source(entry.token, entry.source.sessionId) == entry.source &&
-                                        compose.activity.lifecycle.currentState == Lifecycle.State.RESUMED
+                                        // Room validation may call this under a VM lock; avoid the test rule's main-thread synchronization.
+                                        hostLifecycle.currentState == Lifecycle.State.RESUMED
                                 },
                             )
                         }
