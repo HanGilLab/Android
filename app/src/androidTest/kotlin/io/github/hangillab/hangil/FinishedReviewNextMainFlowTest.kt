@@ -1,5 +1,6 @@
 package io.github.hangillab.hangil
 
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.app.KeyguardManager
 import android.content.res.Configuration
 import android.graphics.Bitmap
@@ -161,7 +162,12 @@ class FinishedReviewNextMainFlowTest {
         check(captures.mkdirs())
         var scenario: ActivityScenario<MainActivity>? = null
         var primary: Throwable? = null
+        var originalWindowFlags: Int? = null
         try {
+            val windowInfo = instrument.uiAutomation.serviceInfo
+            originalWindowFlags = windowInfo.flags
+            windowInfo.flags = windowInfo.flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+            instrument.uiAutomation.serviceInfo = windowInfo
             scenario = ActivityScenario.launch(MainActivity::class.java)
             scenario.onActivity {
                 host = it
@@ -251,7 +257,15 @@ class FinishedReviewNextMainFlowTest {
             throw failure
         } finally {
             try {
-                scenario?.close()
+                try {
+                    scenario?.close()
+                } finally {
+                    originalWindowFlags?.let { flags ->
+                        val windowInfo = instrument.uiAutomation.serviceInfo
+                        windowInfo.flags = flags
+                        instrument.uiAutomation.serviceInfo = windowInfo
+                    }
+                }
                 check(sdkCalls.get() == 0) { "A forbidden SDK boundary was invoked" }
             } catch (cleanup: Throwable) {
                 if (primary == null) throw cleanup else primary.addSuppressed(cleanup)
@@ -272,12 +286,25 @@ class FinishedReviewNextMainFlowTest {
     }
 
     private fun requireHost() {
-        instrument.runOnMainSync { check(host.lifecycle.currentState == Lifecycle.State.RESUMED && host.hasWindowFocus()) }
-        check(
-            instrument.uiAutomation.rootInActiveWindow
-                ?.packageName
-                ?.toString() == instrument.targetContext.packageName,
-        )
+        compose.waitUntil(20_000) {
+            var resumedFocused = false
+            instrument.runOnMainSync {
+                resumedFocused = host.lifecycle.currentState == Lifecycle.State.RESUMED &&
+                    host.hasWindowFocus() && host.display?.isValid == true
+            }
+            val windows = instrument.uiAutomation.windows
+            try {
+                val focused = windows.filter { it.isFocused }
+                val root = focused.singleOrNull()?.root
+                try {
+                    resumedFocused && root?.packageName?.toString() == instrument.targetContext.packageName
+                } finally {
+                    root?.recycle()
+                }
+            } finally {
+                windows.forEach { it.recycle() }
+            }
+        }
     }
 
     private fun click(tag: String) {
