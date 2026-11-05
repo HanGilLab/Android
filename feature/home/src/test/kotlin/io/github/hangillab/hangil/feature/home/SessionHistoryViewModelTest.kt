@@ -54,6 +54,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -1394,6 +1395,96 @@ class SessionHistoryViewModelTest {
         assertEquals(1, fixture.repository.maximumActive)
         assertEquals(0, fixture.repository.writes)
     }
+
+    @Test fun `next preparation receipt binds the selected whole source and retires on selection or reader change`() =
+        runTest {
+            val f = Fixture()
+            assertNull(f.model.nextPracticeSource(session("a"), 0))
+            val job = subscribe(f)
+            val newest = ready(f)
+            assertEquals(newest.session, f.model.nextPracticeSource(newest.session, newest.generation))
+            assertTrue(f.model.older(newest.session.sessionId, newest.generation))
+            val selected = ready(f)
+            assertEquals("b", selected.session.sessionId)
+            assertTrue(f.model.canPrepareNext(selected.session, selected.generation))
+            assertEquals(selected.session, f.model.nextPracticeSource(selected.session, selected.generation))
+            assertNull(f.model.nextPracticeSource(newest.session, newest.generation))
+            assertNull(f.model.nextPracticeSource(selected.session.copy(goalTitle = "different source"), selected.generation))
+            job.cancelAndJoin()
+            runCurrent()
+            assertNull(f.model.nextPracticeSource(selected.session, selected.generation))
+            subscribe(f)
+            val resumed = ready(f)
+            assertNull(f.model.nextPracticeSource(selected.session, selected.generation))
+            assertEquals(resumed.session, f.model.nextPracticeSource(resumed.session, resumed.generation))
+            assertEquals(0, f.repository.writes)
+        }
+
+    @Test fun `next preparation refuses active sessions without replacing the selected ended source`() =
+        runTest {
+            val f = Fixture()
+            subscribe(f)
+            val initial = ready(f)
+            assertTrue(f.model.older(initial.session.sessionId, initial.generation))
+            val selected = ready(f)
+            val original = f.repository.values.value
+            f.repository.values.value = listOf(session("active", ended = null)) + original
+            val active = ready(f)
+            assertEquals(selected.session, active.session)
+            assertFalse(f.model.canPrepareNext(active.session, active.generation))
+            assertNull(f.model.nextPracticeSource(active.session, active.generation))
+            assertNull(f.model.nextPracticeSource(selected.session, selected.generation))
+            f.repository.values.value = original
+            val allowed = ready(f)
+            assertNull(f.model.nextPracticeSource(active.session, active.generation))
+            assertEquals(selected.session, f.model.nextPracticeSource(allowed.session, allowed.generation))
+            assertEquals(0, f.repository.writes)
+        }
+
+    @Test fun `direct denied next preparation intent cannot borrow the next P context`() =
+        runTest {
+            for (denyUx in listOf(false, true)) {
+                val f = Fixture()
+                val job = subscribe(f)
+                val shown = ready(f)
+                if (denyUx) {
+                    f.restrictionState.value = unrestricted().copy(uxRestrictionState = UxRestrictionState.RESTRICTED)
+                } else {
+                    f.vehicleState.value = parked().copy(gear = VehicleReading.Available(GearPosition.DRIVE))
+                }
+                assertNull(f.model.nextPracticeSource(shown.session, shown.generation))
+                f.restrictionState.value = unrestricted()
+                f.vehicleState.value = parked()
+                assertNull(f.model.nextPracticeSource(shown.session, shown.generation))
+                val fresh = ready(f)
+                assertNotEquals(shown.generation, fresh.generation)
+                assertEquals(fresh.session, f.model.nextPracticeSource(fresh.session, fresh.generation))
+                assertEquals(0, f.repository.writes)
+                job.cancelAndJoin()
+            }
+        }
+
+    @Test fun `same id replacement and deletion do not reuse a next preparation source receipt`() =
+        runTest {
+            val f = Fixture()
+            subscribe(f)
+            val shown = ready(f)
+            val changedSource = shown.session.copy(taskTitle = "changed whole source")
+            f.repository.values.value =
+                f.repository.values.value
+                    .map { if (it.sessionId == shown.session.sessionId) changedSource else it }
+            val changed = ready(f)
+            assertNull(f.model.nextPracticeSource(shown.session, shown.generation))
+            assertNull(f.model.nextPracticeSource(shown.session, changed.generation))
+            assertEquals(changedSource, f.model.nextPracticeSource(changedSource, changed.generation))
+            f.repository.values.value =
+                f.repository.values.value
+                    .filterNot { it.sessionId == shown.session.sessionId }
+            runCurrent()
+            assertTrue(f.model.uiState.value is SessionHistoryUiState.SelectionChanged)
+            assertNull(f.model.nextPracticeSource(changedSource, changed.generation))
+            assertEquals(0, f.repository.writes)
+        }
 
     private enum class FailureMode { Exception, NormalCompletion, InternalCancellation }
 

@@ -20,10 +20,23 @@ internal class RoomNextPracticeRepository
             seed: NextPracticeSeed,
             selection: PracticeSelection,
             canCommit: () -> Boolean,
+        ): NextPracticeSaveResult = save(seed, selection, canCommit, latestOnly = true)
+
+        override suspend fun saveHistorySelection(
+            seed: NextPracticeSeed,
+            selection: PracticeSelection,
+            canCommit: () -> Boolean,
+        ): NextPracticeSaveResult = save(seed, selection, canCommit, latestOnly = false)
+
+        private suspend fun save(
+            seed: NextPracticeSeed,
+            selection: PracticeSelection,
+            canCommit: () -> Boolean,
+            latestOnly: Boolean,
         ): NextPracticeSaveResult =
             try {
                 database.withTransaction {
-                    validate(seed, selection, canCommit)
+                    validate(seed, selection, canCommit, latestOnly)
                     database.preparationDao().upsert(
                         PreparationEntity(
                             goalId = selection.goalId,
@@ -33,7 +46,7 @@ internal class RoomNextPracticeRepository
                             taskId = selection.taskId,
                         ),
                     )
-                    validate(seed, selection, canCommit)
+                    validate(seed, selection, canCommit, latestOnly)
                     NextPracticeSaveResult.Saved
                 }
             } catch (rejected: WriteRejected) {
@@ -44,6 +57,7 @@ internal class RoomNextPracticeRepository
             seed: NextPracticeSeed,
             selection: PracticeSelection,
             canCommit: () -> Boolean,
+            latestOnly: Boolean,
         ) {
             currentCoroutineContext().ensureActive()
             val permitted = canCommit()
@@ -51,9 +65,9 @@ internal class RoomNextPracticeRepository
             if (!permitted) throw WriteRejected(NextPracticeSaveResult.Blocked)
             val sessions = database.practiceSessionDao()
             if (sessions.unfinishedCount() != 0L) throw WriteRejected(NextPracticeSaveResult.SourceChanged)
-            val latest = sessions.latestFinished()
+            val entity = if (latestOnly) sessions.latestFinished() else sessions.find(seed.source.sessionId)
             val source =
-                latest?.let {
+                entity?.let {
                     // Room getters can coerce malformed values; bind the raw check to this exact row.
                     check(sessions.countValidNextPracticeSourceStorage(it.rowId, it.sessionId) == 1) {
                         "Invalid next practice source storage"

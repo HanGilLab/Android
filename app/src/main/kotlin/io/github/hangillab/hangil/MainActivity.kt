@@ -53,6 +53,7 @@ class MainActivity : ComponentActivity() {
 
     @Inject lateinit var locationRecording: LocationRecordingController
     private val finishedReviews: FinishedReviewNavigationViewModel by viewModels()
+    private val historyNextPractice: HistoryNextPracticeNavigationViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -68,6 +69,7 @@ class MainActivity : ComponentActivity() {
             HanGilTheme {
                 val recordingState by recording.state.collectAsStateWithLifecycle()
                 val finishedReviewEntry by finishedReviews.entry.collectAsStateWithLifecycle()
+                val historyNextEntry by historyNextPractice.entry.collectAsStateWithLifecycle()
                 val locationState by locationRecording.state.collectAsStateWithLifecycle()
                 var locationHistorySource by remember { mutableStateOf<PracticeSession?>(null) }
                 val navigation = rememberNavController()
@@ -98,12 +100,24 @@ class MainActivity : ComponentActivity() {
                                 onLocationRecording = { navigation.navigate("location-recording") { launchSingleTop = true } },
                             )
                         }
-                        composable("history") {
+                        composable("history") { historyEntry ->
                             SessionHistoryRoute(
                                 onClose = { navigation.popBackStack() },
                                 onOpenLocations = { expected ->
                                     locationHistorySource = expected
                                     navigation.navigate("location-history") { launchSingleTop = true }
+                                },
+                                onPrepareNext = openNext@{ source ->
+                                    if (navigation.currentBackStackEntry !== historyEntry ||
+                                        lifecycle.currentState != Lifecycle.State.RESUMED ||
+                                        historyEntry.lifecycle.currentState != Lifecycle.State.RESUMED
+                                    ) {
+                                        return@openNext
+                                    }
+                                    val token = historyNextPractice.open(source) ?: return@openNext
+                                    navigation.navigate("preparation/history-next/$token/${Uri.encode(source.sessionId)}") {
+                                        launchSingleTop = true
+                                    }
                                 },
                             )
                         }
@@ -176,6 +190,65 @@ class MainActivity : ComponentActivity() {
                                     navigation.navigate("preparation") { launchSingleTop = true }
                                 },
                             )
+                        }
+                        composable(
+                            "preparation/history-next/{historyNextToken}/{nextPracticeSourceId}",
+                            arguments =
+                                listOf(
+                                    navArgument("historyNextToken") { type = NavType.StringType },
+                                    navArgument("nextPracticeSourceId") { type = NavType.StringType },
+                                ),
+                        ) { nextEntry ->
+                            val token = nextEntry.arguments?.getString("historyNextToken")
+                            val sourceId = nextEntry.arguments?.getString("nextPracticeSourceId")
+                            val expected = historyNextEntry?.takeIf { it.token == token && it.source.sessionId == sourceId }?.source
+                            val currentEntry: () -> Boolean =
+                                remember(nextEntry, token, sourceId, expected) {
+                                    {
+                                        navigation.currentBackStackEntry === nextEntry &&
+                                            lifecycle.currentState == Lifecycle.State.RESUMED &&
+                                            nextEntry.lifecycle.currentState == Lifecycle.State.RESUMED &&
+                                            historyNextPractice.source(token, sourceId) == expected && expected != null
+                                    }
+                                }
+                            val canNavigate: () -> Boolean =
+                                remember(nextEntry) {
+                                    {
+                                        navigation.currentBackStackEntry === nextEntry &&
+                                            lifecycle.currentState == Lifecycle.State.RESUMED &&
+                                            nextEntry.lifecycle.currentState == Lifecycle.State.RESUMED
+                                    }
+                                }
+                            if (expected == null) {
+                                ParkedPage {
+                                    Text(getString(R.string.history_next_reopen))
+                                    TextButton(onClick = {
+                                        if (canNavigate()) {
+                                            historyNextPractice.clear(token)
+                                            navigation.popBackStack()
+                                        }
+                                    }) { Text(getString(R.string.history_next_back)) }
+                                }
+                            } else {
+                                NextPracticeRoute(
+                                    expectedHistorySource = expected,
+                                    historyEntryRequired = true,
+                                    isHistoryEntryCurrent = currentEntry,
+                                    onClose = {
+                                        if (canNavigate() && currentEntry()) {
+                                            historyNextPractice.clear(token)
+                                            navigation.popBackStack()
+                                        }
+                                    },
+                                    onPrepareNormally = {
+                                        if (canNavigate() && currentEntry()) {
+                                            historyNextPractice.clear(token)
+                                            navigation.popBackStack()
+                                            navigation.navigate("preparation") { launchSingleTop = true }
+                                        }
+                                    },
+                                )
+                            }
                         }
                         composable("map") { MapDestination(onClose = { navigation.popBackStack() }, showDiagnostics = showDiagnostics) }
                     }
