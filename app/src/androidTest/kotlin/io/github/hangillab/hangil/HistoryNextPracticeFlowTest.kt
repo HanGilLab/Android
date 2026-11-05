@@ -2,20 +2,27 @@ package io.github.hangillab.hangil
 
 import android.app.KeyguardManager
 import android.content.res.Configuration
+import android.graphics.Bitmap
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextMeasurer
+import androidx.compose.ui.unit.Constraints
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.SavedStateHandle
@@ -65,10 +72,12 @@ import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /** Explicit opt-in: real Compose and nonce-owned Room, entirely controlled vehicle inputs, no SDK clients. */
 @RunWith(AndroidJUnit4::class)
@@ -352,27 +361,75 @@ class HistoryNextPracticeFlowTest {
 
     private fun assertTextFits(tag: String) {
         assertHost()
-        val node =
-            compose
-                .onNodeWithTag(tag, useUnmergedTree = true)
-                .performScrollTo()
-                .assertIsDisplayed()
-                .fetchSemanticsNode()
-        val layouts = mutableListOf<TextLayoutResult>()
+        val subject = compose.onNodeWithTag(tag, useUnmergedTree = true).performScrollTo().assertIsDisplayed()
+        // Only this controlled fixture is rendered; keep the actual window image in target-private cache.
+        val mode = "${if (expectedNight == true) "dark" else "light"}-${expectedFontScale.toString().replace('.', '_')}"
+        val image = compose.onRoot().captureToImage().asAndroidBitmap()
+        File(instrument.targetContext.cacheDir, "history-next-$mode-$tag.png").outputStream().use {
+            check(image.compress(Bitmap.CompressFormat.PNG, 100, it))
+        }
+        assertHost()
+        val subjectBounds = subject.getUnclippedBoundsInRoot()
+        val viewport = compose.onRoot().getUnclippedBoundsInRoot()
+        assertTrue(
+            "$tag must fit the actual viewport: subject=$subjectBounds, viewport=$viewport",
+            subjectBounds.left >= viewport.left && subjectBounds.right <= viewport.right &&
+                subjectBounds.top >= viewport.top && subjectBounds.bottom <= viewport.bottom,
+        )
+        val textNodes = mutableListOf<SemanticsNode>()
 
         fun read(current: SemanticsNode) {
-            current.config
-                .getOrNull(SemanticsActions.GetTextLayoutResult)
-                ?.action
-                ?.invoke(layouts)
+            if (current.config.getOrNull(SemanticsActions.GetTextLayoutResult) != null) textNodes += current
             current.children.forEach(::read)
         }
-        read(node)
-        assertTrue("Actual rendered text layout is required", layouts.isNotEmpty())
-        layouts.forEach { layout ->
-            assertFalse(layout.hasVisualOverflow)
-            assertTrue(layout.layoutInput.style.fontSize.value >= 24f)
-            for (line in 0 until layout.lineCount) assertFalse(layout.isLineEllipsized(line))
+        read(subject.fetchSemanticsNode())
+        assertTrue("Actual rendered text layout is required", textNodes.isNotEmpty())
+        instrument.runOnMainSync {
+            for (textNode in textNodes) {
+                val layouts = mutableListOf<TextLayoutResult>()
+                assertTrue(checkNotNull(textNode.config[SemanticsActions.GetTextLayoutResult].action).invoke(layouts))
+                assertTrue("Actual rendered text results are required", layouts.isNotEmpty())
+                val bounds = textNode.boundsInRoot
+                assertTrue("$tag text node must have visible area: $bounds", bounds.width > 0f && bounds.height > 0f)
+                for (layout in layouts) {
+                    val geometry =
+                        "$tag node=${bounds.width}x${bounds.height}, size=${layout.size}, " +
+                            "paragraph=${layout.multiParagraph.width}x${layout.multiParagraph.height}, " +
+                            "flags=${layout.didOverflowWidth}/${layout.didOverflowHeight}, " +
+                            "lines=${layout.lineCount}, scale=${layout.layoutInput.density.fontScale}, " +
+                            "font=${layout.layoutInput.style.fontSize}"
+                    assertTrue(geometry, layout.lineCount > 0)
+                    assertEquals(geometry, expectedFontScale, layout.layoutInput.density.fontScale, 0.01f)
+                    assertTrue(geometry, layout.layoutInput.style.fontSize.value >= 24f)
+                    // String semantics may rebuild a wider MultiParagraph while retaining the
+                    // original natural size. Compare actual lines and remeasure that node instead.
+                    assertFalse(geometry, layout.didOverflowHeight)
+                    assertEquals(geometry, layout.layoutInput.text.length, layout.getLineEnd(layout.lineCount - 1))
+                    for (line in 0 until layout.lineCount) {
+                        val lineBounds =
+                            "$geometry, line=$line, L/R=${layout.getLineLeft(line)}/${layout.getLineRight(line)}, " +
+                                "T/B=${layout.getLineTop(line)}/${layout.getLineBottom(line)}"
+                        assertFalse(lineBounds, layout.isLineEllipsized(line))
+                        assertTrue(lineBounds, layout.getLineLeft(line) >= -1f && layout.getLineRight(line) <= bounds.width + 1f)
+                        assertTrue(lineBounds, layout.getLineTop(line) >= -1f && layout.getLineBottom(line) <= bounds.height + 1f)
+                    }
+                    val input = layout.layoutInput
+                    val measured =
+                        TextMeasurer(input.fontFamilyResolver, input.density, input.layoutDirection, cacheSize = 0).measure(
+                            text = input.text,
+                            style = input.style,
+                            overflow = input.overflow,
+                            softWrap = input.softWrap,
+                            maxLines = input.maxLines,
+                            placeholders = input.placeholders,
+                            constraints = Constraints(maxWidth = bounds.width.roundToInt(), maxHeight = bounds.height.roundToInt()),
+                        )
+                    assertTrue(geometry, measured.lineCount > 0)
+                    assertFalse("$geometry, remeasured=${measured.size}", measured.hasVisualOverflow)
+                    assertEquals(geometry, input.text.length, measured.getLineEnd(measured.lineCount - 1))
+                    for (line in 0 until measured.lineCount) assertFalse(geometry, measured.isLineEllipsized(line))
+                }
+            }
         }
     }
 
