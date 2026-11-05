@@ -1,10 +1,15 @@
 package io.github.hangillab.hangil
 
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.content.res.Resources
 import android.graphics.Bitmap
 import android.graphics.Rect
+import android.os.Bundle
 import android.os.SystemClock
+import android.util.DisplayMetrics
+import android.util.TypedValue
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.semantics.SemanticsActions
@@ -32,6 +37,14 @@ import io.github.hangillab.hangil.core.domain.ConnectionState
 import io.github.hangillab.hangil.core.domain.DrivingRestrictions
 import io.github.hangillab.hangil.core.domain.DrivingRestrictionsProvider
 import io.github.hangillab.hangil.core.domain.GearPosition
+import io.github.hangillab.hangil.core.domain.LocationRecordingAppendResult
+import io.github.hangillab.hangil.core.domain.LocationRecordingBeginResult
+import io.github.hangillab.hangil.core.domain.LocationRecordingEndResult
+import io.github.hangillab.hangil.core.domain.LocationRecordingRunStatus
+import io.github.hangillab.hangil.core.domain.LocationRecordingSnapshot
+import io.github.hangillab.hangil.core.domain.LocationRecordingStopReason
+import io.github.hangillab.hangil.core.domain.LocationUpdateReading
+import io.github.hangillab.hangil.core.domain.LocationUpdateSample
 import io.github.hangillab.hangil.core.domain.ParkingState
 import io.github.hangillab.hangil.core.domain.PracticeSelection
 import io.github.hangillab.hangil.core.domain.PracticeSession
@@ -98,6 +111,81 @@ import io.github.hangillab.hangil.feature.home.R as HomeR
 @RunWith(AndroidJUnit4::class)
 class SessionDeletionFlowTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentCatalogActivity>()
+
+    @Test fun locationDeletionDisclosurePreservesCancelledAndLockedTargets() =
+        withFixture(syntheticLocations = true) { fixture ->
+            val before = fixture.snapshot()
+            val target = fixture.seed.older
+            assertTrue(
+                "DELETE_LOCATION_FIXTURE_PRESENT",
+                before.locations
+                    .getValue(target.sessionId)
+                    .runs.size == 1,
+            )
+            assertTrue(
+                "DELETE_LOCATION_FIXTURE_ITEMS",
+                before.locations
+                    .getValue(target.sessionId)
+                    .events.size == 2,
+            )
+            touch("history_older")
+            fixture.awaitReady(target.sessionId)
+            openAndReadConfirmation(fixture, target)
+            emitDeletionPhase("CONFIRMATION_VISIBLE")
+            assertLocationDeletionDisclosure()
+            touch("history_delete_cancel")
+            waitAbsent("history_delete_dialog")
+            fixture.assertExact(before)
+            emitDeletionPhase("CANCEL_PRESERVED")
+
+            openAndReadConfirmation(fixture, target)
+            val staleConfirm = clickAction("history_delete_confirm")
+            compose.runOnIdle {
+                fixture.vehicleState.setWithoutEmission(driving())
+                staleConfirm.invoke()
+            }
+            compose.waitForIdle()
+            fixture.assertExact(before)
+            assertTrue("DELETE_LOCATION_LOCK_REJECTED", fixture.deletions.calls.get() == 0)
+            compose.runOnIdle {
+                fixture.vehicleState.setWithoutEmission(parked())
+                staleConfirm.invoke()
+            }
+            compose.waitForIdle()
+            fixture.assertExact(before)
+            assertTrue("DELETE_LOCATION_OLD_CONFIRM_RETIRED", fixture.deletions.calls.get() == 0)
+            emitDeletionPhase("LOCK_PRESERVED")
+            fixture.publishParked()
+            fixture.awaitReady(target.sessionId)
+            openAndReadConfirmation(fixture, target)
+            assertLocationDeletionDisclosure()
+            touch("history_delete_confirm")
+            fixture.deletions.awaitCompletion()
+            assertTrue("DELETE_LOCATION_ONCE", fixture.deletions.calls.get() == 1)
+            fixture.assertOnlyDeleted(before, target.sessionId)
+            waitFor("history_delete_success")
+            emitDeletionPhase("SELECTED_CASCADE")
+        }
+
+    private fun emitDeletionPhase(code: String) {
+        InstrumentationRegistry.getInstrumentation().sendStatus(
+            2,
+            Bundle().apply { putString("stream", "LOCATION_DELETION_$code\n") },
+        )
+    }
+
+    private fun assertLocationDeletionDisclosure() {
+        bringIntoView("history_delete_warning")
+        val node = nodes("history_delete_warning").single()
+        val warning =
+            node.config
+                .getOrNull(SemanticsProperties.Text)
+                .orEmpty()
+                .joinToString("") { it.text }
+        // Independent semantic requirement: a resource compared with itself cannot detect this omission.
+        assertTrue("DELETE_LOCATION_DISCLOSURE_MISSING", warning.contains("\uC704\uCE58 \uD45C\uBCF8\uACFC \uC218\uC9D1 \uC0C1\uD0DC"))
+        assertLayout(node, warning)
+    }
 
     @Test fun explicitSelectedDeletionCascadesOnceAndPreservesEveryOtherRowAndSequence() =
         withFixture { fixture ->
@@ -298,22 +386,32 @@ class SessionDeletionFlowTest {
 
     private fun withFixture(
         latestMemo: Boolean = true,
+        syntheticLocations: Boolean = false,
         block: (Fixture) -> Unit,
     ) {
         assumeTrue(
             "명시적인 격리 Room native 실행에서만 fixture를 삭제합니다",
             InstrumentationRegistry.getArguments().getString("manualSessionDeletion") == "true",
         )
-        verifyConfiguration()
         val context = InstrumentationRegistry.getInstrumentation().targetContext
+        if (syntheticLocations) {
+            assertTrue(
+                "DELETE_LOCATION_FUSED_NOT_DENIED",
+                context.checkSelfPermission("pleos.car.permission.FUSED_LOCATION") == PackageManager.PERMISSION_DENIED,
+            )
+            emitDeletionPhase("FUSED_DENIED")
+        }
         val store = OwnedPracticeTestStore.create(context)
         var fixture: Fixture? = null
         var primary: Throwable? = null
         try {
             establishHostForeground()
-            assertTrue("새 격리 저장소는 원래 데이터가 없는 스키마4여야 합니다", store.schemaVersion() == 4)
+            applyCatalogResourceConfigurationIfRequested()
+            verifyConfiguration()
+            if (catalogResourceApplied.get()) emitDeletionPhase("RESOURCES_APPLIED")
+            assertTrue("새 격리 저장소는 원래 데이터가 없는 스키마7여야 합니다", store.schemaVersion() == 7)
             assertTrue("새 격리 저장소의 FK 위반은 없어야 합니다", store.foreignKeyViolationCount() == 0)
-            val seed = runBlocking { seed(store, latestMemo) }
+            val seed = runBlocking { seed(store, latestMemo, syntheticLocations) }
             fixture = Fixture(store, seed)
             fixture.mount()
             fixture.awaitReady(seed.latest.sessionId)
@@ -325,6 +423,7 @@ class SessionDeletionFlowTest {
             throw failure
         } finally {
             val cleanupFailures = mutableListOf<Throwable>()
+            var storeClosed = false
             var safeToClose = fixture == null
             val current = fixture
             if (current != null) {
@@ -344,12 +443,20 @@ class SessionDeletionFlowTest {
                 }
                 try {
                     store.close()
+                    storeClosed = true
                 } catch (cleanup: Throwable) {
                     cleanupFailures.add(cleanup)
                 }
             } else {
                 cleanupFailures.add(IllegalStateException("취소와 DB 작업 종료를 확인하지 못해 소유 격리 파일을 보존했습니다"))
             }
+            try {
+                restoreCatalogResourceConfiguration()
+                if (catalogResourceRestored.get()) emitDeletionPhase("RESOURCES_RESTORED")
+            } catch (cleanup: Throwable) {
+                cleanupFailures.add(cleanup)
+            }
+            if (syntheticLocations && storeClosed) emitDeletionPhase("FIXTURE_CLOSED")
             if (cleanupFailures.isNotEmpty()) {
                 val original = primary
                 if (original != null) {
@@ -395,6 +502,7 @@ class SessionDeletionFlowTest {
     private suspend fun seed(
         store: OwnedPracticeTestStore,
         latestMemo: Boolean,
+        syntheticLocations: Boolean,
     ): Seed {
         assertTrue(
             "fixture는 새 빈 DB에서만 생성해야 합니다",
@@ -430,6 +538,44 @@ class SessionDeletionFlowTest {
             if (index == 0 && finish) {
                 val two = store.observations.append(active.sessionId, VehicleObservation(FIXED_TIME + offset + 50, driving()))
                 assertTrue("관찰 시각 역순도 원형으로 보존해야 합니다", two is VehicleObservationAppendResult.Appended)
+            }
+            if (syntheticLocations && finish) {
+                val begun =
+                    store.locationRecordings.begin(
+                        active,
+                        "deletion-run-${UUID.randomUUID()}",
+                        "deletion-process-${UUID.randomUUID()}",
+                        FIXED_TIME + offset + 150,
+                        offset + 100,
+                    ) { true }
+                assertTrue("DELETE_LOCATION_BEGIN", begun is LocationRecordingBeginResult.Begun)
+                val run = (begun as LocationRecordingBeginResult.Begun).run
+                val sample = LocationUpdateReading.Sample(LocationUpdateSample(12.5, 34.5, 0.0, 0f, 0f, 123, offset + 200))
+                assertTrue(
+                    "DELETE_LOCATION_SAMPLE",
+                    store.locationRecordings.append(
+                        active,
+                        run,
+                        sample,
+                        FIXED_TIME + offset + 250,
+                    ) { true } is LocationRecordingAppendResult.Appended,
+                )
+                assertTrue(
+                    "DELETE_LOCATION_STATE",
+                    store.locationRecordings.append(active, run, LocationUpdateReading.Empty(offset + 300), FIXED_TIME + offset + 300) {
+                        true
+                    } is LocationRecordingAppendResult.Appended,
+                )
+                assertTrue(
+                    "DELETE_LOCATION_END",
+                    store.locationRecordings.end(
+                        run,
+                        LocationRecordingRunStatus.STOPPED,
+                        LocationRecordingStopReason.USER_STOP,
+                        FIXED_TIME + offset + 350,
+                        offset + 350,
+                    ) is LocationRecordingEndResult.Ended,
+                )
             }
             if (!finish) return active
             val ended = store.sessions.finish(active.sessionId, FIXED_TIME + offset + 1_000) { true }
@@ -533,6 +679,7 @@ class SessionDeletionFlowTest {
                         records,
                         records.associate { it.sessionId to store.observations.observe(it.sessionId).first() },
                         records.associate { it.sessionId to store.memos.observe(it.sessionId).first() },
+                        records.associate { it.sessionId to store.locationRecordings.observe(it.sessionId).first() },
                         store.sequenceSnapshot(),
                     )
                 }
@@ -550,10 +697,13 @@ class SessionDeletionFlowTest {
             val after = snapshot()
             assertTrue("삭제 대상 하나만 세션 목록에서 없어져야 합니다", after.sessions == before.sessions.filter { it.sessionId != targetId })
             assertTrue("준비는 삭제와 무관하게 보존해야 합니다", after.preparation == before.preparation)
+            assertTrue("DELETE_LOCATION_RETAINED_ROWS", after.locations == before.locations.filterKeys { it != targetId })
             assertTrue("다른 연결 관찰의 ID/원문/순서를 보존해야 합니다", after.observations == before.observations.filterKeys { it != targetId })
             assertTrue("다른 메모의 원문과 version을 보존해야 합니다", after.memos == before.memos.filterKeys { it != targetId })
             assertTrue("삭제로 자동증가 sequence를 낮추면 안 됩니다", after.sequences == before.sequences)
             runBlocking {
+                val deletedLocations = store.locationRecordings.observe(targetId).first()
+                assertTrue("DELETE_LOCATION_SELECTED_CASCADE", deletedLocations.runs.isEmpty() && deletedLocations.events.isEmpty())
                 assertTrue(
                     "선택한 관찰만 실제 cascade로 없어져야 합니다",
                     store.observations
@@ -563,7 +713,7 @@ class SessionDeletionFlowTest {
                 )
                 assertTrue("선택한 메모만 실제 cascade로 없어져야 합니다", store.memos.observe(targetId).first() == null)
             }
-            assertTrue("스키마 버전과 FK 무결성을 보존해야 합니다", store.schemaVersion() == 4 && store.foreignKeyViolationCount() == 0)
+            assertTrue("스키마 버전과 FK 무결성을 보존해야 합니다", store.schemaVersion() == 7 && store.foreignKeyViolationCount() == 0)
         }
 
         fun failureState(): JSONObject =
@@ -858,6 +1008,7 @@ class SessionDeletionFlowTest {
         val sessions: List<PracticeSession>,
         val observations: Map<String, List<SessionVehicleObservation>>,
         val memos: Map<String, SessionMemo?>,
+        val locations: Map<String, LocationRecordingSnapshot>,
         val sequences: Map<String, Long>,
     )
 
@@ -869,6 +1020,140 @@ class SessionDeletionFlowTest {
         fun driving() = parked().copy(gear = VehicleReading.Available(GearPosition.DRIVE))
     }
 
+    private val catalogResourceConfiguration = AtomicReference<CatalogResourceConfiguration?>(null)
+    private val catalogResourceApplied = AtomicBoolean(false)
+    private val catalogResourceRestored = AtomicBoolean(false)
+
+    private class CatalogResourceState(
+        val resources: Resources,
+    ) {
+        val configuration = Configuration(resources.configuration)
+        val metrics = DisplayMetrics().apply { setTo(resources.displayMetrics) }
+    }
+
+    private class CatalogThemeState(
+        val theme: Resources.Theme,
+        val attributes: List<Int>,
+    )
+
+    private class CatalogResourceConfiguration(
+        val activity: ComponentCatalogActivity,
+        val target: CatalogResourceState,
+        val related: List<CatalogResourceState>,
+        val themes: List<CatalogThemeState>,
+    )
+
+    // Selected cache checks only, matching the existing LocationRecordingFlowTest pattern.
+    private fun catalogThemeAttributes(theme: Resources.Theme): List<Int> =
+        listOf(android.R.attr.colorBackground, android.R.attr.textColorPrimary, android.R.attr.windowBackground).flatMap { attribute ->
+            val value = TypedValue()
+            val resolved = theme.resolveAttribute(attribute, value, true)
+            listOf(if (resolved) 1 else 0, value.type, value.data, value.resourceId)
+        }
+
+    private fun catalogResourceConfigurationRequested(): Boolean {
+        val args = InstrumentationRegistry.getArguments()
+        val requested = args.getString("useCatalogResourceConfiguration")
+        check(requested == null || requested == "false" || requested == "true") { "SDRC_FLAG" }
+        if (requested != "true") return false
+        check(args.getString("manualSessionDeletion") == "true") { "SDRC_OPT_IN" }
+        check(args.getString("expectedFontScale") in setOf("1.0", "1.3")) { "SDRC_FONT_ARGUMENT" }
+        check(args.getString("expectedDark") in setOf("false", "true")) { "SDRC_NIGHT_ARGUMENT" }
+        return true
+    }
+
+    @Suppress("DEPRECATION")
+    private fun applyCatalogResourceConfigurationIfRequested() {
+        if (!catalogResourceConfigurationRequested()) return
+        check(!catalogResourceApplied.get() && catalogResourceConfiguration.get() == null) { "SDRC_SINGLE_OWNER" }
+        val instrument = InstrumentationRegistry.getInstrumentation()
+        val args = InstrumentationRegistry.getArguments()
+        val scale = checkNotNull(args.getString("expectedFontScale")).toFloat()
+        val dark = args.getString("expectedDark") == "true"
+        instrument.runOnMainSync {
+            val activity = compose.activity
+            val contexts = listOf(activity, instrument.targetContext, activity.applicationContext, instrument.context)
+            val resources = IdentityHashMap<Resources, CatalogResourceState>()
+            contexts.forEach { context -> resources.getOrPut(context.resources) { CatalogResourceState(context.resources) } }
+            val system = Resources.getSystem()
+            resources.getOrPut(system) { CatalogResourceState(system) }
+            val themes = IdentityHashMap<Resources.Theme, CatalogThemeState>()
+            contexts.forEach { context ->
+                context.theme?.let { theme -> themes.getOrPut(theme) { CatalogThemeState(theme, catalogThemeAttributes(theme)) } }
+            }
+            val target = checkNotNull(resources[activity.resources])
+            check(target.resources !== system) { "SDRC_SYSTEM_RESOURCE_OWNER" }
+            val saved = CatalogResourceConfiguration(activity, target, resources.values.toList(), themes.values.toList())
+            // Save before the first mutation, so assertion/partial-application failure still restores.
+            check(catalogResourceConfiguration.compareAndSet(null, saved)) { "SDRC_CAPTURE_OWNER" }
+            val expected =
+                Configuration(target.configuration).apply {
+                    fontScale = scale
+                    uiMode = (uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or
+                        if (dark) Configuration.UI_MODE_NIGHT_YES else Configuration.UI_MODE_NIGHT_NO
+                }
+            target.resources.updateConfiguration(expected, DisplayMetrics().apply { setTo(target.metrics) })
+            saved.themes.forEach { it.theme.rebase() }
+            check(activity.resources === target.resources && activity.resources.configuration == expected) { "SDRC_ACTUAL_ACTIVITY" }
+            val metrics = activity.resources.displayMetrics
+            check(
+                metrics.widthPixels == target.metrics.widthPixels && metrics.heightPixels == target.metrics.heightPixels &&
+                    metrics.densityDpi == target.metrics.densityDpi && metrics.density == target.metrics.density &&
+                    metrics.xdpi == target.metrics.xdpi && metrics.ydpi == target.metrics.ydpi,
+            ) { "SDRC_PHYSICAL_METRICS" }
+            saved.related.filterNot { it.resources === target.resources }.forEach { before ->
+                check(before.resources.configuration == before.configuration && before.resources.displayMetrics == before.metrics) {
+                    "SDRC_UNRELATED_RESOURCES"
+                }
+            }
+            check(catalogResourceApplied.compareAndSet(false, true)) { "SDRC_APPLIED_ONCE" }
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun restoreCatalogResourceConfiguration() {
+        val saved = catalogResourceConfiguration.get() ?: return
+        val failures = mutableListOf<Throwable>()
+
+        fun cleanup(action: () -> Unit) {
+            try {
+                action()
+            } catch (failure: Throwable) {
+                failures.add(failure)
+            }
+        }
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            check(catalogResourceConfiguration.get() === saved) { "SDRC_RESTORE_OWNER" }
+            cleanup {
+                saved.target.resources.updateConfiguration(
+                    Configuration(saved.target.configuration),
+                    DisplayMetrics().apply { setTo(saved.target.metrics) },
+                )
+            }
+            saved.themes.forEach { before -> cleanup { before.theme.rebase() } }
+            cleanup { check(saved.activity.resources === saved.target.resources) { "SDRC_RESTORE_ACTIVITY" } }
+            saved.related.forEach { before ->
+                cleanup {
+                    check(before.resources.configuration == before.configuration && before.resources.displayMetrics == before.metrics) {
+                        "SDRC_RESTORE_RESOURCES"
+                    }
+                }
+            }
+            saved.themes.forEach { before ->
+                cleanup { check(catalogThemeAttributes(before.theme) == before.attributes) { "SDRC_RESTORE_THEME_ATTRIBUTES" } }
+            }
+            if (failures.isEmpty()) {
+                check(catalogResourceConfiguration.compareAndSet(saved, null)) { "SDRC_RETIRE_OWNER" }
+                catalogResourceRestored.set(true)
+            }
+        }
+        if (failures.isNotEmpty()) {
+            val first = failures.first()
+            failures.drop(1).filterNot { it === first }.forEach(first::addSuppressed)
+            throw first
+        }
+    }
+
     private fun verifyConfiguration() {
         val arguments = InstrumentationRegistry.getArguments()
         val expectedScale =
@@ -876,10 +1161,7 @@ class SessionDeletionFlowTest {
         val expectedDark =
             arguments.getString("expectedDark")?.let { checkNotNull(it.toBooleanStrictOrNull()) { "야간 선언이 잘못됐습니다" } } ?: false
         assertTrue("정의한 글꼴 조건만 검사합니다", expectedScale == 1f || expectedScale == 1.3f)
-        val configuration =
-            InstrumentationRegistry
-                .getInstrumentation()
-                .targetContext.resources.configuration
+        val configuration = compose.activity.resources.configuration
         assertTrue("실제 글꼴 조건이 선언과 같아야 합니다", kotlin.math.abs(configuration.fontScale - expectedScale) < 0.001f)
         assertTrue(
             "실제 야간 조건이 선언과 같아야 합니다",
@@ -941,7 +1223,11 @@ class SessionDeletionFlowTest {
                 ?.action
                 ?.invoke(layouts)
             val matching = layouts.filter { it.layoutInput.text.text == expected }
-            valid = matching.isNotEmpty() && matching.all { textGeometryFits(it, expected) }
+            val actualScale = compose.activity.resources.configuration.fontScale
+            valid = matching.isNotEmpty() &&
+                matching.all {
+                    kotlin.math.abs(it.layoutInput.density.fontScale - actualScale) < 0.001f && textGeometryFits(it, expected)
+                }
         }
         assertTrue("전체 글자와 줄이 잘리거나 말줄임되지 않아야 합니다", valid)
     }

@@ -156,7 +156,7 @@
 
     <string name="history_delete">이 기록 삭제</string>
     <string name="history_delete_title">기록을 삭제할까요?</string>
-    <string name="history_delete_warning">이 연습과 연결된 차량 관찰, 메모, 배경 실행과 마무리 선언을\n이 기기에서 영구 삭제해요. 복구할 수 없어요.</string>
+    <string name="history_delete_warning">이 연습과 연결된 차량 관찰, 메모, 배경 실행, 위치 표본과 수집 상태, 마무리 선언을\n이 기기에서 영구 삭제해요. 복구할 수 없어요.</string>
     <string name="history_delete_observation_count">저장된 차량 관찰 %1$d개</string>
     <string name="history_delete_memo_present">내가 쓴 메모 있음</string>
     <string name="history_delete_memo_absent">내가 쓴 메모 없음</string>
