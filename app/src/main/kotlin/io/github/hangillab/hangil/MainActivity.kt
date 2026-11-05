@@ -129,6 +129,22 @@ class MainActivity : ComponentActivity() {
                             val expected = finishedReviewEntry?.takeIf { it.token == token }?.source
                             FinishedSessionReviewRoute(
                                 expectedSource = expected,
+                                onPrepareNext = openNext@{ source ->
+                                    if (navigation.currentBackStackEntry !== reviewEntry ||
+                                        lifecycle.currentState != Lifecycle.State.RESUMED ||
+                                        reviewEntry.lifecycle.currentState != Lifecycle.State.RESUMED ||
+                                        expected != source ||
+                                        finishedReviews.entry.value
+                                            ?.takeIf { it.token == token }
+                                            ?.source != source
+                                    ) {
+                                        return@openNext
+                                    }
+                                    val nextToken = historyNextPractice.open(source) ?: return@openNext
+                                    navigation.navigate("preparation/history-next/$nextToken/${Uri.encode(source.sessionId)}") {
+                                        launchSingleTop = true
+                                    }
+                                },
                                 onOpenLocations = openLocations@{ source ->
                                     if (navigation.currentBackStackEntry !== reviewEntry ||
                                         !lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) ||

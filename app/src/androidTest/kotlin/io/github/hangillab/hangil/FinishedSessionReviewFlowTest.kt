@@ -16,6 +16,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ViewModelProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.hangillab.hangil.core.domain.GearPosition
@@ -52,7 +53,10 @@ import io.github.hangillab.hangil.feature.home.R as HomeR
  * actions; repositories are read only from this harness. This creates one owned session and
  * its SDK observations. The root runner must restore the canonical schema6 DB, sequences,
  * settings and DDS even after failure. The protected schema7 device is never a test target.
- * This is correctness/UI QA, not a performance measurement or stale-callback simulation.
+ * Source-bound next preparation checks include deliberately replayed old callbacks.
+ * This is correctness/UI QA, not a performance measurement. Run only with the explicit manual
+ * argument and an approved SDK/native validation window. Next preparation additionally requires
+ * manualFinishedReviewNext=true; the original opt-in alone does not enter or replay that action.
  */
 @RunWith(AndroidJUnit4::class)
 class FinishedSessionReviewFlowTest {
@@ -73,6 +77,8 @@ class FinishedSessionReviewFlowTest {
 
     @Test fun actualUiFinishExplicitExactReviewAndDrivingLockPreserveOriginals() {
         assumeTrue(InstrumentationRegistry.getArguments().getString("manualFinishedSessionReviewFlow") == "true")
+        val verifyNext = InstrumentationRegistry.getArguments().getString("manualFinishedReviewNext") == "true"
+        report.put("nextPreparationChecks", if (verifyNext) "requested" else "not-executed-opt-in-required")
         var primary: Throwable? = null
         var sdkObserver: Job? = null
         var before: SessionHistoryRecordingRunFlowTest.Harness.ExistingData? = null
@@ -178,6 +184,13 @@ class FinishedSessionReviewFlowTest {
                     h.assertText("review_source", h.text(HomeR.string.review_source))
                     visibleText("review_source")
                     capture("stored-actual-SDK-observation", false)
+                    val beforeDriveNext =
+                        if (verifyNext) {
+                            visibleText("history_prepare_next")
+                            clickAction("history_prepare_next").also { check(nextPreparationEntry() == null) }
+                        } else {
+                            null
+                        }
                     phase("FINISH_SOURCE_REVIEW_AWAIT_D")
                     h.awaitDrive()
                     requireHost()
@@ -186,6 +199,12 @@ class FinishedSessionReviewFlowTest {
                         listOf("history_ready", "history_observation_content", "history_memo_content").all { h.nodes(it).isEmpty() }
                     }
                     check(!h.liveAllowed())
+                    if (beforeDriveNext != null) {
+                        invokeCallback(beforeDriveNext)
+                        check(nextPreparationEntry() == null && h.nodes("next_practice_ready").isEmpty()) {
+                            "An exact-review callback captured before D must not open next preparation"
+                        }
+                    }
                     capture("actual-D-locked", false)
                     assertOriginals(original, originalPhysical)
                     phase("FINISH_SOURCE_REVIEW_AWAIT_P")
@@ -198,6 +217,35 @@ class FinishedSessionReviewFlowTest {
                     h.waitFor("review_ready")
                     h.assertText("review_source", h.text(HomeR.string.review_source))
                     capture("fresh-P-exact-review", false)
+                    if (verifyNext) {
+                        invokeCallback(checkNotNull(beforeDriveNext))
+                        check(nextPreparationEntry() == null && h.nodes("next_practice_ready").isEmpty()) {
+                            "A rejected old callback must not borrow a new P review owner"
+                        }
+                        assertExact(ended)
+                        val currentNext = clickAction("history_prepare_next")
+                        touch("history_prepare_next")
+                        h.waitFor("next_practice_ready")
+                        val handedOff = checkNotNull(nextPreparationEntry())
+                        check(handedOff.source == ended) { "Next preparation must receive the whole displayed finish source" }
+                        h.assertText("next_practice_course", ended.courseTitle)
+                        invokeCallback(currentNext)
+                        check(nextPreparationEntry() === handedOff) { "One displayed action must not replace its navigation token twice" }
+                        capture("exact-review-next-preparation", false)
+                        touch("next_practice_close")
+                        assertExact(ended)
+                        check(nextPreparationEntry() == null)
+                        invokeCallback(currentNext)
+                        check(nextPreparationEntry() == null && h.nodes("next_practice_ready").isEmpty()) {
+                            "Returning to exact review must not revive its previously used callback"
+                        }
+                        assertExact(ended)
+                        report
+                            .put("nextPreparationChecks", "completed")
+                            .put("exactReviewNextPreparationWholeSourceOnce", true)
+                            .put("oldNextPreparationCallbacksRejectedAfterDrivingAndReturn", true)
+                            .put("nextPreparationCancelledWithoutSaving", true)
+                    }
                     touch("history_close")
                     h.waitFor("home_history")
                     check(h.nodes("history_ready").isEmpty() && h.nodes("session_finish_review").isEmpty())
@@ -645,6 +693,37 @@ class FinishedSessionReviewFlowTest {
             check(display != null && display.isValid && display.displayId == actualDisplay)
         }
         h.requireForeground()
+    }
+
+    private fun clickAction(tag: String): () -> Boolean {
+        val host = checkNotNull(actualHost)
+        h.instrument.runOnMainSync {
+            check(host.lifecycle.currentState == Lifecycle.State.RESUMED && host.hasWindowFocus())
+        }
+        h.scrollVisible(tag)
+        return checkNotNull(
+            h
+                .nodes(tag)
+                .single()
+                .config
+                .getOrNull(SemanticsActions.OnClick)
+                ?.action,
+        )
+    }
+
+    private fun invokeCallback(action: () -> Boolean) {
+        h.instrument.runOnMainSync { action() }
+        compose.waitForIdle()
+    }
+
+    private fun nextPreparationEntry(): HistoryNextPracticeNavigationViewModel.Entry? {
+        val host = checkNotNull(actualHost)
+        var entry: HistoryNextPracticeNavigationViewModel.Entry? = null
+        h.instrument.runOnMainSync {
+            check(host.lifecycle.currentState == Lifecycle.State.RESUMED && host.hasWindowFocus())
+            entry = ViewModelProvider(host)[HistoryNextPracticeNavigationViewModel::class.java].entry.value
+        }
+        return entry
     }
 
     private fun touch(tag: String) {
