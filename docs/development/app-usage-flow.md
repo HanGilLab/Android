@@ -13,7 +13,7 @@ flowchart TD
     home --> preparation["목표, 코스와 과제 준비"]
     preparation -->|"홈에서 직접 시작"| activeSession["연습 시작과 차량 기록"]
     activeSession --> recent["주차 후 연습 마무리"]
-    recent --> recentReview["기록 복습과 내 메모"]
+    recent -->|"복습 버튼 선택"| recentReview["마친 연습 원본 복습"]
     recentReview --> nextPractice["다음 과제 준비"]
     recent -->|"홈 상단에서 같은 코스의 다음 과제"| nextPractice
     nextPractice -->|"홈에서 새로 시작"| activeSession
@@ -31,7 +31,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    prepareOpen["홈에서 연습 준비 또는 준비 바꾸기"] --> selectGoal["목표 선택"]
+    prepareOpen["홈에서 연습 준비 또는 준비 바꾸기"] --> selectGoal["목표 선택, 편집은 유효한 저장 선택 표시"]
     selectGoal --> selectCourse["목표에 맞는 시연 코스 선택"]
     selectCourse --> briefing["브리핑과 구간 설명 확인"]
     briefing --> selectTask["오늘의 과제 한 가지 선택"]
@@ -96,12 +96,13 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    nextEntry["홈 상단 또는 최근 연습의 다음 과제"] --> noActive{"진행 중 연습이 없는가"}
+    nextEntry["홈의 최근 종료, 마침 복습 또는 지난 연습의 선택 기록"] --> noActive{"진행 중 연습이 없는가"}
     noActive -->|"없음"| nextSource["같은 목표, 코스와 버전 확인"]
     noActive -->|"있음"| keepActive["진행 중 연습 유지"]
     nextSource --> nextTask["다음 과제를 직접 선택"]
     nextTask --> nextSave["다음 연습 준비 저장"]
-    nextSave --> readyAgain["홈에서 새 연습 시작"]
+    nextSave --> returnSource["진입한 홈, 복습 또는 이력으로 복귀"]
+    returnSource -->|"홈에서 시작 버튼 직접 선택"| readyAgain["새 연습 시작"]
     nextSource -->|"변경 또는 사용할 수 없음"| normalPrepare["일반 연습 준비로 이동"]
 ```
 
@@ -118,7 +119,7 @@ flowchart LR
 
 지난 연습 화면의 기존 메모 수정은 진행 중인 연습이 없어야 하며 현재 주차/UX 조건도 허용되어야 한다. 홈의 최근 메모는 같은 최신 종료 원본과 현재 주차/UX 조건을 확인하는 별도 편집 흐름이다. 빈 메모와 글자 수 제한, 원본 변경, 저장 충돌과 결과 미확인은 별도로 표시한다. 최근 메모만 지우기는 연습과 차량 기록을 삭제하지 않는다.
 
-다음 연습은 최근 종료 연습을 바탕으로 같은 목표와 코스의 과제를 다시 고르는 준비 기능이다. 지난 임의 연습이나 실제 도로 구간에서 다음 과제로 바로 이어지는 기능으로 확대해 해석하지 않는다. 배경 실행 시각은 실제 연속 수집 기간을 증명하지 않는다.
+다음 준비는 홈의 최근 종료 기록 또는 복습에서 선택한 종료 원본의 목표, 코스와 버전을 확인한 뒤 과제를 직접 고르는 흐름이다. 마침 복습에서 취소하면 같은 복습으로 돌아간다. 실제 도로 구간 기반 추천은 후속 범위다. 배경 실행 시각은 실제 연속 수집 기간을 증명하지 않는다.
 
 ## 과정 마무리와 삭제
 
@@ -176,23 +177,11 @@ flowchart TD
     lastResult -->|"빈 값 / 미지원 / 시간 초과 / 오류"| distinctResult["해당 상태를 구분해 표시"]
 ```
 
-이 진단은 연속 위치 수집이나 주행 경로 저장 기능이 아니다. 이번 도식 작성 중에는 앱 실행, 권한 요청과 위치 조회를 수행하지 않았다.
+debug 진단은 마지막 위치를 한 번 조회한다. 제품의 전면 위치 기록은 사용자가 진행 중인 연습에서 따로 켜며, 화면 이탈, 권한 상실 또는 연습 종료 시 멈춘다. 주차 후 해당 연습의 위치 표본과 저장된 중단 원인을 확인할 수 있다.
 
 ## 아직 main에 없는 연결
 
-아래 점선은 검토 중이거나 후속 구현이 필요한 연결이다. 위의 현재 사용 흐름과 별도로 읽는다. PR의 구현 존재, CI/리뷰와 실제 수동 검증 완료는 각각 구분한다.
-
-```mermaid
-flowchart TD
-    currentFinish["현재 연습 마무리"] -.-> finishReview["PR #75: 같은 종료 원본 복습"]
-    currentSession["현재 진행 중인 연습"] -.-> locationRecord["PR #74: 전면 위치 표본 저장"]
-    locationRecord -.-> storedLocation["PR #74: 주차 후 표본 열람"]
-    storedLocation -.-> roadReview["후속: 실제 도로 복습 지도"]
-    roadReview -.-> roadNext["후속: 실제 구간의 다음 과제"]
-    currentMap["현재 시연 코스 지도"] -.-> routeMatch["후속: 내비 경로 일치"]
-```
-
-[PR #74](https://github.com/HanGilLab/Android/pull/74)와 [PR #75](https://github.com/HanGilLab/Android/pull/75)는 이 기준 시점에 미병합이다. 실제 도로 복습 지도, 목적지/경유지 전달, 안내 경로 일치와 실제 구간 기반 다음 연습은 완성 기능으로 표시하지 않는다.
+실제 도로 복습 지도, 목적지/경유지 전달, 안내 경로 일치와 실제 구간 기반 다음 연습은 후속 범위다.
 
 ## 코드 연결
 
