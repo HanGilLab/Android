@@ -185,6 +185,25 @@ class SdkBindingContextTest {
         }
     }
 
+    @Test fun `route ownership never forwards the connection that could replay cached SDK requests`() {
+        val platform = TrackingContext()
+        val boundary = SdkBindingContext(platform, initialConnectionOnly = true)
+        val sdk = CountingConnection()
+        assertTrue(boundary.bindService(Intent(), sdk, 0))
+        val proxy = platform.connections.single()
+        assertFalse(boundary.onInitialConnection { error("No initial service yet") })
+        proxy.onServiceConnected(COMPONENT, Binder())
+        assertTrue(boundary.onInitialConnection {})
+        proxy.onServiceDisconnected(COMPONENT)
+        proxy.onServiceConnected(COMPONENT, Binder())
+        assertFalse(boundary.bindService(Intent(), sdk, 0))
+        assertFalse(boundary.onInitialConnection { error("Lost connection was replaced") })
+        assertEquals(1, sdk.connected)
+        assertEquals(1, platform.binds.get())
+        boundary.close()
+        assertTrue(platform.registered.isEmpty())
+    }
+
     private class TrackingContext : ContextWrapper(RuntimeEnvironment.getApplication()) {
         val binds = AtomicInteger()
         val unbinds = AtomicInteger()

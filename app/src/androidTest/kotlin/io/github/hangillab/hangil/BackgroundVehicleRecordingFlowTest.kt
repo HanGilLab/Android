@@ -347,13 +347,11 @@ class BackgroundVehicleRecordingFlowTest {
                 ).requestedPermissions
                 .orEmpty()
         assertTrue(
-            "백그라운드 기록을 위해 위치나 경로 권한을 추가하면 안 됩니다",
+            "백그라운드 차량 기록을 위해 Android 위치 권한을 추가하면 안 됩니다",
             listOf(
                 "android.permission.ACCESS_FINE_LOCATION",
                 "android.permission.ACCESS_COARSE_LOCATION",
                 "android.permission.ACCESS_BACKGROUND_LOCATION",
-                "pleos.car.permission.NAVI_ROUTE",
-                "pleos.car.permission.NAVI_ROUTE_SEARCH",
             ).none {
                 it in
                     permissions

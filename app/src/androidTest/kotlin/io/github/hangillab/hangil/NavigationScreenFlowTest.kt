@@ -1,5 +1,12 @@
 package io.github.hangillab.hangil
 
+import ai.pleos.playground.navi.constants.NaviErrorCode
+import ai.pleos.playground.navi.constants.NaviMode
+import ai.pleos.playground.navi.data.DestinationInfo
+import ai.pleos.playground.navi.data.RouteStateInfo
+import ai.pleos.playground.navi.data.WaypointInfo
+import ai.pleos.playground.navi.helper.NaviHelper
+import ai.pleos.playground.navi.helper.listener.NaviHelperEventListener
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Intent
 import android.content.pm.ApplicationInfo
@@ -29,17 +36,25 @@ import androidx.test.runner.lifecycle.Stage
 import dagger.hilt.android.EntryPointAccessors
 import io.github.hangillab.hangil.core.domain.CourseReviewStatus
 import io.github.hangillab.hangil.core.domain.GearPosition
+import io.github.hangillab.hangil.core.domain.PracticeNavigationRoute
 import io.github.hangillab.hangil.core.domain.PracticeSelection
 import io.github.hangillab.hangil.core.domain.PracticeSession
+import io.github.hangillab.hangil.core.domain.Preparation
 import io.github.hangillab.hangil.core.domain.SessionMemo
 import io.github.hangillab.hangil.core.domain.SessionVehicleObservation
 import io.github.hangillab.hangil.core.domain.VehicleReading
 import io.github.hangillab.hangil.core.domain.VehicleRecordingRun
 import io.github.hangillab.hangil.core.domain.allowsPracticeInteraction
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.selects.select
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.After
@@ -50,9 +65,10 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicReference
 import io.github.hangillab.hangil.feature.home.R as HomeR
 
-/** Actual Main/SDK/default-navigation foreground test. Never requests route, info, or location. */
+/** Actual Main/SDK navigation tests. Screen-only methods retain their separate opt-in and request no route. */
 @RunWith(AndroidJUnit4::class)
 class NavigationScreenFlowTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
@@ -174,6 +190,277 @@ class NavigationScreenFlowTest {
             }
             cleanupFailure?.let { throw it }
         }
+    }
+
+    /**
+     * Requires a dedicated real Pleos host with no active practice or unrelated guidance before launch.
+     * The caller inspects the native capture and owns any later cleanup of the confirmed test route.
+     */
+    @Test fun actualPracticeCourseGuidanceOpensDefaultNavigationAndRestoresPreparation() {
+        val args = InstrumentationRegistry.getArguments()
+        assumeTrue(args.getString("manualNativePracticeRoute") == "true")
+        val expectedNavigationPackage = checkNotNull(args.getString("expectedNavigationPackage"))
+        check(expectedNavigationPackage != context.packageName && expectedNavigationPackage.startsWith("ai."))
+        check(
+            context.packageName == "io.github.hangillab.hangil.debug" && Build.VERSION.SDK_INT == 34 &&
+                context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0,
+        )
+        val font = checkNotNull(args.getString("expectedFontScale")).toFloat()
+        val dark = checkNotNull(args.getString("expectedDark")).toBooleanStrict()
+        val configuration = context.resources.configuration
+        check(kotlin.math.abs(configuration.fontScale - font) < 0.001f)
+        check((configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES) == dark)
+        assertPermissionBoundary(requireRoute = true)
+        prepareForegroundObservation()
+
+        val graph = EntryPointAccessors.fromApplication(context.applicationContext, RecordingTestEntryPoint::class.java)
+        val before = snapshot(graph)
+        val original = checkNotNull(before.preparation)
+        check(before.sessions.none { it.isActive })
+        val catalog = graph.catalog()
+        val course = catalog.courses.single { it.id == "pleos-pangyo-yangjae" }
+        val route = checkNotNull(course.navigationRoute)
+        val goal = catalog.goals.first { it.id in course.goalIds }
+        val selected = PracticeSelection(goal.id, course.id, course.version, course.briefingVersion, course.tasks.first().id)
+        check(catalog.resolve(selected) is Preparation.Ready)
+        val preparation = graph.preparation()
+        val vehicle = graph.vehicle()
+        val restrictions = graph.restrictions()
+        val canWritePreparation = { allowsPracticeInteraction(vehicle.state.value, restrictions.restrictions.value) }
+        var selectionAttempted = false
+        var primary: Throwable? = null
+        try {
+            awaitAllowed(graph)
+            if (original != selected) {
+                selectionAttempted = true
+                check(runBlocking { withTimeout(20_000) { preparation.saveSelection(selected, canWritePreparation) } })
+            }
+            check(snapshot(graph) == before.copy(preparation = selected))
+            awaitPackage(context.packageName)
+            waitTag("navigation_course_route_start")
+            verifyGlyphs("navigation_course_route_start")
+            capture("practice-route-before-request")
+            check(readPracticeRoute(route, waitForGuidance = false) == RouteReadback.INACTIVE)
+            phase("NAVI_PRACTICE_ROUTE_INITIAL_IDLE")
+            compose.onNodeWithTag("navigation_course_route_start").performScrollTo().performClick()
+
+            var appResult: String? = null
+            var autoForeground = false
+            compose.waitUntil(60_000) {
+                val foreground = packageNow()
+                val lifecycle = mainState()
+                autoForeground = foreground == expectedNavigationPackage && !lifecycle.isAtLeast(Lifecycle.State.STARTED)
+                if (foreground == context.packageName && lifecycle == Lifecycle.State.RESUMED) {
+                    appResult =
+                        compose
+                            .onAllNodes(hasTestTag("navigation_screen_result"), useUnmergedTree = true)
+                            .fetchSemanticsNodes(false)
+                            .singleOrNull()
+                            ?.config
+                            ?.getOrNull(SemanticsProperties.Text)
+                            ?.singleOrNull()
+                            ?.text
+                }
+                autoForeground || appResult != null
+            }
+            if (!autoForeground) {
+                check(appResult == context.getString(HomeR.string.navigation_route_guidance_started))
+                awaitAllowed(graph)
+                if (packageNow() == context.packageName && mainState() == Lifecycle.State.RESUMED) {
+                    compose
+                        .onNodeWithTag("navigation_screen_open")
+                        .performScrollTo()
+                        .assertIsDisplayed()
+                        .performClick()
+                }
+            }
+            awaitStableNavigation(expectedNavigationPackage)
+            val readback = readPracticeRoute(route, waitForGuidance = true)
+            phase("NAVI_PRACTICE_ROUTE_READBACK_" + readback.name)
+            check(readback == RouteReadback.MATCHED_ACTIVE)
+            check(packageNow() == expectedNavigationPackage && !mainState().isAtLeast(Lifecycle.State.STARTED))
+            capture("practice-route-native-guidance")
+            phase("NAVI_PRACTICE_ROUTE_NATIVE_FOREGROUND_CAPTURED")
+        } catch (failure: Throwable) {
+            primary = failure
+            runCatching { saveForegroundProof("practice-route-failure", failure.javaClass.simpleName) }
+                .exceptionOrNull()
+                ?.let(failure::addSuppressed)
+            throw failure
+        } finally {
+            var cleanupFailure: Throwable? = null
+            listOf<() -> Unit>(
+                { returnToMain() },
+                {
+                    val current = runBlocking { withTimeout(20_000) { preparation.observeSelection().first() } }
+                    if (current != original) {
+                        check(selectionAttempted && current == selected) { "The temporary preparation no longer belongs to this test" }
+                        awaitAllowed(graph)
+                        check(
+                            runBlocking {
+                                withTimeout(20_000) {
+                                    check(preparation.observeSelection().first() == selected)
+                                    preparation.saveSelection(original, canWritePreparation)
+                                }
+                            },
+                        )
+                    }
+                },
+                {
+                    check(before == snapshot(graph))
+                    phase("NAVI_PRACTICE_ROUTE_APP_DATA_RESTORED")
+                },
+                { assertPermissionBoundary(requireRoute = true) },
+            ).forEach { cleanup ->
+                try {
+                    cleanup()
+                } catch (failure: Throwable) {
+                    val originalFailure = primary ?: cleanupFailure
+                    if (originalFailure == null) cleanupFailure = failure else originalFailure.addSuppressed(failure)
+                }
+            }
+            cleanupFailure?.let { throw it }
+        }
+    }
+
+    @Test fun observeExistingPracticeCourseGuidanceWithoutRequestingRoute() {
+        val args = InstrumentationRegistry.getArguments()
+        assumeTrue(args.getString("manualNativePracticeRouteReadback") == "true")
+        check(
+            context.packageName == "io.github.hangillab.hangil.debug" && Build.VERSION.SDK_INT == 34 &&
+                context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0,
+        )
+        val graph = EntryPointAccessors.fromApplication(context.applicationContext, RecordingTestEntryPoint::class.java)
+        val before = snapshot(graph)
+        check(before.sessions.none { it.isActive })
+        val route =
+            checkNotNull(
+                graph
+                    .catalog()
+                    .courses
+                    .single { it.id == "pleos-pangyo-yangjae" }
+                    .navigationRoute,
+            )
+        awaitAllowed(graph)
+        val readback =
+            try {
+                readPracticeRoute(route, waitForGuidance = false)
+            } finally {
+                check(before == snapshot(graph))
+            }
+        phase("NAVI_PRACTICE_ROUTE_READBACK_" + readback.name)
+        check(readback == RouteReadback.MATCHED_ACTIVE)
+    }
+
+    /** Fresh SDK listener, sequential read-only queries and no request or cancellation API. */
+    private fun readPracticeRoute(
+        route: PracticeNavigationRoute,
+        waitForGuidance: Boolean,
+    ): RouteReadback =
+        runBlocking {
+            withContext(Dispatchers.Main.immediate) {
+                val permission = "pleos.car.permission.NAVI_ROUTE"
+                check(context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED)
+                assertNormalNavigationPermission(permission)
+                val helper = NaviHelper(context.applicationContext)
+                val connected = CompletableDeferred<Boolean>()
+                val error = CompletableDeferred<Unit>()
+                val state = AtomicReference<CompletableDeferred<RouteStateInfo>?>()
+                val destination = AtomicReference<CompletableDeferred<DestinationInfo>?>()
+                val waypoints = AtomicReference<CompletableDeferred<List<WaypointInfo>>?>()
+                val listener =
+                    object : NaviHelperEventListener {
+                        override fun onError(errorCode: NaviErrorCode) {
+                            error.complete(Unit)
+                        }
+
+                        override fun onRouteStateInfo(routeStateInfo: RouteStateInfo) {
+                            state.get()?.complete(routeStateInfo)
+                        }
+
+                        override fun onDestinationInfo(destinationInfo: DestinationInfo) {
+                            destination.get()?.complete(destinationInfo)
+                        }
+
+                        override fun onWayPointInfo(waypointInfoList: List<WaypointInfo>) {
+                            waypoints.get()?.complete(waypointInfoList.toList())
+                        }
+                    }
+
+                suspend fun <T> read(
+                    pending: AtomicReference<CompletableDeferred<T>?>,
+                    query: () -> Unit,
+                ): T? {
+                    if (error.isCompleted) return null
+                    val reply = CompletableDeferred<T>()
+                    pending.set(reply)
+                    return try {
+                        query()
+                        select {
+                            error.onAwait { null }
+                            reply.onAwait { it }
+                        }
+                    } finally {
+                        pending.set(null)
+                    }
+                }
+                try {
+                    withTimeoutOrNull(30_000) {
+                        helper.initialize(onConnected = { connected.complete(true) }, onFailed = { connected.complete(false) })
+                        if (!connected.await()) return@withTimeoutOrNull RouteReadback.UNCONFIRMED
+                        helper.addListener(listener)
+                        var current = read(state, helper::getRouteStateInfo) ?: return@withTimeoutOrNull RouteReadback.UNCONFIRMED
+                        while (
+                            waitForGuidance && current.termsAgreement && current.naviMode != NaviMode.SIMULATION_GUIDING &&
+                            !current.isActualGuidance()
+                        ) {
+                            delay(250)
+                            current = read(state, helper::getRouteStateInfo) ?: return@withTimeoutOrNull RouteReadback.UNCONFIRMED
+                        }
+                        phase("NAVI_PRACTICE_ROUTE_STATE_${current.naviMode}_ROUTING_${current.isRouting}_TERMS_${current.termsAgreement}")
+                        if (!current.isActualGuidance()) {
+                            return@withTimeoutOrNull if (
+                                current.termsAgreement && !current.isRouting && current.naviMode == NaviMode.SAFE_GUIDING
+                            ) {
+                                RouteReadback.INACTIVE
+                            } else {
+                                RouteReadback.UNCONFIRMED
+                            }
+                        }
+                        val target = read(destination, helper::getDestinationInfo) ?: return@withTimeoutOrNull RouteReadback.UNCONFIRMED
+                        val stops = read(waypoints, helper::getWaypointInfo) ?: return@withTimeoutOrNull RouteReadback.UNCONFIRMED
+                        val finalState = read(state, helper::getRouteStateInfo)
+                        if (finalState?.isActualGuidance() != true || error.isCompleted) return@withTimeoutOrNull RouteReadback.UNCONFIRMED
+                        val destinationMatches = route.destination.matchesProviderPoi(target.poiId, target.poiSubId)
+                        val waypointsMatch =
+                            stops.size == route.waypoints.size &&
+                                route.waypoints.zip(stops).all { (point, stop) -> point.matchesProviderPoi(stop.poiId, stop.poiSubId) }
+                        when {
+                            destinationMatches && waypointsMatch -> RouteReadback.MATCHED_ACTIVE
+                            !destinationMatches && !waypointsMatch -> RouteReadback.DESTINATION_AND_WAYPOINTS_MISMATCH
+                            !destinationMatches -> RouteReadback.DESTINATION_MISMATCH
+                            else -> RouteReadback.WAYPOINTS_MISMATCH
+                        }
+                    } ?: RouteReadback.UNCONFIRMED
+                } finally {
+                    try {
+                        helper.removeListener(listener)
+                    } finally {
+                        helper.release()
+                    }
+                }
+            }
+        }
+
+    private fun RouteStateInfo.isActualGuidance(): Boolean = termsAgreement && naviMode == NaviMode.ROUTE_GUIDING
+
+    private enum class RouteReadback {
+        MATCHED_ACTIVE,
+        INACTIVE,
+        DESTINATION_MISMATCH,
+        WAYPOINTS_MISMATCH,
+        DESTINATION_AND_WAYPOINTS_MISMATCH,
+        UNCONFIRMED,
     }
 
     @After fun restoreInteractiveWindowsObservationFlag() {
@@ -462,7 +749,10 @@ class NavigationScreenFlowTest {
         }
     }
 
-    private fun assertPermissionBoundary() {
+    private fun assertPermissionBoundary(requireRoute: Boolean = false) {
+        val screenPermission = "pleos.car.permission.NAVI_CUSTOM_MAP"
+        val routePermissions = listOf("pleos.car.permission.NAVI_ROUTE", "pleos.car.permission.NAVI_ROUTE_SEARCH")
+        val required = if (requireRoute) listOf(screenPermission) + routePermissions else listOf(screenPermission)
         val permissions =
             context.packageManager
                 .getPackageInfo(
@@ -471,18 +761,15 @@ class NavigationScreenFlowTest {
                 ).requestedPermissions
                 .orEmpty()
         assertTrue(
-            "화면 권한만 정상 선언/허용되어야 합니다",
-            "pleos.car.permission.NAVI_CUSTOM_MAP" in permissions &&
-                context.checkSelfPermission("pleos.car.permission.NAVI_CUSTOM_MAP") == PackageManager.PERMISSION_GRANTED,
+            "필요한 내비 권한이 이미 선언되고 허용되어야 합니다",
+            required.all { it in permissions && context.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED },
         )
-        assertTrue(
-            "경로나 경로 정보 권한으로 확대하지 않습니다",
-            listOf("pleos.car.permission.NAVI_ROUTE", "pleos.car.permission.NAVI_ROUTE_SEARCH").none {
-                it in
-                    permissions
-            },
-        )
-        val info = context.packageManager.getPermissionInfo("pleos.car.permission.NAVI_CUSTOM_MAP", 0)
+        val grantedRoutePermissions = routePermissions.filter { context.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
+        (required + grantedRoutePermissions).distinct().forEach(::assertNormalNavigationPermission)
+    }
+
+    private fun assertNormalNavigationPermission(permission: String) {
+        val info = context.packageManager.getPermissionInfo(permission, 0)
         assertTrue(
             "이 검사에서 새 dangerous 허용 흐름을 대신하면 안 됩니다",
             info.protectionLevel and android.content.pm.PermissionInfo.PROTECTION_MASK_BASE ==

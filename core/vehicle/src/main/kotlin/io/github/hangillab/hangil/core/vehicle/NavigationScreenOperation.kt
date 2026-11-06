@@ -2,6 +2,7 @@ package io.github.hangillab.hangil.core.vehicle
 
 import io.github.hangillab.hangil.core.domain.ConnectionState
 import io.github.hangillab.hangil.core.domain.NavigationScreenResult
+import io.github.hangillab.hangil.core.domain.PracticeNavigationRoute
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Job
@@ -22,12 +23,32 @@ internal class NavigationScreenOperation(
     private val factory: () -> NavigationClient,
     private val main: CoroutineDispatcher,
     private val timeoutMillis: Long = 20_000,
+    private val routeFactory: () -> NavigationClient = factory,
 ) {
     private val mutex = Mutex()
     private val currentConnection = MutableStateFlow(ConnectionState.DISCONNECTED)
     val connection = currentConnection.asStateFlow()
 
-    suspend fun request(canDispatch: () -> Boolean): NavigationScreenResult {
+    suspend fun request(canDispatch: () -> Boolean): NavigationScreenResult =
+        execute(factory, NavigationClient::hasPermission, canDispatch) { client, _ ->
+            client.requestForeground()
+            NavigationScreenResult.REQUESTED
+        }
+
+    suspend fun requestRoute(
+        route: PracticeNavigationRoute,
+        canDispatch: () -> Boolean,
+    ): NavigationScreenResult =
+        execute(routeFactory, NavigationClient::hasRoutePermissions, canDispatch) { client, allowed ->
+            client.requestRoute(route, allowed, timeoutMillis)
+        }
+
+    private suspend fun execute(
+        createClient: () -> NavigationClient,
+        hasPermission: (NavigationClient) -> Boolean,
+        canDispatch: () -> Boolean,
+        dispatch: suspend (NavigationClient, () -> Boolean) -> NavigationScreenResult,
+    ): NavigationScreenResult {
         // A competing call is rejected, not queued for a later host or parking lifetime.
         if (!mutex.tryLock()) return NavigationScreenResult.BLOCKED
         val caller = currentCoroutineContext()[Job]
@@ -40,11 +61,11 @@ internal class NavigationScreenOperation(
                 fun allowed(): Boolean = caller?.isActive == true && runCatching(canDispatch).getOrDefault(false)
                 try {
                     if (!allowed()) return@withContext NavigationScreenResult.BLOCKED
-                    val current = factory().also { client = it }
+                    val current = createClient().also { client = it }
                     result =
                         when {
                             !current.isSupported() -> NavigationScreenResult.UNSUPPORTED
-                            !current.hasPermission() -> NavigationScreenResult.PERMISSION_DENIED
+                            !hasPermission(current) -> NavigationScreenResult.PERMISSION_DENIED
                             else -> {
                                 currentConnection.value = ConnectionState.CONNECTING
                                 val connected =
@@ -55,12 +76,11 @@ internal class NavigationScreenOperation(
                                 when {
                                     connected == null -> NavigationScreenResult.TIMED_OUT
                                     !allowed() -> NavigationScreenResult.BLOCKED
-                                    !current.hasPermission() -> NavigationScreenResult.PERMISSION_DENIED
+                                    !hasPermission(current) -> NavigationScreenResult.PERMISSION_DENIED
                                     else -> {
                                         currentCoroutineContext().ensureActive()
                                         currentConnection.value = ConnectionState.CONNECTED
-                                        current.requestForeground()
-                                        NavigationScreenResult.REQUESTED
+                                        dispatch(current, ::allowed)
                                     }
                                 }
                             }
@@ -77,7 +97,13 @@ internal class NavigationScreenOperation(
                             client?.close()
                         } catch (failure: Exception) {
                             cleanupFailure = failure
-                            result = NavigationScreenResult.ERROR
+                            result =
+                                when (result) {
+                                    NavigationScreenResult.GUIDANCE_STARTED,
+                                    NavigationScreenResult.GUIDANCE_UNCONFIRMED,
+                                    -> NavigationScreenResult.GUIDANCE_UNCONFIRMED
+                                    else -> NavigationScreenResult.ERROR
+                                }
                         }
                         currentConnection.value = ConnectionState.DISCONNECTED
                     }

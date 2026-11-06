@@ -5,10 +5,11 @@ import io.github.hangillab.hangil.core.domain.CoursePreviewPoint
 import io.github.hangillab.hangil.core.domain.PracticeCatalog
 import io.github.hangillab.hangil.core.domain.PracticeCourse
 import io.github.hangillab.hangil.core.domain.PracticeGoal
+import io.github.hangillab.hangil.core.domain.PracticeNavigationRoute
 import io.github.hangillab.hangil.core.domain.PracticeTask
 import javax.inject.Inject
 
-/** Fictional preparation examples with separate fixed landmark previews, not reviewed road routes. */
+/** Preparation examples with separate landmark previews and a Pleos SDK demonstration route. */
 class LocalPracticeCatalog
     @Inject
     constructor() : PracticeCatalog {
@@ -68,6 +69,45 @@ class LocalPracticeCatalog
                                     CoursePreviewPoint("gwanghwamun", "광화문", 37.5759283, 126.9768176, 170199440L, 22),
                                     CoursePreviewPoint("sejong-center", "세종문화회관", 37.5723190, 126.9756030, 543729863L, 14),
                                     CoursePreviewPoint("government-seoul-complex", "정부서울청사", 37.5748313, 126.9749411, 196076051L, 18),
+                                ),
+                        ),
+                ),
+                PracticeCourse(
+                    id = "pleos-pangyo-yangjae",
+                    version = 1,
+                    briefingVersion = 1,
+                    title = "판교를 거쳐 양재까지",
+                    summary = "Pleos 내비 예제로 경유지와 목적지를 한 번에 안내받는 순서를 익혀요.",
+                    sections = listOf("주차 중 경로 확인", "소프트웨어드림센터 경유", "양재 목적지 도착"),
+                    tasks =
+                        listOf(
+                            PracticeTask("stops", "경유지 순서 확인하기", "출발 전에 경유지와 최종 목적지의 순서를 확인해 보세요."),
+                        ),
+                    goalIds = setOf("commute", "shopping"),
+                    // POI identifiers and routing coordinates from the official NaviHelper waypoint example.
+                    // Pleos resolves the waypoint ID to the Software Dream Center in active guidance.
+                    // https://document.pleos.ai/docs/pleos-only/connect-sdk-pleos/NaviHelper/route-with-waypoints
+                    navigationRoute =
+                        PracticeNavigationRoute(
+                            destination =
+                                PracticeNavigationRoute.Point(
+                                    name = "42dot",
+                                    latitude = 37.48544722,
+                                    longitude = 127.03636666,
+                                    poiId = "36khp37hh8gqcm5nqhe5",
+                                    poiSubId = "0",
+                                    address = "서울시 강남구 남부순환로 2621",
+                                ),
+                            waypoints =
+                                listOf(
+                                    PracticeNavigationRoute.Point(
+                                        name = "소프트웨어드림센터",
+                                        latitude = 37.41275833,
+                                        longitude = 127.09481944,
+                                        poiId = "36khp2hdj2cfcm5nqhe3",
+                                        poiSubId = "0",
+                                        address = "경기도 성남시 수정구 창업로40번길 20",
+                                    ),
                                 ),
                         ),
                 ),

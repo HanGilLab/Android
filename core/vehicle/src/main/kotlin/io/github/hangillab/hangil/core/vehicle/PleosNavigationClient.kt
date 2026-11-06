@@ -8,25 +8,21 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Handler
 import android.os.Looper
+import io.github.hangillab.hangil.core.domain.NavigationScreenResult
+import io.github.hangillab.hangil.core.domain.PracticeNavigationRoute
 import java.util.concurrent.atomic.AtomicBoolean
 
-/** One explicit screen request, no route, location, information, or cancellation APIs. */
+/** One explicit screen or guidance request and its associated SDK connection. */
 internal class PleosNavigationClient(
     context: Context,
+    initialConnectionOnly: Boolean = false,
 ) : NavigationClient {
-    private val context = SdkBindingContext(context)
+    private val context = SdkBindingContext(context, initialConnectionOnly)
     private val handler = Handler(Looper.getMainLooper())
     private val cancelled = AtomicBoolean(false)
-    private val requestError = AtomicBoolean(false)
     private var sdk: NaviHelper? = null
     private var closed = false
-    private var listenerAdded = false
-    private val listener =
-        object : NaviHelperEventListener {
-            override fun onError(errorCode: NaviErrorCode) {
-                requestError.set(true)
-            }
-        }
+    private var listener: NaviHelperEventListener? = null
 
     override fun isSupported(): Boolean =
         try {
@@ -35,8 +31,12 @@ internal class PleosNavigationClient(
             false
         }
 
-    override fun hasPermission(): Boolean =
-        context.checkSelfPermission("pleos.car.permission.NAVI_CUSTOM_MAP") == PackageManager.PERMISSION_GRANTED
+    override fun hasPermission(): Boolean = hasPermission("pleos.car.permission.NAVI_CUSTOM_MAP")
+
+    override fun hasRoutePermissions(): Boolean =
+        hasPermission("pleos.car.permission.NAVI_ROUTE") && hasPermission("pleos.car.permission.NAVI_ROUTE_SEARCH")
+
+    private fun hasPermission(permission: String): Boolean = context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
 
     override fun connect(
         onConnected: () -> Unit,
@@ -52,15 +52,42 @@ internal class PleosNavigationClient(
 
     override fun requestForeground() {
         check(!closed && !cancelled.get())
-        if (context.checkSelfPermission("pleos.car.permission.NAVI_CUSTOM_MAP") != PackageManager.PERMISSION_GRANTED) {
-            throw SecurityException()
-        }
+        if (!hasPermission()) throw SecurityException()
         val current = checkNotNull(sdk)
-        current.addListener(listener)
-        listenerAdded = true
+        val requestError = AtomicBoolean(false)
+        val screenListener =
+            object : NaviHelperEventListener {
+                override fun onError(errorCode: NaviErrorCode) {
+                    requestError.set(true)
+                }
+            }
+        listener = screenListener
+        current.addListener(screenListener)
         current.requestNavigationScreen(NavigationScreenRequest.Foreground)
         // Synchronous errors are observed; the void return is never an actual-screen acknowledgement.
         check(!requestError.get()) { "Navigation screen request failed" }
+    }
+
+    override suspend fun requestRoute(
+        route: PracticeNavigationRoute,
+        canDispatch: () -> Boolean,
+        timeoutMillis: Long,
+    ): NavigationScreenResult {
+        check(!closed && !cancelled.get())
+        val current = checkNotNull(sdk)
+        val routeRequest =
+            PleosNavigationRouteRequest(
+                onConnection = context::onInitialConnection,
+                hasPermissions = ::hasRoutePermissions,
+                canDispatch = canDispatch,
+                getRouteState = current::getRouteStateInfo,
+                getDestination = current::getDestinationInfo,
+                getWaypoints = current::getWaypointInfo,
+                requestRoute = current::requestRouteWithWaypoints,
+            )
+        listener = routeRequest
+        current.addListener(routeRequest)
+        return routeRequest.request(route, timeoutMillis)
     }
 
     override fun cancelPending() {
@@ -79,9 +106,9 @@ internal class PleosNavigationClient(
         }
         val current = sdk
         if (current != null) {
-            if (listenerAdded) {
+            listener?.let { added ->
                 try {
-                    current.removeListener(listener)
+                    current.removeListener(added)
                 } catch (cause: Exception) {
                     val previous = failure
                     if (previous == null) failure = cause else previous.addSuppressed(cause)

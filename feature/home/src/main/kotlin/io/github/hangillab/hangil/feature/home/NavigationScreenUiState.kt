@@ -7,6 +7,7 @@ data class NavigationScreenUiState(
     val revision: Long = 0,
     val phase: Phase = Phase.CLOSED,
     val result: NavigationScreenResult? = null,
+    internal val routePreparationRevision: Long? = null,
 ) {
     enum class Phase { CLOSED, IDLE, OPENING, LOCKED, RESULT }
 }

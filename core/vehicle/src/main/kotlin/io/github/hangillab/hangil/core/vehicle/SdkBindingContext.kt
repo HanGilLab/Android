@@ -15,10 +15,13 @@ import java.util.IdentityHashMap
  */
 internal class SdkBindingContext(
     context: Context,
+    private val initialConnectionOnly: Boolean = false,
 ) : ContextWrapper(context.applicationContext) {
     private val lock = Any()
     private val bindings = IdentityHashMap<ServiceConnection, Binding>()
     private var closed = false
+    private var initialConnection: Binding? = null
+    private var initialBinder: IBinder? = null
     private var cleanupFailure: Exception? = null
 
     override fun bindService(
@@ -28,6 +31,7 @@ internal class SdkBindingContext(
     ): Boolean =
         synchronized(lock) {
             if (closed) return@synchronized false
+            if (initialConnectionOnly && initialConnection != null) return@synchronized false
             bindings[conn]?.let { previous ->
                 if (previous.enabled && previous.bound) return@synchronized true
                 unbind(previous)
@@ -60,6 +64,17 @@ internal class SdkBindingContext(
             bindings[conn]?.let(::unbind)
         }
     }
+
+    /**
+     * Route operations use one platform connection. NaviHelper can replay queued calls when reconnected.
+     * Serialize SDK invocation with platform disconnect callbacks and reject work on a retired binder.
+     */
+    fun onInitialConnection(action: () -> Unit): Boolean =
+        synchronized(lock) {
+            if (closed || initialBinder?.isBinderAlive != true) return@synchronized false
+            action()
+            true
+        }
 
     fun close() {
         synchronized(lock) {
@@ -105,17 +120,41 @@ internal class SdkBindingContext(
         override fun onServiceConnected(
             name: ComponentName,
             service: IBinder,
-        ) = dispatch { delegate.onServiceConnected(name, service) }
+        ) = dispatch {
+            if (initialConnectionOnly) {
+                if (initialConnection != null) return@dispatch
+                initialConnection = this
+                initialBinder = service
+            }
+            delegate.onServiceConnected(name, service)
+        }
 
-        override fun onServiceDisconnected(name: ComponentName) = dispatch { delegate.onServiceDisconnected(name) }
+        override fun onServiceDisconnected(name: ComponentName) =
+            dispatch {
+                retireInitialConnection()
+                delegate.onServiceDisconnected(name)
+            }
 
-        override fun onBindingDied(name: ComponentName) = dispatch { delegate.onBindingDied(name) }
+        override fun onBindingDied(name: ComponentName) =
+            dispatch {
+                retireInitialConnection()
+                delegate.onBindingDied(name)
+            }
 
-        override fun onNullBinding(name: ComponentName) = dispatch { delegate.onNullBinding(name) }
+        override fun onNullBinding(name: ComponentName) =
+            dispatch {
+                retireInitialConnection()
+                delegate.onNullBinding(name)
+            }
 
         fun deactivate() {
+            retireInitialConnection()
             enabled = false
             pending.clear()
+        }
+
+        private fun retireInitialConnection() {
+            if (initialConnection === this) initialBinder = null
         }
 
         fun drain() {

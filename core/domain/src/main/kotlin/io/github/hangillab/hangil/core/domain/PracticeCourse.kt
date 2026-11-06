@@ -11,4 +11,5 @@ data class PracticeCourse(
     val goalIds: Set<String>,
     val reviewStatus: CourseReviewStatus = CourseReviewStatus.DEMO,
     val mapPreview: CourseMapPreview? = null,
+    val navigationRoute: PracticeNavigationRoute? = null,
 )

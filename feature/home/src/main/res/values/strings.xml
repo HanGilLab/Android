@@ -175,7 +175,7 @@
     <string name="history_delete_failed">삭제하지 못했어요. 기록을 다시 확인해 주세요.</string>
     <string name="history_memo_empty">이 연습에 저장한 메모가 없어요.</string>
     <string name="navigation_screen_title">기본 내비</string>
-    <string name="navigation_screen_scope">목적지는 보내지 않아요. 내비 중 기록을 켜지 않으면 화면을 벗어날 때 차량 기록이 멈춰요.</string>
+    <string name="navigation_screen_scope">화면만 열어요. 내비 중 기록을 켜지 않으면 화면을 벗어날 때 차량 기록이 멈춰요.</string>
     <string name="navigation_screen_open">기본 내비 열기</string>
     <string name="navigation_screen_connecting">내비에 연결하고 있어요.</string>
     <string name="navigation_screen_requested">화면 전환을 요청했어요. 내비 화면을 확인해 주세요.</string>
@@ -184,6 +184,16 @@
     <string name="navigation_screen_permission">내비 화면을 여는 권한이 없어요.</string>
     <string name="navigation_screen_timeout">내비 연결 응답이 없어요. 화면을 확인한 뒤 다시 요청해 주세요.</string>
     <string name="navigation_screen_error">전환 요청을 확인하지 못했어요. 내비 화면을 확인해 주세요.</string>
+    <string name="navigation_route_title">준비한 코스 길안내</string>
+    <string name="navigation_route_destination">도착지 %1$s</string>
+    <string name="navigation_route_waypoint">경유지 %1$d. %2$s</string>
+    <string name="navigation_route_start">기본 내비에 길안내 요청</string>
+    <string name="navigation_route_handoff">기본 내비가 열리면 도착지와 경유지를 확인해 주세요.</string>
+    <string name="navigation_route_guidance_started">기본 내비에서 준비한 코스의 길안내를 확인했어요.</string>
+    <string name="navigation_route_guidance_unconfirmed">길안내 시작을 확인하지 못했어요. 기본 내비를 확인해 주세요.</string>
+    <string name="navigation_route_active">기본 내비에서 이미 안내 중인 경로를 유지했어요.</string>
+    <string name="navigation_route_blocked">준비한 코스와 주차 상태를 다시 확인해 주세요.</string>
+    <string name="navigation_route_permission">코스 길안내를 요청할 권한이 없어요.</string>
     <string name="background_recording_title">내비 중 차량 기록</string>
     <string name="background_recording_disabled">지금은 한길 화면이 켜진 동안만 기록해요.</string>
     <string name="background_recording_starting">내비 중 기록을 준비하고 있어요.</string>
