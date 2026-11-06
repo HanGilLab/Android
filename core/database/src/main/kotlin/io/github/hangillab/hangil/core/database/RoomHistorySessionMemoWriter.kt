@@ -16,9 +16,22 @@ internal class RoomHistorySessionMemoWriter
     constructor(
         private val database: PreparationDatabase,
     ) : HistorySessionMemoWriter {
+        override suspend fun create(
+            expectedSource: PracticeSession,
+            text: String,
+            canCommit: () -> Boolean,
+        ): SessionMemoWriteResult = write(expectedSource, null, text, canCommit)
+
         override suspend fun update(
             expectedSource: PracticeSession,
             expectedMemo: SessionMemo,
+            text: String,
+            canCommit: () -> Boolean,
+        ): SessionMemoWriteResult = write(expectedSource, expectedMemo, text, canCommit)
+
+        private suspend fun write(
+            expectedSource: PracticeSession,
+            expectedMemo: SessionMemo?,
             text: String,
             canCommit: () -> Boolean,
         ): SessionMemoWriteResult =
@@ -29,11 +42,11 @@ internal class RoomHistorySessionMemoWriter
                     val result =
                         when {
                             actual == null -> SessionMemoWriteResult.MissingSession
-                            expectedMemo.sessionId != expectedSource.sessionId || actual != expectedSource ->
+                            actual != expectedSource || (expectedMemo != null && expectedMemo.sessionId != actual.sessionId) ->
                                 SessionMemoWriteResult.SessionChanged
                             actual.isActive || database.practiceSessionDao().unfinishedCount() != 0L ->
                                 SessionMemoWriteResult.SessionActive
-                            else -> updateExisting(expectedMemo, text)
+                            else -> writeMemo(actual.sessionId, expectedMemo, text)
                         }
                     requirePermission(canCommit)
                     result
@@ -57,16 +70,21 @@ internal class RoomHistorySessionMemoWriter
             return source
         }
 
-        private suspend fun updateExisting(
-            expectedMemo: SessionMemo,
+        private suspend fun writeMemo(
+            sessionId: String,
+            expectedMemo: SessionMemo?,
             text: String,
         ): SessionMemoWriteResult {
             val dao = database.sessionMemoDao()
-            val current = dao.find(expectedMemo.sessionId)?.memo()
-            if (current == null || current != expectedMemo) return SessionMemoWriteResult.Conflict
+            val current = dao.find(sessionId)?.memo()
+            if (current != expectedMemo) return SessionMemoWriteResult.Conflict
             if (!SessionMemoPolicy.isValidText(text)) return SessionMemoWriteResult.InvalidText
-            val next = SessionMemoEntity(current.sessionId, text, nextVersion(current.version))
-            check(dao.update(current.sessionId, text, next.version, current.version) == 1)
+            val next = SessionMemoEntity(sessionId, text, nextVersion(current?.version))
+            if (current == null) {
+                dao.insert(next)
+            } else {
+                check(dao.update(sessionId, text, next.version, current.version) == 1)
+            }
             return SessionMemoWriteResult.Saved(next.memo())
         }
 
@@ -77,7 +95,7 @@ internal class RoomHistorySessionMemoWriter
             if (!allowed) throw WriteBlocked()
         }
 
-        private fun nextVersion(previous: String): String {
+        private fun nextVersion(previous: String?): String {
             var next: String
             do {
                 next = UUID.randomUUID().toString()

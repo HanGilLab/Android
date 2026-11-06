@@ -116,6 +116,7 @@
     <string name="memo_unsaved">저장되지 않은 초안이에요</string>
     <string name="memo_count">%1$d / %2$d자</string>
     <string name="memo_save">메모 저장</string>
+    <string name="memo_create">메모 쓰기</string>
     <string name="memo_edit">메모 수정</string>
     <string name="memo_cancel_edit">수정 취소</string>
     <string name="memo_delete">메모 지우기</string>

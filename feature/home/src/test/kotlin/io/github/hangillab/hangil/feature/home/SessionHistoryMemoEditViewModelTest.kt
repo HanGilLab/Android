@@ -62,6 +62,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -110,6 +111,49 @@ class SessionHistoryMemoEditViewModelTest {
             assertFalse(ready(fresh).canEdit)
             assertFalse(f.model.beginStoredMemoEdit(ready(fresh).token))
             assertEquals(0, f.writer.calls)
+        }
+
+    @Test fun `the exact finish review creates a first memo only once and confirms it from storage`() =
+        runTest {
+            val f = Fixture()
+            val source = session("b")
+            val saved = SessionMemo(source.sessionId, "첫 연습 메모", "first-version")
+            f.memos.values.value = null
+            val persisted = MutableSharedFlow<SessionMemo?>()
+            f.writer.createAction = { expectedSource, text, canCommit ->
+                assertEquals(source, expectedSource)
+                assertEquals(saved.text, text)
+                assertTrue(canCommit())
+                f.memos.querySource = { persisted }
+                SessionMemoWriteResult.Saved(saved)
+            }
+            var parent: SessionHistoryUiState.Ready? = null
+            backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+                f.model.observeEntry(SessionHistoryEntry.FinishedReview(source), f.host::get).collect {
+                    parent = it as? SessionHistoryUiState.Ready
+                }
+            }
+            runCurrent()
+            val detail = open(f, source, checkNotNull(parent).generation)
+            val empty = detail.value as SessionHistoryMemoUiState.Empty
+            assertTrue(empty.canCreate)
+            assertTrue(f.model.beginStoredMemoEdit(empty.token))
+            runCurrent()
+            val edit = editing(detail)
+            assertEquals("", edit.draft)
+            assertNull(edit.memo)
+            assertTrue(f.model.editStoredMemo(edit.token, edit.nonce, saved.text))
+            assertTrue(f.model.saveStoredMemo(edit.token, edit.nonce, saved.text))
+            assertFalse(f.model.saveStoredMemo(edit.token, edit.nonce, saved.text))
+            runCurrent()
+            assertTrue(detail.value is SessionHistoryMemoUiState.Loading)
+            assertEquals(1, f.writer.creates)
+            assertEquals(0, f.writer.calls)
+            persisted.emit(saved)
+            runCurrent()
+            assertEquals(saved, ready(detail).memo)
+            assertEquals(Feedback.SAVED, ready(detail).feedback)
+            assertEquals(listOf(source.sessionId, source.sessionId), f.memos.requested)
         }
 
     @Test fun `an older memo shares the selected full source without a second parent subscription`() =
@@ -871,6 +915,19 @@ class SessionHistoryMemoEditViewModelTest {
     }
 
     private class Writer : HistorySessionMemoWriter {
+        var creates = 0
+        var createAction: suspend (PracticeSession, String, () -> Boolean) -> SessionMemoWriteResult =
+            { _, _, _ -> error("Unconfigured history create") }
+
+        override suspend fun create(
+            expectedSource: PracticeSession,
+            text: String,
+            canCommit: () -> Boolean,
+        ): SessionMemoWriteResult {
+            creates++
+            return createAction(expectedSource, text, canCommit)
+        }
+
         var calls = 0
         var source: PracticeSession? = null
         var expected: SessionMemo? = null
