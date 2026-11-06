@@ -1,10 +1,15 @@
 package io.github.hangillab.hangil
 
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.hangillab.hangil.core.database.OwnedPracticeTestStore
 import io.github.hangillab.hangil.core.domain.CourseCompletionDeclaration
+import io.github.hangillab.hangil.core.domain.DrivingRestrictions
+import io.github.hangillab.hangil.core.domain.ParkingState
 import io.github.hangillab.hangil.core.domain.PracticeSelection
 import io.github.hangillab.hangil.core.domain.PracticeSession
 import io.github.hangillab.hangil.core.domain.PracticeSessionRepository
@@ -19,6 +24,7 @@ import io.github.hangillab.hangil.core.domain.SessionMemoRepository
 import io.github.hangillab.hangil.core.domain.SessionMemoWriteResult
 import io.github.hangillab.hangil.core.domain.SessionStartResult
 import io.github.hangillab.hangil.core.domain.SessionVehicleObservation
+import io.github.hangillab.hangil.core.domain.UxRestrictionState
 import io.github.hangillab.hangil.core.domain.VehicleObservation
 import io.github.hangillab.hangil.core.domain.VehicleObservationAppendResult
 import io.github.hangillab.hangil.core.domain.VehicleRecordingRun
@@ -37,6 +43,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicInteger
+import io.github.hangillab.hangil.feature.home.R as HomeR
 
 /** Real production routes and strict Room repository in a UUID-owned schema6 store; no SDK or user database. */
 @RunWith(AndroidJUnit4::class)
@@ -167,6 +174,53 @@ class FinishSourceReviewRoomFlowTest {
             next.openExact(ended)
             next.ready(ended)
             check(next.navigation.isEmpty() && f.snapshot() == committedData)
+        }
+    }
+
+    @Test fun uxLockDuringFinishShowsBlockedFeedbackAfterUnlock() {
+        assumeManual()
+        fixture { f ->
+            val original = f.snapshot()
+            val started = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            val result = CompletableDeferred<SessionFinishResult>()
+            val proxy = Sessions(f.store.sessions, listOf(f.active))
+            proxy.onFinish = { expected, time, allowed ->
+                check(allowed())
+                started.complete(Unit)
+                release.await()
+                f.store.sessions
+                    .finish(expected, time, allowed)
+                    .also { result.complete(it) }
+            }
+            val ui = f.mount(proxy)
+            ui.waitTag("session_finish")
+            val oldFinish = ui.action("session_finish")
+            ui.touch("session_finish")
+            await(started)
+            ui.waitTag("session_saving")
+
+            compose.runOnIdle {
+                ui.restrictions.value = DrivingRestrictions(ParkingState.PARKED, UxRestrictionState.RESTRICTED)
+            }
+            ui.waitTag("home_locked_title")
+            check(ui.nodes("session_finish").isEmpty() && ui.nodes("session_feedback").isEmpty())
+            release.complete(Unit)
+            check(await(result) == SessionFinishResult.Blocked)
+            compose.waitUntil(TIMEOUT) { proxy.completed.get() == 1 }
+            compose.runOnIdle {
+                ui.restrictions.value = DrivingRestrictions(ParkingState.PARKED, UxRestrictionState.UNRESTRICTED)
+            }
+
+            ui.waitTag("session_feedback")
+            compose.onNodeWithTag("session_feedback", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
+            val context = InstrumentationRegistry.getInstrumentation().targetContext
+            check(ui.text("session_feedback") == context.getString(HomeR.string.session_blocked))
+            ui.waitTag("session_finish")
+            ui.invoke(oldFinish)
+            check(proxy.strictCalls.get() == 1 && proxy.legacyCalls.get() == 0)
+            check(ui.session.finishReceipt.value == null && ui.navigation.isEmpty())
+            check(f.snapshot() == original)
         }
     }
 
