@@ -57,18 +57,25 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    readyHome["유효한 준비가 있는 홈"] -->|"연습 시작"| sessionStarted["연습과 시작 시각 저장"]
+    home["홈"] -->|"유효한 준비 확인"| readyHome["준비한 코스"]
+    home -->|"주차와 UX 허용"| navigationRequest["기본 내비 열기"]
+    readyHome -->|"연습 시작"| sessionStarted["연습과 시작 시각 저장"]
     sessionStarted --> foregroundRecord["한길 화면에서 차량 기록"]
     sessionStarted -->|"내비 중에도 기록하기를 직접 선택"| backgroundRecord["배경 차량 기록 켜기"]
-    foregroundRecord --> navigationRequest["주차 후 기본 내비 요청"]
-    backgroundRecord --> navigationRequest
+    foregroundRecord -->|"주차와 UX 허용"| navigationRequest
+    backgroundRecord -->|"주차와 UX 허용"| navigationRequest
     navigationRequest -->|"전환되면"| nativeNavigation["Pleos 기본 내비 화면"]
+    readyHome -->|"지원 코스, 주차와 UX 허용"| courseRoute["경유지와 도착지의 길안내 요청"]
+    courseRoute -->|"전환되면"| nativeNavigation
+    courseRoute -->|"기존 안내 중 또는 요청 실패"| navigationFeedback
     navigationRequest -->|"미지원, 권한 없음, 응답 없음 또는 오류"| navigationFeedback["요청 상태를 확인하고 새로 선택"]
-    nativeNavigation -->|"배경 기록을 켠 경우"| continueRecord["내비에서도 차량 기록"]
-    nativeNavigation -->|"배경 기록을 켜지 않은 경우"| pauseRecord["이탈 중 전면 기록 중단"]
+    nativeNavigation -->|"연습 중 배경 기록을 켠 경우"| continueRecord["내비에서도 차량 기록"]
+    nativeNavigation -->|"연습 중 배경 기록을 켜지 않은 경우"| pauseRecord["이탈 중 전면 기록 중단"]
     continueRecord --> returnHome["한길 복귀"]
     pauseRecord --> returnHome
-    returnHome -->|"주차와 UX 허용 확인"| parkedSession["현재 연습 확인"]
+    nativeNavigation -->|"진행 중인 연습 없음"| returnHome
+    returnHome -->|"진행 중인 연습 없음"| home
+    returnHome -->|"연습 중 주차와 UX 허용 확인"| parkedSession["현재 연습 확인"]
     parkedSession -->|"내비 중 기록 끄기"| backgroundOff["배경 실행 종료 처리"]
     parkedSession -->|"연습 마무리"| finishedSession["종료 시각 저장과 마무리"]
     backgroundOff --> parkedSession
@@ -77,7 +84,9 @@ flowchart TD
     interrupted -->|"직접 정리 또는 다시 켜기"| parkedSession
 ```
 
-기본 내비 요청은 화면 열기만 요청하며 목적지, 경유지와 시연 코스를 전송하지 않는다. 요청 반환을 실제 화면 전환이나 길안내 성공으로 표시하지 않는다. 배경 기록은 차량 상태에 한하며 위치와 경로를 수집하지 않는다. 중간 상태와 앱이 종료된 동안의 수집은 보장하지 않는다.
+기본 내비 열기는 화면 전환을 요청한다. 별도의 길안내 버튼은 주차와 UX 허용이 확인된 상태에서 판교를 거쳐 양재까지 코스의 경유지와 도착지를 Pleos에 보낸다. 기존 안내 중이면 새 요청을 막고, 화면 전환과 실제 안내 시작을 구분한다.
+
+사용자가 켠 배경 기록의 수집 범위는 차량 상태다. 위치와 경로는 수집 대상에서 제외하며, 중간 상태와 앱이 종료된 동안의 수집은 보장하지 않는다.
 
 주행 중에는 연습 마무리, 메모와 상세 복습을 조작할 수 없다. 상세 화면의 잠금과 이미 시작한 차량 기록 수집은 서로 다른 동작이다.
 
@@ -179,9 +188,9 @@ flowchart TD
 
 debug 진단은 마지막 위치를 한 번 조회한다. 제품의 전면 위치 기록은 사용자가 진행 중인 연습에서 따로 켜며, 화면 이탈, 권한 상실 또는 연습 종료 시 멈춘다. 주차 후 해당 연습의 위치 표본과 저장된 중단 원인을 확인할 수 있다.
 
-## 아직 main에 없는 연결
+## 남은 연결과 검증
 
-실제 도로 복습 지도, 목적지/경유지 전달, 안내 경로 일치와 실제 구간 기반 다음 연습은 후속 범위다.
+실제 도로 복습 지도와 실제 구간 기반 다음 연습은 후속 범위다. 지원 코스의 경유지, 도착지와 안내 시작은 Pleos에서 확인했으며, 지도 타일 표시와 실제 도로 경로의 일치는 별도 검증이 필요하다.
 
 ## 코드 연결
 
@@ -191,7 +200,7 @@ debug 진단은 마지막 위치를 한 번 조회한다. 제품의 전면 위�
 | 목표, 코스, 브리핑과 과제 준비 | [CourseScreen](../../feature/course/src/main/kotlin/io/github/hangillab/hangil/feature/course/CourseScreen.kt) |
 | 연습 시작/마무리와 최근 연습 | [SessionPanel](../../feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionPanel.kt), [SessionViewModel](../../feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionViewModel.kt) |
 | 지도와 고정 시연 지점 선택 | [MapScreen](../../feature/map/src/main/kotlin/io/github/hangillab/hangil/feature/map/MapScreen.kt) |
-| 기본 내비 화면 요청 | [NavigationScreenRoute](../../feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/NavigationScreenRoute.kt) |
+| 기본 내비 열기와 지원 코스 길안내 | [NavigationScreenRoute](../../feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/NavigationScreenRoute.kt) |
 | 명시적인 배경 차량 기록 | [BackgroundRecordingRoute](../../feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/BackgroundRecordingRoute.kt), [VehicleRecordingService](../../app/src/main/kotlin/io/github/hangillab/hangil/VehicleRecordingService.kt) |
 | 지난 연습, 차량 관찰과 배경 실행 | [SessionHistoryScreen](../../feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionHistoryScreen.kt) |
 | 최근/이전 연습의 메모 | [SessionMemoEditor](../../feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionMemoEditor.kt), [HistorySessionMemoEditor](../../feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/HistorySessionMemoEditor.kt) |
