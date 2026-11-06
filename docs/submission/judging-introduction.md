@@ -22,7 +22,7 @@
 
 연습을 시작하고 필요하면 차량 상태 배경 기록을 켜거나 기본 내비 화면을 엽니다. 위치 표본은 사용자가 직접 켠 경우 한길 화면이 켜진 동안만 기록하며, 화면 이탈, 권한 상실이나 연습 종료 등에서 멈추고 자동 재개하지 않습니다.
 
-주차 후 마침 응답에 연결된 복습 버튼으로 같은 종료 원본의 저장된 관찰, 위치 기록과 메모를 확인합니다. 메모가 비어 있으면 그 기록에 첫 메모를 남길 수 있습니다. 마침 복습이나 지난 연습에서 선택한 종료 기록으로 같은 목표와 코스의 다음 과제를 준비합니다. 마침 복습에서 취소하면 같은 복습으로 돌아가고, 저장 뒤 연습은 별도로 시작합니다. 시연 지도에는 정해진 지점을, 위치 기록에는 연습에서 관찰한 표본을 표시합니다.
+주차 후 마침 응답에 연결된 복습 버튼으로 같은 종료 원본의 저장된 관찰, 위치 기록과 메모를 확인합니다. 주차와 화면 사용 허용이 확인되고 새 연습을 시작하기 전이라면 방금 마친 기록에 첫 메모를 남길 수 있습니다. 마침 복습이나 지난 연습에서 선택한 종료 기록으로 같은 목표와 코스의 다음 과제를 준비합니다. 마침 복습에서 취소하면 같은 복습으로 돌아가고, 저장 뒤 연습은 별도로 시작합니다. 시연 지도에는 정해진 지점을, 위치 기록에는 연습에서 관찰한 표본을 표시합니다.
 
 ## 5. 개발 계획
 
@@ -57,9 +57,9 @@ Kotlin과 Compose 화면, 순수 도메인 계약, Pleos와 AAOS 어댑터, Room
 | 명시적 전면 위치 표본 기록과 열람 | [전면 위치 controller](../../core/domain/src/main/kotlin/io/github/hangillab/hangil/core/domain/ForegroundLocationRecordingController.kt), [위치 기록 화면](../../feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/LocationHistoryScreen.kt) | 배경 위치 수집, 현재 위치나 실제 경로가 아니다. SDK 시각과 신뢰도 원본값의 미확인 의미를 유지한다 |
 | 마친 연습 원본에 고정한 복습 | [마침 응답 처리](../../feature/home/src/main/kotlin/io/github/hangillab/hangil/feature/home/SessionViewModel.kt), [원본 메모리 토큰](../../app/src/main/kotlin/io/github/hangillab/hangil/FinishedReviewNavigationViewModel.kt) | 최신 기록으로 대체하지 않는다. 프로세스 재생성으로 원본을 잃으면 이용 불가이며 실제 도로 구간 복습은 아니다 |
 
-준비 편집, 과거 기록의 다음 준비, 위치 중단 원인과 삭제 고지는 제어 입력을 사용하는 API33 화면에서 확인했다. 마침 복습에서 다음 준비로 이어지는 경로는 실제 Main과 Room에서 기본 라이트 및 1.3배 글자 다크로 확인했다. 마침 복습의 첫 메모는 더 최신 연습이 있어도 선택한 종료 기록에만 저장되는 것을 확인했다. [다음 준비 검증](https://github.com/HanGilLab/Android/pull/101), [첫 메모 검증](https://github.com/HanGilLab/Android/pull/107)
+준비 편집, 과거 기록의 다음 준비, 위치 중단 원인과 삭제 고지는 제어 입력을 사용하는 API33 화면에서 확인했다. 마침 복습에서 다음 준비로 이어지는 경로는 실제 Main과 Room에서 기본 라이트 및 1.3배 글자 다크로 확인했다. 격리 API 33의 실제 Compose 화면과 Room에서 더 최신 종료 기록이 생겨도 첫 메모가 마침 복습을 연 원본에만 저장되는 것을 확인했다. [다음 준비 검증](https://github.com/HanGilLab/Android/pull/101), [첫 메모 검증](https://github.com/HanGilLab/Android/pull/107)
 
-Pleos 에뮬레이터에서는 기본 라이트와 확대 다크에서 내비 전면 전환, 회전 안내 시작, 소프트웨어드림센터 경유와 양재 42dot 도착의 일치를 확인했다. 기본 내비의 지도 배경 타일에는 인증 오류가 있었고 실제 도로 경로와 주행 정확도는 미검증이다. [코스 내비 연동 검증](https://github.com/HanGilLab/Android/pull/108)
+Pleos 에뮬레이터에서는 기본 라이트와 확대 다크에서 내비 전면 전환, 회전 안내 시작, 소프트웨어드림센터 경유지와 양재 42dot 도착지의 일치를 확인했다. 기본 내비의 지도 배경 타일에는 인증 오류가 있었고 실제 도로 경로와 주행 정확도는 미검증이다. [코스 내비 연동 검증](https://github.com/HanGilLab/Android/pull/108)
 
 ## 심사 항목과 확인할 가설
 

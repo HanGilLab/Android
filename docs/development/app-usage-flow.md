@@ -57,11 +57,13 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    readyHome["유효한 준비가 있는 홈"] -->|"연습 시작"| sessionStarted["연습과 시작 시각 저장"]
+    home["홈"] -->|"유효한 준비 확인"| readyHome["준비한 코스"]
+    home -->|"주차와 UX 허용"| navigationRequest["기본 내비 열기"]
+    readyHome -->|"연습 시작"| sessionStarted["연습과 시작 시각 저장"]
     sessionStarted --> foregroundRecord["한길 화면에서 차량 기록"]
     sessionStarted -->|"내비 중에도 기록하기를 직접 선택"| backgroundRecord["배경 차량 기록 켜기"]
-    foregroundRecord --> navigationRequest["주차 후 기본 내비 열기"]
-    backgroundRecord --> navigationRequest
+    foregroundRecord -->|"주차와 UX 허용"| navigationRequest
+    backgroundRecord -->|"주차와 UX 허용"| navigationRequest
     navigationRequest -->|"전환되면"| nativeNavigation["Pleos 기본 내비 화면"]
     readyHome -->|"지원 코스, 주차와 UX 허용"| courseRoute["경유지와 도착지의 길안내 요청"]
     courseRoute -->|"전환되면"| nativeNavigation
@@ -71,7 +73,9 @@ flowchart TD
     nativeNavigation -->|"연습 중 배경 기록을 켜지 않은 경우"| pauseRecord["이탈 중 전면 기록 중단"]
     continueRecord --> returnHome["한길 복귀"]
     pauseRecord --> returnHome
-    returnHome -->|"주차와 UX 허용 확인"| parkedSession["현재 연습 확인"]
+    nativeNavigation -->|"진행 중인 연습 없음"| returnHome
+    returnHome -->|"진행 중인 연습 없음"| home
+    returnHome -->|"연습 중 주차와 UX 허용 확인"| parkedSession["현재 연습 확인"]
     parkedSession -->|"내비 중 기록 끄기"| backgroundOff["배경 실행 종료 처리"]
     parkedSession -->|"연습 마무리"| finishedSession["종료 시각 저장과 마무리"]
     backgroundOff --> parkedSession
