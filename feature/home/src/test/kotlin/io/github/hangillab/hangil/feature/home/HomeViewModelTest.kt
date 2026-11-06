@@ -189,6 +189,25 @@ class HomeViewModelTest {
             assertEquals(0, writes)
         }
 
+    @Test fun returningToSamePreparationDoesNotRevivePreviousRouteAction() =
+        runTest {
+            val selected = MutableStateFlow<PracticeSelection?>(selection)
+            selectionSource = selected
+            val model = HomeViewModel(vehicle, navigation, restrictions, repository, catalog)
+            observe(model)
+            val original = model.uiState.value.preparationRevision
+            assertTrue(model.canExpandPreparation(practice, original))
+
+            selected.value = null
+            runCurrent()
+            selected.value = selection
+            runCurrent()
+            assertFalse(model.canExpandPreparation(practice, original))
+            assertTrue(model.canExpandPreparation(practice, model.uiState.value.preparationRevision))
+            assertEquals(1, reads)
+            assertEquals(0, writes)
+        }
+
     @Test fun `a preparation read failure invalidates the old disclosure before UI failure delivery`() =
         runTest {
             val failRead = CompletableDeferred<Unit>()

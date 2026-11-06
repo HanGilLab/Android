@@ -13,7 +13,7 @@ class LocalPracticeCatalogTest {
     @Test fun `all shipped demo choices have a resolvable version and task`() {
         val catalog = LocalPracticeCatalog()
         assertEquals(2, catalog.goals.size)
-        assertEquals(2, catalog.courses.size)
+        assertEquals(3, catalog.courses.size)
         assertEquals(
             catalog.courses.size,
             catalog.courses
@@ -46,7 +46,7 @@ class LocalPracticeCatalogTest {
     }
 
     @Test fun `current landmark previews preserve existing preparation identities and versions`() {
-        val courses = LocalPracticeCatalog().courses
+        val courses = LocalPracticeCatalog().courses.filter { it.mapPreview != null }
         assertEquals(listOf("neighborhood", "intersections"), courses.map { it.id })
         assertEquals(listOf("생활권 한 바퀴", "교차로 흐름 익히기"), courses.map { it.title })
         assertEquals(listOf(1, 1), courses.map { it.version })
@@ -62,8 +62,22 @@ class LocalPracticeCatalogTest {
         )
     }
 
+    @Test fun `native demo course resolves its official destination and waypoint independently of landmark previews`() {
+        val catalog = LocalPracticeCatalog()
+        val course = catalog.courses.single { it.navigationRoute != null }
+        val selection = PracticeSelection("commute", course.id, course.version, course.briefingVersion, "stops")
+        val prepared = (catalog.resolve(selection) as Preparation.Ready).practice
+        val route = requireNotNull(prepared.course.navigationRoute)
+
+        assertEquals("pleos-pangyo-yangjae", prepared.course.id)
+        assertEquals("36khp37hh8gqcm5nqhe5", route.destination.poiId)
+        assertEquals(listOf("36khp2hdj2cfcm5nqhe3"), route.waypoints.map { it.poiId })
+        assertEquals(null, prepared.course.mapPreview)
+        assertTrue(catalog.courses.filter { it.mapPreview != null }.all { it.navigationRoute == null })
+    }
+
     @Test fun `each shipped course has its own ordered fixed landmark preview`() {
-        val previews = LocalPracticeCatalog().courses.map { requireNotNull(it.mapPreview) }
+        val previews = LocalPracticeCatalog().courses.mapNotNull { it.mapPreview }
         assertEquals(listOf("seoul-city-hall-landmarks", "gwanghwamun-landmarks"), previews.map { it.id })
         assertEquals(listOf("서울 시청 주변", "광화문 주변"), previews.map { it.title })
         assertEquals(listOf(1, 1), previews.map { it.version })

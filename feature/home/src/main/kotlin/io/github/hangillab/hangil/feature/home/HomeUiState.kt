@@ -10,6 +10,7 @@ data class HomeUiState(
     val navigationConnection: ConnectionState = ConnectionState.UNAVAILABLE,
     val restrictions: DrivingRestrictions = DrivingRestrictions(),
     val preparation: PreparationLoadState = PreparationLoadState.Loading,
+    internal val preparationRevision: Long = 0,
 ) {
     val allowsDetailedInteraction: Boolean get() = allowsPracticeInteraction(vehicle, restrictions)
 }

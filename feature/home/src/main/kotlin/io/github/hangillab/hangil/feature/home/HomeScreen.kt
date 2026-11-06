@@ -107,7 +107,7 @@ private fun HomeRouteContent(
         showDiagnostics,
         viewModel::retryLoading,
         { if (viewModel.canViewMap()) onMapPreview() },
-        viewModel::canExpandPreparation,
+        { viewModel.canExpandPreparation(it) },
         viewModel::canViewMap,
         {
             SessionRoute(
@@ -118,7 +118,12 @@ private fun HomeRouteContent(
                 onRetryRecording = onRetryRecording,
                 onFinishedReview = onFinishedReview,
             )
-            NavigationScreenRoute()
+            val prepared = ((state.preparation as? PreparationLoadState.Loaded)?.preparation as? Preparation.Ready)?.practice
+            NavigationScreenRoute(
+                prepared = prepared,
+                preparationRevision = state.preparationRevision,
+                canUsePreparedRoute = viewModel::canExpandPreparation,
+            )
             ParkedButton(
                 onClick = { if (viewModel.canViewHistory()) onHistory() },
                 prominent = false,

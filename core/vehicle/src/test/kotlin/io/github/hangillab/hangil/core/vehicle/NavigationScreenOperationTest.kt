@@ -2,7 +2,9 @@ package io.github.hangillab.hangil.core.vehicle
 
 import io.github.hangillab.hangil.core.domain.ConnectionState
 import io.github.hangillab.hangil.core.domain.NavigationScreenResult
+import io.github.hangillab.hangil.core.domain.PracticeNavigationRoute
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -227,8 +229,36 @@ class NavigationScreenOperationTest {
             assertEquals(1, client.closes)
         }
 
+    @Test fun routeAndScreenShareOwnershipWithoutSendingAnImplicitForegroundRequest() =
+        runTest {
+            val screen = Client()
+            val routeClient = Client().apply { permission = false }
+            val operation =
+                NavigationScreenOperation(
+                    { screen },
+                    StandardTestDispatcher(testScheduler),
+                    routeFactory = { routeClient },
+                )
+            val destination = PracticeNavigationRoute.Point("Destination", 1.0, 1.0, "destination", "0", "Address")
+            val waypoint = PracticeNavigationRoute.Point("Waypoint", 2.0, 2.0, "waypoint", "0", "Address")
+            val route = PracticeNavigationRoute(destination, listOf(waypoint))
+            val result = async { operation.requestRoute(route) { true } }
+            runCurrent()
+            routeClient.connected()
+            runCurrent()
+            assertEquals(route, routeClient.route)
+            assertEquals(NavigationScreenResult.BLOCKED, operation.request { true })
+            assertEquals(0, screen.connects)
+            assertEquals(0, routeClient.requests)
+            routeClient.routeResult.complete(NavigationScreenResult.GUIDANCE_STARTED)
+            assertEquals(NavigationScreenResult.GUIDANCE_STARTED, result.await())
+            assertEquals(1, routeClient.closes)
+        }
+
     private class Client : NavigationClient {
         var supported = true
+        var route: PracticeNavigationRoute? = null
+        val routeResult = CompletableDeferred<NavigationScreenResult>()
         var permission = true
         var connects = 0
         var requests = 0
@@ -244,6 +274,8 @@ class NavigationScreenOperationTest {
 
         override fun hasPermission() = permission
 
+        override fun hasRoutePermissions() = true
+
         override fun connect(
             onConnected: () -> Unit,
             onFailed: (Throwable) -> Unit,
@@ -257,6 +289,15 @@ class NavigationScreenOperationTest {
         override fun requestForeground() {
             requests++
             requestFailure?.let { throw it }
+        }
+
+        override suspend fun requestRoute(
+            route: PracticeNavigationRoute,
+            canDispatch: () -> Boolean,
+            timeoutMillis: Long,
+        ): NavigationScreenResult {
+            this.route = route
+            return routeResult.await()
         }
 
         override fun cancelPending() {

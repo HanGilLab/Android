@@ -8,4 +8,10 @@ interface NavigationGateway {
 
     /** Requests only the default screen; rechecks the caller's live ownership before dispatch. */
     suspend fun requestForeground(canDispatch: () -> Boolean): NavigationScreenResult
+
+    /** Requests course guidance while the caller still owns the current parked action. */
+    suspend fun requestRoute(
+        route: PracticeNavigationRoute,
+        canDispatch: () -> Boolean,
+    ): NavigationScreenResult = NavigationScreenResult.UNSUPPORTED
 }

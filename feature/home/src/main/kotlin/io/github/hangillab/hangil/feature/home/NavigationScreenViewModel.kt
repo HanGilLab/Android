@@ -6,6 +6,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import io.github.hangillab.hangil.core.domain.DrivingRestrictionsProvider
 import io.github.hangillab.hangil.core.domain.NavigationGateway
 import io.github.hangillab.hangil.core.domain.NavigationScreenResult
+import io.github.hangillab.hangil.core.domain.PracticeNavigationRoute
 import io.github.hangillab.hangil.core.domain.VehicleGateway
 import io.github.hangillab.hangil.core.domain.allowsPracticeInteraction
 import kotlinx.coroutines.CancellationException
@@ -77,7 +78,22 @@ class NavigationScreenViewModel
                 }
             }
 
-        fun open(expected: NavigationScreenUiState): Boolean {
+        fun open(expected: NavigationScreenUiState): Boolean = request(expected, dispatch = navigation::requestForeground)
+
+        internal fun startRoute(
+            expected: NavigationScreenUiState,
+            route: PracticeNavigationRoute,
+            preparationRevision: Long,
+            canUsePreparation: () -> Boolean,
+        ): Boolean = request(expected, preparationRevision, canUsePreparation) { guard -> navigation.requestRoute(route, guard) }
+
+        private fun request(
+            expected: NavigationScreenUiState,
+            preparationRevision: Long? = null,
+            canUsePreparation: () -> Boolean = { true },
+            dispatch: suspend (() -> Boolean) -> NavigationScreenResult,
+        ): Boolean {
+            fun preparationIsCurrent(): Boolean = runCatching(canUsePreparation).getOrDefault(false)
             val work =
                 synchronized(lock) {
                     val owner = host ?: return@synchronized null
@@ -91,18 +107,21 @@ class NavigationScreenViewModel
                         deny(owner)
                         return@synchronized null
                     }
-                    publish(owner, NavigationScreenUiState.Phase.OPENING)
+                    if (!preparationIsCurrent()) return@synchronized null
+                    publish(owner, NavigationScreenUiState.Phase.OPENING, preparationRevision = preparationRevision)
                     val request = current.value
                     val job =
                         viewModelScope.launch(start = CoroutineStart.LAZY) {
                             val caller = checkNotNull(currentCoroutineContext()[Job])
+                            val canDispatch = {
+                                synchronized(lock) {
+                                    host === owner && current.value === request && caller.isActive && allowed(owner) &&
+                                        preparationIsCurrent()
+                                }
+                            }
                             val result =
                                 try {
-                                    navigation.requestForeground {
-                                        synchronized(lock) {
-                                            host === owner && current.value === request && caller.isActive && allowed(owner)
-                                        }
-                                    }
+                                    if (canDispatch()) dispatch(canDispatch) else NavigationScreenResult.BLOCKED
                                 } catch (cancelled: CancellationException) {
                                     if (!currentCoroutineContext().isActive) throw cancelled
                                     NavigationScreenResult.ERROR
@@ -111,10 +130,10 @@ class NavigationScreenViewModel
                                 }
                             synchronized(lock) {
                                 if (host === owner && current.value === request && caller.isActive) {
-                                    if (allowed(owner)) {
-                                        publish(owner, NavigationScreenUiState.Phase.RESULT, result)
-                                    } else {
-                                        deny(owner)
+                                    when {
+                                        !allowed(owner) -> deny(owner)
+                                        !preparationIsCurrent() -> publish(owner, NavigationScreenUiState.Phase.IDLE)
+                                        else -> publish(owner, NavigationScreenUiState.Phase.RESULT, result, preparationRevision)
                                     }
                                 }
                             }
@@ -153,8 +172,9 @@ class NavigationScreenViewModel
             owner: Host,
             phase: NavigationScreenUiState.Phase,
             result: NavigationScreenResult? = null,
+            preparationRevision: Long? = null,
         ) {
-            current.value = NavigationScreenUiState(owner.id, ++revision, phase, result)
+            current.value = NavigationScreenUiState(owner.id, ++revision, phase, result, preparationRevision)
         }
 
         private class Host(

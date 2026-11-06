@@ -24,7 +24,6 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onCompletion
-import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
@@ -47,6 +46,7 @@ class HomeViewModel
         private var preparationOwner: Any? = null
         private var preparationJob: Job? = null
         private var receivedPreparation: PreparationLoadState = PreparationLoadState.Loading
+        private var preparationRevision = 0L
         private val preparation =
             retry.flatMapLatest {
                 val owner = Any()
@@ -58,6 +58,7 @@ class HomeViewModel
                             preparationOwner = owner
                             preparationJob = starting
                             receivedPreparation = PreparationLoadState.Loading
+                            preparationRevision++
                         }
                         emit(PreparationLoadState.Loading)
                     }.onCompletion { cause ->
@@ -65,9 +66,13 @@ class HomeViewModel
                     }.catch {
                         currentCoroutineContext().ensureActive()
                         emit(PreparationLoadState.Failed)
-                    }.onEach { load ->
+                    }.map { load ->
                         synchronized(disclosureLock) {
-                            if (preparationOwner === owner) receivedPreparation = load
+                            if (preparationOwner === owner && receivedPreparation != load) {
+                                receivedPreparation = load
+                                preparationRevision++
+                            }
+                            load to preparationRevision
                         }
                     }.onCompletion {
                         synchronized(disclosureLock) {
@@ -80,17 +85,21 @@ class HomeViewModel
             }
         val uiState =
             combine(vehicleGateway.state, navigationGateway.connection, restrictionsProvider.restrictions, preparation) { v, n, r, p ->
-                HomeUiState(v, n, r, p)
+                HomeUiState(v, n, r, p.first, p.second)
             }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(0, 0), HomeUiState())
 
         fun canPrepare(): Boolean =
             uiState.value.preparation is PreparationLoadState.Loaded &&
                 allowsPracticeInteraction(vehicleGateway.state.value, restrictionsProvider.restrictions.value)
 
-        internal fun canExpandPreparation(expected: PreparedPractice): Boolean =
+        internal fun canExpandPreparation(
+            expected: PreparedPractice,
+            revision: Long? = null,
+        ): Boolean =
             synchronized(disclosureLock) {
                 val current = (receivedPreparation as? PreparationLoadState.Loaded)?.preparation as? Preparation.Ready
                 preparationJob?.isActive == true && current?.practice == expected &&
+                    (revision == null || revision == preparationRevision) &&
                     allowsPracticeInteraction(vehicleGateway.state.value, restrictionsProvider.restrictions.value)
             }
 

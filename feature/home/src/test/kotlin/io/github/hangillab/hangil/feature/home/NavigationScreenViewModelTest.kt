@@ -7,6 +7,7 @@ import io.github.hangillab.hangil.core.domain.GearPosition
 import io.github.hangillab.hangil.core.domain.NavigationGateway
 import io.github.hangillab.hangil.core.domain.NavigationScreenResult
 import io.github.hangillab.hangil.core.domain.ParkingState
+import io.github.hangillab.hangil.core.domain.PracticeNavigationRoute
 import io.github.hangillab.hangil.core.domain.UxRestrictionState
 import io.github.hangillab.hangil.core.domain.VehicleGateway
 import io.github.hangillab.hangil.core.domain.VehicleReading
@@ -25,6 +26,7 @@ import kotlinx.coroutines.withContext
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -65,6 +67,60 @@ class NavigationScreenViewModelTest {
             runCurrent()
             assertEquals(NavigationScreenResult.REQUESTED, f.model.state.value.result)
             assertFalse(f.model.open(displayed))
+            f.model.endHost(host)
+            runCurrent()
+        }
+
+    @Test fun courseRouteRechecksPreparationBeforeConnectionAndDispatch() =
+        runTest {
+            val f = Fixture()
+            val host = f.model.beginHost { true }
+            runCurrent()
+            var ownsPreparation = false
+            val displayed = f.model.state.value
+            assertFalse(f.model.startRoute(displayed, route, 3) { ownsPreparation })
+            ownsPreparation = true
+            assertTrue(f.model.startRoute(displayed, route, 3) { ownsPreparation })
+            ownsPreparation = false
+            runCurrent()
+            assertTrue(f.navigation.routeRequests.isEmpty())
+            assertEquals(NavigationScreenUiState.Phase.IDLE, f.model.state.value.phase)
+
+            ownsPreparation = true
+            val current = f.model.state.value
+            assertTrue(f.model.startRoute(current, route, 4) { ownsPreparation })
+            runCurrent()
+            assertEquals(listOf(route), f.navigation.routeRequests)
+            assertTrue(f.navigation.guard())
+            ownsPreparation = false
+            assertFalse(f.navigation.guard())
+            f.navigation.finish.complete(NavigationScreenResult.GUIDANCE_STARTED)
+            runCurrent()
+            assertNull(f.model.state.value.result)
+            assertEquals(NavigationScreenUiState.Phase.IDLE, f.model.state.value.phase)
+            assertFalse(f.model.startRoute(current, route, 4) { true })
+            f.model.endHost(host)
+            runCurrent()
+        }
+
+    @Test fun activeGuidanceRemainsAnExplicitCourseResultAndExcludesScreenRequests() =
+        runTest {
+            val f = Fixture()
+            val host = f.model.beginHost { true }
+            runCurrent()
+            val displayed = f.model.state.value
+            assertTrue(f.model.startRoute(displayed, route, 3) { true })
+            assertFalse(f.model.open(displayed))
+            assertFalse(f.model.open(f.model.state.value))
+            assertFalse(f.model.startRoute(displayed, route, 3) { true })
+            runCurrent()
+            f.navigation.finish.complete(NavigationScreenResult.ACTIVE_ROUTE)
+            runCurrent()
+            assertEquals(NavigationScreenResult.ACTIVE_ROUTE, f.model.state.value.result)
+            assertEquals(3L, f.model.state.value.routePreparationRevision)
+            assertEquals(listOf(route), f.navigation.routeRequests)
+            assertEquals(0, f.navigation.calls)
+            assertFalse(f.model.startRoute(displayed, route, 3) { true })
             f.model.endHost(host)
             runCurrent()
         }
@@ -259,6 +315,7 @@ class NavigationScreenViewModelTest {
     private class Gateway : NavigationGateway {
         override val connection = MutableStateFlow(ConnectionState.DISCONNECTED)
         var calls = 0
+        val routeRequests = mutableListOf<PracticeNavigationRoute>()
         var ignoreCancellation = false
         var failure: Exception? = null
         val finish = CompletableDeferred<NavigationScreenResult>()
@@ -270,9 +327,24 @@ class NavigationScreenViewModelTest {
             failure?.let { throw it }
             return if (ignoreCancellation) withContext(NonCancellable) { finish.await() } else finish.await()
         }
+
+        override suspend fun requestRoute(
+            route: PracticeNavigationRoute,
+            canDispatch: () -> Boolean,
+        ): NavigationScreenResult {
+            routeRequests += route
+            guard = canDispatch
+            return finish.await()
+        }
     }
 
     companion object {
+        private val route =
+            PracticeNavigationRoute(
+                PracticeNavigationRoute.Point("도착지", 37.1, 127.1, "destination", "0", "도착지 주소"),
+                listOf(PracticeNavigationRoute.Point("경유지", 37.2, 127.2, "waypoint", "0", "경유지 주소")),
+            )
+
         private fun parked() = VehicleState(ConnectionState.CONNECTED, VehicleReading.Available(GearPosition.PARK))
 
         private fun unrestricted() = DrivingRestrictions(ParkingState.PARKED, UxRestrictionState.UNRESTRICTED)
