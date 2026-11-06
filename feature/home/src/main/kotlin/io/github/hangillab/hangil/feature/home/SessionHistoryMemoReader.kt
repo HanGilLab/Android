@@ -44,6 +44,7 @@ internal class SessionHistoryMemoReader(
         val isCurrent: () -> Boolean,
         val denyAccess: () -> Unit,
         val canWrite: () -> Boolean,
+        val canCreate: Boolean = false,
     )
 
     fun observe(
@@ -110,9 +111,17 @@ internal class SessionHistoryMemoReader(
     fun beginEdit(token: Token): Boolean =
         synchronized(lock) {
             val owner = owner(token) ?: return@synchronized false
-            if (owner.published.value !is MemoState.Ready || owner.action != null || !canWrite(owner)) return@synchronized false
-            val memo = owner.stored ?: return@synchronized false
-            val action = Action(++actionSerial, memo, memo.text)
+            if (owner.action != null || !canWrite(owner)) return@synchronized false
+            val receipt = owner.published.value
+            if (receipt.token != token) return@synchronized false
+            val memo =
+                when (receipt) {
+                    is MemoState.Ready -> receipt.memo
+                    is MemoState.Empty -> if (receipt.canCreate) null else return@synchronized false
+                    else -> return@synchronized false
+                }
+            if (owner.stored != memo) return@synchronized false
+            val action = Action(++actionSerial, memo, memo?.text.orEmpty())
             owner.action = action
             owner.published.value = MemoState.Editing(owner.source, owner.generation, next(owner), memo, action.draft, action.nonce)
             true
@@ -320,7 +329,12 @@ internal class SessionHistoryMemoReader(
                 synchronized(lock) { if (currentAction(owner, action, job)) fail(owner, FailureReason.BLOCKED) }
                 return
             }
-            val result = writer.update(owner.source, action.memo, action.draft, canCommit)
+            val result =
+                if (action.memo == null) {
+                    writer.create(owner.source, action.draft, canCommit)
+                } else {
+                    writer.update(owner.source, action.memo, action.draft, canCommit)
+                }
             currentCoroutineContext().ensureActive()
             synchronized(lock) {
                 if (!currentAction(owner, action, job) || !ownsContext(owner)) return@synchronized
@@ -328,7 +342,7 @@ internal class SessionHistoryMemoReader(
                     is SessionMemoWriteResult.Saved -> {
                         val memo = result.memo
                         if (memo.sessionId != owner.source.sessionId || memo.text != action.draft ||
-                            memo.version.isBlank() || memo.version == action.memo.version
+                            memo.version.isBlank() || memo.version == action.memo?.version
                         ) {
                             fail(owner, FailureReason.INVALID_SAVE_RESULT)
                         } else {
@@ -418,7 +432,7 @@ internal class SessionHistoryMemoReader(
         val memo = owner.stored
         owner.published.value =
             if (memo == null) {
-                MemoState.Empty(owner.source, owner.generation, next(owner))
+                MemoState.Empty(owner.source, owner.generation, next(owner), canCreate = owner.binding.canCreate && canEdit)
             } else {
                 MemoState.Ready(owner.source, owner.generation, next(owner), memo, canEdit, feedback)
             }
@@ -475,7 +489,7 @@ internal class SessionHistoryMemoReader(
 
     private class Action(
         val nonce: Long,
-        val memo: SessionMemo,
+        val memo: SessionMemo?,
         var draft: String,
     ) {
         var saving = false

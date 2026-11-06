@@ -39,6 +39,7 @@ sealed interface SessionHistoryMemoUiState {
         override val source: PracticeSession,
         override val historyGeneration: Long,
         override val token: Token,
+        val canCreate: Boolean = false,
     ) : SessionHistoryMemoUiState
 
     data class Failed(
@@ -62,7 +63,7 @@ sealed interface SessionHistoryMemoUiState {
         override val source: PracticeSession,
         override val historyGeneration: Long,
         override val token: Token,
-        val memo: SessionMemo,
+        val memo: SessionMemo?,
         val draft: String,
         val nonce: Long,
     ) : SessionHistoryMemoUiState
@@ -71,7 +72,7 @@ sealed interface SessionHistoryMemoUiState {
         override val source: PracticeSession,
         override val historyGeneration: Long,
         override val token: Token,
-        val memo: SessionMemo,
+        val memo: SessionMemo?,
         val draft: String,
         val nonce: Long,
     ) : SessionHistoryMemoUiState

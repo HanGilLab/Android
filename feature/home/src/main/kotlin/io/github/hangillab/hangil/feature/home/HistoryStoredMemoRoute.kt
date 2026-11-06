@@ -48,12 +48,27 @@ internal fun HistoryStoredMemoRoute(
                     style = MaterialTheme.typography.bodyLarge,
                 )
             is MemoState.Locked, is MemoState.Unavailable -> Unit
-            is MemoState.Empty ->
+            is MemoState.Empty -> {
                 Text(
                     stringResource(R.string.history_memo_empty),
                     Modifier.testTag("history_memo_empty"),
                     style = MaterialTheme.typography.bodyLarge,
                 )
+                if (displayed.canCreate) {
+                    val create: () -> Unit = { viewModel.beginStoredMemoEdit(displayed.token) }
+                    ParkedButton(
+                        onClick = create,
+                        modifier = Modifier.fillMaxWidth().testTag("history_memo_create").frozenObservationClick(create),
+                    ) {
+                        Text(
+                            stringResource(R.string.memo_create),
+                            Modifier.fillMaxWidth(),
+                            textAlign = TextAlign.Center,
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                    }
+                }
+            }
             is MemoState.Failed -> {
                 val message =
                     when (displayed.reason) {
@@ -134,7 +149,9 @@ internal fun HistoryStoredMemoRoute(
                 }
             }
             is MemoState.Editing -> {
-                Column(Modifier.testTag("history_memo_source")) { ParkedBadge(stringResource(R.string.memo_source)) }
+                if (displayed.memo != null) {
+                    Column(Modifier.testTag("history_memo_source")) { ParkedBadge(stringResource(R.string.memo_source)) }
+                }
                 HistorySessionMemoEditor(
                     displayed.source,
                     displayed.draft,
@@ -145,7 +162,9 @@ internal fun HistoryStoredMemoRoute(
                 )
             }
             is MemoState.Saving -> {
-                Column(Modifier.testTag("history_memo_source")) { ParkedBadge(stringResource(R.string.memo_source)) }
+                if (displayed.memo != null) {
+                    Column(Modifier.testTag("history_memo_source")) { ParkedBadge(stringResource(R.string.memo_source)) }
+                }
                 HistorySessionMemoEditor(displayed.source, displayed.draft, true, {}, {}, {})
             }
         }

@@ -51,6 +51,38 @@ class RoomHistorySessionMemoWriterTest {
     private fun memoryDatabase() =
         Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), PreparationDatabase::class.java).build()
 
+    @Test fun `first memo for the exact older source is created once and a later create cannot replace it`() =
+        runBlocking {
+            memoryDatabase().useDatabase { db ->
+                val fixture = seed(db)
+                assertEquals(1, db.sessionMemoDao().delete(fixture.source.sessionId, fixture.memo.version))
+                val before = snapshot(db, excludingMemo = fixture.source.sessionId)
+                val writer = RoomHistorySessionMemoWriter(db)
+                val text = " \n첫 메모 🙂\n "
+                val first = saved(writer.create(fixture.source, text) { true })
+                assertEquals(fixture.source.sessionId, first.sessionId)
+                assertEquals(text, first.text)
+                assertEquals(first.version, UUID.fromString(first.version).toString())
+                assertEquals(SessionMemoWriteResult.Conflict, writer.create(fixture.source, "second attempt") { true })
+                assertEquals(first, RoomSessionMemoRepository(db).observe(fixture.source.sessionId).first())
+                assertEquals(before, snapshot(db, excludingMemo = fixture.source.sessionId))
+            }
+        }
+
+    @Test fun `denial after the first memo insert rolls back the write`() =
+        runBlocking {
+            memoryDatabase().useDatabase { db ->
+                val fixture = seed(db)
+                assertEquals(1, db.sessionMemoDao().delete(fixture.source.sessionId, fixture.memo.version))
+                val before = snapshot(db)
+                var gateChecks = 0
+                val result = RoomHistorySessionMemoWriter(db).create(fixture.source, "blocked first memo") { ++gateChecks == 1 }
+                assertEquals(SessionMemoWriteResult.Blocked, result)
+                assertEquals(2, gateChecks)
+                assertEquals(before, snapshot(db))
+            }
+        }
+
     @Test fun `an older existing memo is updated while the original latest-only writer still rejects it`() =
         runBlocking {
             memoryDatabase().useDatabase { db ->

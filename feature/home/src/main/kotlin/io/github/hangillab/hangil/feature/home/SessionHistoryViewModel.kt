@@ -354,6 +354,7 @@ class SessionHistoryViewModel
                                 receivedHasActiveSession == false &&
                                     deletion?.phase !in listOf(DeletionPhase.PREPARING, DeletionPhase.CONFIRMING, DeletionPhase.DELETING)
                             },
+                            canCreate = owner.entry is SessionHistoryEntry.FinishedReview,
                         )
                     }
                 }

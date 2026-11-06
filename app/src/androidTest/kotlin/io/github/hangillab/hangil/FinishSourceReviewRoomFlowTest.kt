@@ -4,6 +4,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextReplacement
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.hangillab.hangil.core.database.OwnedPracticeTestStore
@@ -102,6 +103,57 @@ class FinishSourceReviewRoomFlowTest {
             check(f.memoQueries.none { it == newer.sessionId })
             check(f.snapshot() == beforeReview) { "Reviewing an exact source changed owned data" }
             check(proxy.strictCalls.get() == 1 && proxy.legacyCalls.get() == 0)
+        }
+    }
+
+    @Test fun exactFinishReviewCreatesFirstMemoForTheFinishedSource() {
+        assumeManual()
+        fixture { f ->
+            val original = f.snapshot()
+            val committed = CompletableDeferred<SessionFinishResult>()
+            val acknowledge = CompletableDeferred<Unit>()
+            val proxy = Sessions(f.store.sessions, listOf(f.active))
+            proxy.onFinish = { expected, time, allowed ->
+                val result = f.store.sessions.finish(expected, time, allowed)
+                committed.complete(result)
+                acknowledge.await()
+                result
+            }
+            val ui = f.mount(proxy)
+            ui.touch("session_finish")
+            val result = await(committed)
+            check(result is SessionFinishResult.Finished)
+            val ended = result.session
+            f.assertOnlyEnded(original, ended)
+            val newer = f.addNewerEnded()
+            val before = f.snapshot()
+            check(before.sessions.first() == newer && before.memos.values.all { it == null })
+            acknowledge.complete(Unit)
+
+            ui.waitReceipt()
+            ui.touch("session_finish_review")
+            ui.ready(ended)
+            check(ui.navigation == listOf(ended))
+            check(ui.nodes("history_newer").isEmpty() && ui.nodes("history_older").isEmpty())
+            check(f.memoQueries.isEmpty())
+            ui.touch("history_memo")
+            ui.waitTag("history_memo_empty")
+            ui.touch("history_memo_create")
+            ui.waitTag("history_memo_textfield")
+            check(ui.nodes("history_memo_source").isEmpty())
+
+            val draft = "다음 연습에서는 진입 전에 좌우를 한 번 더 확인하기"
+            compose.onNodeWithTag("history_memo_textfield", useUnmergedTree = true).performScrollTo().performTextReplacement(draft)
+            check(f.snapshot() == before)
+            ui.touch("history_memo_save")
+            ui.waitTag("history_memo_text")
+            check(ui.text("history_memo_text") == draft)
+            check(ui.nodes("history_memo_create").isEmpty())
+            val after = f.snapshot()
+            val saved = checkNotNull(after.memos[ended.sessionId])
+            check(saved.sessionId == ended.sessionId && saved.text == draft && saved.version.isNotBlank())
+            check(after == before.copy(memos = before.memos + (ended.sessionId to saved)))
+            check(f.memoQueries.isNotEmpty() && f.memoQueries.all { it == ended.sessionId })
         }
     }
 
