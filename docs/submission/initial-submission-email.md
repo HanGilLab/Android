@@ -51,6 +51,7 @@ GitHub를 선택할 때 사용할 문단:
 ```text
 참고자료
 - 소스 저장소: https://github.com/HanGilLab/Android
+- APK 빌드 기준 소스: [최종 APK를 빌드한 Git 태그 또는 커밋 링크]
 - 실행 가능한 release APK: [위 소스와 버전을 맞춘 최종 release APK 제공 링크]
 ```
 
@@ -85,7 +86,8 @@ APK는 소스 코드와 함께 GitHub에 제공하는 묶음으로 준비한다.
 - [ ] 팀원 전원의 CC와 참가자 전원의 개별 동의서를 확인했다.
 - [ ] 접수양식과 동의서의 실제 입력, 동의와 서명을 직접 확인했다.
 - [ ] 본문의 입력 칸을 모두 정리하고 첨부 목록을 실제 최종 파일과 맞췄다.
-- [ ] 제공할 선택 자료만 남기고, 링크 접근, 영상 재생과 APK 설치/실행을 실제 최종본으로 확인했다.
+- [ ] 제공할 선택 자료만 남기고, 링크 접근과 영상 재생을 실제 최종본으로 확인했다.
+- [ ] GitHub를 제출한다면 링크의 태그 또는 커밋이 APK 빌드 원본을 가리키는지 확인했다. 다운로드한 APK와 배포 전에 확인한 APK의 SHA-256이 같은지 대조하고, 해당 APK를 설치해 실행했다.
 - [ ] 심사용 자료에서 연락처, 비공개 주소, 실제 위치와 원문 로그를 점검했다. 운영 접수 정보와 서명은 비공개 제출본에서 관리한다.
 - [ ] 대표자가 발송할 최종 묶음과 시점을 확인했다.
 
@@ -93,6 +95,6 @@ APK는 소스 코드와 함께 GitHub에 제공하는 묶음으로 준비한다.
 
 ## 일정과 출처
 
-공식 접수 마감은 2026-11-15 23:59 한국 시간이다. 한길의 준비 목표는 2026-11-10이며 2026-11-11 00:00 한국 시간부터 개발, 커밋과 병합을 중단한다. 공식 접수 기한을 이유로 자동화 종료일을 연장하지 않는다. [공식 접수양식과 동의서](https://appdevchallenge.auto-hmg.io/downloads/contest-application-consent.docx)
+공식 접수 마감은 2026-11-15 23:59 한국 시간이다. 한길의 준비 목표는 2026-11-10이며, 이후 개발 범위와 종료 시각은 [출품 실행 계획](../plans/active/2026-10-27-contest-delivery.md)을 따른다. [공식 접수양식과 동의서](https://appdevchallenge.auto-hmg.io/downloads/contest-application-consent.docx)
 
 2026-11-04의 [공식 모집 공고](https://appdevchallenge.auto-hmg.io/notice/c0a1a000-2026-4923-8000-000000000001), [공식 제출 안내](https://appdevchallenge.auto-hmg.io/guide/submission)와 [참가 규정](https://appdevchallenge.auto-hmg.io/guide/rules)을 기준으로 작성했다. 실제 발송 직전에 사용자가 최종 자료와 최신 안내를 다시 확인한다. 기존 [수정 제출 절차](revision-checklist.md)는 최초 발송 이후 수정이 필요할 때 사용한다.
