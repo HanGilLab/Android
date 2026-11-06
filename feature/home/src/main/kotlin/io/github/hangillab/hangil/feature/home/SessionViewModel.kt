@@ -245,6 +245,11 @@ class SessionViewModel
                         val result = sessions.finish(action.source, requestedTime) { canCommitFinish(pending) }
                         currentCoroutineContext().ensureActive()
                         synchronized(disclosureLock) {
+                            // A confirmed no-write result belongs to the request even after presentation is revoked.
+                            if (result == SessionFinishResult.Blocked && acceptedFinish === pending && pending.job?.isActive == true) {
+                                operation.value = SessionOperationState.Feedback(SessionFeedback.BLOCKED)
+                                return@synchronized
+                            }
                             if (!ownsFinishLocked(pending) || !finishAccessLocked(pending.canKeepOpen) ||
                                 !ownsFinishLocked(pending)
                             ) {
@@ -281,7 +286,6 @@ class SessionViewModel
                                     SessionOperationState.Feedback(
                                         when (result) {
                                             SessionFinishResult.Missing -> SessionFeedback.MISSING
-                                            SessionFinishResult.Blocked -> SessionFeedback.BLOCKED
                                             SessionFinishResult.InvalidTime -> SessionFeedback.INVALID_TIME
                                             else -> SessionFeedback.SAVE_FAILED
                                         },

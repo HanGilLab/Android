@@ -43,6 +43,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -208,14 +209,24 @@ class SessionViewModelTest {
             }
             val model = model()
             observe(model)
-            assertTrue(model.finish(checkNotNull(model.finishActions.value)) { true })
+            val previousAction = checkNotNull(model.finishActions.value)
+            assertTrue(model.finish(previousAction) { true })
             runCurrent()
             restrictions.restrictions.value = DrivingRestrictions()
             resume.complete(Unit)
             runCurrent()
-            assertFeedback(model, SessionFeedback.SAVE_FAILED)
+            assertFeedback(model, SessionFeedback.BLOCKED)
             assertNull(model.finishReceipt.value)
             assertEquals(listOf(active), records.value)
+
+            restrictions.restrictions.value = unrestricted
+            runCurrent()
+            assertFeedback(model, SessionFeedback.BLOCKED)
+            assertTrue(model.uiState.value.canFinish)
+            assertNotSame(previousAction, checkNotNull(model.finishActions.value))
+            assertFalse(model.finish(previousAction) { true })
+            assertEquals(1, finishCalls)
+            assertNull(model.finishReceipt.value)
         }
 
     @Test fun `duplicate starts enter one mutation and never offer a finish action`() =
