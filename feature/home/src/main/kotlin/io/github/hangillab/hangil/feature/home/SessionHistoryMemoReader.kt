@@ -27,11 +27,11 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 import io.github.hangillab.hangil.feature.home.SessionHistoryMemoUiState as MemoState
 
-/** Cold selected-source reads and explicit edit actions share the parent's receipt lock. */
+/** Cold selected-source reads share the parent's lock; a writer enables explicit edit actions. */
 internal class SessionHistoryMemoReader(
     private val lock: Any,
     private val repository: SessionMemoRepository,
-    private val writer: HistorySessionMemoWriter,
+    private val writer: HistorySessionMemoWriter?,
     private val allowed: () -> Boolean,
 ) {
     private var current: Reader? = null
@@ -235,7 +235,8 @@ internal class SessionHistoryMemoReader(
     }
 
     private fun canWrite(owner: Reader): Boolean =
-        ownsContext(owner) && owner.received && owner.query?.let { currentQuery(owner, it) } == true && safe(owner.binding.canWrite)
+        writer != null && ownsContext(owner) && owner.received &&
+            owner.query?.let { currentQuery(owner, it) } == true && safe(owner.binding.canWrite)
 
     private fun currentQuery(
         owner: Reader,
@@ -325,15 +326,16 @@ internal class SessionHistoryMemoReader(
             synchronized(lock) { job.isActive && currentAction(owner, action, job) && canWrite(owner) && owner.stored == action.memo }
         }
         try {
-            if (!canCommit()) {
+            val availableWriter = writer
+            if (availableWriter == null || !canCommit()) {
                 synchronized(lock) { if (currentAction(owner, action, job)) fail(owner, FailureReason.BLOCKED) }
                 return
             }
             val result =
                 if (action.memo == null) {
-                    writer.create(owner.source, action.draft, canCommit)
+                    availableWriter.create(owner.source, action.draft, canCommit)
                 } else {
-                    writer.update(owner.source, action.memo, action.draft, canCommit)
+                    availableWriter.update(owner.source, action.memo, action.draft, canCommit)
                 }
             currentCoroutineContext().ensureActive()
             synchronized(lock) {
@@ -427,7 +429,7 @@ internal class SessionHistoryMemoReader(
         owner: Reader,
         feedback: Feedback? = null,
     ) {
-        val canEdit = safe(owner.binding.canWrite)
+        val canEdit = writer != null && safe(owner.binding.canWrite)
         if (!ownsContext(owner)) return
         val memo = owner.stored
         owner.published.value =

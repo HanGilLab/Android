@@ -257,4 +257,5 @@
     <string name="history_memo_entered_text">입력한 내용이에요. 저장 여부는 다시 읽어 확인해 주세요.</string>
     <string name="location_history_point_map">저장한 표본 지도</string>
     <string name="location_history_point_map_notice">지도를 펼치면 외부 지도 서비스에 저장한 표본 주변의 지도 요청이 전달돼요.</string>
+    <string name="location_history_memo">이 연습 전체 메모</string>
 </resources>
