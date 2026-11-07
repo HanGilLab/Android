@@ -45,6 +45,7 @@ import io.github.hangillab.hangil.core.designsystem.ParkedLockedNotice
 import io.github.hangillab.hangil.core.designsystem.ParkedPage
 import io.github.hangillab.hangil.core.designsystem.ParkedPanel
 import io.github.hangillab.hangil.core.domain.CourseReviewStatus
+import io.github.hangillab.hangil.core.domain.LocationUpdateReading
 import io.github.hangillab.hangil.core.domain.PracticeSession
 import io.github.hangillab.hangil.core.domain.SessionDeletionTarget
 import java.util.concurrent.atomic.AtomicBoolean
@@ -666,6 +667,8 @@ private fun HistoryDeletionContent(
 
 @Composable
 private fun HistoryDeletionTarget(target: SessionDeletionTarget) {
+    val locationSampleCount = target.locationRecording.events.count { it.reading is LocationUpdateReading.Sample }
+    val locationStateCount = target.locationRecording.events.size - locationSampleCount
     Text(
         stringResource(
             if (target.completionDeclaration ==
@@ -682,6 +685,21 @@ private fun HistoryDeletionTarget(target: SessionDeletionTarget) {
     Text(
         stringResource(R.string.history_delete_observation_count, target.observationCount),
         Modifier.testTag("history_delete_observation_count"),
+        style = MaterialTheme.typography.bodyLarge,
+    )
+    Text(
+        stringResource(R.string.history_delete_location_counts, locationSampleCount, locationStateCount),
+        Modifier.fillMaxWidth().testTag("history_delete_location_counts"),
+        style = MaterialTheme.typography.bodyLarge,
+    )
+    Text(
+        stringResource(R.string.history_delete_location_run_count, target.locationRecording.runs.size),
+        Modifier.fillMaxWidth().testTag("history_delete_location_run_count"),
+        style = MaterialTheme.typography.bodyLarge,
+    )
+    Text(
+        stringResource(R.string.history_delete_recording_run_count, target.recordingRuns.size),
+        Modifier.fillMaxWidth().testTag("history_delete_recording_run_count"),
         style = MaterialTheme.typography.bodyLarge,
     )
     Text(
