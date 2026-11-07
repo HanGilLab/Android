@@ -208,9 +208,13 @@ private fun NextPracticeChoices(
         }
         Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.lg)) {
             state.seed.practice.course.tasks.forEach { task ->
+                val count =
+                    state.summary.tasks
+                        .singleOrNull { it.taskId == task.id && it.taskTitle == task.title }
+                        ?.sessionCount ?: 0
                 ParkedChoice(
                     task.title,
-                    task.description,
+                    stringResource(R.string.next_practice_task_history, task.description, count),
                     selected = state.taskId == task.id,
                     onClick = { viewModel.selectTask(task.id, source.sessionId, state.generation) },
                     modifier = Modifier.fillMaxWidth().testTag("next_task_${task.id}"),

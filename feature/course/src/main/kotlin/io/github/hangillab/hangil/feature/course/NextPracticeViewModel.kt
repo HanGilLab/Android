@@ -12,6 +12,7 @@ import io.github.hangillab.hangil.core.domain.PracticeCatalog
 import io.github.hangillab.hangil.core.domain.PracticeSelection
 import io.github.hangillab.hangil.core.domain.PracticeSession
 import io.github.hangillab.hangil.core.domain.PracticeSessionRepository
+import io.github.hangillab.hangil.core.domain.SessionCourseSummary
 import io.github.hangillab.hangil.core.domain.VehicleGateway
 import io.github.hangillab.hangil.core.domain.allowsPracticeInteraction
 import io.github.hangillab.hangil.feature.course.NextPracticeUiState.FailureReason
@@ -512,11 +513,14 @@ class NextPracticeViewModel
                     pinned = seed
                     restoreTaskLocked(seed)
                 }
+                val summary = SessionCourseSummary.from(source, records) ?: throw InvalidSessions()
                 received = seed
                 val current = published.value as? NextPracticeUiState.Ready
                 if (current == null || current.seed != seed || current.taskId != taskId) {
                     published.value =
-                        NextPracticeUiState.Ready(seed, taskId, ++generation)
+                        NextPracticeUiState.Ready(seed, taskId, ++generation, summary)
+                } else if (current.summary != summary) {
+                    published.value = current.copy(summary = summary)
                 }
             } finally {
                 owner.receiving = false

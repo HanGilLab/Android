@@ -216,6 +216,12 @@ class HistoryNextPracticeFlowTest {
             waitTag("next_practice_ready")
             assertEquals(older, opened.value?.source)
             assertHost()
+            for (task in course.tasks) {
+                val tag = "next_task_${task.id}"
+                val expectedRecords = sessionsBefore.count { it.selection.taskId == task.id && it.taskTitle == task.title }
+                compose.onNodeWithTag(tag).performScrollTo().assertTextContains("남긴 마무리 기록 ${expectedRecords}개", substring = true)
+                assertTextFits(tag)
+            }
             compose.onNodeWithTag("next_practice_save").performScrollTo().assertIsNotEnabled()
             click("next_practice_source_details")
             assertHost()
