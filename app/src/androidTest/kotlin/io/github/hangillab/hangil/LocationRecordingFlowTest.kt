@@ -14,7 +14,10 @@ import android.util.DisplayMetrics
 import android.util.TypedValue
 import android.view.Display
 import android.view.PixelCopy
+import android.view.View
+import android.view.ViewGroup
 import androidx.activity.compose.setContent
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.semantics.SemanticsActions
@@ -91,6 +94,7 @@ import io.github.hangillab.hangil.feature.home.SessionHistoryUiState
 import io.github.hangillab.hangil.feature.home.SessionHistoryViewModel
 import io.github.hangillab.hangil.feature.home.SessionMemoViewModel
 import io.github.hangillab.hangil.feature.home.SessionViewModel
+import io.github.hangillab.hangil.feature.map.StoredLocationMap
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -99,8 +103,10 @@ import kotlinx.coroutines.InternalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -120,6 +126,10 @@ import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.maplibre.android.geometry.LatLng
+import org.maplibre.android.maps.MapView
+import org.maplibre.android.style.layers.CircleLayer
+import org.maplibre.android.style.sources.GeoJsonSource
 import java.io.File
 import java.time.Clock
 import java.util.IdentityHashMap
@@ -133,13 +143,15 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.abs
 import io.github.hangillab.hangil.feature.home.R as HomeR
+import org.maplibre.geojson.Point as GeoJsonPoint
 
 /**
  * Actual product Routes, controller and UUID-owned Room, with controlled vehicle/UX/location inputs.
  * The Activity stays RESUMED. An injected LifecycleRegistry controls PAUSE/STOP Main-host policy;
  * this is not actual OS Main STOP, SDK callback receipt, a permission grant or an FGS test.
  * Every ViewModel is explicitly preseeded: this fixture never uses the production Hilt graph/DB.
- * Raw detail assertions and optional visuals use controlled data only, with no SDK, permission or provider mutation.
+ * Raw detail assertions and optional visuals use controlled inputs without Pleos SDK, permission or provider mutation.
+ * The opt-in stored-point check uses actual MapLibre rendering and external tiles for public landmark fixtures.
  * An explicit resource scope changes this instrumented process before composition and restores shared resources.
  * It does not prove OS setting transitions or the real SDK Main in dark mode.
  */
@@ -470,7 +482,299 @@ class LocationRecordingFlowTest {
             phase("CONTROLLED_STORED_STOP_REASONS_OPEN_LOCKS_AND_PRESERVATION")
         }
 
-    private fun fixture(block: (Fixture) -> Unit) {
+    @Test fun storedPointMapOpensOnlyForTheSelectedSampleAndNeverReopensAfterSelectionOrAccessChanges() {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("manualStoredLocationMap") == "true")
+        fixture(mapEnabled = true) { f ->
+            click("session_start")
+            val source = f.active()
+            f.awaitSource(source)
+            click("home_location_recording")
+            click("location_recording_start")
+            f.awaitRecording()
+            // Public landmark fixtures enter through the controlled update gateway, not a device location.
+            val cityHall = LocationUpdateSample(37.5666904, 126.9784222, -2.0, 421f, -5f, -42, f.elapsed.incrementAndGet())
+            val gwanghwamun =
+                cityHall.copy(
+                    latitude = 37.5759283,
+                    longitude = 126.9756030,
+                    receivedAtElapsedRealtimeMillis = f.elapsed.incrementAndGet(),
+                )
+            f.emit(LocationUpdateReading.Sample(cityHall))
+            f.emit(LocationUpdateReading.Sample(gwanghwamun))
+            f.emit(LocationUpdateReading.Empty(f.elapsed.incrementAndGet()))
+            f.awaitEvents(source, 3)
+            click("location_recording_stop")
+            f.awaitTerminal(source, LocationRecordingStopReason.USER_STOP)
+            click("location_recording_back")
+            click("session_finish")
+            val ended = f.ended(source.sessionId)
+            f.gateway.permission.set(false)
+            val sessionsBefore =
+                runBlocking {
+                    f.store.sessions
+                        .observeSessions()
+                        .first()
+                }
+            val preparationBefore =
+                runBlocking {
+                    f.store.preparation
+                        .observeSelection()
+                        .first()
+                }
+            val storedBefore = f.snapshot(ended)
+            val sequencesBefore = f.store.sequenceSnapshot()
+            val streamsBefore = f.gateway.streams.size
+
+            click("home_history")
+            click("history_location_recording")
+            waitTag("location_history_content")
+            assertEquals(ended, f.selectedHistory)
+            assertText("location_history_event_state", HomeR.string.location_history_callback_empty)
+            assertTrue(nodes("location_history_point_map").isEmpty())
+            assertNoStoredMap()
+
+            click("location_history_event_previous")
+            waitTag("location_history_point_map_notice")
+            assertText("location_history_point_map_notice", HomeR.string.location_history_point_map_notice)
+            assertNoStoredMap()
+            click("location_history_event_previous")
+            assertText("location_history_source", HomeR.string.location_history_source)
+            assertText("location_history_source_warning", HomeR.string.location_history_uncertain)
+            click("location_history_raw_details")
+            waitTag("location_history_raw_content")
+            assertTrue(hasTextNode(instrument.targetContext.getString(HomeR.string.location_history_sdk_time, "-42")))
+            assertTrue(hasTextNode(instrument.targetContext.getString(HomeR.string.location_history_confidence, "-5.0")))
+            assertNoStoredMap()
+            val staleOpen = clickAction("location_history_point_map")
+            click("location_history_point_map")
+            val firstMap = awaitStoredMap(cityHall)
+            visual("stored-city-hall-point-map", "location_history_point_map_notice", "stored_location_map")
+
+            click("location_history_event_next")
+            assertNoStoredMap(firstMap)
+            invoke(staleOpen)
+            assertNoStoredMap()
+            click("location_history_event_next")
+            assertText("location_history_event_state", HomeR.string.location_history_callback_empty)
+            assertTrue(nodes("location_history_point_map").isEmpty())
+            assertNoStoredMap(firstMap)
+
+            click("location_history_event_previous")
+            assertNoStoredMap()
+            click("location_history_point_map")
+            val beforeDriving = awaitStoredMap(gwanghwamun)
+            assertTrue("Each selected stored event owns a fresh native map", beforeDriving !== firstMap)
+            val retiredForDriving = clickAction("location_history_point_map")
+            f.drive(true)
+            waitTag("location_history_locked")
+            assertNoStoredMap(beforeDriving)
+            f.drive(false)
+            waitTag("location_history_locked")
+            invoke(retiredForDriving)
+            assertNoStoredMap()
+            click("location_history_back")
+            click("history_location_recording")
+            waitTag("location_history_content")
+            assertText("location_history_event_state", HomeR.string.location_history_callback_empty)
+            assertNoStoredMap()
+            click("location_history_event_previous")
+            waitTag("location_history_point_map")
+            assertNoStoredMap()
+
+            click("location_history_point_map")
+            val beforeStop = awaitStoredMap(gwanghwamun)
+            val retiredForStop = clickAction("location_history_point_map")
+            f.move(Lifecycle.State.CREATED)
+            assertNoStoredMap(beforeStop)
+            f.move(Lifecycle.State.RESUMED)
+            waitTag("location_history_content")
+            assertText("location_history_event_state", HomeR.string.location_history_callback_empty)
+            invoke(retiredForStop)
+            assertNoStoredMap()
+            click("location_history_event_previous")
+            waitTag("location_history_point_map")
+            assertNoStoredMap()
+
+            assertEquals(storedBefore, f.snapshot(ended))
+            assertEquals(
+                sessionsBefore,
+                runBlocking {
+                    f.store.sessions
+                        .observeSessions()
+                        .first()
+                },
+            )
+            assertEquals(
+                preparationBefore,
+                runBlocking {
+                    f.store.preparation
+                        .observeSelection()
+                        .first()
+                },
+            )
+            assertEquals(sequencesBefore, f.store.sequenceSnapshot())
+            assertEquals(0, f.store.foreignKeyViolationCount())
+            assertEquals(streamsBefore, f.gateway.streams.size)
+            assertEquals(0, f.gateway.active.get())
+            assertFalse(f.gateway.permission.get())
+            f.assertNoPlatformActions()
+            phase("CONTROLLED_STORED_POINT_MAP_EXPLICIT_NATIVE_POINT_ACCESS_AND_PRESERVATION")
+        }
+    }
+
+    /** Every native source, projection and rendered-feature query remains on its live UI-thread View. */
+    private fun awaitStoredMap(expected: LocationUpdateSample): MapView =
+        runBlocking {
+            waitTag("stored_location_map_view")
+            compose.onNodeWithTag("stored_location_map_view", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
+            waitTag("stored_location_map_ready")
+            val lastObservation = AtomicReference("{\"reason\":\"NO_NATIVE_OBSERVATION\"}")
+            try {
+                withTimeout(25_000) {
+                    var result: MapView? = null
+                    while (result == null) {
+                        assertActualHost()
+                        val reply = CompletableDeferred<MapView?>()
+                        instrument.runOnMainSync {
+                            val attached = storedMapViews(compose.activity.window.decorView).filter { it.isAttachedToWindow }
+                            val view = attached.singleOrNull()
+                            if (view == null || view.width <= 0 || view.height <= 0) {
+                                lastObservation.set(
+                                    JSONObject()
+                                        .put("reason", if (view == null) "VIEW_NOT_UNIQUE" else "VIEW_NO_SIZE")
+                                        .put("nativeViewCount", attached.size)
+                                        .toString(),
+                                )
+                                reply.complete(null)
+                            } else {
+                                view.getMapAsync { map ->
+                                    if (!view.isAttachedToWindow ||
+                                        storedMapViews(compose.activity.window.decorView).singleOrNull { it.isAttachedToWindow } !== view
+                                    ) {
+                                        lastObservation.set(JSONObject().put("reason", "VIEW_RETIRED").toString())
+                                        reply.complete(null)
+                                    } else {
+                                        val observation = JSONObject().put("reason", "INSPECTION_STARTED")
+                                        try {
+                                            val style = map.style
+                                            val source = style?.getSource(STORED_POINT_SOURCE) as? GeoJsonSource
+                                            val circle = style?.getLayerAs<CircleLayer>(STORED_POINT_LAYER)
+                                            // Runtime Style JSON omits dynamic GeoJSON data on the pinned renderer.
+                                            // StoredLocationPointTest checks exact one-point serialization; JNI exposes tile-converted copies.
+                                            val location = LatLng(expected.latitude, expected.longitude)
+                                            val screen = map.projection.toScreenLocation(location)
+                                            val screenInside =
+                                                screen.x > 0 && screen.y > 0 && screen.x < view.width && screen.y < view.height
+                                            observation.put("screenInside", screenInside)
+                                            val storedFeatures = source?.querySourceFeatures(null).orEmpty()
+                                            var sourceTypesMatch = true
+                                            var sourcePropertiesMatch = true
+                                            var sourcePlacementsMatch = true
+                                            for (feature in storedFeatures) {
+                                                val point = feature.geometry() as? GeoJsonPoint
+                                                sourcePropertiesMatch =
+                                                    sourcePropertiesMatch &&
+                                                    feature.getStringProperty("source") == LocationUpdateSource.SDK_UPDATE.name
+                                                if (point == null) {
+                                                    sourceTypesMatch = false
+                                                    sourcePlacementsMatch = false
+                                                } else {
+                                                    val position =
+                                                        map.projection.toScreenLocation(
+                                                            LatLng(point.latitude(), point.longitude()),
+                                                        )
+                                                    // Native source geometry may be tile-quantized; placement is checked in physical pixels.
+                                                    sourcePlacementsMatch =
+                                                        sourcePlacementsMatch && abs(position.x - screen.x) <= 1f &&
+                                                        abs(position.y - screen.y) <= 1f
+                                                }
+                                            }
+                                            observation.put("sourceQueryCount", storedFeatures.size)
+                                            observation.put("sourceQueryTypeMatches", sourceTypesMatch)
+                                            observation.put("sourceQuerySourceMatches", sourcePropertiesMatch)
+                                            observation.put("sourceQueryPlacementMatches", sourcePlacementsMatch)
+                                            val rendered = map.queryRenderedFeatures(screen, STORED_POINT_LAYER)
+                                            val renderedSourceMatches =
+                                                rendered.singleOrNull()?.getStringProperty("source") == LocationUpdateSource.SDK_UPDATE.name
+                                            val renderedPoint = rendered.singleOrNull()?.geometry() as? GeoJsonPoint
+                                            val renderedTypeMatches = renderedPoint != null
+                                            val renderedPlacementMatches =
+                                                if (renderedPoint == null) {
+                                                    false
+                                                } else {
+                                                    val position =
+                                                        map.projection.toScreenLocation(
+                                                            LatLng(renderedPoint.latitude(), renderedPoint.longitude()),
+                                                        )
+                                                    abs(position.x - screen.x) <= 1f && abs(position.y - screen.y) <= 1f
+                                                }
+                                            observation.put("renderedCount", rendered.size)
+                                            observation.put("renderedSourceMatches", renderedSourceMatches)
+                                            observation.put("renderedTypeMatches", renderedTypeMatches)
+                                            observation.put("renderedPlacementMatches", renderedPlacementMatches)
+                                            val checks =
+                                                linkedMapOf(
+                                                    "SOURCE_PRESENT" to (source != null),
+                                                    "LAYER_PRESENT" to (circle != null),
+                                                    "LAYER_SOURCE_MATCHES" to (circle != null && circle.sourceId == STORED_POINT_SOURCE),
+                                                    "LAYER_VISIBLE" to (circle != null && circle.visibility.value != "none"),
+                                                    "SCREEN_INSIDE" to screenInside,
+                                                    "SOURCE_QUERY_NONEMPTY" to storedFeatures.isNotEmpty(),
+                                                    "SOURCE_QUERY_TYPES_MATCH" to sourceTypesMatch,
+                                                    "SOURCE_QUERY_SOURCES_MATCH" to sourcePropertiesMatch,
+                                                    "SOURCE_QUERY_PLACEMENTS_MATCH" to sourcePlacementsMatch,
+                                                    "ONE_RENDERED_FEATURE" to (rendered.size == 1),
+                                                    "RENDERED_SOURCE_MATCHES" to renderedSourceMatches,
+                                                    "RENDERED_TYPE_MATCHES" to renderedTypeMatches,
+                                                    "RENDERED_PLACEMENT_MATCHES" to renderedPlacementMatches,
+                                                )
+                                            val failed = checks.entries.firstOrNull { !it.value }
+                                            observation.put("checks", JSONObject(checks))
+                                            observation.put("reason", failed?.let { "FAILED_" + it.key } ?: "MATCHED")
+                                            lastObservation.set(observation.toString())
+                                            reply.complete(if (failed == null) view else null)
+                                        } catch (failure: Throwable) {
+                                            observation.put("reason", "NATIVE_INSPECTION_EXCEPTION")
+                                            observation.put("exceptionType", failure.javaClass.simpleName)
+                                            lastObservation.set(observation.toString())
+                                            reply.completeExceptionally(
+                                                AssertionError("Stored point native map inspection failed: " + lastObservation.get()),
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        result = withTimeout(5_000) { reply.await() }
+                        if (result == null) delay(150)
+                    }
+                    checkNotNull(result)
+                }
+            } catch (_: TimeoutCancellationException) {
+                throw AssertionError("Stored point native map inspection timed out: " + lastObservation.get())
+            }
+        }
+
+    private fun assertNoStoredMap(previous: MapView? = null) {
+        compose.waitForIdle()
+        assertTrue("The map stays absent until an explicit current disclosure", nodes("stored_location_map_view").isEmpty())
+        instrument.runOnMainSync {
+            assertTrue("No native map remains attached after its owner closes", storedMapViews(compose.activity.window.decorView).isEmpty())
+            if (previous != null) assertFalse("A retired event must detach its native map", previous.isAttachedToWindow)
+        }
+    }
+
+    private fun storedMapViews(view: View): List<MapView> =
+        when (view) {
+            is MapView -> listOf(view)
+            is ViewGroup -> (0 until view.childCount).flatMap { storedMapViews(view.getChildAt(it)) }
+            else -> emptyList()
+        }
+
+    private fun fixture(
+        mapEnabled: Boolean = false,
+        block: (Fixture) -> Unit,
+    ) {
         catalogResourceOverrideRequested = requestedCatalogResourceOverride()
         assumeTrue(InstrumentationRegistry.getArguments().getString("manualLocationRecordingControlled") == "true")
         val originalFlags = instrument.uiAutomation.serviceInfo.flags
@@ -490,7 +794,7 @@ class LocationRecordingFlowTest {
             prepareActualHost()
             val store = OwnedPracticeTestStore.create(instrument.targetContext)
             ownedStore = store
-            val owned = Fixture(store)
+            val owned = Fixture(store, mapEnabled)
             f = owned
             runBlocking { owned.prepare() }
             instrument.runOnMainSync {
@@ -782,7 +1086,25 @@ class LocationRecordingFlowTest {
                 check(getters.isNotEmpty()) { "The actual Text layout must be observable" }
                 val layouts = mutableListOf<TextLayoutResult>()
                 instrument.runOnMainSync { getters.forEach { check(it(layouts)) } }
-                check(layouts.isNotEmpty() && layouts.all(::visualTextFits)) { "Large text must retain its complete actual layout" }
+                check(layouts.isNotEmpty() && layouts.all(::visualTextFits)) {
+                    "Large text must retain its complete actual layout: " +
+                        layouts.map { layout ->
+                            val text = layout.layoutInput.text.text
+                            val glyphs = text.indices.filterNot { text[it].isWhitespace() }.map(layout::getBoundingBox)
+                            mapOf(
+                                "fontSp" to layout.layoutInput.style.fontSize.value,
+                                "overflow" to layout.hasVisualOverflow,
+                                "size" to layout.size,
+                                "lines" to layout.lineCount,
+                                "characters" to text.length,
+                                "covered" to if (layout.lineCount > 0) layout.getLineEnd(layout.lineCount - 1, false) else 0,
+                                "minGlyphTop" to glyphs.minOfOrNull { it.top },
+                                "maxGlyphBottom" to glyphs.maxOfOrNull { it.bottom },
+                                "minGlyphLeft" to glyphs.minOfOrNull { it.left },
+                                "maxGlyphRight" to glyphs.maxOfOrNull { it.right },
+                            )
+                        }
+                }
                 val actualScale = checkNotNull(actualHost).resources.configuration.fontScale
                 check(layouts.all { abs(it.layoutInput.density.fontScale - actualScale) <= 0.01f })
                 proof
@@ -1314,6 +1636,7 @@ class LocationRecordingFlowTest {
 
     private inner class Fixture(
         val store: OwnedPracticeTestStore,
+        private val mapEnabled: Boolean = false,
     ) {
         val lifecycleOwner = ControlledLifecycleOwner()
         val visible = mutableStateOf(true)
@@ -1380,6 +1703,12 @@ class LocationRecordingFlowTest {
         }
 
         fun mount() {
+            val pointMap: (@Composable (LocationUpdateSample, () -> Boolean) -> Unit)? =
+                if (mapEnabled) {
+                    { sample, canRead -> StoredLocationMap(sample, canRead) }
+                } else {
+                    null
+                }
             lifecycleOwner.moveTo(Lifecycle.State.RESUMED)
             val navigation =
                 object : NavigationGateway {
@@ -1507,6 +1836,7 @@ class LocationRecordingFlowTest {
                                         current.source,
                                         { screen.value = Screen.History },
                                         locationHistoryModel,
+                                        storedPointMap = pointMap,
                                     )
                             }
                         }
@@ -1875,6 +2205,9 @@ class LocationRecordingFlowTest {
     }
 
     private companion object {
+        const val STORED_POINT_SOURCE = "hangil-stored-location-point"
+        const val STORED_POINT_LAYER = "hangil-stored-location-circle"
+
         fun selection() = PracticeSelection("commute", "neighborhood", 1, 1, "sequence")
 
         fun parked() = VehicleState(ConnectionState.CONNECTED, VehicleReading.Available(GearPosition.PARK))
