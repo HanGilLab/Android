@@ -8,5 +8,5 @@ internal data class MapRenderAttempt(
     val reader: Long = 0,
     val preparation: MapPreparationState = MapPreparationState.Loading,
     val queryEpoch: Long = 0,
-    val pointSelection: MapPointSelection? = null,
+    val selection: MapSelection? = null,
 )

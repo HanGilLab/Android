@@ -84,13 +84,17 @@ class NextPracticeSeedTest {
         }
     }
 
-    @Test fun `seed owns independent course lists goal IDs and preview point collections`() {
+    @Test fun `seed owns independent course lists goal IDs preview points and road geometry`() {
         val fixture = Fixture()
+        val originalRoad = fixture.roads.single().copy(nodes = fixture.roadNodes.toList())
         val seed = checkNotNull(NextPracticeSeed.resolve(fixture.catalog, fixture.source))
         fixture.sections += "later section"
         fixture.tasks += PracticeTask("later", "later task", "later description")
         fixture.goalIds += "later-goal"
         fixture.points += CoursePreviewPoint("c", "fixture C", 37.2, 127.2, 3, 1)
+        fixture.roadNodes[0] = fixture.roadNodes[0].copy(osmNodeVersion = 9)
+        fixture.roadNodes.reverse()
+        fixture.roads += originalRoad.copy(id = "later-road")
         assertEquals(listOf("depart", "arrive"), seed.practice.course.sections)
         assertEquals(
             listOf("first", "second"),
@@ -104,6 +108,7 @@ class NextPracticeSeedTest {
                 ?.points
                 ?.map { it.id },
         )
+        assertEquals(listOf(originalRoad), seed.practice.course.roadSnapshots)
     }
 
     @Test fun `unversioned catalog detail changes produce a different fresh complete seed`() {
@@ -170,6 +175,12 @@ class NextPracticeSeedTest {
                 CoursePreviewPoint("a", "fixture A", 37.0, 127.0, 1, 1),
                 CoursePreviewPoint("b", "fixture B", 37.1, 127.1, 2, 1),
             )
+        val roadNodes =
+            mutableListOf(
+                CourseRoadSnapshot.Node(1, 1, 37.0, 127.0),
+                CourseRoadSnapshot.Node(2, 2, 37.1, 127.1),
+            )
+        val roads = mutableListOf(CourseRoadSnapshot("road", "fixture road", "residential", 10, 3, 1_000, roadNodes))
         val course =
             PracticeCourse(
                 "course",
@@ -181,6 +192,7 @@ class NextPracticeSeedTest {
                 tasks,
                 goalIds,
                 mapPreview = CourseMapPreview("preview", 1, "fixture preview", points),
+                roadSnapshots = roads,
             )
         val catalog = MutableCatalog(listOf(goal), listOf(course))
         val source =

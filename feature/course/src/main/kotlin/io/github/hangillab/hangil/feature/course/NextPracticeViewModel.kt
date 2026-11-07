@@ -687,6 +687,30 @@ class NextPracticeViewModel
                     fields.add(point.osmVersion.toString())
                 }
             }
+            fields.add(course.roadSnapshots.size.toString())
+            course.roadSnapshots.forEach { road ->
+                fields.addAll(
+                    listOf(
+                        road.id,
+                        road.title,
+                        road.highway,
+                        road.osmWayId.toString(),
+                        road.osmWayVersion.toString(),
+                        road.capturedAtEpochMillis.toString(),
+                    ),
+                )
+                fields.add(road.nodes.size.toString())
+                road.nodes.forEach { node ->
+                    fields.addAll(
+                        listOf(
+                            node.osmNodeId.toString(),
+                            node.osmNodeVersion.toString(),
+                            node.latitude.toString(),
+                            node.longitude.toString(),
+                        ),
+                    )
+                }
+            }
             fields.add(practice.task.id)
             fields.add(practice.task.title)
             fields.add(practice.task.description)

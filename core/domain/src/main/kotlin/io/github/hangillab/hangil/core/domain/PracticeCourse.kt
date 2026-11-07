@@ -12,4 +12,9 @@ data class PracticeCourse(
     val reviewStatus: CourseReviewStatus = CourseReviewStatus.DEMO,
     val mapPreview: CourseMapPreview? = null,
     val navigationRoute: PracticeNavigationRoute? = null,
-)
+    val roadSnapshots: List<CourseRoadSnapshot> = emptyList(),
+) {
+    init {
+        require(roadSnapshots.map { it.id }.distinct().size == roadSnapshots.size) { "Duplicate road snapshot ID" }
+    }
+}

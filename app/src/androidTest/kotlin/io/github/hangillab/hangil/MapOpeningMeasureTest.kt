@@ -21,6 +21,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import dagger.hilt.android.EntryPointAccessors
+import io.github.hangillab.hangil.core.database.LocalPracticeCatalog
 import io.github.hangillab.hangil.core.domain.CourseMapPreview
 import io.github.hangillab.hangil.core.domain.PracticeSelection
 import io.github.hangillab.hangil.core.domain.PracticeSession
@@ -497,8 +498,14 @@ class MapOpeningMeasureTest {
                             val bounds =
                                 LatLngBounds
                                     .Builder()
-                                    .includes(preview.points.map { LatLng(it.latitude, it.longitude) })
-                                    .build()
+                                    .includes(
+                                        preview.points.map { LatLng(it.latitude, it.longitude) } +
+                                            LocalPracticeCatalog()
+                                                .courses
+                                                .single { it.mapPreview == preview }
+                                                .roadSnapshots
+                                                .flatMap { road -> road.nodes.map { LatLng(it.latitude, it.longitude) } },
+                                    ).build()
                             val fit = CameraUpdateFactory.newLatLngBounds(bounds, padding).getCameraPosition(map)
                             val camera = map.cameraPosition
                             val target = camera.target

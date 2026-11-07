@@ -1,0 +1,9 @@
+Fixed public road data in LocalRoadSnapshots.kt
+Copyright OpenStreetMap contributors.
+Licensed under the Open Data Commons Open Database License (ODbL) 1.0.
+https://opendatacommons.org/licenses/odbl/1-0/
+https://www.openstreetmap.org/copyright
+
+The way versions and individually pinned node versions identify the distributed snapshot.
+This data does not establish current access, navigability or an observed driving route.
+The repository code license does not replace this data license.

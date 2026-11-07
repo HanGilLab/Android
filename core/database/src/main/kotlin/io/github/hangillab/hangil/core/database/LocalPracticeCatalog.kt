@@ -32,6 +32,7 @@ class LocalPracticeCatalog
                             PracticeTask("sequence", "이동 순서 떠올리기", "출발과 도착 사이에 어떤 구간이 있을지 한 번 떠올려 보세요."),
                             PracticeTask("arrival", "도착 후 할 일 생각하기", "도착했을 때 확인하고 싶은 일 하나를 정해 보세요."),
                         ),
+                    roadSnapshots = LocalRoadSnapshots.cityHall,
                     goalIds = setOf("commute", "shopping"),
                     mapPreview =
                         CourseMapPreview(

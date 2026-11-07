@@ -383,8 +383,14 @@ class MapInputBoundaryTest {
                             val bounds =
                                 LatLngBounds
                                     .Builder()
-                                    .includes(preview.points.map { LatLng(it.latitude, it.longitude) })
-                                    .build()
+                                    .includes(
+                                        preview.points.map { LatLng(it.latitude, it.longitude) } +
+                                            LocalPracticeCatalog()
+                                                .courses
+                                                .single { it.mapPreview == preview }
+                                                .roadSnapshots
+                                                .flatMap { road -> road.nodes.map { LatLng(it.latitude, it.longitude) } },
+                                    ).build()
                             // 실제 선택 원의 반경과 전체 stroke에 명목5 style px를 더하고 최소40을 유지합니다.
                             // 확대 글자에서 원 바깥쪽이 잘리지 않도록 같은 값을 화면 density로 변환합니다.
                             val selection = style?.getLayerAs<CircleLayer>("hangil-course-preview-selection")

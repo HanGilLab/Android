@@ -45,7 +45,7 @@ internal fun DemoMap(
     inputChanges: Flow<Unit>,
     onRendered: (Int, Long) -> Unit,
     onFailed: (Int, Long) -> Unit,
-    selection: MapPointSelection?,
+    selection: MapSelection?,
     canApplySelection: (Int, Long, Long) -> Boolean,
     onSelectionApplied: (Int, Long, Long) -> Unit,
     onNativeSelect: (String, () -> Boolean) -> Unit,
@@ -76,7 +76,7 @@ internal fun DemoMap(
                 onFailed = { onFailed(attempt, token) },
             )
         }
-    val selectionApplier = remember(result) { MapPointSelectionApplier() }
+    val selectionApplier = remember(result) { MapSelectionApplier() }
     val view = result.getOrNull()
     LaunchedEffect(result) { if (result.isFailure) onFailed(attempt, token) }
     if (view == null) return
@@ -186,12 +186,15 @@ private fun createMap(
                     map.setStyle(styleUrl) { style ->
                         if (active.get()) {
                             try {
+                                RoadPreviewLayers.add(style, preview.roads, pointFill)
                                 CoursePreviewLayers.add(style, preview, pointFill, pointText, pointBorder, fontScale)
                                 styleLoaded.set(true)
-                                val coordinates = preview.points.map { LatLng(it.latitude, it.longitude) }
+                                val coordinates =
+                                    preview.points.map { LatLng(it.latitude, it.longitude) } +
+                                        preview.roads.flatMap { road -> road.nodes.map { LatLng(it.latitude, it.longitude) } }
                                 val sameCoordinate =
-                                    preview.points.all {
-                                        it.latitude == preview.points.first().latitude && it.longitude == preview.points.first().longitude
+                                    coordinates.all {
+                                        it.latitude == coordinates.first().latitude && it.longitude == coordinates.first().longitude
                                     }
                                 val bounds =
                                     if (sameCoordinate) {
