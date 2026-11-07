@@ -1,6 +1,5 @@
 package io.github.hangillab.hangil.feature.map
 
-import io.github.hangillab.hangil.core.domain.CourseMapPreview
 import org.maplibre.android.maps.Style
 import org.maplibre.android.style.expressions.Expression
 import org.maplibre.android.style.expressions.Expression.get
@@ -21,7 +20,7 @@ import org.maplibre.geojson.Feature
 import org.maplibre.geojson.FeatureCollection
 import org.maplibre.geojson.Point
 
-/** Fixed public landmark points only. No route line or SDK/user location is represented. */
+/** Fixed landmarks or navigation-request POIs. No route line or SDK/user location is represented. */
 internal object CoursePreviewLayers {
     const val SOURCE = "hangil-course-preview-points"
     private const val CIRCLES = "hangil-course-preview-circles"
@@ -41,7 +40,7 @@ internal object CoursePreviewLayers {
 
     private fun selectionRadius(fontScale: Float): Float = pointTextSize(fontScale) + SELECTION_RADIUS_EXTENSION
 
-    fun features(preview: CourseMapPreview): FeatureCollection =
+    fun features(preview: MapPreview): FeatureCollection =
         FeatureCollection.fromFeatures(
             preview.points.mapIndexed { index, point ->
                 Feature.fromGeometry(Point.fromLngLat(point.longitude, point.latitude)).apply {
@@ -50,13 +49,15 @@ internal object CoursePreviewLayers {
                     addStringProperty("title", point.title)
                     addStringProperty("preview_id", preview.id)
                     addNumberProperty("preview_version", preview.version)
+                    addStringProperty("preview_source", preview.sourceCode)
+                    addStringProperty("point_role", point.role.name)
                 }
             },
         )
 
     fun add(
         style: Style,
-        preview: CourseMapPreview,
+        preview: MapPreview,
         fill: Int,
         text: Int,
         border: Int,

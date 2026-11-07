@@ -63,7 +63,7 @@ class MapPointSelectionViewModelTest {
     @Test fun noReaderCannotReadOrSelectAnyPoint() =
         runTest {
             val f = Fixture()
-            assertNull(f.model.selectPoint(0, 1, preview("a"), "a-1") { true })
+            assertNull(f.model.selectPoint(0, 1, MapPreview.from(preview("a")), "a-1") { true })
             assertFalse(f.model.canApplyPointSelection(0, 1, 0))
             f.model.onPointSelectionRendered(0, 1, 1)
             f.model.dismissPointSelection(1)
@@ -109,9 +109,9 @@ class MapPointSelectionViewModelTest {
             val f = Fixture()
             subscribe(f)
             val attempt = f.model.uiState.value.attempt
-            assertNull(f.model.selectPoint(attempt, 0, preview("a"), "a-1") { true })
+            assertNull(f.model.selectPoint(attempt, 0, MapPreview.from(preview("a")), "a-1") { true })
             val token = checkNotNull(f.model.onMapLoading(attempt))
-            assertNull(f.model.selectPoint(attempt, token, preview("a"), "a-1") { true })
+            assertNull(f.model.selectPoint(attempt, token, MapPreview.from(preview("a")), "a-1") { true })
             f.model.onMapRendered(attempt, token)
             runCurrent()
             val r = Renderer(attempt, token, prepared(f).preview)
@@ -147,6 +147,7 @@ class MapPointSelectionViewModelTest {
             val r = renderReady(f)
             val original = r.preview
             val first = original.points.first()
+            val osm = (original.source as MapPreview.Source.FixedOsm).preview
             val altered =
                 listOf(
                     original.copy(id = "other"),
@@ -156,8 +157,24 @@ class MapPointSelectionViewModelTest {
                     original.copy(points = listOf(first.copy(title = "other point")) + original.points.drop(1)),
                     original.copy(points = listOf(first.copy(latitude = 37.01)) + original.points.drop(1)),
                     original.copy(points = listOf(first.copy(longitude = 127.01)) + original.points.drop(1)),
-                    original.copy(points = listOf(first.copy(osmWayId = 99)) + original.points.drop(1)),
-                    original.copy(points = listOf(first.copy(osmVersion = 99)) + original.points.drop(1)),
+                    original.copy(
+                        source =
+                            MapPreview.Source.FixedOsm(
+                                osm.copy(
+                                    points =
+                                        listOf(osm.points.first().copy(osmWayId = 99)) + osm.points.drop(1),
+                                ),
+                            ),
+                    ),
+                    original.copy(
+                        source =
+                            MapPreview.Source.FixedOsm(
+                                osm.copy(
+                                    points =
+                                        listOf(osm.points.first().copy(osmVersion = 99)) + osm.points.drop(1),
+                                ),
+                            ),
+                    ),
                 )
             for (value in altered) assertNull(f.model.selectPoint(r.attempt, r.token, value, first.id) { true })
             runCurrent()
@@ -585,7 +602,7 @@ class MapPointSelectionViewModelTest {
     private data class Renderer(
         val attempt: Int,
         val token: Long,
-        val preview: CourseMapPreview,
+        val preview: MapPreview,
     )
 
     private class Fixture {

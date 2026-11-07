@@ -16,7 +16,6 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
-import io.github.hangillab.hangil.core.domain.CourseMapPreview
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collect
 import org.maplibre.android.MapLibre
@@ -34,7 +33,7 @@ import kotlin.math.roundToInt
 @Composable
 internal fun DemoMap(
     attempt: Int,
-    preview: CourseMapPreview,
+    preview: MapPreview,
     dark: Boolean,
     fontScale: Float,
     pointFill: Int,
@@ -142,7 +141,7 @@ private fun createMap(
     context: Context,
     savedState: MapViewSavedState,
     active: AtomicBoolean,
-    preview: CourseMapPreview,
+    preview: MapPreview,
     dark: Boolean,
     fontScale: Float,
     pointFill: Int,
@@ -189,12 +188,20 @@ private fun createMap(
                             try {
                                 CoursePreviewLayers.add(style, preview, pointFill, pointText, pointBorder, fontScale)
                                 styleLoaded.set(true)
+                                val coordinates = preview.points.map { LatLng(it.latitude, it.longitude) }
+                                val sameCoordinate =
+                                    preview.points.all {
+                                        it.latitude == preview.points.first().latitude && it.longitude == preview.points.first().longitude
+                                    }
                                 val bounds =
-                                    LatLngBounds
-                                        .Builder()
-                                        .includes(
-                                            preview.points.map { LatLng(it.latitude, it.longitude) },
-                                        ).build()
+                                    if (sameCoordinate) {
+                                        null
+                                    } else {
+                                        LatLngBounds
+                                            .Builder()
+                                            .includes(coordinates)
+                                            .build()
+                                    }
                                 val density = context.resources.displayMetrics.density
                                 val padding = (CoursePreviewLayers.viewportPaddingDp(fontScale) * density).roundToInt()
                                 var layout: View.OnLayoutChangeListener? = null
@@ -203,7 +210,13 @@ private fun createMap(
                                         mapView.height > padding * 2
                                     ) {
                                         try {
-                                            map.moveCamera(CameraUpdateFactory.newLatLngBounds(bounds, padding))
+                                            val camera =
+                                                if (sameCoordinate) {
+                                                    CameraUpdateFactory.newLatLngZoom(coordinates.first(), 14.0)
+                                                } else {
+                                                    CameraUpdateFactory.newLatLngBounds(checkNotNull(bounds), padding)
+                                                }
+                                            map.moveCamera(camera)
                                             cameraFitted.set(true)
                                             layout?.let(mapView::removeOnLayoutChangeListener)
                                         } catch (_: Exception) {

@@ -2,7 +2,6 @@ package io.github.hangillab.hangil.feature.map
 
 import android.graphics.PointF
 import android.os.Looper
-import io.github.hangillab.hangil.core.domain.CourseMapPreview
 import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.Style
@@ -13,7 +12,7 @@ import org.maplibre.geojson.Point
 import java.math.BigDecimal
 import kotlin.math.hypot
 
-/** A fixed preview hit is not a road segment, entrance, device location or navigation destination. */
+/** A preview hit identifies one displayed landmark or request POI, not a road or device location. */
 internal object MapPointHitTest {
     private const val CIRCLES = "hangil-course-preview-circles"
     private const val MAX_PROJECTION_ERROR_PX = 2.0
@@ -25,7 +24,7 @@ internal object MapPointHitTest {
      */
     fun find(
         map: MapLibreMap,
-        preview: CourseMapPreview,
+        preview: MapPreview,
         x: Float,
         y: Float,
     ): String? {
@@ -55,7 +54,7 @@ internal object MapPointHitTest {
      * Projection errors propagate to the caller's SDK failure boundary.
      */
     internal fun match(
-        preview: CourseMapPreview,
+        preview: MapPreview,
         features: List<Feature>,
         project: (latitude: Double, longitude: Double) -> Pair<Double, Double>,
     ): String? {
@@ -66,6 +65,7 @@ internal object MapPointHitTest {
             if (index < 0) return null
             val expected = preview.points[index]
             if (text(feature, "title") != expected.title || text(feature, "preview_id") != preview.id ||
+                text(feature, "preview_source") != preview.sourceCode || text(feature, "point_role") != expected.role.name ||
                 !numberMatches(feature, "preview_version", preview.version) || !numberMatches(feature, "order", index + 1)
             ) {
                 return null

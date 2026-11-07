@@ -1,0 +1,90 @@
+package io.github.hangillab.hangil.feature.map
+
+import io.github.hangillab.hangil.core.domain.CourseMapPreview
+import io.github.hangillab.hangil.core.domain.PracticeCourse
+import io.github.hangillab.hangil.core.domain.PracticeNavigationRoute
+import java.util.Collections
+
+/** Display-only points with their full origin. Neither source represents a road or observed route. */
+@ConsistentCopyVisibility
+data class MapPreview internal constructor(
+    val id: String,
+    val version: Int,
+    val title: String,
+    val points: List<Point>,
+    val source: Source,
+) {
+    val sourceCode: String
+        get() =
+            when (source) {
+                is Source.FixedOsm -> "FIXED_OSM"
+                is Source.NavigationRequest -> "NAVIGATION_REQUEST"
+            }
+
+    @ConsistentCopyVisibility
+    data class Point internal constructor(
+        val id: String,
+        val title: String,
+        val latitude: Double,
+        val longitude: Double,
+        val role: Role = Role.LANDMARK,
+    )
+
+    enum class Role { LANDMARK, WAYPOINT, DESTINATION }
+
+    sealed interface Source {
+        @ConsistentCopyVisibility
+        data class FixedOsm internal constructor(
+            val preview: CourseMapPreview,
+        ) : Source
+
+        @ConsistentCopyVisibility
+        data class NavigationRequest internal constructor(
+            val courseId: String,
+            val courseVersion: Int,
+            val briefingVersion: Int,
+            val route: PracticeNavigationRoute,
+        ) : Source
+    }
+
+    companion object {
+        internal fun from(course: PracticeCourse): MapPreview? {
+            course.mapPreview?.let { return from(it) }
+            val route = course.navigationRoute ?: return null
+            val snapshot = route.copy(waypoints = frozen(route.waypoints))
+            return MapPreview(
+                id = "${course.id}-navigation-request-pois",
+                version = course.version,
+                title = course.title,
+                points =
+                    frozen(
+                        snapshot.waypoints.map { it.displayPoint(Role.WAYPOINT) } +
+                            snapshot.destination.displayPoint(Role.DESTINATION),
+                    ),
+                source = Source.NavigationRequest(course.id, course.version, course.briefingVersion, snapshot),
+            )
+        }
+
+        internal fun from(preview: CourseMapPreview): MapPreview {
+            val snapshot = preview.copy(points = frozen(preview.points))
+            return MapPreview(
+                id = snapshot.id,
+                version = snapshot.version,
+                title = snapshot.title,
+                points = frozen(snapshot.points.map { Point(it.id, it.title, it.latitude, it.longitude) }),
+                source = Source.FixedOsm(snapshot),
+            )
+        }
+
+        private fun PracticeNavigationRoute.Point.displayPoint(role: Role): Point =
+            Point(
+                id = "poi:${poiId.length}:$poiId${poiSubId.length}:$poiSubId",
+                title = name,
+                latitude = latitude,
+                longitude = longitude,
+                role = role,
+            )
+
+        private fun <T> frozen(values: List<T>): List<T> = Collections.unmodifiableList(ArrayList(values))
+    }
+}
