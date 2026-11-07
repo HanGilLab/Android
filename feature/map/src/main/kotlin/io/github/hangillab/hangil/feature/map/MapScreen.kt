@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -20,6 +22,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -36,13 +39,18 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import io.github.hangillab.hangil.core.designsystem.HanGilDimensions
 import io.github.hangillab.hangil.core.designsystem.HanGilSpacing
 import io.github.hangillab.hangil.core.designsystem.ParkedChoice
+import io.github.hangillab.hangil.core.designsystem.ParkedDisclosure
 import io.github.hangillab.hangil.core.designsystem.PracticeBadge
 import io.github.hangillab.hangil.core.designsystem.PracticeLockedNotice
 import io.github.hangillab.hangil.core.designsystem.PracticePage
 import io.github.hangillab.hangil.core.designsystem.PracticePanel
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
@@ -63,7 +71,7 @@ fun MapRoute(
         fun stopOwner() {
             val owner = startedOwner
             owner.first.set(false)
-            viewModel.dismissPointSelection(owner.second.getAndSet(0))
+            viewModel.dismissSelection(owner.second.getAndSet(0))
         }
 
         fun startOwner() {
@@ -88,7 +96,7 @@ fun MapRoute(
     val clickOwner = startedOwner
     val close = {
         clickOwner.first.set(false)
-        viewModel.dismissPointSelection(clickOwner.second.getAndSet(0))
+        viewModel.dismissSelection(clickOwner.second.getAndSet(0))
         onClose()
     }
     BackHandler(onBack = close)
@@ -128,6 +136,20 @@ fun MapRoute(
                                     clickOwner.first.get()
                                 }?.let(clickOwner.second::set)
                         },
+                        onSelectRoad = { roadId ->
+                            viewModel
+                                .selectRoad(displayedAttempt, displayedRendererToken, preparation.preview, roadId) {
+                                    clickOwner.first.get()
+                                }?.let(clickOwner.second::set)
+                        },
+                        onClearSelection = { nonce ->
+                            if (clickOwner.first.get() &&
+                                viewModel.canApplySelection(displayedAttempt, displayedRendererToken, nonce)
+                            ) {
+                                viewModel.dismissSelection(nonce)
+                                clickOwner.second.compareAndSet(nonce, 0)
+                            }
+                        },
                     )
                 else -> MapPreparationMessage(preparation, viewModel::retryPreparation, close)
             }
@@ -142,8 +164,10 @@ private fun PreparedMap(
     preparation: MapPreparationState.Ready,
     viewModel: MapViewModel,
     canSelect: Boolean,
-    selectionOwner: Any,
+    selectionOwner: AtomicBoolean,
     onSelect: (String) -> Unit,
+    onSelectRoad: (String) -> Unit,
+    onClearSelection: (Long) -> Unit,
     onNativeSelect: (String, () -> Boolean) -> Unit,
 ) {
     val preview = preparation.preview
@@ -156,6 +180,43 @@ private fun PreparedMap(
                 MapPreview.Role.DESTINATION -> stringResource(R.string.map_point_destination, index + 1, point.title)
             }
         }
+    val roadTitles = preview.roads.mapIndexed { index, road -> stringResource(R.string.map_road_title, index + 1, road.title) }
+    val pointContentDescription =
+        if (isNavigationRequest) {
+            stringResource(
+                R.string.map_navigation_request_content_description,
+                preparation.prepared.course.title,
+                pointTitles.joinToString(", "),
+            )
+        } else {
+            stringResource(R.string.map_content_description, preparation.prepared.course.title)
+        }
+    val contentDescription =
+        if (preview.roads.isEmpty()) {
+            pointContentDescription
+        } else {
+            stringResource(R.string.map_roads_content_description, pointContentDescription, roadTitles.joinToString(", "))
+        }
+    val mapRequester = remember { BringIntoViewRequester() }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val selection = state.selection
+    val renderedRoad = selection?.takeIf { it.roadId != null && it.rendered }
+    LaunchedEffect(state.attempt, state.rendererToken, preview, selectionOwner, renderedRoad?.nonce, lifecycle) {
+        val road = renderedRoad ?: return@LaunchedEffect
+        var requested = false
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            viewModel.mapInputChanges
+                .map {
+                    selectionOwner.get() && viewModel.canApplySelection(state.attempt, state.rendererToken, road.nonce)
+                }.distinctUntilChanged()
+                .collectLatest { allowed ->
+                    if (allowed && !requested) {
+                        requested = true
+                        mapRequester.bringIntoView()
+                    }
+                }
+        }
+    }
     val dark = isSystemInDarkTheme()
     val scale = LocalDensity.current.fontScale
     Column(verticalArrangement = Arrangement.spacedBy(HanGilSpacing.md)) {
@@ -174,6 +235,7 @@ private fun PreparedMap(
         Modifier
             .fillMaxWidth()
             .height(HanGilDimensions.mapPreviewHeight)
+            .bringIntoViewRequester(mapRequester)
             .testTag(if (state.load == MapLoadState.READY) "map_ready" else "map_container"),
     ) {
         if (state.load == MapLoadState.FAILED) {
@@ -194,24 +256,15 @@ private fun PreparedMap(
                     pointFill = MaterialTheme.colorScheme.primary.toArgb(),
                     pointText = MaterialTheme.colorScheme.onPrimary.toArgb(),
                     pointBorder = MaterialTheme.colorScheme.surface.toArgb(),
-                    contentDescription =
-                        if (isNavigationRequest) {
-                            stringResource(
-                                R.string.map_navigation_request_content_description,
-                                preparation.prepared.course.title,
-                                pointTitles.joinToString(", "),
-                            )
-                        } else {
-                            stringResource(R.string.map_content_description, preparation.prepared.course.title)
-                        },
+                    contentDescription = contentDescription,
                     onLoading = viewModel::onMapLoading,
                     canInteract = viewModel::canInteractWithMap,
                     inputChanges = viewModel.mapInputChanges,
                     onRendered = viewModel::onMapRendered,
                     onFailed = viewModel::onMapFailed,
-                    selection = state.pointSelection,
-                    canApplySelection = viewModel::canApplyPointSelection,
-                    onSelectionApplied = viewModel::onPointSelectionRendered,
+                    selection = selection,
+                    canApplySelection = viewModel::canApplySelection,
+                    onSelectionApplied = viewModel::onSelectionRendered,
                     onNativeSelect = onNativeSelect,
                     modifier = Modifier.fillMaxSize().testTag("map_view"),
                 )
@@ -245,7 +298,6 @@ private fun PreparedMap(
         Modifier.testTag("map_point_selection_instruction"),
         style = MaterialTheme.typography.bodyLarge,
     )
-    val selection = state.pointSelection
     key(state.attempt, state.rendererToken, preview, selectionOwner) {
         Column(Modifier.testTag("map_point_choices"), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.lg)) {
             preview.points.forEachIndexed { index, point ->
@@ -260,10 +312,36 @@ private fun PreparedMap(
                 )
             }
         }
+        if (preview.roads.isNotEmpty()) {
+            Column(Modifier.testTag("map_road_badge")) { PracticeBadge(stringResource(R.string.map_road_badge)) }
+            Text(
+                stringResource(R.string.map_road_scope),
+                Modifier.fillMaxWidth().testTag("map_road_scope"),
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            Text(
+                stringResource(R.string.map_road_selection_instruction),
+                Modifier.fillMaxWidth().testTag("map_road_selection_instruction"),
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            Column(Modifier.testTag("map_road_choices"), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.lg)) {
+                preview.roads.forEachIndexed { index, road ->
+                    ParkedChoice(
+                        title = roadTitles[index],
+                        description = "",
+                        selected = selection?.roadId == road.id && selection.rendered,
+                        enabled = state.load == MapLoadState.READY && canSelect,
+                        showDescription = false,
+                        onClick = { onSelectRoad(road.id) },
+                        modifier = Modifier.testTag("map_road_$index"),
+                    )
+                }
+            }
+        }
     }
     if (selection != null && !selection.rendered) {
         Text(
-            stringResource(R.string.map_point_selection_pending),
+            stringResource(if (selection.roadId != null) R.string.map_road_selection_pending else R.string.map_point_selection_pending),
             Modifier.testTag("map_selection_pending"),
             style = MaterialTheme.typography.bodyLarge,
         )
@@ -303,6 +381,58 @@ private fun PreparedMap(
                         },
                     ),
                     style = MaterialTheme.typography.bodyLarge,
+                )
+            }
+        }
+        preview.roads.withIndex().singleOrNull { it.value.id == selection.roadId }?.let { (index, _) ->
+            PracticePanel(Modifier.testTag("map_selected_road")) {
+                Text(stringResource(R.string.map_selected_road), style = MaterialTheme.typography.labelLarge)
+                Text(
+                    roadTitles[index],
+                    Modifier.fillMaxWidth().testTag("map_selected_road_title"),
+                    style = MaterialTheme.typography.titleLarge,
+                )
+                Text(
+                    stringResource(R.string.map_selected_road_source),
+                    Modifier.fillMaxWidth().testTag("map_selected_road_source"),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                Text(
+                    stringResource(R.string.map_selected_road_scope),
+                    Modifier.fillMaxWidth().testTag("map_selected_road_scope"),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                key(state.attempt, state.rendererToken, preview, selectionOwner, selection.nonce) {
+                    Button(
+                        onClick = { onClearSelection(selection.nonce) },
+                        enabled = state.load == MapLoadState.READY && canSelect,
+                        modifier = Modifier.heightIn(min = HanGilDimensions.secondaryActionMinHeight).testTag("map_clear_selection"),
+                    ) { Text(stringResource(R.string.map_clear_selection), style = MaterialTheme.typography.titleMedium) }
+                }
+            }
+        }
+    }
+    if (preview.roads.isNotEmpty()) {
+        Text(
+            stringResource(R.string.map_road_attribution),
+            Modifier.fillMaxWidth().testTag("map_road_attribution"),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        key(state.attempt, state.rendererToken, preview, selectionOwner) {
+            ParkedDisclosure(
+                title = stringResource(R.string.map_road_source_details),
+                canExpand = { selectionOwner.get() && viewModel.canInteractWithMap(state.attempt, state.rendererToken) },
+                modifier = Modifier.testTag("map_road_source_details"),
+            ) {
+                Text(
+                    stringResource(R.string.map_road_copyright_uri),
+                    Modifier.fillMaxWidth().testTag("map_road_copyright_uri"),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Text(
+                    stringResource(R.string.map_road_license_uri),
+                    Modifier.fillMaxWidth().testTag("map_road_license_uri"),
+                    style = MaterialTheme.typography.bodyMedium,
                 )
             }
         }

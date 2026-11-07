@@ -1,11 +1,12 @@
 package io.github.hangillab.hangil.feature.map
 
 import io.github.hangillab.hangil.core.domain.CourseMapPreview
+import io.github.hangillab.hangil.core.domain.CourseRoadSnapshot
 import io.github.hangillab.hangil.core.domain.PracticeCourse
 import io.github.hangillab.hangil.core.domain.PracticeNavigationRoute
 import java.util.Collections
 
-/** Display-only points with their full origin. Neither source represents a road or observed route. */
+/** Display-only points and fixed road shapes, never an observed or reviewed driving route. */
 @ConsistentCopyVisibility
 data class MapPreview internal constructor(
     val id: String,
@@ -13,6 +14,7 @@ data class MapPreview internal constructor(
     val title: String,
     val points: List<Point>,
     val source: Source,
+    val roads: List<CourseRoadSnapshot> = emptyList(),
 ) {
     val sourceCode: String
         get() =
@@ -49,7 +51,9 @@ data class MapPreview internal constructor(
 
     companion object {
         internal fun from(course: PracticeCourse): MapPreview? {
-            course.mapPreview?.let { return from(it) }
+            val roads = frozen(course.roadSnapshots.map { it.copy(nodes = frozen(it.nodes)) })
+            require(roads.map { it.id }.distinct().size == roads.size) { "Duplicate road preview ID" }
+            course.mapPreview?.let { return from(it).copy(roads = roads) }
             val route = course.navigationRoute ?: return null
             val snapshot = route.copy(waypoints = frozen(route.waypoints))
             return MapPreview(
@@ -62,6 +66,7 @@ data class MapPreview internal constructor(
                             snapshot.destination.displayPoint(Role.DESTINATION),
                     ),
                 source = Source.NavigationRequest(course.id, course.version, course.briefingVersion, snapshot),
+                roads = roads,
             )
         }
 

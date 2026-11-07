@@ -4,6 +4,7 @@ import io.github.hangillab.hangil.core.domain.ConnectionState
 import io.github.hangillab.hangil.core.domain.CourseMapPreview
 import io.github.hangillab.hangil.core.domain.CoursePreviewPoint
 import io.github.hangillab.hangil.core.domain.CoursePreviewSource
+import io.github.hangillab.hangil.core.domain.CourseRoadSnapshot
 import io.github.hangillab.hangil.core.domain.DrivingRestrictions
 import io.github.hangillab.hangil.core.domain.DrivingRestrictionsProvider
 import io.github.hangillab.hangil.core.domain.GearPosition
@@ -178,7 +179,57 @@ class MapViewModelTest {
             fixture.model.onMapFailed(attempt, token)
             runCurrent()
             assertEquals(MapLoadState.LOADING, fixture.model.uiState.value.load)
-            assertNull(fixture.model.uiState.value.pointSelection)
+            assertNull(fixture.model.uiState.value.selection)
+            assertEquals(0, fixture.repository.writes)
+        }
+
+    @Test fun `road source freezes node provenance and rejects an unsupported projection`() =
+        runTest {
+            val fixture = Fixture()
+            val nodes =
+                mutableListOf(
+                    CourseRoadSnapshot.Node(10, 1, 37.0, 127.0),
+                    CourseRoadSnapshot.Node(11, 2, 37.1, 127.1),
+                )
+            val road = CourseRoadSnapshot("road", "Fixture road", "residential", 99, 1, 1000, nodes)
+            val roads = mutableListOf(road)
+            fixture.catalog.courses = listOf(course("a").copy(roadSnapshots = roads))
+            subscribe(fixture)
+            val first = ready(fixture)
+            nodes[0] = nodes[0].copy(osmNodeVersion = 3)
+            roads.clear()
+            assertEquals(
+                1,
+                first.preview.roads
+                    .single()
+                    .nodes
+                    .first()
+                    .osmNodeVersion,
+            )
+            assertEquals(first.preview.roads, first.prepared.course.roadSnapshots)
+            assertNotEquals(first.preview, first.preview.copy(roads = listOf(road)))
+            fixture.catalog.courses =
+                listOf(
+                    course("b").copy(
+                        roadSnapshots =
+                            listOf(
+                                road.copy(nodes = listOf(nodes[0].copy(latitude = 90.0), nodes[1])),
+                            ),
+                    ),
+                )
+            fixture.repository.values.value = selection("b")
+            runCurrent()
+            val unavailable = fixture.model.uiState.value.preparation as MapPreparationState.Unavailable
+            assertEquals(MapPreparationState.UnavailableReason.OUTSIDE_MAP_RANGE, unavailable.reason)
+            assertEquals(
+                90.0,
+                unavailable.prepared.course.roadSnapshots
+                    .single()
+                    .nodes
+                    .first()
+                    .latitude,
+                0.0,
+            )
             assertEquals(0, fixture.repository.writes)
         }
 

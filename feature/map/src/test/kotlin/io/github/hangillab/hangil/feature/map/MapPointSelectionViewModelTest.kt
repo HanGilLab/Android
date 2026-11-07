@@ -3,6 +3,7 @@ package io.github.hangillab.hangil.feature.map
 import io.github.hangillab.hangil.core.domain.ConnectionState
 import io.github.hangillab.hangil.core.domain.CourseMapPreview
 import io.github.hangillab.hangil.core.domain.CoursePreviewPoint
+import io.github.hangillab.hangil.core.domain.CourseRoadSnapshot
 import io.github.hangillab.hangil.core.domain.DrivingRestrictions
 import io.github.hangillab.hangil.core.domain.DrivingRestrictionsProvider
 import io.github.hangillab.hangil.core.domain.GearPosition
@@ -64,11 +65,11 @@ class MapPointSelectionViewModelTest {
         runTest {
             val f = Fixture()
             assertNull(f.model.selectPoint(0, 1, MapPreview.from(preview("a")), "a-1") { true })
-            assertFalse(f.model.canApplyPointSelection(0, 1, 0))
-            f.model.onPointSelectionRendered(0, 1, 1)
-            f.model.dismissPointSelection(1)
+            assertFalse(f.model.canApplySelection(0, 1, 0))
+            f.model.onSelectionRendered(0, 1, 1)
+            f.model.dismissSelection(1)
             runCurrent()
-            assertNull(f.model.uiState.value.pointSelection)
+            assertNull(f.model.uiState.value.selection)
             assertEquals(0, f.repository.calls)
             assertEquals(0, f.repository.writes)
         }
@@ -80,8 +81,8 @@ class MapPointSelectionViewModelTest {
             val r = renderReady(f)
             assertTrue(r.token > 0)
             assertEquals(r.token, f.model.uiState.value.rendererToken)
-            assertNull(f.model.uiState.value.pointSelection)
-            assertTrue(f.model.canApplyPointSelection(r.attempt, r.token, 0))
+            assertNull(f.model.uiState.value.selection)
+            assertTrue(f.model.canApplySelection(r.attempt, r.token, 0))
             assertEquals(1, f.repository.calls)
             assertEquals(0, f.repository.writes)
         }
@@ -92,15 +93,15 @@ class MapPointSelectionViewModelTest {
             subscribe(f)
             val r = renderReady(f)
             val nonce = select(f, r, "a-1")
-            val pending = checkNotNull(f.model.uiState.value.pointSelection)
+            val pending = checkNotNull(f.model.uiState.value.selection)
             assertTrue(nonce > 0)
             assertEquals("a-1", pending.pointId)
             assertEquals(nonce, pending.nonce)
             assertFalse(pending.rendered)
-            assertTrue(f.model.canApplyPointSelection(r.attempt, r.token, nonce))
-            f.model.onPointSelectionRendered(r.attempt, r.token, nonce)
+            assertTrue(f.model.canApplySelection(r.attempt, r.token, nonce))
+            f.model.onSelectionRendered(r.attempt, r.token, nonce)
             runCurrent()
-            assertTrue(checkNotNull(f.model.uiState.value.pointSelection).rendered)
+            assertTrue(checkNotNull(f.model.uiState.value.selection).rendered)
             assertEquals(0, f.repository.writes)
         }
 
@@ -117,12 +118,12 @@ class MapPointSelectionViewModelTest {
             val r = Renderer(attempt, token, prepared(f).preview)
             val nonce = select(f, r, "a-1")
             f.model.onMapFailed(attempt, token)
-            f.model.onPointSelectionRendered(attempt, token, nonce)
+            f.model.onSelectionRendered(attempt, token, nonce)
             runCurrent()
             assertEquals(MapLoadState.FAILED, f.model.uiState.value.load)
-            assertNull(f.model.uiState.value.pointSelection)
-            assertFalse(f.model.canApplyPointSelection(attempt, token, nonce))
-            assertFalse(f.model.canApplyPointSelection(attempt, token, 0))
+            assertNull(f.model.uiState.value.selection)
+            assertFalse(f.model.canApplySelection(attempt, token, nonce))
+            assertFalse(f.model.canApplySelection(attempt, token, 0))
             assertNull(f.model.selectPoint(attempt, token, r.preview, "a-1") { true })
         }
 
@@ -134,7 +135,7 @@ class MapPointSelectionViewModelTest {
             for (id in listOf("", " ", "missing", "b-1")) {
                 assertNull(f.model.selectPoint(r.attempt, r.token, r.preview, id) { true })
                 runCurrent()
-                assertNull(f.model.uiState.value.pointSelection)
+                assertNull(f.model.uiState.value.selection)
             }
             assertEquals(1, f.repository.calls)
             assertEquals(0, f.repository.writes)
@@ -178,7 +179,7 @@ class MapPointSelectionViewModelTest {
                 )
             for (value in altered) assertNull(f.model.selectPoint(r.attempt, r.token, value, first.id) { true })
             runCurrent()
-            assertNull(f.model.uiState.value.pointSelection)
+            assertNull(f.model.uiState.value.selection)
             assertEquals(0, f.repository.writes)
         }
 
@@ -191,11 +192,11 @@ class MapPointSelectionViewModelTest {
             assertNull(f.model.selectPoint(r.attempt, r.token + 1, r.preview, "a-1") { true })
             assertNull(f.model.selectPoint(r.attempt, 0, r.preview, "a-1") { true })
             val nonce = select(f, r, "a-1")
-            f.model.onPointSelectionRendered(r.attempt + 1, r.token, nonce)
-            f.model.onPointSelectionRendered(r.attempt, r.token + 1, nonce)
+            f.model.onSelectionRendered(r.attempt + 1, r.token, nonce)
+            f.model.onSelectionRendered(r.attempt, r.token + 1, nonce)
             runCurrent()
-            assertFalse(checkNotNull(f.model.uiState.value.pointSelection).rendered)
-            assertTrue(f.model.canApplyPointSelection(r.attempt, r.token, nonce))
+            assertFalse(checkNotNull(f.model.uiState.value.selection).rendered)
+            assertTrue(f.model.canApplySelection(r.attempt, r.token, nonce))
         }
 
     @Test fun rapidChoicesRejectOldAckAndDismissWithoutChangingTheNewChoice() =
@@ -206,17 +207,17 @@ class MapPointSelectionViewModelTest {
             val first = select(f, r, "a-1")
             val second = select(f, r, "a-2")
             assertNotEquals(first, second)
-            assertFalse(f.model.canApplyPointSelection(r.attempt, r.token, first))
-            f.model.onPointSelectionRendered(r.attempt, r.token, first)
-            f.model.dismissPointSelection(first)
+            assertFalse(f.model.canApplySelection(r.attempt, r.token, first))
+            f.model.onSelectionRendered(r.attempt, r.token, first)
+            f.model.dismissSelection(first)
             runCurrent()
-            val pending = checkNotNull(f.model.uiState.value.pointSelection)
+            val pending = checkNotNull(f.model.uiState.value.selection)
             assertEquals("a-2", pending.pointId)
             assertEquals(second, pending.nonce)
             assertFalse(pending.rendered)
-            f.model.onPointSelectionRendered(r.attempt, r.token, second)
+            f.model.onSelectionRendered(r.attempt, r.token, second)
             runCurrent()
-            assertTrue(checkNotNull(f.model.uiState.value.pointSelection).rendered)
+            assertTrue(checkNotNull(f.model.uiState.value.selection).rendered)
         }
 
     @Test fun selectingTheSamePointAgainCreatesANewPendingNonce() =
@@ -225,14 +226,14 @@ class MapPointSelectionViewModelTest {
             subscribe(f)
             val r = renderReady(f)
             val first = select(f, r, "a-1")
-            f.model.onPointSelectionRendered(r.attempt, r.token, first)
+            f.model.onSelectionRendered(r.attempt, r.token, first)
             runCurrent()
             val second = select(f, r, "a-1")
             assertNotEquals(first, second)
-            f.model.onPointSelectionRendered(r.attempt, r.token, first)
+            f.model.onSelectionRendered(r.attempt, r.token, first)
             runCurrent()
-            assertFalse(checkNotNull(f.model.uiState.value.pointSelection).rendered)
-            assertTrue(f.model.canApplyPointSelection(r.attempt, r.token, second))
+            assertFalse(checkNotNull(f.model.uiState.value.selection).rendered)
+            assertTrue(f.model.canApplySelection(r.attempt, r.token, second))
         }
 
     @Test fun zeroNonceCanOnlyClearTheCurrentReadyRendererWithNoChoice() =
@@ -240,21 +241,21 @@ class MapPointSelectionViewModelTest {
             val f = Fixture()
             subscribe(f)
             val r = renderReady(f)
-            assertFalse(f.model.canApplyPointSelection(r.attempt + 1, r.token, 0))
-            assertFalse(f.model.canApplyPointSelection(r.attempt, r.token + 1, 0))
+            assertFalse(f.model.canApplySelection(r.attempt + 1, r.token, 0))
+            assertFalse(f.model.canApplySelection(r.attempt, r.token + 1, 0))
             val nonce = select(f, r, "a-1")
-            assertFalse(f.model.canApplyPointSelection(r.attempt, r.token, 0))
-            f.model.onPointSelectionRendered(r.attempt, r.token, nonce)
+            assertFalse(f.model.canApplySelection(r.attempt, r.token, 0))
+            f.model.onSelectionRendered(r.attempt, r.token, nonce)
             runCurrent()
-            assertFalse(f.model.canApplyPointSelection(r.attempt, r.token, 0))
-            f.model.dismissPointSelection(nonce + 1)
+            assertFalse(f.model.canApplySelection(r.attempt, r.token, 0))
+            f.model.dismissSelection(nonce + 1)
             runCurrent()
-            assertNotNull(f.model.uiState.value.pointSelection)
-            f.model.dismissPointSelection(nonce)
+            assertNotNull(f.model.uiState.value.selection)
+            f.model.dismissSelection(nonce)
             runCurrent()
-            assertNull(f.model.uiState.value.pointSelection)
-            assertFalse(f.model.canApplyPointSelection(r.attempt, r.token, nonce))
-            assertTrue(f.model.canApplyPointSelection(r.attempt, r.token, 0))
+            assertNull(f.model.uiState.value.selection)
+            assertFalse(f.model.canApplySelection(r.attempt, r.token, nonce))
+            assertTrue(f.model.canApplySelection(r.attempt, r.token, 0))
         }
 
     @Test fun stoppedHostsCannotStartOrReviveAnExistingSelection() =
@@ -266,12 +267,12 @@ class MapPointSelectionViewModelTest {
             var visible = true
             val nonce = select(f, r, "a-1") { visible }
             visible = false
-            assertFalse(f.model.canApplyPointSelection(r.attempt, r.token, nonce))
+            assertFalse(f.model.canApplySelection(r.attempt, r.token, nonce))
             visible = true
-            assertFalse(f.model.canApplyPointSelection(r.attempt, r.token, nonce))
-            f.model.onPointSelectionRendered(r.attempt, r.token, nonce)
+            assertFalse(f.model.canApplySelection(r.attempt, r.token, nonce))
+            f.model.onSelectionRendered(r.attempt, r.token, nonce)
             runCurrent()
-            assertNull(f.model.uiState.value.pointSelection)
+            assertNull(f.model.uiState.value.selection)
             assertNotEquals(nonce, select(f, r, "a-2") { visible })
         }
 
@@ -287,7 +288,7 @@ class MapPointSelectionViewModelTest {
                 assertEquals(displayed, f.model.uiState.value)
                 assertNull(f.model.selectPoint(r.attempt, r.token, r.preview, "a-1") { true })
                 runCurrent()
-                assertNull(f.model.uiState.value.pointSelection)
+                assertNull(f.model.uiState.value.selection)
                 subscriber.cancelAndJoin()
                 runCurrent()
             }
@@ -304,14 +305,14 @@ class MapPointSelectionViewModelTest {
                 f.vehicle.live.setWithoutEmission(vehicle)
                 f.restrictions.live.setWithoutEmission(restrictions)
                 assertEquals(displayed, f.model.uiState.value)
-                assertFalse(f.model.canApplyPointSelection(r.attempt, r.token, nonce))
+                assertFalse(f.model.canApplySelection(r.attempt, r.token, nonce))
                 f.vehicle.live.setWithoutEmission(parked())
                 f.restrictions.live.setWithoutEmission(unrestricted())
-                assertFalse(f.model.canApplyPointSelection(r.attempt, r.token, nonce))
-                f.model.onPointSelectionRendered(r.attempt, r.token, nonce)
+                assertFalse(f.model.canApplySelection(r.attempt, r.token, nonce))
+                f.model.onSelectionRendered(r.attempt, r.token, nonce)
                 runCurrent()
-                assertNull(f.model.uiState.value.pointSelection)
-                assertTrue(f.model.canApplyPointSelection(r.attempt, r.token, 0))
+                assertNull(f.model.uiState.value.selection)
+                assertTrue(f.model.canApplySelection(r.attempt, r.token, 0))
                 subscriber.cancelAndJoin()
                 runCurrent()
             }
@@ -331,11 +332,11 @@ class MapPointSelectionViewModelTest {
                 assertFalse(f.model.canInteractWithMap(r.attempt, r.token))
                 f.vehicle.live.setWithoutEmission(parked())
                 f.restrictions.live.setWithoutEmission(unrestricted())
-                assertFalse(f.model.canApplyPointSelection(r.attempt, r.token, nonce))
-                f.model.onPointSelectionRendered(r.attempt, r.token, nonce)
+                assertFalse(f.model.canApplySelection(r.attempt, r.token, nonce))
+                f.model.onSelectionRendered(r.attempt, r.token, nonce)
                 runCurrent()
-                assertNull(f.model.uiState.value.pointSelection)
-                assertTrue(f.model.canApplyPointSelection(r.attempt, r.token, 0))
+                assertNull(f.model.uiState.value.selection)
+                assertTrue(f.model.canApplySelection(r.attempt, r.token, 0))
                 subscriber.cancelAndJoin()
                 runCurrent()
             }
@@ -348,11 +349,11 @@ class MapPointSelectionViewModelTest {
             val r = renderReady(f)
             val nonce = select(f, r, "a-1")
             f.vehicle.live.setWithoutEmission(driving())
-            f.model.onPointSelectionRendered(r.attempt, r.token, nonce)
+            f.model.onSelectionRendered(r.attempt, r.token, nonce)
             f.vehicle.live.setWithoutEmission(parked())
             runCurrent()
-            assertNull(f.model.uiState.value.pointSelection)
-            assertFalse(f.model.canApplyPointSelection(r.attempt, r.token, nonce))
+            assertNull(f.model.uiState.value.selection)
+            assertFalse(f.model.canApplySelection(r.attempt, r.token, nonce))
         }
 
     @Test fun aRejectedNewRequestObservingSilentDAlsoDiscardsTheOldIntent() =
@@ -364,9 +365,9 @@ class MapPointSelectionViewModelTest {
             f.vehicle.live.setWithoutEmission(driving())
             assertNull(f.model.selectPoint(r.attempt, r.token, r.preview, "a-2") { true })
             f.vehicle.live.setWithoutEmission(parked())
-            assertFalse(f.model.canApplyPointSelection(r.attempt, r.token, nonce))
+            assertFalse(f.model.canApplySelection(r.attempt, r.token, nonce))
             runCurrent()
-            assertNull(f.model.uiState.value.pointSelection)
+            assertNull(f.model.uiState.value.selection)
         }
 
     @Test fun anExpiredIncomingHostCannotClearAnotherCurrentValidHostChoice() =
@@ -377,8 +378,8 @@ class MapPointSelectionViewModelTest {
             val nonce = select(f, r, "a-1") { true }
             assertNull(f.model.selectPoint(r.attempt, r.token, r.preview, "a-2") { false })
             runCurrent()
-            assertEquals(nonce, checkNotNull(f.model.uiState.value.pointSelection).nonce)
-            assertTrue(f.model.canApplyPointSelection(r.attempt, r.token, nonce))
+            assertEquals(nonce, checkNotNull(f.model.uiState.value.selection).nonce)
+            assertTrue(f.model.canApplySelection(r.attempt, r.token, nonce))
         }
 
     @Test fun aFreshTokenInTheSameAttemptClearsThePreviousViewSelection() =
@@ -387,22 +388,22 @@ class MapPointSelectionViewModelTest {
             subscribe(f)
             val first = renderReady(f)
             val nonce = select(f, first, "a-1")
-            f.model.onPointSelectionRendered(first.attempt, first.token, nonce)
+            f.model.onSelectionRendered(first.attempt, first.token, nonce)
             runCurrent()
             val replacement = checkNotNull(f.model.onMapLoading(first.attempt))
             assertNotEquals(first.token, replacement)
             runCurrent()
-            assertNull(f.model.uiState.value.pointSelection)
-            assertFalse(f.model.canApplyPointSelection(first.attempt, first.token, nonce))
+            assertNull(f.model.uiState.value.selection)
+            assertFalse(f.model.canApplySelection(first.attempt, first.token, nonce))
             f.model.onMapRendered(first.attempt, replacement)
             runCurrent()
             val second = Renderer(first.attempt, replacement, prepared(f).preview)
             val fresh = select(f, second, "a-2")
-            f.model.onPointSelectionRendered(first.attempt, first.token, nonce)
+            f.model.onSelectionRendered(first.attempt, first.token, nonce)
             f.model.onMapFailed(first.attempt, first.token)
-            f.model.dismissPointSelection(nonce)
+            f.model.dismissSelection(nonce)
             runCurrent()
-            assertEquals(fresh, checkNotNull(f.model.uiState.value.pointSelection).nonce)
+            assertEquals(fresh, checkNotNull(f.model.uiState.value.selection).nonce)
             assertEquals(MapLoadState.READY, f.model.uiState.value.load)
         }
 
@@ -415,10 +416,10 @@ class MapPointSelectionViewModelTest {
             f.model.retry()
             runCurrent()
             assertNotEquals(first.attempt, f.model.uiState.value.attempt)
-            assertNull(f.model.uiState.value.pointSelection)
-            assertFalse(f.model.canApplyPointSelection(first.attempt, first.token, nonce))
+            assertNull(f.model.uiState.value.selection)
+            assertFalse(f.model.canApplySelection(first.attempt, first.token, nonce))
             val replacement = renderReady(f)
-            assertTrue(f.model.canApplyPointSelection(replacement.attempt, replacement.token, 0))
+            assertTrue(f.model.canApplySelection(replacement.attempt, replacement.token, 0))
         }
 
     @Test fun preparationRetryRevokesTheOldQueryWithoutWritingSelection() =
@@ -428,9 +429,9 @@ class MapPointSelectionViewModelTest {
             val first = renderReady(f)
             val nonce = select(f, first, "a-1")
             assertTrue(f.model.retryPreparation())
-            assertFalse(f.model.canApplyPointSelection(first.attempt, first.token, nonce))
+            assertFalse(f.model.canApplySelection(first.attempt, first.token, nonce))
             runCurrent()
-            assertNull(f.model.uiState.value.pointSelection)
+            assertNull(f.model.uiState.value.selection)
             assertEquals(1, f.repository.active)
             assertEquals(1, f.repository.maximumActive)
             assertEquals(0, f.repository.writes)
@@ -446,22 +447,22 @@ class MapPointSelectionViewModelTest {
             f.catalog.onResolve = { value ->
                 if (value?.courseId == "b") {
                     checked = true
-                    assertFalse(f.model.canApplyPointSelection(first.attempt, first.token, nonce))
-                    f.model.onPointSelectionRendered(first.attempt, first.token, nonce)
+                    assertFalse(f.model.canApplySelection(first.attempt, first.token, nonce))
+                    f.model.onSelectionRendered(first.attempt, first.token, nonce)
                 }
             }
             f.repository.values.value = selection("b")
             runCurrent()
             assertTrue(checked)
             assertEquals("b", prepared(f).prepared.course.id)
-            assertNull(f.model.uiState.value.pointSelection)
+            assertNull(f.model.uiState.value.selection)
             val second = renderReady(f)
             val fresh = select(f, second, "b-1")
-            f.model.onPointSelectionRendered(first.attempt, first.token, nonce)
-            f.model.dismissPointSelection(nonce)
+            f.model.onSelectionRendered(first.attempt, first.token, nonce)
+            f.model.dismissSelection(nonce)
             runCurrent()
-            assertEquals(fresh, checkNotNull(f.model.uiState.value.pointSelection).nonce)
-            assertFalse(checkNotNull(f.model.uiState.value.pointSelection).rendered)
+            assertEquals(fresh, checkNotNull(f.model.uiState.value.selection).nonce)
+            assertFalse(checkNotNull(f.model.uiState.value.selection).rendered)
         }
 
     @Test fun outdatedPreparationClearsPointSelectionWithoutAGenericFallback() =
@@ -473,8 +474,8 @@ class MapPointSelectionViewModelTest {
             f.repository.values.value = selection("missing")
             runCurrent()
             assertEquals(MapPreparationState.Outdated, f.model.uiState.value.preparation)
-            assertNull(f.model.uiState.value.pointSelection)
-            assertFalse(f.model.canApplyPointSelection(first.attempt, first.token, nonce))
+            assertNull(f.model.uiState.value.selection)
+            assertFalse(f.model.canApplySelection(first.attempt, first.token, nonce))
             assertNull(f.model.onMapLoading(f.model.uiState.value.attempt))
         }
 
@@ -487,13 +488,13 @@ class MapPointSelectionViewModelTest {
             f.vehicle.live.publish(driving())
             runCurrent()
             assertEquals(MapPreparationState.Locked, f.model.uiState.value.preparation)
-            assertNull(f.model.uiState.value.pointSelection)
+            assertNull(f.model.uiState.value.selection)
             f.vehicle.live.publish(parked())
             runCurrent()
             val second = renderReady(f)
-            assertNull(f.model.uiState.value.pointSelection)
-            assertFalse(f.model.canApplyPointSelection(first.attempt, first.token, nonce))
-            assertTrue(f.model.canApplyPointSelection(second.attempt, second.token, 0))
+            assertNull(f.model.uiState.value.selection)
+            assertFalse(f.model.canApplySelection(first.attempt, first.token, nonce))
+            assertTrue(f.model.canApplySelection(second.attempt, second.token, 0))
         }
 
     @Test fun stoppedReaderCallbacksCannotBorrowAReenteredReader() =
@@ -505,15 +506,15 @@ class MapPointSelectionViewModelTest {
             subscriber.cancelAndJoin()
             runCurrent()
             assertEquals(0, f.repository.active)
-            assertNull(f.model.uiState.value.pointSelection)
-            assertFalse(f.model.canApplyPointSelection(first.attempt, first.token, nonce))
+            assertNull(f.model.uiState.value.selection)
+            assertFalse(f.model.canApplySelection(first.attempt, first.token, nonce))
             subscribe(f)
             val second = renderReady(f)
             val fresh = select(f, second, "a-2")
-            f.model.onPointSelectionRendered(first.attempt, first.token, nonce)
-            f.model.dismissPointSelection(nonce)
+            f.model.onSelectionRendered(first.attempt, first.token, nonce)
+            f.model.dismissSelection(nonce)
             runCurrent()
-            assertEquals(fresh, checkNotNull(f.model.uiState.value.pointSelection).nonce)
+            assertEquals(fresh, checkNotNull(f.model.uiState.value.selection).nonce)
             assertEquals(1, f.repository.active)
             assertEquals(1, f.repository.maximumActive)
             assertEquals(0, f.repository.writes)
@@ -536,13 +537,13 @@ class MapPointSelectionViewModelTest {
             fail.complete(Unit)
             runCurrent()
             assertEquals(MapPreparationState.Failed(MapPreparationState.FailureReason.Read), f.model.uiState.value.preparation)
-            assertNull(f.model.uiState.value.pointSelection)
-            assertFalse(f.model.canApplyPointSelection(first.attempt, first.token, nonce))
+            assertNull(f.model.uiState.value.selection)
+            assertFalse(f.model.canApplySelection(first.attempt, first.token, nonce))
             f.repository.querySource = { f.repository.values }
             assertTrue(f.model.retryPreparation())
             runCurrent()
             renderReady(f)
-            assertNull(f.model.uiState.value.pointSelection)
+            assertNull(f.model.uiState.value.selection)
         }
 
     @Test fun normalStreamCompletionCannotKeepAnAcknowledgedSelectionAlive() =
@@ -558,7 +559,7 @@ class MapPointSelectionViewModelTest {
             subscribe(f)
             val first = renderReady(f)
             val nonce = select(f, first, "a-1")
-            f.model.onPointSelectionRendered(first.attempt, first.token, nonce)
+            f.model.onSelectionRendered(first.attempt, first.token, nonce)
             runCurrent()
             finish.complete(Unit)
             runCurrent()
@@ -566,8 +567,8 @@ class MapPointSelectionViewModelTest {
                 MapPreparationState.Failed(MapPreparationState.FailureReason.StreamCompleted),
                 f.model.uiState.value.preparation,
             )
-            assertNull(f.model.uiState.value.pointSelection)
-            assertFalse(f.model.canApplyPointSelection(first.attempt, first.token, nonce))
+            assertNull(f.model.uiState.value.selection)
+            assertFalse(f.model.canApplySelection(first.attempt, first.token, nonce))
         }
 
     private fun TestScope.subscribe(fixture: Fixture): Job {
@@ -575,6 +576,54 @@ class MapPointSelectionViewModelTest {
         runCurrent()
         return job
     }
+
+    @Test fun roadsAndPointsShareOneSelectionAndRejectOldAcknowledgements() =
+        runTest {
+            val f = Fixture()
+            subscribe(f)
+            val r = renderReady(f)
+            assertNull(f.model.selectRoad(r.attempt, r.token, r.preview, "missing") { true })
+            val point = select(f, r, "a-1")
+            val road = checkNotNull(f.model.selectRoad(r.attempt, r.token, r.preview, "a-road") { true })
+            f.model.onSelectionRendered(r.attempt, r.token, point)
+            f.model.dismissSelection(point)
+            runCurrent()
+            val pending = checkNotNull(f.model.uiState.value.selection)
+            assertNull(pending.pointId)
+            assertEquals("a-road", pending.roadId)
+            assertFalse(pending.rendered)
+            f.model.onSelectionRendered(r.attempt, r.token, road)
+            runCurrent()
+            assertTrue(checkNotNull(f.model.uiState.value.selection).rendered)
+            val nextPoint = select(f, r, "a-2")
+            assertFalse(f.model.canApplySelection(r.attempt, r.token, road))
+            assertNull(checkNotNull(f.model.uiState.value.selection).roadId)
+            f.model.dismissSelection(nextPoint)
+            runCurrent()
+            assertNull(f.model.uiState.value.selection)
+            assertEquals(0, f.repository.writes)
+        }
+
+    @Test fun roadSelectionRequiresWholeNodeProvenanceAndCurrentHost() =
+        runTest {
+            val f = Fixture()
+            subscribe(f)
+            val r = renderReady(f)
+            val road = r.preview.roads.single()
+            val changed = road.copy(nodes = road.nodes.map { it.copy(osmNodeVersion = it.osmNodeVersion + 1) })
+            assertNull(f.model.selectRoad(r.attempt, r.token, r.preview.copy(roads = listOf(changed)), road.id) { true })
+            assertNull(f.model.selectRoad(r.attempt + 1, r.token, r.preview, road.id) { true })
+            assertNull(f.model.selectRoad(r.attempt, r.token, r.preview, road.id) { false })
+            var host = true
+            val nonce = checkNotNull(f.model.selectRoad(r.attempt, r.token, r.preview, road.id) { host })
+            host = false
+            assertFalse(f.model.canApplySelection(r.attempt, r.token, nonce))
+            host = true
+            f.model.onSelectionRendered(r.attempt, r.token, nonce)
+            runCurrent()
+            assertNull(f.model.uiState.value.selection)
+            assertEquals(0, f.repository.writes)
+        }
 
     private fun TestScope.renderReady(fixture: Fixture): Renderer {
         val attempt = fixture.model.uiState.value.attempt
@@ -714,6 +763,21 @@ class MapPointSelectionViewModelTest {
                 listOf(PracticeTask("task-$id", "Task $id", "Fixture task")),
                 setOf("goal"),
                 mapPreview = preview(id),
+                roadSnapshots = listOf(road(id)),
+            )
+
+        fun road(id: String) =
+            CourseRoadSnapshot(
+                "$id-road",
+                "Fixture road",
+                "residential",
+                10,
+                2,
+                1000,
+                listOf(
+                    CourseRoadSnapshot.Node(20, 1, 37.0, 127.0),
+                    CourseRoadSnapshot.Node(21, 2, 37.1, 127.1),
+                ),
             )
 
         fun preview(id: String) =

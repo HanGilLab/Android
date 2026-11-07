@@ -11,7 +11,7 @@ data class MapUiState(
     val load: MapLoadState = MapLoadState.LOADING,
     val preparation: MapPreparationState = MapPreparationState.Loading,
     val rendererToken: Long = 0,
-    val pointSelection: MapPointSelection? = null,
+    val selection: MapSelection? = null,
 ) {
     val allowsDetailedInteraction: Boolean get() = allowsPracticeInteraction(vehicle, restrictions)
 }

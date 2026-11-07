@@ -5,6 +5,7 @@ import io.github.hangillab.hangil.core.domain.ConnectionState
 import io.github.hangillab.hangil.core.domain.CourseMapPreview
 import io.github.hangillab.hangil.core.domain.CoursePreviewPoint
 import io.github.hangillab.hangil.core.domain.CourseReviewStatus
+import io.github.hangillab.hangil.core.domain.CourseRoadSnapshot
 import io.github.hangillab.hangil.core.domain.DrivingRestrictions
 import io.github.hangillab.hangil.core.domain.DrivingRestrictionsProvider
 import io.github.hangillab.hangil.core.domain.GearPosition
@@ -657,6 +658,51 @@ class NextPracticeViewModelTest {
             changed.catalog.courses = changed.catalog.courses.map { it.copy(mapPreview = preview().copy(title = "변경된 표시 영역")) }
             watch(changed)
             assertNull(ready(changed).taskId)
+        }
+
+    @Test fun `changed pinned road source versions retire a restored task even when IDs and coordinates match`() =
+        runTest {
+            val road =
+                CourseRoadSnapshot(
+                    "road",
+                    "공개 도로 fixture",
+                    "residential",
+                    10,
+                    3,
+                    1_000,
+                    listOf(CourseRoadSnapshot.Node(1, 1, 37.0, 127.0), CourseRoadSnapshot.Node(2, 2, 37.1, 127.1)),
+                )
+            val f = Fixture()
+            f.catalog.courses = f.catalog.courses.map { it.copy(roadSnapshots = listOf(road)) }
+            val reader = watch(f)
+            choose(f)
+            val saved = copyState(f.handle)
+            reader.cancelAndJoin()
+            runCurrent()
+
+            val same = Fixture(state = copyState(saved))
+            same.catalog.courses = f.catalog.courses
+            val sameReader = watch(same)
+            assertEquals("next", ready(same).taskId)
+            sameReader.cancelAndJoin()
+            runCurrent()
+
+            val changedSources =
+                listOf(
+                    road.copy(osmWayVersion = road.osmWayVersion + 1),
+                    road.copy(nodes = listOf(road.nodes.first().copy(osmNodeVersion = 9)) + road.nodes.drop(1)),
+                )
+            for (changedRoad in changedSources) {
+                val changed = Fixture(state = copyState(saved))
+                changed.catalog.courses = f.catalog.courses.map { it.copy(roadSnapshots = listOf(changedRoad)) }
+                val changedReader = watch(changed)
+                assertEquals(source(), ready(changed).seed.source)
+                assertNull(ready(changed).taskId)
+                assertFalse(ready(changed).canSave)
+                assertEquals(0, changed.next.calls)
+                changedReader.cancelAndJoin()
+                runCurrent()
+            }
         }
 
     @Test fun `a task key without a matching complete binding never auto selects a target`() =

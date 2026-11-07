@@ -43,6 +43,7 @@ import io.github.hangillab.hangil.core.domain.DrivingRestrictions
 import io.github.hangillab.hangil.core.domain.DrivingRestrictionsProvider
 import io.github.hangillab.hangil.core.domain.GearPosition
 import io.github.hangillab.hangil.core.domain.ParkingState
+import io.github.hangillab.hangil.core.domain.PracticeCatalog
 import io.github.hangillab.hangil.core.domain.PracticeRepository
 import io.github.hangillab.hangil.core.domain.PracticeSelection
 import io.github.hangillab.hangil.core.domain.UxRestrictionState
@@ -83,6 +84,7 @@ import org.maplibre.android.style.layers.CircleLayer
 import org.maplibre.android.style.layers.LineLayer
 import org.maplibre.android.style.layers.SymbolLayer
 import org.maplibre.android.style.sources.GeoJsonSource
+import org.maplibre.geojson.LineString
 import org.maplibre.geojson.Point
 import java.io.File
 import java.util.UUID
@@ -95,7 +97,7 @@ import org.maplibre.android.R as MapSdkR
  * Additional controlled native boundaries after the input guard is implemented. Vehicle and
  * preparation are explicit synthetic fixtures; real MapRoute/VM/MapLibre/native dispatch and
  * public style network are used. No Room/real Vehicle SDK gateway or performance claims.
- * Only the navigation-request POI scenario saves private crops of its public catalog fixture.
+ * The navigation-request POI and road scenarios save private crops of public catalog fixtures.
  * Native camera key/trackball control is intentionally unsupported, so only no-mutation is
  * asserted for those events. Touch drag/pinch remain positive native controls.
  * Attribution uses public own-process WindowInspector/ListView callbacks with the real dialog;
@@ -254,7 +256,7 @@ class MapInputLifecycleTest {
                 onMain { beforeD.invoke() }
                 assertTrue(
                     "D에서는 상세 선택을 남기면 안 됩니다",
-                    fixture.model.uiState.value.pointSelection == null && nodes("map_point_choices").isEmpty(),
+                    fixture.model.uiState.value.selection == null && nodes("map_point_choices").isEmpty(),
                 )
                 onMain { fixture.vehicleState.publish(parked()) }
                 waitMapReady()
@@ -301,6 +303,411 @@ class MapInputLifecycleTest {
             }
         }
     }
+
+    /** Fixed public road snapshots and controlled inputs; no road tap, SDK guidance or trip is claimed. */
+    @Test fun publicRoadLinesFollowListSelectionAndDiscardOldSourceAndHostReceipts() {
+        val args = InstrumentationRegistry.getArguments()
+        assumeTrue("명시적인 SDK-free 도로 지도 실행에서만 검사합니다", args.getString("manualMapInputBoundary") == "true")
+        val scale = checkNotNull(args.getString("expectedFontScale")?.toFloatOrNull()) { "ROAD_MAP_FONT_ARGUMENT" }
+        val dark = checkNotNull(args.getString("expectedDark")?.toBooleanStrictOrNull()) { "ROAD_MAP_THEME_ARGUMENT" }
+        assertTrue("정의된 기본/확대 글꼴만 검사합니다", scale == 1f || scale == 1.3f)
+        val configuration = compose.activity.resources.configuration
+        assertTrue("실제 글꼴이 선언과 같아야 합니다", abs(configuration.fontScale - scale) < 0.001f)
+        assertTrue(
+            "실제 테마가 선언과 같아야 합니다",
+            (configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES) == dark,
+        )
+        val originalCatalog = LocalPracticeCatalog()
+        val course = originalCatalog.courses.single { it.id == "neighborhood" }
+        val otherCourse = originalCatalog.courses.single { it.id == "intersections" }.copy(roadSnapshots = course.roadSnapshots)
+        // Only this in-memory catalog mixes existing public data to keep road IDs while changing source.
+        val catalog =
+            object : PracticeCatalog {
+                override val goals = originalCatalog.goals
+                override val courses = originalCatalog.courses.map { if (it.id == otherCourse.id) otherCourse else it }
+            }
+        withMap(courseId = course.id, catalog = catalog) { fixture, initial ->
+            val instrumentation = InstrumentationRegistry.getInstrumentation()
+            assertTrue(
+                "실제 fixture host가 RESUMED와 focus를 소유해야 합니다",
+                compose.activity.lifecycle.currentState == Lifecycle.State.RESUMED && compose.activity.hasWindowFocus(),
+            )
+            assertEquals(
+                "fixture host가 실제 전면이어야 합니다",
+                instrumentation.targetContext.packageName,
+                instrumentation.uiAutomation.rootInActiveWindow
+                    ?.packageName
+                    ?.toString(),
+            )
+            assertEquals(
+                "공개 way/version 두 개를 그대로 표시해야 합니다",
+                listOf(184443139L to 13, 431903253L to 5),
+                fixture.preview.roads.map { it.osmWayId to it.osmWayVersion },
+            )
+            // Original ordered node IDs, individual versions, coordinates and snapshot metadata are equal.
+            // Native tiled geometry below is checked separately and may have clipped/simplified vertices.
+            assertEquals("생산 DTO의 전체 ordered-node 스냅샷이 현재 카탈로그 원본과 같아야 합니다", course.roadSnapshots, fixture.preview.roads)
+            assertEquals("서로 다른 원본 노드 목록을 보존해야 합니다", listOf(6, 7), fixture.preview.roads.map { it.nodes.size })
+            assertPoiText("map_road_badge", "공개 OSM 도로 구간")
+            assertPoiText("map_road_scope", "저장한 공개지도 도로선이에요. 현재 통행과 실제 이동 경로는 미확인이에요. 선택은 현재 지도에서만 유지돼요.")
+            assertPoiText("map_road_attribution", "도로 자료: © OpenStreetMap 기여자, ODbL 1.0")
+            fixture.preview.roads.forEachIndexed { index, road -> assertPoiText("map_road_$index", "${index + 1}. ${road.title}") }
+            awaitRoadLines(fixture.preview, initial.view, null)
+            val directory = File(instrumentation.targetContext.cacheDir, "screenshots/public-road-preview-${UUID.randomUUID()}")
+            check(directory.mkdirs()) { "ROAD_MAP_PRIVATE_CACHE" }
+            capturePoiRegion(directory, "roads-map.png", "map_view")
+            capturePoiRegion(directory, "roads-list.png", "map_road_choices")
+            for (index in fixture.preview.roads.indices) {
+                chooseRoad(fixture, initial.view, index)
+                assertTrue("도로 강조는 camera를 바꾸면 안 됩니다", sameCamera(initial.camera, awaitStableCamera(initial.view)))
+            }
+            capturePoiRegion(directory, "selected-road-map.png", "map_view")
+            assertPoiText("map_selected_road_source", "출처: 저장한 OpenStreetMap 도로 자료")
+            capturePoiRegion(directory, "road-selected.png", "map_selected_road")
+            compose.onNodeWithTag("map_clear_selection", useUnmergedTree = true).performScrollTo().performClick()
+            compose.waitUntil(20_000) { fixture.model.uiState.value.selection == null && nodes("map_selected_road").isEmpty() }
+            assertNoCanvasSelection(fixture, initial.view)
+            awaitRoadLines(fixture.preview, initial.view, null)
+            chooseRoad(fixture, initial.view, 0)
+            tapPreviewPoint(fixture, initial.view, 0, waitForPreparedPoint = true)
+            assertTrue(
+                "점 선택은 도로 선택을 지워야 합니다",
+                fixture.model.uiState.value.selection
+                    ?.roadId == null && nodes("map_selected_road").isEmpty(),
+            )
+            awaitRoadLines(fixture.preview, initial.view, null)
+            chooseRoad(fixture, initial.view, 1)
+            val original = checkNotNull(fixture.repository.values.value)
+            try {
+                val beforeSource = fixture.model.uiState.value
+                val sourceReceipt = checkNotNull(beforeSource.selection)
+                val sourceAction =
+                    checkNotNull(
+                        nodes("map_road_0")
+                            .single()
+                            .config
+                            .getOrNull(SemanticsActions.OnClick)
+                            ?.action,
+                    )
+                val otherGoal = catalog.goals.first { it.id in otherCourse.goalIds }
+                val otherSelection =
+                    PracticeSelection(
+                        otherGoal.id,
+                        otherCourse.id,
+                        otherCourse.version,
+                        otherCourse.briefingVersion,
+                        otherCourse.tasks.first().id,
+                    )
+                onMain { fixture.repository.values.value = otherSelection }
+                compose.waitUntil(90_000) {
+                    (fixture.model.uiState.value.preparation as? MapPreparationState.Ready)?.prepared?.course == otherCourse &&
+                        fixture.model.uiState.value.load == MapLoadState.READY
+                }
+                val otherPreview = (fixture.model.uiState.value.preparation as MapPreparationState.Ready).preview
+                assertTrue(
+                    "같은 도로 ID여도 다른 코스의 preview 원본이어야 합니다",
+                    otherPreview != fixture.preview && otherPreview.roads == fixture.preview.roads,
+                )
+                compose.onNodeWithTag("map_view", useUnmergedTree = true).performScrollTo()
+                val otherNative = awaitPreview(otherPreview)
+                assertTrue("출처 교체는 새 View여야 합니다", otherNative.view !== initial.view)
+                onMain {
+                    sourceAction.invoke()
+                    fixture.model.onSelectionRendered(beforeSource.attempt, beforeSource.rendererToken, sourceReceipt.nonce)
+                }
+                compose.waitForIdle()
+                assertTrue("같은 ID의 옛 source callback/ACK가 새 선택을 만들면 안 됩니다", fixture.model.uiState.value.selection == null)
+                awaitRoadLines(otherPreview, otherNative.view, null)
+                chooseRoad(fixture.copy(preview = otherPreview), otherNative.view, 0)
+                onMain { fixture.repository.values.value = original }
+                compose.waitUntil(90_000) {
+                    (fixture.model.uiState.value.preparation as? MapPreparationState.Ready)?.preview == fixture.preview &&
+                        fixture.model.uiState.value.load == MapLoadState.READY
+                }
+                compose.onNodeWithTag("map_view", useUnmergedTree = true).performScrollTo()
+                var current = awaitPreview(fixture.preview)
+                onMain {
+                    sourceAction.invoke()
+                    fixture.model.onSelectionRendered(beforeSource.attempt, beforeSource.rendererToken, sourceReceipt.nonce)
+                }
+                compose.waitForIdle()
+                assertTrue("원본 복귀도 옛 receipt를 되살리면 안 됩니다", fixture.model.uiState.value.selection == null)
+                awaitRoadLines(fixture.preview, current.view, null)
+                chooseRoad(fixture, current.view, 0)
+
+                // D and UX receipts are separate controlled emissions; neither restores old intent.
+                for (uxOnly in listOf(false, true)) {
+                    val beforeLock = fixture.model.uiState.value
+                    val oldReceipt = checkNotNull(beforeLock.selection)
+                    val oldAction =
+                        checkNotNull(
+                            nodes("map_road_1")
+                                .single()
+                                .config
+                                .getOrNull(SemanticsActions.OnClick)
+                                ?.action,
+                        )
+                    val oldView = current.view
+                    onMain {
+                        if (uxOnly) {
+                            fixture.restrictionState.publish(
+                                DrivingRestrictions(ParkingState.PARKED, UxRestrictionState.RESTRICTED),
+                            )
+                        } else {
+                            fixture.vehicleState.publish(parked().copy(gear = VehicleReading.Available(GearPosition.DRIVE)))
+                        }
+                    }
+                    compose.waitUntil(20_000) { nodes("map_locked").size == 1 && nodes("map_view").isEmpty() && currentMapView() == null }
+                    onMain {
+                        oldAction.invoke()
+                        fixture.model.onSelectionRendered(beforeLock.attempt, beforeLock.rendererToken, oldReceipt.nonce)
+                    }
+                    assertTrue(
+                        "주행 또는 UX 잠금은 상세 선택을 폐기해야 합니다",
+                        fixture.model.uiState.value.selection == null && nodes("map_road_choices").isEmpty(),
+                    )
+                    onMain {
+                        fixture.vehicleState.publish(parked())
+                        fixture.restrictionState.publish(DrivingRestrictions(ParkingState.PARKED, UxRestrictionState.UNRESTRICTED))
+                    }
+                    waitMapReady()
+                    compose.onNodeWithTag("map_view", useUnmergedTree = true).performScrollTo()
+                    current = awaitPreview(fixture.preview)
+                    assertTrue("잠금 복귀는 새 View여야 합니다", current.view !== oldView)
+                    onMain {
+                        oldAction.invoke()
+                        fixture.model.onSelectionRendered(beforeLock.attempt, beforeLock.rendererToken, oldReceipt.nonce)
+                    }
+                    compose.waitForIdle()
+                    assertTrue("잠금 복귀가 옛 선택/ACK를 승인하면 안 됩니다", fixture.model.uiState.value.selection == null)
+                    awaitRoadLines(fixture.preview, current.view, null)
+                    chooseRoad(fixture, current.view, 0)
+                }
+                val beforeStop = fixture.model.uiState.value
+                val stopReceipt = checkNotNull(beforeStop.selection)
+                val stopAction =
+                    checkNotNull(
+                        nodes("map_road_1")
+                            .single()
+                            .config
+                            .getOrNull(SemanticsActions.OnClick)
+                            ?.action,
+                    )
+                val stoppedView = current.view
+                compose.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
+                compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+                waitMapReady()
+                compose.onNodeWithTag("map_view", useUnmergedTree = true).performScrollTo()
+                val resumed = awaitPreview(fixture.preview)
+                assertTrue("STOP 후에는 새 View여야 합니다", resumed.view !== stoppedView)
+                onMain {
+                    stopAction.invoke()
+                    fixture.model.onSelectionRendered(beforeStop.attempt, beforeStop.rendererToken, stopReceipt.nonce)
+                }
+                compose.waitForIdle()
+                assertTrue("STOP 이전 callback/ACK가 새 owner를 빌리면 안 됩니다", fixture.model.uiState.value.selection == null)
+                awaitRoadLines(fixture.preview, resumed.view, null)
+                chooseRoad(fixture, resumed.view, 1)
+                assertTrue("새 선택도 초기 camera를 보존해야 합니다", sameCamera(resumed.camera, awaitStableCamera(resumed.view)))
+                pointChoiceTrace(
+                    "PUBLIC_ROADS_COMPLETED",
+                    "originalSnapshotMatched" to true,
+                    "nativeLinesMatched" to true,
+                    "ownersRejected" to true,
+                )
+            } finally {
+                onMain {
+                    fixture.repository.values.value = original
+                    fixture.vehicleState.publish(parked())
+                    fixture.restrictionState.publish(DrivingRestrictions(ParkingState.PARKED, UxRestrictionState.UNRESTRICTED))
+                }
+            }
+        }
+    }
+
+    private suspend fun chooseRoad(
+        fixture: Fixture,
+        view: MapView,
+        index: Int,
+    ) {
+        val road = fixture.preview.roads[index]
+        compose.onNodeWithTag("map_road_$index", useUnmergedTree = true).performScrollTo().performClick()
+        compose.waitUntil(30_000) {
+            fixture.model.uiState.value.selection
+                ?.let { it.roadId == road.id && it.pointId == null && it.rendered } == true &&
+                nodes("map_selection_pending").isEmpty()
+        }
+        assertPoiText("map_selected_road_title", "${index + 1}. ${road.title}")
+        assertTrue("도로 선택은 점 상세를 지워야 합니다", nodes("map_selected_point").isEmpty())
+        fixture.preview.roads.indices.forEach { current ->
+            assertTrue(
+                "목록은 선택한 도로 하나만 표시해야 합니다",
+                nodes("map_road_$current").single().config.getOrNull(SemanticsProperties.Selected) == (current == index),
+            )
+        }
+        fixture.preview.points.indices.forEach { current ->
+            assertTrue(
+                "도로 선택은 점 목록을 해제해야 합니다",
+                nodes("map_point_$current").single().config.getOrNull(SemanticsProperties.Selected) == false,
+            )
+        }
+        compose.onNodeWithTag("map_view", useUnmergedTree = true).performScrollTo()
+        awaitRoadLines(fixture.preview, view, road.id)
+        val pointCleared =
+            readCurrentCanvas(view) { map ->
+                map.style
+                    ?.getLayerAs<CircleLayer>("hangil-course-preview-selection")
+                    ?.filter
+                    ?.toArray()
+                    ?.contentDeepEquals(Expression.literal(false).toArray()) == true
+            }
+        assertTrue("도로 강조 뒤 실제 점 선택 filter도 비어야 합니다", pointCleared)
+    }
+
+    private suspend fun awaitRoadLines(
+        preview: MapPreview,
+        view: MapView,
+        selectedId: String?,
+    ) {
+        compose.onNodeWithTag("map_view", useUnmergedTree = true).performScrollTo()
+        withTimeout(30_000) {
+            while (true) {
+                val matched =
+                    readCurrentCanvas(view) { map ->
+                        val style = map.style ?: return@readCurrentCanvas false
+                        val source =
+                            style.sources.singleOrNull { it.id == ROAD_SOURCE_ID } as? GeoJsonSource
+                                ?: return@readCurrentCanvas false
+                        val base = style.getLayerAs<LineLayer>(ROAD_BASE_ID) ?: return@readCurrentCanvas false
+                        val selected = style.getLayerAs<LineLayer>(ROAD_SELECTION_ID) ?: return@readCurrentCanvas false
+                        val expectedFilter =
+                            if (selectedId == null) {
+                                Expression.literal(false)
+                            } else {
+                                Expression.eq(Expression.get("road_id"), Expression.literal(selectedId))
+                            }
+                        if (!style.isFullyLoaded ||
+                            base.sourceId != ROAD_SOURCE_ID ||
+                            selected.sourceId != ROAD_SOURCE_ID ||
+                            base.visibility.value == "none" ||
+                            selected.visibility.value == "none" ||
+                            selected.filter?.toArray()?.contentDeepEquals(expectedFilter.toArray()) != true
+                        ) {
+                            return@readCurrentCanvas false
+                        }
+                        if ((base.lineWidth.value ?: 0f) <= 0f ||
+                            (base.lineOpacity.value ?: 0f) <= 0f ||
+                            (selected.lineWidth.value ?: 0f) <= (base.lineWidth.value ?: 0f) ||
+                            (selected.lineOpacity.value ?: 0f) <= 0f
+                        ) {
+                            return@readCurrentCanvas false
+                        }
+                        val features = source.querySourceFeatures(null)
+                        val actualRoadIds = features.map { it.getStringProperty("road_id") }.toSet()
+                        val expectedRoadIds = preview.roads.map { it.id }.toSet()
+                        if (actualRoadIds != expectedRoadIds) {
+                            return@readCurrentCanvas false
+                        }
+                        for (feature in features) {
+                            val road =
+                                preview.roads.singleOrNull { it.id == feature.getStringProperty("road_id") }
+                                    ?: return@readCurrentCanvas false
+                            val wayId = feature.properties()?.get("osm_way_id")
+                            val wayVersion = feature.properties()?.get("osm_way_version")
+                            if (wayId?.isJsonPrimitive != true ||
+                                !wayId.asJsonPrimitive.isString ||
+                                wayVersion?.isJsonPrimitive != true ||
+                                !wayVersion.asJsonPrimitive.isNumber
+                            ) {
+                                return@readCurrentCanvas false
+                            }
+                            val renderedVersion = feature.getNumberProperty("osm_way_version").toDouble()
+                            if (feature.getStringProperty("title") != road.title ||
+                                feature.getStringProperty("highway") != road.highway ||
+                                feature.getStringProperty("osm_way_id") != road.osmWayId.toString() ||
+                                renderedVersion != road.osmWayVersion.toDouble() ||
+                                feature.getStringProperty("road_source") != "OSM_WAY_NODES"
+                            ) {
+                                return@readCurrentCanvas false
+                            }
+                            val line = feature.geometry() as? LineString ?: return@readCurrentCanvas false
+                            if (line.coordinates().size < 2) return@readCurrentCanvas false
+                            val original =
+                                road.nodes.map { node ->
+                                    val coordinate = LatLng(node.latitude, node.longitude)
+                                    map.projection.toScreenLocation(coordinate)
+                                }
+                            if (original.any {
+                                    !it.x.isFinite() || !it.y.isFinite() ||
+                                        it.x < 1f || it.y < 1f ||
+                                        it.x >= view.width - 1f || it.y >= view.height - 1f
+                                }
+                            ) {
+                                return@readCurrentCanvas false
+                            }
+                            // Native tile clipping/simplification can change vertex count. Check projected
+                            // vertices against the original ordered polyline, never exact native node count.
+                            if (line.coordinates().any { point ->
+                                    val coordinate = LatLng(point.latitude(), point.longitude())
+                                    val projectedPoint = map.projection.toScreenLocation(coordinate)
+                                    !onOriginalRoad(projectedPoint, original)
+                                }
+                            ) {
+                                return@readCurrentCanvas false
+                            }
+                        }
+                        for (road in preview.roads) {
+                            val projected =
+                                road.nodes.map { node ->
+                                    val coordinate = LatLng(node.latitude, node.longitude)
+                                    map.projection.toScreenLocation(coordinate)
+                                }
+                            val edge =
+                                projected.zipWithNext().maxBy { (a, b) ->
+                                    (a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y)
+                                }
+                            val middle = PointF((edge.first.x + edge.second.x) / 2f, (edge.first.y + edge.second.y) / 2f)
+                            val hits = map.queryRenderedFeatures(middle, ROAD_BASE_ID)
+                            if (hits.isEmpty() ||
+                                hits.any { it.getStringProperty("road_id") != road.id || it.geometry() !is LineString }
+                            ) {
+                                return@readCurrentCanvas false
+                            }
+                            val highlighted = map.queryRenderedFeatures(middle, ROAD_SELECTION_ID)
+                            if (road.id == selectedId) {
+                                if (highlighted.isEmpty() ||
+                                    highlighted.any { it.getStringProperty("road_id") != road.id || it.geometry() !is LineString }
+                                ) {
+                                    return@readCurrentCanvas false
+                                }
+                            } else if (highlighted.isNotEmpty()) {
+                                return@readCurrentCanvas false
+                            }
+                        }
+                        true
+                    }
+                if (matched) return@withTimeout
+                delay(150)
+            }
+        }
+    }
+
+    private fun onOriginalRoad(
+        actual: PointF,
+        nodes: List<PointF>,
+    ): Boolean =
+        nodes.zipWithNext().any { (a, b) ->
+            val dx = b.x - a.x
+            val dy = b.y - a.y
+            val length = dx * dx + dy * dy
+            val fraction =
+                if (length == 0f) {
+                    0f
+                } else {
+                    (((actual.x - a.x) * dx + (actual.y - a.y) * dy) / length).coerceIn(0f, 1f)
+                }
+            abs(actual.x - (a.x + fraction * dx)) <= 1f && abs(actual.y - (a.y + fraction * dy)) <= 1f
+        }
 
     private fun assertPoiText(
         tag: String,
@@ -618,7 +1025,7 @@ class MapInputLifecycleTest {
                     compose.mainClock.advanceTimeByFrame()
                     compose.waitForIdle()
                     compose.waitUntil(30_000) {
-                        fixture.model.uiState.value.pointSelection
+                        fixture.model.uiState.value.selection
                             ?.let { it.pointId == point.id && it.rendered } == true &&
                             nodes("map_selected_point_title")
                                 .singleOrNull()
@@ -693,7 +1100,7 @@ class MapInputLifecycleTest {
                                 "직접 setter의 기준은 실제 null 선택의 false 필터여야 합니다",
                                 original.toArray().contentDeepEquals(arrayOf<Any>("literal", false)),
                             )
-                            assertTrue("생산 선택을 실행한 결과로 취급하면 안 됩니다", fixture.model.uiState.value.pointSelection == null)
+                            assertTrue("생산 선택을 실행한 결과로 취급하면 안 됩니다", fixture.model.uiState.value.selection == null)
                             val expected =
                                 Expression.eq(
                                     Expression.get("point_id"),
@@ -735,7 +1142,7 @@ class MapInputLifecycleTest {
                 val laterNative = nativeKeys.all { key -> later.singleOrNull { it.first == key }?.second == true }
                 assertTrue("직접 setter 직후 실제 bound getter는 null/false가 아닌 정확한 식이어야 합니다", firstNative)
                 assertTrue("500ms 뒤 실제 bound getter도 같은 정확한 식이어야 합니다", laterNative)
-                assertTrue("직접 SDK probe는 생산 VM 선택 성공을 만들면 안 됩니다", fixture.model.uiState.value.pointSelection == null)
+                assertTrue("직접 SDK probe는 생산 VM 선택 성공을 만들면 안 됩니다", fixture.model.uiState.value.selection == null)
             } finally {
                 val saved = probe
                 if (saved != null) {
@@ -809,7 +1216,7 @@ class MapInputLifecycleTest {
                 )
             assertTrue("같은 실제 카탈로그 코스의 다른 과제로만 source를 바꿉니다", otherTask.id.isNotBlank())
             assertTrue("초기 native source와 표시 source가 같아야 합니다", oldPreparation.preview == fixture.preview)
-            assertTrue("새 선택 없이 옛 callback만 검사해야 합니다", oldState.pointSelection == null)
+            assertTrue("새 선택 없이 옛 callback만 검사해야 합니다", oldState.selection == null)
             val activity = compose.activity
             assertTrue("초기 host는 실제 STARTED여야 합니다", activity.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED))
             compose.onNodeWithTag("map_point_0", useUnmergedTree = true).performScrollTo()
@@ -855,19 +1262,19 @@ class MapInputLifecycleTest {
                     "newAttempt" to newAttempt,
                     "newToken" to newToken,
                     "changedTask" to changedTask,
-                    "noChoice" to (current.pointSelection == null),
+                    "noChoice" to (current.selection == null),
                 )
                 assertTrue("같은 Activity/STARTED에서만 callback source 교체를 검사합니다", sameActivity && started)
                 assertTrue("같은 코스/preview의 다른 과제여야 합니다", sameCourse && samePreview && changedTask)
                 assertTrue("새 renderer tuple과 실제 native View를 먼저 확인해야 합니다", newAttempt && newToken && newView)
-                assertTrue("옛 action 전에 선택은 없어야 합니다", current.pointSelection == null)
+                assertTrue("옛 action 전에 선택은 없어야 합니다", current.selection == null)
                 assertTrue(
                     "옛 action 전에 설명/pending은 없어야 합니다",
                     nodes("map_selected_point").isEmpty() && nodes("map_selection_pending").isEmpty(),
                 )
                 compose.runOnIdle { oldAction.invoke() }
                 compose.waitForIdle()
-                val noChoice = fixture.model.uiState.value.pointSelection == null
+                val noChoice = fixture.model.uiState.value.selection == null
                 val noDetail = nodes("map_selected_point").isEmpty()
                 val noPending = nodes("map_selection_pending").isEmpty()
                 pointChoiceTrace(
@@ -896,7 +1303,7 @@ class MapInputLifecycleTest {
                 compose.onNodeWithTag("map_view", useUnmergedTree = true).performScrollTo()
                 val expectedPoint = ready.preview.points.first()
                 compose.waitUntil(30_000) {
-                    fixture.model.uiState.value.pointSelection
+                    fixture.model.uiState.value.selection
                         ?.let { it.pointId == expectedPoint.id && it.rendered } == true &&
                         nodes("map_selected_point_title")
                             .singleOrNull()
@@ -924,7 +1331,7 @@ class MapInputLifecycleTest {
                     }
                 }
                 val nativeAccepted = withTimeout(5_000) { readback.await() }
-                val applied = fixture.model.uiState.value.pointSelection
+                val applied = fixture.model.uiState.value.selection
                 val rendered = applied?.pointId == expectedPoint.id && applied.rendered
                 val matchingTitle =
                     nodes("map_selected_point_title")
@@ -1598,7 +2005,7 @@ class MapInputLifecycleTest {
         compose.mainClock.advanceTimeByFrame()
         compose.waitForIdle()
         compose.waitUntil(30_000) {
-            fixture.model.uiState.value.pointSelection
+            fixture.model.uiState.value.selection
                 ?.let { it.pointId == expected.id && it.rendered } == true &&
                 nodes("map_selected_point_title")
                     .singleOrNull()
@@ -1642,7 +2049,7 @@ class MapInputLifecycleTest {
         compose.waitForIdle()
         delay(100)
         compose.waitForIdle()
-        assertTrue("거부/비탭 입력은 선택 의도를 남기면 안 됩니다", fixture.model.uiState.value.pointSelection == null)
+        assertTrue("거부/비탭 입력은 선택 의도를 남기면 안 됩니다", fixture.model.uiState.value.selection == null)
         assertTrue(
             "거부/비탭 입력은 설명이나 대기를 만들면 안 됩니다",
             nodes("map_selected_point").isEmpty() && nodes("map_selection_pending").isEmpty(),
@@ -1669,13 +2076,13 @@ class MapInputLifecycleTest {
 
     private fun withMap(
         courseId: String? = null,
+        catalog: PracticeCatalog = LocalPracticeCatalog(),
         block: suspend (Fixture, NativeReadback) -> Unit,
     ) {
         assumeTrue(
             "입력 guard 후 제어 native 경계의 명시적 실행에서만 검사합니다",
             InstrumentationRegistry.getArguments().getString("manualMapInputBoundary") == "true",
         )
-        val catalog = LocalPracticeCatalog()
         val course = catalog.courses.first { if (courseId == null) it.mapPreview != null else it.id == courseId }
         val goal = catalog.goals.first { it.id in course.goalIds }
         val selection = PracticeSelection(goal.id, course.id, course.version, course.briefingVersion, course.tasks.first().id)
@@ -1711,7 +2118,7 @@ class MapInputLifecycleTest {
                 compose.onNodeWithTag("map_view", useUnmergedTree = true).performScrollTo()
                 val ready = model.uiState.value.preparation as MapPreparationState.Ready
                 assertEquals("현재 생산 VM이 선택한 카탈로그 원본을 표시해야 합니다", course, ready.prepared.course)
-                val fixture = Fixture(model, vehicleState, ready.preview, repository)
+                val fixture = Fixture(model, vehicleState, restrictionState, ready.preview, repository)
                 block(fixture, awaitPreview(ready.preview))
             }
         } catch (failure: Throwable) {
@@ -1973,6 +2380,7 @@ class MapInputLifecycleTest {
     private data class Fixture(
         val model: MapViewModel,
         val vehicleState: SilentLiveState<VehicleState>,
+        val restrictionState: SilentLiveState<DrivingRestrictions>,
         val preview: MapPreview,
         val repository: FixturePreparation,
     )
@@ -2189,8 +2597,10 @@ class MapInputLifecycleTest {
                             val bounds =
                                 LatLngBounds
                                     .Builder()
-                                    .includes(preview.points.map { LatLng(it.latitude, it.longitude) })
-                                    .build()
+                                    .includes(
+                                        preview.points.map { LatLng(it.latitude, it.longitude) } +
+                                            preview.roads.flatMap { road -> road.nodes.map { LatLng(it.latitude, it.longitude) } },
+                                    ).build()
                             // 실제 선택 원의 반경과 전체 stroke에 명목5 style px를 더하고 최소40을 유지합니다.
                             // 확대 글자에서 원 바깥쪽이 잘리지 않도록 같은 값을 화면 density로 변환합니다.
                             val selection = style?.getLayerAs<CircleLayer>("hangil-course-preview-selection")
@@ -2327,6 +2737,9 @@ class MapInputLifecycleTest {
 
     private companion object {
         const val GESTURE_STEPS = 14
+        const val ROAD_SOURCE_ID = "hangil-course-preview-roads"
+        const val ROAD_BASE_ID = "hangil-course-preview-road-lines"
+        const val ROAD_SELECTION_ID = "hangil-course-preview-road-selection"
         const val SOURCE_ID = "hangil-course-preview-points"
         const val CIRCLES_ID = "hangil-course-preview-circles"
         const val NUMBERS_ID = "hangil-course-preview-numbers"

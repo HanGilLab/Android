@@ -27,6 +27,7 @@ data class NextPracticeSeed private constructor(
                     tasks = current.tasks.toList(),
                     goalIds = current.goalIds.toSet(),
                     mapPreview = current.mapPreview?.let { it.copy(points = it.points.toList()) },
+                    roadSnapshots = current.roadSnapshots.map { it.copy(nodes = it.nodes.toList()) },
                 )
             val task = course.tasks.singleOrNull { it.id == selection.taskId } ?: return null
             if (goal.id !in course.goalIds || course.version != selection.courseVersion ||
