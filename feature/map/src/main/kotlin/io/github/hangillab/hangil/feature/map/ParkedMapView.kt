@@ -1,6 +1,7 @@
 package io.github.hangillab.hangil.feature.map
 
 import android.content.Context
+import android.graphics.Canvas
 import android.graphics.Rect
 import android.os.Looper
 import android.os.SystemClock
@@ -30,6 +31,7 @@ internal class ParkedMapView(
     context: Context,
     options: MapLibreMapOptions,
     private val canInteract: () -> Boolean,
+    private val canRender: (() -> Boolean)? = null,
 ) : MapView(context, options) {
     // MapView's superclass constructor may call onViewAdded before these fields exist.
     private var initialized = false
@@ -155,6 +157,10 @@ internal class ParkedMapView(
     override fun onViewAdded(child: View) {
         super.onViewAdded(child)
         if (initialized) refreshAccessibility(child)
+    }
+
+    override fun dispatchDraw(canvas: Canvas) {
+        if (canRender?.invoke() != false) super.dispatchDraw(canvas)
     }
 
     override fun initialiseCompassView(): CompassView = super.initialiseCompassView().also { if (initialized) installCompassClick(it) }

@@ -34,4 +34,9 @@
   <string name="map_point_selection_pending">선택한 번호를 지도에 표시하고 있어요.</string>
   <string name="map_selected_point">선택한 시연 지점</string>
   <string name="map_selected_point_scope">같은 번호에 테두리를 표시했어요. 장소의 경계 중심이며 출입구, 도로 구간이나 목적지가 아니에요.</string>
+  <string name="stored_map_scope">저장한 SDK 표본 한 점이에요. 현재 위치와 이동 경로, 정확도는 확인하지 않았어요.</string>
+  <string name="stored_map_uncertain">SDK 시각 기준과 신뢰도 단위는 미확인이에요.</string>
+  <string name="stored_map_content_description">저장한 SDK 위치 표본 한 점. 현재 위치와 이동 경로, 정확도는 미확인이에요.</string>
+  <string name="stored_map_locked">주차와 화면 조작 허용을 확인한 뒤 표본 지도를 다시 열어 주세요.</string>
+  <string name="stored_map_unavailable">이 표본은 지도가 표시할 수 있는 위도 범위 밖에 있어요. 표본 원본에서 확인해 주세요.</string>
 </resources>

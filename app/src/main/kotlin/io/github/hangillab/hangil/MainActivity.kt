@@ -43,6 +43,7 @@ import io.github.hangillab.hangil.feature.home.LocationRecordingStatusRow
 import io.github.hangillab.hangil.feature.home.LocationRecordingViewModel
 import io.github.hangillab.hangil.feature.home.SessionHistoryRoute
 import io.github.hangillab.hangil.feature.home.SessionRecordingViewModel
+import io.github.hangillab.hangil.feature.map.StoredLocationMap
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -191,7 +192,11 @@ class MainActivity : ComponentActivity() {
                                     ) { Text(getString(R.string.location_history_missing_back)) }
                                 }
                             } else {
-                                LocationHistoryRoute(expectedSource = expected, onClose = { navigation.popBackStack() })
+                                LocationHistoryRoute(
+                                    expectedSource = expected,
+                                    onClose = { navigation.popBackStack() },
+                                    storedPointMap = { sample, canRead -> StoredLocationMap(sample, canRead) },
+                                )
                             }
                         }
                         composable("preparation") { CourseRoute(onClose = { navigation.popBackStack() }) }
