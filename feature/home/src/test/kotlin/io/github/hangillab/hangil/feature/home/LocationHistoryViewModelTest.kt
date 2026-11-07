@@ -22,6 +22,9 @@ import io.github.hangillab.hangil.core.domain.PracticeSession
 import io.github.hangillab.hangil.core.domain.PracticeSessionRepository
 import io.github.hangillab.hangil.core.domain.PreparedPractice
 import io.github.hangillab.hangil.core.domain.SessionFinishResult
+import io.github.hangillab.hangil.core.domain.SessionMemo
+import io.github.hangillab.hangil.core.domain.SessionMemoRepository
+import io.github.hangillab.hangil.core.domain.SessionMemoWriteResult
 import io.github.hangillab.hangil.core.domain.SessionStartResult
 import io.github.hangillab.hangil.core.domain.UxRestrictionState
 import io.github.hangillab.hangil.core.domain.VehicleGateway
@@ -29,6 +32,7 @@ import io.github.hangillab.hangil.core.domain.VehicleReading
 import io.github.hangillab.hangil.core.domain.VehicleState
 import io.github.hangillab.hangil.feature.home.LocationHistoryUiState.FailureReason
 import io.github.hangillab.hangil.feature.home.LocationHistoryUiState.Token
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.awaitCancellation
@@ -54,6 +58,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
+import io.github.hangillab.hangil.feature.home.SessionHistoryMemoUiState as MemoState
 
 /** Real read-only VM with controlled sources/policy/storage. No SDK, permission request or database write. */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -359,6 +364,193 @@ class LocationHistoryViewModelTest {
             assertEquals(FailureReason.SNAPSHOT_REGRESSED, (display.value as LocationHistoryUiState.Failed).reason)
         }
 
+    @Test fun `session memo is lazy and its readonly receipt survives point and run selection`() =
+        runTest {
+            val f = Fixture()
+            val first = run("first")
+            val second = run("second")
+            f.recordings.values.value =
+                LocationRecordingSnapshot(
+                    listOf(first, second),
+                    listOf(event(1, first.runId), event(2, second.runId), event(3, second.runId, ordinal = 2, elapsed = 102)),
+                )
+            val parent = open(f)
+            val selected = parent.ready()
+            assertTrue(f.model.canRevealSessionMemo(selected.source, selected.token))
+            f.model.observeSessionMemo(selected.source, selected.token, f.host::get)
+            runCurrent()
+            assertEquals(0, f.memos.calls)
+
+            val memo = openMemo(f, selected)
+            val ready = memo.value as MemoState.Ready
+            assertEquals(selected.source, ready.source)
+            assertEquals(selected.token.queryNonce, ready.historyGeneration)
+            assertEquals(note(), ready.memo)
+            assertFalse(ready.canEdit)
+            assertTrue(f.model.canReadSessionMemo(ready.token))
+            assertEquals(listOf(selected.source.sessionId), f.memos.requested)
+
+            assertTrue(f.model.previousEvent(selected.token, selected.run.runId, selected.event?.id))
+            runCurrent()
+            val previousPoint = parent.ready()
+            assertNotEquals(selected.token.revision, previousPoint.token.revision)
+            assertTrue(f.model.canRevealSessionMemo(previousPoint.source, previousPoint.token))
+            assertTrue(f.model.previousRun(previousPoint.token, previousPoint.run.runId))
+            runCurrent()
+            assertEquals("first", parent.ready().run.runId)
+            assertEquals(ready, memo.value)
+            assertTrue(f.model.canReadSessionMemo(ready.token))
+            assertEquals(1, f.memos.calls)
+            assertEquals(1, f.memos.active)
+            assertEquals(0, f.memos.writes)
+            assertEquals(0, f.recordings.writes)
+        }
+
+    @Test fun `memo absence read failure and explicit retry preserve their distinct meanings`() =
+        runTest {
+            val fail = CompletableDeferred<Unit>()
+            val f =
+                Fixture().apply {
+                    memos.factory =
+                        {
+                            flow {
+                                emit(null)
+                                fail.await()
+                                throw IOException("Controlled memo read")
+                            }
+                        }
+                }
+            val parent = open(f)
+            val memo = openMemo(f, parent.ready())
+            val empty = memo.value as MemoState.Empty
+            assertFalse(empty.canCreate)
+            assertEquals(1, f.memos.calls)
+
+            fail.complete(Unit)
+            runCurrent()
+            val failed = memo.value as MemoState.Failed
+            assertEquals(MemoState.FailureReason.MEMO_READ, failed.reason)
+            f.memos.factory = { f.memos.values }
+            runCurrent()
+            assertEquals(failed, memo.value)
+            assertEquals(1, f.memos.calls)
+            assertTrue(f.model.retrySessionMemo(failed.token))
+            runCurrent()
+            val recovered = memo.value as MemoState.Ready
+            assertEquals(note(), recovered.memo)
+            assertFalse(recovered.canEdit)
+            assertNotEquals(failed.token, recovered.token)
+            assertFalse(f.model.retrySessionMemo(failed.token))
+            assertEquals(2, f.memos.calls)
+
+            f.memos.values.value = note().copy(sessionId = "another-session")
+            runCurrent()
+            assertEquals(MemoState.FailureReason.INVALID_MEMO, (memo.value as MemoState.Failed).reason)
+            assertFalse(f.model.canReadSessionMemo(recovered.token))
+            assertEquals(0, f.memos.writes)
+        }
+
+    @Test fun `parent query failure retires a retryable child before a fresh query can read again`() =
+        runTest {
+            val failParent = CompletableDeferred<Unit>()
+            val f =
+                Fixture().apply {
+                    recordings.factory =
+                        {
+                            flow {
+                                emit(snapshot())
+                                failParent.await()
+                                throw IOException("Controlled location read")
+                            }
+                        }
+                    memos.factory = { flow { throw IOException("Controlled memo read") } }
+                }
+            val parent = open(f)
+            val oldParent = parent.ready()
+            val oldMemo = openMemo(f, oldParent)
+            val failedMemo = oldMemo.value as MemoState.Failed
+            assertTrue(f.model.canReadSessionMemo(failedMemo.token))
+
+            failParent.complete(Unit)
+            runCurrent()
+            val failedParent = parent.value as LocationHistoryUiState.Failed
+            assertFalse(f.model.canRevealSessionMemo(oldParent.source, oldParent.token))
+            assertFalse(f.model.canReadSessionMemo(failedMemo.token))
+            assertFalse(f.model.retrySessionMemo(failedMemo.token))
+            assertEquals(1, f.memos.calls)
+
+            f.recordings.factory = { f.recordings.values }
+            f.memos.factory = { f.memos.values }
+            assertTrue(f.model.retry(failedParent.token))
+            runCurrent()
+            val freshParent = parent.ready()
+            assertNotEquals(oldParent.token.queryNonce, freshParent.token.queryNonce)
+            assertFalse(f.model.canRevealSessionMemo(oldParent.source, oldParent.token))
+            val freshMemo = openMemo(f, freshParent)
+            val ready = freshMemo.value as MemoState.Ready
+            assertEquals(note(), ready.memo)
+            assertFalse(f.model.retrySessionMemo(failedMemo.token))
+            assertTrue(f.model.canReadSessionMemo(ready.token))
+            assertEquals(2, f.memos.calls)
+            assertEquals(1, f.memos.active)
+            assertEquals(0, f.memos.writes)
+        }
+
+    @Test fun `source replacement access loss and stopped collectors cancel the memo query`() =
+        runTest {
+            val retirements =
+                listOf<(Fixture, Display) -> Unit>(
+                    { f, _ -> f.sessions.values.value = listOf(source().copy(taskTitle = "Changed task")) },
+                    { f, _ -> f.vehicle.value = vehicleState(GearPosition.DRIVE) },
+                    { f, parent ->
+                        f.host.set(false)
+                        assertFalse(f.model.canRead(parent.ready().token))
+                    },
+                    { _, parent -> parent.job.cancel() },
+                )
+            for (retire in retirements) {
+                val f = Fixture()
+                val parent = open(f)
+                val selected = parent.ready()
+                val memo = openMemo(f, selected)
+                val ready = memo.value as MemoState.Ready
+                assertEquals(1, f.memos.active)
+                retire(f, parent)
+                runCurrent()
+                assertFalse(f.model.canReadSessionMemo(ready.token))
+                assertFalse(f.model.retrySessionMemo(ready.token))
+                assertFalse(f.model.canRevealSessionMemo(selected.source, selected.token))
+                assertEquals(0, f.memos.active)
+                assertEquals(1, f.memos.calls)
+                assertEquals(0, f.memos.writes)
+                memo.job.cancelAndJoin()
+                parent.job.cancelAndJoin()
+            }
+        }
+
+    private fun TestScope.openMemo(
+        f: Fixture,
+        parent: LocationHistoryUiState.Ready,
+    ): MemoDisplay {
+        val states =
+            MutableStateFlow<MemoState>(
+                MemoState.Loading(parent.source, parent.token.queryNonce, MemoState.Token(0, 0, 0)),
+            )
+        val job =
+            backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+                f.model.observeSessionMemo(parent.source, parent.token, f.host::get).collect { states.value = it }
+            }
+        runCurrent()
+        return MemoDisplay(states, job)
+    }
+
+    private class MemoDisplay(
+        private val states: MutableStateFlow<MemoState>,
+        val job: Job,
+    ) {
+        val value get() = states.value
+    }
+
     private fun TestScope.open(
         f: Fixture,
         expected: PracticeSession = source(),
@@ -387,6 +579,7 @@ class LocationHistoryViewModelTest {
     private class Fixture {
         val sessions = Sessions()
         val recordings = Recordings()
+        val memos = Memos()
         val host = AtomicBoolean(true)
         val vehicle = MutableStateFlow(vehicleState(GearPosition.PARK))
         val restrictions = MutableStateFlow(DrivingRestrictions(ParkingState.PARKED, UxRestrictionState.UNRESTRICTED))
@@ -400,6 +593,7 @@ class LocationHistoryViewModelTest {
                 object : DrivingRestrictionsProvider {
                     override val restrictions = this@Fixture.restrictions
                 },
+                memos,
             )
     }
 
@@ -425,6 +619,46 @@ class LocationHistoryViewModelTest {
             endedAtEpochMillis: Long,
             canCommit: () -> Boolean,
         ): SessionFinishResult = error("Unexpected session write")
+    }
+
+    private class Memos : SessionMemoRepository {
+        val values = MutableStateFlow<SessionMemo?>(note())
+        var factory: () -> Flow<SessionMemo?> = { values }
+        val requested = mutableListOf<String>()
+        var calls = 0
+        var active = 0
+        var writes = 0
+
+        override fun observe(sessionId: String): Flow<SessionMemo?> =
+            flow {
+                requested += sessionId
+                calls++
+                active++
+                try {
+                    emitAll(factory())
+                } finally {
+                    active--
+                }
+            }
+
+        override suspend fun save(
+            sessionId: String,
+            text: String,
+            expectedVersion: String?,
+            canCommit: () -> Boolean,
+        ): SessionMemoWriteResult {
+            writes++
+            error("Unexpected memo write")
+        }
+
+        override suspend fun delete(
+            sessionId: String,
+            expectedVersion: String,
+            canCommit: () -> Boolean,
+        ): SessionMemoWriteResult {
+            writes++
+            error("Unexpected memo deletion")
+        }
     }
 
     private class Recordings : LocationRecordingRepository {
@@ -486,6 +720,8 @@ class LocationHistoryViewModelTest {
     }
 
     companion object {
+        private fun note() = SessionMemo("source", "  Whole-session user note\nwith its original whitespace  ", "version")
+
         private fun source() =
             PracticeSession(
                 "source",

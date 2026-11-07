@@ -508,6 +508,15 @@ class LocationRecordingFlowTest {
             click("location_recording_back")
             click("session_finish")
             val ended = f.ended(source.sessionId)
+            val memoText = "테스트용 연습 전체 메모\n표본을 보며 함께 읽어요."
+            val savedMemo = runBlocking { f.store.memos.save(ended.sessionId, memoText, null) { true } }
+            assertTrue(savedMemo is io.github.hangillab.hangil.core.domain.SessionMemoWriteResult.Saved)
+            val memoBefore =
+                runBlocking {
+                    f.store.memos
+                        .observe(ended.sessionId)
+                        .first()
+                }
             f.gateway.permission.set(false)
             val sessionsBefore =
                 runBlocking {
@@ -549,8 +558,31 @@ class LocationRecordingFlowTest {
             click("location_history_point_map")
             val firstMap = awaitStoredMap(cityHall)
             visual("stored-city-hall-point-map", "location_history_point_map_notice", "stored_location_map")
+            assertTrue(nodes("location_history_memo_content").isEmpty())
+            val retiredMemoOpen = clickAction("location_history_memo")
+            click("location_history_memo")
+            waitTag("location_history_memo_text")
+            assertTrue(
+                nodes("location_history_memo_text")
+                    .single()
+                    .config[SemanticsProperties.Text]
+                    .single()
+                    .text == memoText,
+            )
+            waitTag("location_history_memo_source")
+            assertTrue(nodes("history_memo_edit").isEmpty() && nodes("history_memo_create").isEmpty())
+            assertTrue("Reading a whole-session memo keeps the selected sample's native map", awaitStoredMap(cityHall) === firstMap)
+            visual("stored-point-session-memo", "location_history_memo_content")
 
             click("location_history_event_next")
+            waitTag("location_history_memo_text")
+            assertTrue(
+                nodes("location_history_memo_text")
+                    .single()
+                    .config[SemanticsProperties.Text]
+                    .single()
+                    .text == memoText,
+            )
             assertNoStoredMap(firstMap)
             invoke(staleOpen)
             assertNoStoredMap()
@@ -558,6 +590,14 @@ class LocationRecordingFlowTest {
             assertText("location_history_event_state", HomeR.string.location_history_callback_empty)
             assertTrue(nodes("location_history_point_map").isEmpty())
             assertNoStoredMap(firstMap)
+            waitTag("location_history_memo_text")
+            assertTrue(
+                nodes("location_history_memo_text")
+                    .single()
+                    .config[SemanticsProperties.Text]
+                    .single()
+                    .text == memoText,
+            )
 
             click("location_history_event_previous")
             assertNoStoredMap()
@@ -568,6 +608,9 @@ class LocationRecordingFlowTest {
             f.drive(true)
             waitTag("location_history_locked")
             assertNoStoredMap(beforeDriving)
+            assertTrue(nodes("location_history_memo_content").isEmpty())
+            invoke(retiredMemoOpen)
+            assertTrue(nodes("location_history_memo_content").isEmpty())
             f.drive(false)
             waitTag("location_history_locked")
             invoke(retiredForDriving)
@@ -583,19 +626,36 @@ class LocationRecordingFlowTest {
 
             click("location_history_point_map")
             val beforeStop = awaitStoredMap(gwanghwamun)
+            assertTrue(nodes("location_history_memo_content").isEmpty())
+            invoke(retiredMemoOpen)
+            assertTrue(nodes("location_history_memo_content").isEmpty())
+            val retiredMemoForStop = clickAction("location_history_memo")
+            click("location_history_memo")
+            waitTag("location_history_memo_text")
             val retiredForStop = clickAction("location_history_point_map")
             f.move(Lifecycle.State.CREATED)
             assertNoStoredMap(beforeStop)
+            assertTrue(nodes("location_history_memo_content").isEmpty())
             f.move(Lifecycle.State.RESUMED)
             waitTag("location_history_content")
             assertText("location_history_event_state", HomeR.string.location_history_callback_empty)
             invoke(retiredForStop)
             assertNoStoredMap()
+            invoke(retiredMemoForStop)
+            assertTrue(nodes("location_history_memo_content").isEmpty())
             click("location_history_event_previous")
             waitTag("location_history_point_map")
             assertNoStoredMap()
 
             assertEquals(storedBefore, f.snapshot(ended))
+            assertEquals(
+                memoBefore,
+                runBlocking {
+                    f.store.memos
+                        .observe(ended.sessionId)
+                        .first()
+                },
+            )
             assertEquals(
                 sessionsBefore,
                 runBlocking {
@@ -1781,7 +1841,8 @@ class LocationRecordingFlowTest {
                     store.courseCompletions,
                     store.historyMemoWriter,
                 )
-            locationHistoryModel = LocationHistoryViewModel(store.sessions, store.locationRecordings, vehicleGateway, restrictions)
+            locationHistoryModel =
+                LocationHistoryViewModel(store.sessions, store.locationRecordings, vehicleGateway, restrictions, store.memos)
             // Add explicitly passed models so final ViewModelStore.clear closes all their scopes too.
             val additional = listOf<ViewModel>(recordingModel, historyModel, locationHistoryModel)
             val additionalProvider =

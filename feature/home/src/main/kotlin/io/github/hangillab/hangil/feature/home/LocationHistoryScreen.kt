@@ -151,6 +151,9 @@ internal fun LocationHistoryScreen(
                 is LocationHistoryUiState.Ready ->
                     if (viewModel.canRead(state.token)) {
                         key(state.token) { LocationHistoryReady(state, viewModel, storedPointMap) }
+                        key(state.token.readerId, state.token.queryNonce) {
+                            LocationHistorySessionMemoRoute(state.source, state.token, viewModel)
+                        }
                     }
             }
         }

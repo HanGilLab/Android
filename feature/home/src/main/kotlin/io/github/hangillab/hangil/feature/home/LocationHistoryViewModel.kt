@@ -13,6 +13,7 @@ import io.github.hangillab.hangil.core.domain.LocationUpdateReading
 import io.github.hangillab.hangil.core.domain.ParkingState
 import io.github.hangillab.hangil.core.domain.PracticeSession
 import io.github.hangillab.hangil.core.domain.PracticeSessionRepository
+import io.github.hangillab.hangil.core.domain.SessionMemoRepository
 import io.github.hangillab.hangil.core.domain.UxRestrictionState
 import io.github.hangillab.hangil.core.domain.VehicleGateway
 import io.github.hangillab.hangil.core.domain.VehicleReading
@@ -44,8 +45,10 @@ class LocationHistoryViewModel
         private val locationRepo: LocationRecordingRepository,
         private val vehicle: VehicleGateway,
         private val restrictions: DrivingRestrictionsProvider,
+        memos: SessionMemoRepository,
     ) : ViewModel() {
         private val lock = Any()
+        private val sessionMemos = SessionHistoryMemoReader(lock, memos, writer = null, allowed = ::allowed)
         private var current: Reader? = null
         private var serial = 0L
         private var nonce = 0L
@@ -138,6 +141,55 @@ class LocationHistoryViewModel
                 val owner = owner(token) ?: return@synchronized false
                 owner.states.value is LocationHistoryUiState.Ready && owner.queryJob?.isActive == true
             }
+
+        /** The note belongs to the whole ended session, independently of event-page revisions. */
+        fun canRevealSessionMemo(
+            expected: PracticeSession,
+            parentToken: Token,
+        ): Boolean = synchronized(lock) { sessionMemoParent(expected, parentToken) != null }
+
+        fun observeSessionMemo(
+            expected: PracticeSession,
+            parentToken: Token,
+            canKeepOpen: () -> Boolean,
+        ): Flow<SessionHistoryMemoUiState> =
+            sessionMemos.observe(expected, parentToken.queryNonce, canKeepOpen) {
+                val owner = sessionMemoParent(expected, parentToken)
+                if (owner == null) {
+                    null
+                } else {
+                    SessionHistoryMemoReader.Binding(
+                        isCurrent = { sessionMemoParent(expected, parentToken) === owner },
+                        denyAccess = {
+                            if (current === owner && owner.queryNonce == parentToken.queryNonce) revoke(owner, true)
+                        },
+                        canWrite = { false },
+                        canCreate = false,
+                    )
+                }
+            }
+
+        fun canReadSessionMemo(memoToken: SessionHistoryMemoUiState.Token): Boolean = sessionMemos.canRead(memoToken)
+
+        fun retrySessionMemo(memoToken: SessionHistoryMemoUiState.Token): Boolean = sessionMemos.retry(memoToken)
+
+        private fun sessionMemoParent(
+            expected: PracticeSession,
+            token: Token,
+        ): Reader? {
+            val owner = current ?: return null
+
+            fun matches(): Boolean {
+                val ready = owner.states.value as? LocationHistoryUiState.Ready ?: return false
+                return current === owner && !owner.revoked && !owner.failed && owner.job.isActive &&
+                    token.readerId > 0 && token.queryNonce > 0 && owner.id == token.readerId &&
+                    owner.queryNonce == token.queryNonce && owner.queryJob?.isActive == true &&
+                    owner.source == expected && ready.source == expected &&
+                    ready.token.readerId == token.readerId && ready.token.queryNonce == token.queryNonce
+            }
+            if (!matches() || !context(owner) || !matches()) return null
+            return owner
+        }
 
         fun previousRun(
             token: Token,
@@ -252,6 +304,7 @@ class LocationHistoryViewModel
 
         private fun startQuery(owner: Reader) {
             if (!context(owner)) return
+            sessionMemos.invalidate()
             owner.queryNonce = ++nonce
             val queryNonce = owner.queryNonce
             publish(owner, LocationHistoryUiState.Loading(owner.source, nextToken(owner)))
@@ -425,7 +478,7 @@ class LocationHistoryViewModel
             val policy = owner.policyJob
             owner.policyJob = null
             policy?.cancel()
-            detachQuery(owner)
+            detachQuery(owner, locked)
             val source = owner.sourceJob
             owner.sourceJob = null
             source?.cancel()
@@ -437,9 +490,13 @@ class LocationHistoryViewModel
                 }
         }
 
-        private fun detachQuery(owner: Reader) {
+        private fun detachQuery(
+            owner: Reader,
+            locked: Boolean = false,
+        ) {
             val job = owner.queryJob
             owner.queryJob = null
+            if (current === owner) sessionMemos.invalidate(locked)
             job?.cancel()
         }
 
@@ -537,6 +594,7 @@ class LocationHistoryViewModel
             val hostJob =
                 synchronized(lock) {
                     cleared = true
+                    sessionMemos.invalidate()
                     val job = current?.job
                     current?.let { revoke(it, false) }
                     current = null
