@@ -36,6 +36,7 @@
     <string name="next_practice_save">다음 연습 준비 저장</string>
     <string name="next_practice_saving">준비를 저장하고 있어요.</string>
     <string name="next_practice_save_failed">준비를 저장하지 못했어요. 다시 저장해 주세요.</string>
+    <string name="next_practice_task_history">%1$s\n남긴 마무리 기록 %2$d개</string>
     <string name="next_practice_choose_first">과제 하나를 골라 주세요.</string>
     <string name="next_practice_close">닫기</string>
 </resources>

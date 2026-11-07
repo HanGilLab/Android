@@ -22,6 +22,7 @@ import io.github.hangillab.hangil.core.domain.PracticeTask
 import io.github.hangillab.hangil.core.domain.PreparedPractice
 import io.github.hangillab.hangil.core.domain.SessionFinishResult
 import io.github.hangillab.hangil.core.domain.SessionStartResult
+import io.github.hangillab.hangil.core.domain.SessionTaskCount
 import io.github.hangillab.hangil.core.domain.UxRestrictionState
 import io.github.hangillab.hangil.core.domain.VehicleGateway
 import io.github.hangillab.hangil.core.domain.VehicleReading
@@ -97,6 +98,71 @@ class NextPracticeViewModelTest {
             assertTrue(f.model.canInteract())
             assertFalse(f.model.save("source", state.generation))
             assertEquals(0, f.next.calls)
+            assertEquals(0, f.sessions.writes)
+        }
+
+    @Test fun recordSummaryKeepsHistoricalCourseAndTaskTitleBoundaries() =
+        runTest {
+            val f = Fixture()
+            val selectedSource = source()
+            val next = source("next-record").copy(selection = selectedSource.selection.copy(taskId = "next"), taskTitle = nextTask().title)
+            val renamedTask = source("renamed-task").copy(taskTitle = "이전 이름의 과제")
+            f.sessions.values.value =
+                listOf(
+                    selectedSource,
+                    source("repeat"),
+                    next,
+                    renamedTask,
+                    source("different-goal").copy(selection = selectedSource.selection.copy(goalId = "another")),
+                    source("different-course").copy(selection = selectedSource.selection.copy(courseId = "another")),
+                    source("old-version").copy(selection = selectedSource.selection.copy(courseVersion = 2)),
+                    source("old-briefing").copy(selection = selectedSource.selection.copy(briefingVersion = 2)),
+                    source("renamed-goal").copy(goalTitle = "다른 목표 이름"),
+                    source("renamed-course").copy(courseTitle = "다른 코스 이름"),
+                )
+            watch(f)
+            val summary = ready(f).summary
+            assertEquals(selectedSource, summary.source)
+            assertEquals(CourseReviewStatus.DEMO, summary.source.courseReviewStatus)
+            assertEquals(4, summary.sessionCount)
+            assertEquals(
+                listOf(
+                    SessionTaskCount("old", oldTask().title, 2),
+                    SessionTaskCount("next", nextTask().title, 1),
+                    SessionTaskCount("old", renamedTask.taskTitle, 1),
+                ),
+                summary.tasks,
+            )
+            assertNull(ready(f).taskId)
+            assertEquals(1, f.sessions.calls)
+            assertEquals(0, f.sessions.writes)
+            assertEquals(0, f.next.calls)
+        }
+
+    @Test fun recordSummaryUpdatesPreserveSelectedDraftAndSaveFailure() =
+        runTest {
+            val f = Fixture()
+            watch(f)
+            val events = events(f)
+            val chosen = choose(f)
+            f.next.handler = { _, _, _ -> NextPracticeSaveResult.Blocked }
+            assertTrue(f.model.save("source", chosen.generation))
+            runCurrent()
+            assertTrue(ready(f).saveFailed)
+
+            f.sessions.values.value = listOf(source(), source("repeat"))
+            runCurrent()
+            val updated = ready(f)
+            assertEquals(2, updated.summary.sessionCount)
+            assertEquals(chosen.generation, updated.generation)
+            assertEquals(chosen.seed, updated.seed)
+            assertEquals("next", updated.taskId)
+            assertTrue(updated.saveFailed)
+            assertFalse(updated.saving)
+            assertTrue(updated.canSave)
+            assertEquals(1, f.next.calls)
+            assertTrue(events.isEmpty())
+            assertEquals(1, f.sessions.calls)
             assertEquals(0, f.sessions.writes)
         }
 
@@ -248,7 +314,7 @@ class NextPracticeViewModelTest {
             assertFalse(f.model.save("source", state.generation))
         }
 
-    @Test fun `equal seed emissions preserve pending commit ownership`() =
+    @Test fun `summary updates for the same seed preserve pending commit ownership`() =
         runTest {
             val f = Fixture()
             val sourceEvents = MutableSharedFlow<List<PracticeSession>>(replay = 1)
@@ -262,9 +328,13 @@ class NextPracticeViewModelTest {
             f.model.save("source", state.generation)
             runCurrent()
             assertTrue(f.next.guards.single()())
-            sourceEvents.emit(listOf(source()))
+            sourceEvents.emit(listOf(source(), source("repeat")))
             runCurrent()
+            assertEquals(2, ready(f).summary.sessionCount)
+            assertEquals(state.generation, ready(f).generation)
+            assertEquals("next", ready(f).taskId)
             assertTrue(ready(f).saving)
+            assertFalse(ready(f).saveFailed)
             assertTrue(f.next.guards.single()())
             release.complete(Unit)
             runCurrent()
@@ -427,7 +497,15 @@ class NextPracticeViewModelTest {
 
     @Test fun `repeated source identity and invalid times fail rather than normalizing saved records`() =
         runTest {
-            for (records in listOf(listOf(source(), source()), listOf(source(ended = 999)), listOf(source().copy(sessionId = " ")))) {
+            val malformed =
+                listOf(
+                    listOf(source(), source()),
+                    listOf(source(ended = 999)),
+                    listOf(source().copy(sessionId = " ")),
+                    listOf(source(), source("older"), source("older")),
+                    listOf(source(), source("older").copy(taskTitle = "")),
+                )
+            for (records in malformed) {
                 val f = Fixture()
                 f.sessions.values.value = records
                 val job = watch(f)
@@ -1150,7 +1228,12 @@ class NextPracticeViewModelTest {
             val chosen = historyReady(h)
             f.sessions.values.value = listOf(source("newest"), source("newer"), source())
             runCurrent()
-            assertEquals(chosen, historyReady(h))
+            val updated = historyReady(h)
+            assertEquals(chosen.seed, updated.seed)
+            assertEquals(chosen.taskId, updated.taskId)
+            assertEquals(chosen.generation, updated.generation)
+            assertEquals(2, chosen.summary.sessionCount)
+            assertEquals(3, updated.summary.sessionCount)
             val events = events(f)
             assertTrue(f.model.save("source", chosen.generation))
             runCurrent()

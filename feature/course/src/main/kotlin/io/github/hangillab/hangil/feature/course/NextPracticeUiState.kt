@@ -1,6 +1,7 @@
 package io.github.hangillab.hangil.feature.course
 
 import io.github.hangillab.hangil.core.domain.NextPracticeSeed
+import io.github.hangillab.hangil.core.domain.SessionCourseSummary
 
 sealed interface NextPracticeUiState {
     data object Locked : NextPracticeUiState
@@ -24,6 +25,7 @@ sealed interface NextPracticeUiState {
         val seed: NextPracticeSeed,
         val taskId: String?,
         val generation: Long,
+        val summary: SessionCourseSummary,
         val saving: Boolean = false,
         val saveFailed: Boolean = false,
     ) : NextPracticeUiState {
