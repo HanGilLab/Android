@@ -43,6 +43,7 @@ import io.github.hangillab.hangil.core.domain.LocationRecordingEndResult
 import io.github.hangillab.hangil.core.domain.LocationRecordingRunStatus
 import io.github.hangillab.hangil.core.domain.LocationRecordingSnapshot
 import io.github.hangillab.hangil.core.domain.LocationRecordingStopReason
+import io.github.hangillab.hangil.core.domain.LocationUpdateErrorOrigin
 import io.github.hangillab.hangil.core.domain.LocationUpdateReading
 import io.github.hangillab.hangil.core.domain.LocationUpdateSample
 import io.github.hangillab.hangil.core.domain.ParkingState
@@ -50,6 +51,8 @@ import io.github.hangillab.hangil.core.domain.PracticeSelection
 import io.github.hangillab.hangil.core.domain.PracticeSession
 import io.github.hangillab.hangil.core.domain.PracticeSessionRepository
 import io.github.hangillab.hangil.core.domain.Preparation
+import io.github.hangillab.hangil.core.domain.RecordingRunOpenResult
+import io.github.hangillab.hangil.core.domain.RecordingRunStatus
 import io.github.hangillab.hangil.core.domain.SessionDeletionPreparation
 import io.github.hangillab.hangil.core.domain.SessionDeletionRepository
 import io.github.hangillab.hangil.core.domain.SessionDeletionResult
@@ -64,7 +67,9 @@ import io.github.hangillab.hangil.core.domain.VehicleGateway
 import io.github.hangillab.hangil.core.domain.VehicleObservation
 import io.github.hangillab.hangil.core.domain.VehicleObservationAppendResult
 import io.github.hangillab.hangil.core.domain.VehicleReading
+import io.github.hangillab.hangil.core.domain.VehicleRecordingRun
 import io.github.hangillab.hangil.core.domain.VehicleState
+import io.github.hangillab.hangil.feature.home.SessionDeletionUiState
 import io.github.hangillab.hangil.feature.home.SessionHistoryRoute
 import io.github.hangillab.hangil.feature.home.SessionHistoryUiState
 import io.github.hangillab.hangil.feature.home.SessionHistoryViewModel
@@ -122,15 +127,50 @@ class SessionDeletionFlowTest {
                     .getValue(target.sessionId)
                     .runs.size == 1,
             )
-            assertTrue(
-                "DELETE_LOCATION_FIXTURE_ITEMS",
+            val readings =
                 before.locations
                     .getValue(target.sessionId)
-                    .events.size == 2,
+                    .events
+                    .map { it.reading }
+            assertTrue(
+                "DELETE_LOCATION_FIXTURE_SAMPLE_AND_STATES",
+                readings.size == 3 && readings[0] is LocationUpdateReading.Sample &&
+                    readings[1] is LocationUpdateReading.Empty && readings[2] is LocationUpdateReading.Error,
             )
+            assertTrue("DELETE_RECORDING_FIXTURE_PRESENT", before.recordingRuns.getValue(target.sessionId).size == 1)
+            val emptyLocations = before.locations.getValue(fixture.seed.latest.sessionId)
+            assertTrue(
+                "DELETE_LOCATION_ZERO_REQUIRES_EMPTY_LISTS",
+                emptyLocations.events.isEmpty() && emptyLocations.runs.isEmpty() &&
+                    before.recordingRuns.getValue(fixture.seed.latest.sessionId).isEmpty(),
+            )
+            openAndReadConfirmation(fixture, fixture.seed.latest)
+            touch("history_delete_cancel")
+            waitAbsent("history_delete_dialog")
+            fixture.assertExact(before)
+            emitDeletionPhase("EMPTY_COUNTS_VISIBLE")
             touch("history_older")
             fixture.awaitReady(target.sessionId)
             openAndReadConfirmation(fixture, target)
+            bringIntoView("history_delete_location_counts")
+            bringIntoView("history_delete_recording_run_count")
+            assertTrue(
+                "DELETE_LINKED_COUNTS_VISIBLE",
+                listOf("history_delete_location_counts", "history_delete_location_run_count", "history_delete_recording_run_count")
+                    .all { fullyVisible(nodes(it).single()) },
+            )
+            requireForeground()
+            val instrumentation = InstrumentationRegistry.getInstrumentation()
+            val directory = File(instrumentation.targetContext.cacheDir, "session-deletion-confirmations/${UUID.randomUUID()}")
+            check(directory.mkdirs()) { "DELETE_CONFIRMATION_CACHE" }
+            val bitmap = checkNotNull(instrumentation.uiAutomation.takeScreenshot()) { "DELETE_CONFIRMATION_CAPTURE" }
+            try {
+                File(directory, "linked-records.png").outputStream().use {
+                    check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) { "DELETE_CONFIRMATION_WRITE" }
+                }
+            } finally {
+                bitmap.recycle()
+            }
             emitDeletionPhase("CONFIRMATION_VISIBLE")
             assertLocationDeletionDisclosure()
             touch("history_delete_cancel")
@@ -394,12 +434,19 @@ class SessionDeletionFlowTest {
             InstrumentationRegistry.getArguments().getString("manualSessionDeletion") == "true",
         )
         val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val permissionInvariant = InstrumentationRegistry.getArguments().getString("sdkFreeDeletionPermissionInvariant")
+        check(permissionInvariant == null || permissionInvariant == "false" || permissionInvariant == "true")
+        check(permissionInvariant != "true" || syntheticLocations) { "SDK_FREE_LOCATION_FIXTURE_REQUIRED" }
+        val originalLocationPermission = context.checkSelfPermission("pleos.car.permission.FUSED_LOCATION")
         if (syntheticLocations) {
-            assertTrue(
-                "DELETE_LOCATION_FUSED_NOT_DENIED",
-                context.checkSelfPermission("pleos.car.permission.FUSED_LOCATION") == PackageManager.PERMISSION_DENIED,
-            )
-            emitDeletionPhase("FUSED_DENIED")
+            // The separate SDK-free host mode never grants, revokes or exercises this permission.
+            // Keep the original denied-host scenario as the default, without an automatic fallback.
+            if (permissionInvariant == "true") {
+                emitDeletionPhase("SDK_FREE_EXISTING_PERMISSION")
+            } else {
+                assertTrue("DELETE_LOCATION_FUSED_NOT_DENIED", originalLocationPermission == PackageManager.PERMISSION_DENIED)
+                emitDeletionPhase("FUSED_DENIED")
+            }
         }
         val store = OwnedPracticeTestStore.create(context)
         var fixture: Fixture? = null
@@ -457,6 +504,17 @@ class SessionDeletionFlowTest {
                 cleanupFailures.add(cleanup)
             }
             if (syntheticLocations && storeClosed) emitDeletionPhase("FIXTURE_CLOSED")
+            if (syntheticLocations) {
+                try {
+                    assertTrue(
+                        "DELETE_LOCATION_PERMISSION_CHANGED",
+                        context.checkSelfPermission("pleos.car.permission.FUSED_LOCATION") == originalLocationPermission,
+                    )
+                    emitDeletionPhase("SDK_FREE_PERMISSION_UNCHANGED")
+                } catch (cleanup: Throwable) {
+                    cleanupFailures.add(cleanup)
+                }
+            }
             if (cleanupFailures.isNotEmpty()) {
                 val original = primary
                 if (original != null) {
@@ -539,7 +597,25 @@ class SessionDeletionFlowTest {
                 val two = store.observations.append(active.sessionId, VehicleObservation(FIXED_TIME + offset + 50, driving()))
                 assertTrue("관찰 시각 역순도 원형으로 보존해야 합니다", two is VehicleObservationAppendResult.Appended)
             }
-            if (syntheticLocations && finish) {
+            if (syntheticLocations && finish && index == 0) {
+                val background =
+                    store.recordingRuns.open(
+                        active,
+                        "deletion-background-${UUID.randomUUID()}",
+                        "deletion-background-process-${UUID.randomUUID()}",
+                        FIXED_TIME + offset + 125,
+                    ) { true }
+                assertTrue("DELETE_RECORDING_OPEN", background is RecordingRunOpenResult.Opened)
+                val backgroundRun = (background as RecordingRunOpenResult.Opened).run
+                assertTrue(
+                    "DELETE_RECORDING_FINISH",
+                    store.recordingRuns.finish(
+                        backgroundRun.runId,
+                        backgroundRun.processId,
+                        RecordingRunStatus.STOPPED,
+                        FIXED_TIME + offset + 400,
+                    ),
+                )
                 val begun =
                     store.locationRecordings.begin(
                         active,
@@ -560,18 +636,27 @@ class SessionDeletionFlowTest {
                         FIXED_TIME + offset + 250,
                     ) { true } is LocationRecordingAppendResult.Appended,
                 )
-                assertTrue(
-                    "DELETE_LOCATION_STATE",
-                    store.locationRecordings.append(active, run, LocationUpdateReading.Empty(offset + 300), FIXED_TIME + offset + 300) {
-                        true
-                    } is LocationRecordingAppendResult.Appended,
-                )
+                listOf(
+                    LocationUpdateReading.Empty(offset + 300),
+                    LocationUpdateReading.Error(
+                        LocationUpdateErrorOrigin.SDK_CALLBACK,
+                        IllegalStateException::class.java.name,
+                        offset + 310,
+                    ),
+                ).forEachIndexed { stateIndex, reading ->
+                    assertTrue(
+                        "DELETE_LOCATION_STATE",
+                        store.locationRecordings.append(active, run, reading, FIXED_TIME + offset + 300 + stateIndex * 10) {
+                            true
+                        } is LocationRecordingAppendResult.Appended,
+                    )
+                }
                 assertTrue(
                     "DELETE_LOCATION_END",
                     store.locationRecordings.end(
                         run,
-                        LocationRecordingRunStatus.STOPPED,
-                        LocationRecordingStopReason.USER_STOP,
+                        LocationRecordingRunStatus.FAILED,
+                        LocationRecordingStopReason.SDK_ERROR,
                         FIXED_TIME + offset + 350,
                         offset + 350,
                     ) is LocationRecordingEndResult.Ended,
@@ -680,6 +765,7 @@ class SessionDeletionFlowTest {
                         records.associate { it.sessionId to store.observations.observe(it.sessionId).first() },
                         records.associate { it.sessionId to store.memos.observe(it.sessionId).first() },
                         records.associate { it.sessionId to store.locationRecordings.observe(it.sessionId).first() },
+                        records.associate { it.sessionId to store.recordingRuns.observe(it.sessionId).first() },
                         store.sequenceSnapshot(),
                     )
                 }
@@ -698,12 +784,20 @@ class SessionDeletionFlowTest {
             assertTrue("삭제 대상 하나만 세션 목록에서 없어져야 합니다", after.sessions == before.sessions.filter { it.sessionId != targetId })
             assertTrue("준비는 삭제와 무관하게 보존해야 합니다", after.preparation == before.preparation)
             assertTrue("DELETE_LOCATION_RETAINED_ROWS", after.locations == before.locations.filterKeys { it != targetId })
+            assertTrue("DELETE_RECORDING_RETAINED_ROWS", after.recordingRuns == before.recordingRuns.filterKeys { it != targetId })
             assertTrue("다른 연결 관찰의 ID/원문/순서를 보존해야 합니다", after.observations == before.observations.filterKeys { it != targetId })
             assertTrue("다른 메모의 원문과 version을 보존해야 합니다", after.memos == before.memos.filterKeys { it != targetId })
             assertTrue("삭제로 자동증가 sequence를 낮추면 안 됩니다", after.sequences == before.sequences)
             runBlocking {
                 val deletedLocations = store.locationRecordings.observe(targetId).first()
                 assertTrue("DELETE_LOCATION_SELECTED_CASCADE", deletedLocations.runs.isEmpty() && deletedLocations.events.isEmpty())
+                assertTrue(
+                    "DELETE_RECORDING_SELECTED_CASCADE",
+                    store.recordingRuns
+                        .observe(targetId)
+                        .first()
+                        .isEmpty(),
+                )
                 assertTrue(
                     "선택한 관찰만 실제 cascade로 없어져야 합니다",
                     store.observations
@@ -972,6 +1066,29 @@ class SessionDeletionFlowTest {
                     .observe(target.sessionId)
                     .first()
             }
+        val locations =
+            runBlocking {
+                fixture.store.locationRecordings
+                    .observe(target.sessionId)
+                    .first()
+            }
+        val recordingRuns =
+            runBlocking {
+                fixture.store.recordingRuns
+                    .observe(target.sessionId)
+                    .first()
+            }
+        val prepared = (fixture.model.deletionState.value as SessionDeletionUiState.Confirming).target
+        assertTrue(
+            "확인창은 선택한 원본과 실제 Room 연결 자료의 준비된 스냅샷을 표시해야 합니다",
+            prepared.session == target && prepared.observationCount == rows.size.toLong() && prepared.memoVersion == memo?.version &&
+                prepared.locationRecording == locations && prepared.recordingRuns == recordingRuns,
+        )
+        val sampleCount = locations.events.count { it.reading is LocationUpdateReading.Sample }
+        val stateCount = locations.events.count { it.reading !is LocationUpdateReading.Sample }
+        assertText("history_delete_location_counts", text(HomeR.string.history_delete_location_counts, sampleCount, stateCount))
+        assertText("history_delete_location_run_count", text(HomeR.string.history_delete_location_run_count, locations.runs.size))
+        assertText("history_delete_recording_run_count", text(HomeR.string.history_delete_recording_run_count, recordingRuns.size))
         assertText("history_delete_observation_count", text(HomeR.string.history_delete_observation_count, rows.size))
         assertText(
             "history_delete_memo_status",
@@ -1009,6 +1126,7 @@ class SessionDeletionFlowTest {
         val observations: Map<String, List<SessionVehicleObservation>>,
         val memos: Map<String, SessionMemo?>,
         val locations: Map<String, LocationRecordingSnapshot>,
+        val recordingRuns: Map<String, List<VehicleRecordingRun>>,
         val sequences: Map<String, Long>,
     )
 
