@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.Instrumentation
 import android.content.Intent
 import android.content.res.Configuration
+import android.graphics.Bitmap
 import android.graphics.PointF
 import android.graphics.Rect
 import android.os.Bundle
@@ -22,6 +23,7 @@ import android.widget.ListView
 import android.widget.TextView
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.hasTestTag
@@ -37,7 +39,6 @@ import androidx.test.platform.app.InstrumentationRegistry
 import io.github.hangillab.hangil.core.database.LocalPracticeCatalog
 import io.github.hangillab.hangil.core.designsystem.HanGilTheme
 import io.github.hangillab.hangil.core.domain.ConnectionState
-import io.github.hangillab.hangil.core.domain.CourseMapPreview
 import io.github.hangillab.hangil.core.domain.DrivingRestrictions
 import io.github.hangillab.hangil.core.domain.DrivingRestrictionsProvider
 import io.github.hangillab.hangil.core.domain.GearPosition
@@ -50,6 +51,7 @@ import io.github.hangillab.hangil.core.domain.VehicleReading
 import io.github.hangillab.hangil.core.domain.VehicleState
 import io.github.hangillab.hangil.feature.map.MapLoadState
 import io.github.hangillab.hangil.feature.map.MapPreparationState
+import io.github.hangillab.hangil.feature.map.MapPreview
 import io.github.hangillab.hangil.feature.map.MapRoute
 import io.github.hangillab.hangil.feature.map.MapViewModel
 import kotlinx.coroutines.CompletableDeferred
@@ -78,9 +80,12 @@ import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
 import org.maplibre.android.style.expressions.Expression
 import org.maplibre.android.style.layers.CircleLayer
+import org.maplibre.android.style.layers.LineLayer
 import org.maplibre.android.style.layers.SymbolLayer
 import org.maplibre.android.style.sources.GeoJsonSource
 import org.maplibre.geojson.Point
+import java.io.File
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -89,7 +94,8 @@ import org.maplibre.android.R as MapSdkR
 /**
  * Additional controlled native boundaries after the input guard is implemented. Vehicle and
  * preparation are explicit synthetic fixtures; real MapRoute/VM/MapLibre/native dispatch and
- * public style network are used. No Room/real SDK gateway, captures or performance claims.
+ * public style network are used. No Room/real Vehicle SDK gateway or performance claims.
+ * Only the navigation-request POI scenario saves private crops of its public catalog fixture.
  * Native camera key/trackball control is intentionally unsupported, so only no-mutation is
  * asserted for those events. Touch drag/pinch remain positive native controls.
  * Attribution uses public own-process WindowInspector/ListView callbacks with the real dialog;
@@ -100,6 +106,254 @@ import org.maplibre.android.R as MapSdkR
 @RunWith(AndroidJUnit4::class)
 class MapInputLifecycleTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentCatalogActivity>()
+
+    /** Public catalog request POIs, controlled P/UX and real MapLibre. No native guidance is requested. */
+    @Test fun navigationRequestPoisMatchNativeMapAndDiscardPreviousOwners() {
+        val args = InstrumentationRegistry.getArguments()
+        assumeTrue("명시적인 SDK-free POI 지도 실행에서만 검사합니다", args.getString("manualMapInputBoundary") == "true")
+        val scale = checkNotNull(args.getString("expectedFontScale")?.toFloatOrNull()) { "POI_MAP_FONT_ARGUMENT" }
+        val dark = checkNotNull(args.getString("expectedDark")?.toBooleanStrictOrNull()) { "POI_MAP_THEME_ARGUMENT" }
+        assertTrue("정의된 기본/확대 글꼴 조건만 검사합니다", scale == 1f || scale == 1.3f)
+        val configuration = compose.activity.resources.configuration
+        assertTrue("실제 글꼴이 선언과 같아야 합니다", abs(configuration.fontScale - scale) < 0.001f)
+        assertTrue(
+            "실제 테마가 선언과 같아야 합니다",
+            (configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES) == dark,
+        )
+        withMap(courseId = "pleos-pangyo-yangjae") { fixture, initial ->
+            val instrumentation = InstrumentationRegistry.getInstrumentation()
+            assertTrue(
+                "현재 실제 fixture host가 RESUMED와 focus를 소유해야 합니다",
+                compose.activity.lifecycle.currentState == Lifecycle.State.RESUMED && compose.activity.hasWindowFocus(),
+            )
+            assertEquals(
+                "fixture host가 실제 전면이어야 합니다",
+                instrumentation.targetContext.packageName,
+                instrumentation.uiAutomation.rootInActiveWindow
+                    ?.packageName
+                    ?.toString(),
+            )
+            val catalog = LocalPracticeCatalog()
+            val course = catalog.courses.single { it.id == "pleos-pangyo-yangjae" }
+            val route = checkNotNull(course.navigationRoute)
+            assertTrue("시연 preview로 우회하지 않는 현재 nav-only 원본이어야 합니다", course.mapPreview == null)
+            val source = fixture.preview.source as MapPreview.Source.NavigationRequest
+            assertTrue(
+                "전체 요청 원본과 코스 버전을 보존해야 합니다",
+                source.courseId == course.id && source.courseVersion == course.version &&
+                    source.briefingVersion == course.briefingVersion && source.route == route,
+            )
+            assertEquals("요청 장소 출처를 구분해야 합니다", "NAVIGATION_REQUEST", fixture.preview.sourceCode)
+            assertEquals(
+                "현재 요청 장소 preview의 정체성을 보존해야 합니다",
+                "${course.id}-navigation-request-pois",
+                fixture.preview.id,
+            )
+            assertEquals("현재 코스 version을 표시해야 합니다", course.version, fixture.preview.version)
+            val pois = route.waypoints + route.destination
+            assertTrue("현재 공개 요청의 경유지와 도착지 두 개만 검사합니다", pois.size == 2 && fixture.preview.points.size == pois.size)
+            pois.forEachIndexed { index, poi ->
+                val point = fixture.preview.points[index]
+                val expectedRole = if (index < route.waypoints.size) MapPreview.Role.WAYPOINT else MapPreview.Role.DESTINATION
+                val expectedId = "poi:${poi.poiId.length}:${poi.poiId}${poi.poiSubId.length}:${poi.poiSubId}"
+                assertTrue(
+                    "표시 지점은 원래 요청 POI ID/이름/좌표/역할과 일치해야 합니다",
+                    point.id == expectedId && point.title == poi.name && point.latitude == poi.latitude &&
+                        point.longitude == poi.longitude && point.role == expectedRole,
+                )
+                assertPoiText("map_point_$index", selectedPointTitle(fixture.preview, index))
+            }
+            assertTrue("추가 시연 지점을 만들면 안 됩니다", nodes("map_point_2").isEmpty() && nodes("map_demo_badge").isEmpty())
+            assertPoiText("map_navigation_request_badge", "내비 요청 장소")
+            assertPoiText("map_navigation_request_scope", "내비에 요청할 장소이며 실제 안내 경로와 현재 위치는 표시하지 않아요.")
+            val directory = File(instrumentation.targetContext.cacheDir, "screenshots/navigation-request-pois-${UUID.randomUUID()}")
+            check(directory.mkdirs()) { "POI_MAP_PRIVATE_CACHE" }
+            capturePoiRegion(directory, "pois-map.png", "map_view")
+            capturePoiRegion(directory, "pois-list.png", "map_point_choices")
+            assertNoCanvasSelection(fixture, initial.view)
+            for (index in pois.indices) {
+                tapPreviewPoint(fixture, initial.view, index, waitForPreparedPoint = true)
+                assertTrue("요청 장소 강조는 실제 camera를 움직이면 안 됩니다", sameCamera(initial.camera, awaitStableCamera(initial.view)))
+            }
+            assertPoiText("map_navigation_request_selected_point", "선택한 내비 요청 장소")
+            assertPoiText("map_navigation_request_selected_point_scope", "같은 번호에 테두리를 표시했어요. 이 선택으로 길안내를 시작하지 않아요.")
+            capturePoiRegion(directory, "poi-selected.png", "map_selected_point")
+            val original = checkNotNull(fixture.repository.values.value)
+            val oldState = fixture.model.uiState.value
+            val oldChoice =
+                checkNotNull(
+                    nodes("map_point_0")
+                        .single()
+                        .config
+                        .getOrNull(SemanticsActions.OnClick)
+                        ?.action,
+                )
+            try {
+                val fixedCourse = catalog.courses.first { it.mapPreview != null }
+                val fixedGoal = catalog.goals.first { it.id in fixedCourse.goalIds }
+                val fixedSelection =
+                    PracticeSelection(
+                        fixedGoal.id,
+                        fixedCourse.id,
+                        fixedCourse.version,
+                        fixedCourse.briefingVersion,
+                        fixedCourse.tasks.first().id,
+                    )
+                onMain { fixture.repository.values.value = fixedSelection }
+                compose.waitUntil(90_000) {
+                    (fixture.model.uiState.value.preparation as? MapPreparationState.Ready)?.prepared?.course ==
+                        fixedCourse &&
+                        fixture.model.uiState.value.load == MapLoadState.READY
+                }
+                val fixedPreview = (fixture.model.uiState.value.preparation as MapPreparationState.Ready).preview
+                assertEquals("기존 OSM 시연 원본을 보존해야 합니다", fixedCourse.mapPreview, (fixedPreview.source as MapPreview.Source.FixedOsm).preview)
+                compose.onNodeWithTag("map_view", useUnmergedTree = true).performScrollTo()
+                val fixedNative = awaitPreview(fixedPreview)
+                assertTrue("출처 교체는 새 native View여야 합니다", fixedNative.view !== initial.view)
+                val fixedState = fixture.model.uiState.value
+                onMain {
+                    oldChoice.invoke()
+                    fixture.model.onMapFailed(oldState.attempt, oldState.rendererToken)
+                    fixture.model.onMapRendered(oldState.attempt, oldState.rendererToken)
+                }
+                compose.waitForIdle()
+                assertTrue(
+                    "옛 요청 장소 callback은 새 시연 renderer를 바꾸면 안 됩니다",
+                    fixture.model.uiState.value.attempt == fixedState.attempt &&
+                        fixture.model.uiState.value.rendererToken == fixedState.rendererToken &&
+                        fixture.model.uiState.value.load == MapLoadState.READY,
+                )
+                assertNoCanvasSelection(fixture.copy(preview = fixedPreview), fixedNative.view)
+                awaitPreview(fixedPreview)
+                onMain { fixture.repository.values.value = original }
+                compose.waitUntil(90_000) {
+                    (fixture.model.uiState.value.preparation as? MapPreparationState.Ready)?.preview ==
+                        fixture.preview &&
+                        fixture.model.uiState.value.load == MapLoadState.READY
+                }
+                compose.onNodeWithTag("map_view", useUnmergedTree = true).performScrollTo()
+                val returned = awaitPreview(fixture.preview)
+                assertTrue("요청 장소 복귀도 이전 View를 재사용하면 안 됩니다", returned.view !== fixedNative.view && returned.view !== initial.view)
+                onMain { oldChoice.invoke() }
+                compose.waitForIdle()
+                assertNoCanvasSelection(fixture, returned.view)
+
+                val beforeD =
+                    checkNotNull(
+                        nodes("map_point_0")
+                            .single()
+                            .config
+                            .getOrNull(SemanticsActions.OnClick)
+                            ?.action,
+                    )
+                val dPoint = canvasPoint(returned.view, fixture.preview, 0)
+                val dDown = freshCanvasDownTime()
+                sendCanvasTouch(returned.view, dDown, MotionEvent.ACTION_DOWN, dPoint)
+                onMain { fixture.vehicleState.publish(parked().copy(gear = VehicleReading.Available(GearPosition.DRIVE))) }
+                compose.waitUntil(20_000) { nodes("map_locked").size == 1 && nodes("map_view").isEmpty() && currentMapView() == null }
+                onMain { beforeD.invoke() }
+                assertTrue(
+                    "D에서는 상세 선택을 남기면 안 됩니다",
+                    fixture.model.uiState.value.pointSelection == null && nodes("map_point_choices").isEmpty(),
+                )
+                onMain { fixture.vehicleState.publish(parked()) }
+                waitMapReady()
+                compose.onNodeWithTag("map_view", useUnmergedTree = true).performScrollTo()
+                val parkedAgain = awaitPreview(fixture.preview)
+                assertTrue("P 복귀는 새 native View여야 합니다", parkedAgain.view !== returned.view)
+                onMain { beforeD.invoke() }
+                sendCanvasTouch(returned.view, dDown, MotionEvent.ACTION_UP, dPoint, throughActivity = false)
+                sendCanvasTouch(parkedAgain.view, dDown, MotionEvent.ACTION_UP, dPoint, throughActivity = false)
+                compose.waitForIdle()
+                assertNoCanvasSelection(fixture, parkedAgain.view)
+                tapPreviewPoint(fixture, parkedAgain.view, 0, waitForPreparedPoint = true)
+
+                val beforeStop =
+                    checkNotNull(
+                        nodes("map_point_1")
+                            .single()
+                            .config
+                            .getOrNull(SemanticsActions.OnClick)
+                            ?.action,
+                    )
+                val stopPoint = canvasPoint(parkedAgain.view, fixture.preview, 1)
+                val stopDown = freshCanvasDownTime()
+                sendCanvasTouch(parkedAgain.view, stopDown, MotionEvent.ACTION_DOWN, stopPoint)
+                compose.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
+                compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+                waitMapReady()
+                compose.onNodeWithTag("map_view", useUnmergedTree = true).performScrollTo()
+                val resumed = awaitPreview(fixture.preview)
+                assertTrue("STOP 후에는 새 native View여야 합니다", resumed.view !== parkedAgain.view)
+                onMain { beforeStop.invoke() }
+                sendCanvasTouch(parkedAgain.view, stopDown, MotionEvent.ACTION_UP, stopPoint, throughActivity = false)
+                sendCanvasTouch(resumed.view, stopDown, MotionEvent.ACTION_UP, stopPoint, throughActivity = false)
+                compose.waitForIdle()
+                assertNoCanvasSelection(fixture, resumed.view)
+                tapPreviewPoint(fixture, resumed.view, 1, waitForPreparedPoint = true)
+                assertTrue("새 P 입력은 현재 View의 camera를 보존해야 합니다", sameCamera(resumed.camera, awaitStableCamera(resumed.view)))
+                pointChoiceTrace("NAVIGATION_POIS_COMPLETED", "catalogMatched" to true, "ownersRejected" to true)
+            } finally {
+                onMain {
+                    fixture.repository.values.value = original
+                    fixture.vehicleState.publish(parked())
+                }
+            }
+        }
+    }
+
+    private fun assertPoiText(
+        tag: String,
+        expected: String,
+    ) {
+        compose.onNodeWithTag(tag, useUnmergedTree = true).performScrollTo()
+        compose.waitForIdle()
+
+        fun texts(node: SemanticsNode): List<String> =
+            node.config
+                .getOrNull(SemanticsProperties.Text)
+                .orEmpty()
+                .map { it.text } + node.children.flatMap(::texts)
+        assertTrue("현재 역할/출처의 실제 표시 문구를 확인해야 합니다", texts(nodes(tag).single()).contains(expected))
+    }
+
+    private fun capturePoiRegion(
+        directory: File,
+        name: String,
+        tag: String,
+    ) {
+        compose.onNodeWithTag(tag, useUnmergedTree = true).performScrollTo()
+        compose.waitForIdle()
+        assertTrue(
+            "캡처 전에 실제 host가 전면을 유지해야 합니다",
+            compose.activity.lifecycle.currentState == Lifecycle.State.RESUMED && compose.activity.hasWindowFocus(),
+        )
+        val node = nodes(tag).single()
+        val origin = node.positionOnScreen - node.positionInWindow
+        val bounds = node.boundsInWindow
+        val left = (bounds.left + origin.x).roundToInt()
+        val top = (bounds.top + origin.y).roundToInt()
+        val width = bounds.width.roundToInt()
+        val height = bounds.height.roundToInt()
+        val bitmap = checkNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()) { "POI_MAP_CAPTURE" }
+        try {
+            assertTrue(
+                "태그 영역 전체가 실제 캡처 안에 있어야 합니다",
+                left >= 0 && top >= 0 && width > 0 && height > 0 && left + width <= bitmap.width && top + height <= bitmap.height,
+            )
+            val cropped = Bitmap.createBitmap(bitmap, left, top, width, height)
+            try {
+                File(
+                    directory,
+                    name,
+                ).outputStream().use { check(cropped.compress(Bitmap.CompressFormat.PNG, 100, it)) { "POI_MAP_CAPTURE_WRITE" } }
+            } finally {
+                if (cropped !== bitmap) cropped.recycle()
+            }
+        } finally {
+            bitmap.recycle()
+        }
+    }
 
     /** Baseline RED target: synthetic gate, real Activity dispatch/Route/MapLibre, no SDK/Room claim. */
     @Test fun nativeCanvasPointTapsSelectAllThreeCurrentPointsWithoutMovingCamera() =
@@ -115,7 +369,10 @@ class MapInputLifecycleTest {
         val courses = LocalPracticeCatalog().courses.filter { it.mapPreview != null }
         assertTrue("서로 다른 두 공개 시연 preview가 있어야 합니다", courses.size >= 2)
         withMap(courseId = courses[1].id) { fixture, initial ->
-            assertTrue("두 번째 실제 카탈로그 preview를 사용해야 합니다", fixture.preview == courses[1].mapPreview)
+            assertTrue(
+                "두 번째 실제 카탈로그 preview를 사용해야 합니다",
+                (fixture.preview.source as? MapPreview.Source.FixedOsm)?.preview == courses[1].mapPreview,
+            )
             assertNoCanvasSelection(fixture, initial.view)
             for (index in fixture.preview.points.indices) {
                 tapPreviewPoint(fixture, initial.view, index)
@@ -315,7 +572,7 @@ class MapInputLifecycleTest {
                 checkNotNull(
                     catalog.courses.firstOrNull { it.id != original.courseId && it.mapPreview?.points?.size == 3 },
                 )
-            val secondPreview = checkNotNull(secondCourse.mapPreview)
+            val secondDomainPreview = checkNotNull(secondCourse.mapPreview)
             val secondGoal = catalog.goals.first { it.id in secondCourse.goalIds }
             val secondTask = secondCourse.tasks.first()
             val secondSelection =
@@ -326,7 +583,11 @@ class MapInputLifecycleTest {
                     secondCourse.briefingVersion,
                     secondTask.id,
                 )
-            assertTrue("두 번째 실제 카탈로그 preview여야 합니다", secondPreview != fixture.preview && secondPreview.points.size == 3)
+            assertTrue(
+                "두 번째 실제 카탈로그 preview여야 합니다",
+                secondDomainPreview != (fixture.preview.source as MapPreview.Source.FixedOsm).preview &&
+                    secondDomainPreview.points.size == 3,
+            )
             try {
                 compose.runOnIdle { fixture.repository.values.value = secondSelection }
                 compose.mainClock.advanceTimeByFrame()
@@ -335,11 +596,13 @@ class MapInputLifecycleTest {
                     val current = fixture.model.uiState.value
                     val preparation = current.preparation as? MapPreparationState.Ready
                     current.load == MapLoadState.READY && current.rendererToken > 0 && preparation != null &&
-                        preparation.prepared.course.id == secondCourse.id && preparation.preview == secondPreview
+                        preparation.prepared.course.id == secondCourse.id &&
+                        (preparation.preview.source as? MapPreview.Source.FixedOsm)?.preview == secondDomainPreview
                 }
                 waitMapReady()
                 compose.onNodeWithTag("map_view", useUnmergedTree = true).performScrollTo()
                 compose.waitForIdle()
+                val secondPreview = (fixture.model.uiState.value.preparation as MapPreparationState.Ready).preview
                 val second = awaitPreview(secondPreview)
                 assertTrue("다른 source는 실제 새 native View로 표시돼야 합니다", second.view !== initial.view)
                 val currentPreparation = fixture.model.uiState.value.preparation as MapPreparationState.Ready
@@ -987,7 +1250,7 @@ class MapInputLifecycleTest {
      */
     private suspend fun secondPointerContactAtPreviewPoint(
         view: MapView,
-        preview: CourseMapPreview,
+        preview: MapPreview,
         index: Int,
     ) {
         awaitCanvasPoint(view, preview, index, "negative_multiple_pointers_before_down")
@@ -1183,7 +1446,7 @@ class MapInputLifecycleTest {
 
     private suspend fun canvasPoint(
         view: MapView,
-        preview: CourseMapPreview,
+        preview: MapPreview,
         index: Int,
     ): CanvasPixel {
         compose.onNodeWithTag("map_view", useUnmergedTree = true).performScrollTo()
@@ -1209,7 +1472,7 @@ class MapInputLifecycleTest {
      */
     private suspend fun awaitCanvasPoint(
         view: MapView,
-        preview: CourseMapPreview,
+        preview: MapPreview,
         index: Int,
         purpose: String,
     ): CanvasPixel {
@@ -1246,7 +1509,9 @@ class MapInputLifecycleTest {
                                     feature.getStringProperty("title") == expected.title &&
                                         feature.getStringProperty("preview_id") == preview.id &&
                                         feature.getNumberProperty("preview_version").toDouble() == preview.version.toDouble() &&
-                                        feature.getNumberProperty("order").toDouble() == (index + 1).toDouble()
+                                        feature.getNumberProperty("order").toDouble() == (index + 1).toDouble() &&
+                                        feature.getStringProperty("preview_source") == preview.sourceCode &&
+                                        feature.getStringProperty("point_role") == expected.role.name
                                 if (geometry == null) {
                                     false
                                 } else {
@@ -1339,7 +1604,7 @@ class MapInputLifecycleTest {
                     .singleOrNull()
                     ?.config
                     ?.getOrNull(SemanticsProperties.Text)
-                    ?.any { it.text == expected.title } == true && nodes("map_selection_pending").isEmpty()
+                    ?.any { it.text == selectedPointTitle(fixture.preview, index) } == true && nodes("map_selection_pending").isEmpty()
         }
         for (choice in fixture.preview.points.indices) {
             assertTrue(
@@ -1355,6 +1620,18 @@ class MapInputLifecycleTest {
                     layer.filter?.toArray()?.contentDeepEquals(expression.toArray()) == true
             }
         assertTrue("현재 native 선택 filter는 누른 point의 정확한 식이어야 합니다", filterMatches)
+    }
+
+    private fun selectedPointTitle(
+        preview: MapPreview,
+        index: Int,
+    ): String {
+        val point = preview.points[index]
+        return when (point.role) {
+            MapPreview.Role.LANDMARK -> point.title
+            MapPreview.Role.WAYPOINT -> "${index + 1}. 경유지 ${point.title}"
+            MapPreview.Role.DESTINATION -> "${index + 1}. 도착지 ${point.title}"
+        }
     }
 
     private suspend fun assertNoCanvasSelection(
@@ -1399,8 +1676,7 @@ class MapInputLifecycleTest {
             InstrumentationRegistry.getArguments().getString("manualMapInputBoundary") == "true",
         )
         val catalog = LocalPracticeCatalog()
-        val course = catalog.courses.first { it.mapPreview != null && (courseId == null || it.id == courseId) }
-        val preview = checkNotNull(course.mapPreview)
+        val course = catalog.courses.first { if (courseId == null) it.mapPreview != null else it.id == courseId }
         val goal = catalog.goals.first { it.id in course.goalIds }
         val selection = PracticeSelection(goal.id, course.id, course.version, course.briefingVersion, course.tasks.first().id)
         val repository = FixturePreparation(selection)
@@ -1427,14 +1703,16 @@ class MapInputLifecycleTest {
             model = ViewModelProvider(compose.activity, factory)[MapViewModel::class.java]
         }
         val shown = mutableStateOf(true)
-        val fixture = Fixture(model, vehicleState, preview, repository)
         var primaryFailure: Throwable? = null
         try {
             compose.setContent { HanGilTheme { if (shown.value) MapRoute(onClose = {}, viewModel = model) } }
             runBlocking {
                 waitMapReady()
                 compose.onNodeWithTag("map_view", useUnmergedTree = true).performScrollTo()
-                block(fixture, awaitPreview(preview))
+                val ready = model.uiState.value.preparation as MapPreparationState.Ready
+                assertEquals("현재 생산 VM이 선택한 카탈로그 원본을 표시해야 합니다", course, ready.prepared.course)
+                val fixture = Fixture(model, vehicleState, ready.preview, repository)
+                block(fixture, awaitPreview(ready.preview))
             }
         } catch (failure: Throwable) {
             primaryFailure = failure
@@ -1695,7 +1973,7 @@ class MapInputLifecycleTest {
     private data class Fixture(
         val model: MapViewModel,
         val vehicleState: SilentLiveState<VehicleState>,
-        val preview: CourseMapPreview,
+        val preview: MapPreview,
         val repository: FixturePreparation,
     )
 
@@ -1758,7 +2036,7 @@ class MapInputLifecycleTest {
         }
     }
 
-    private suspend fun awaitPreview(preview: CourseMapPreview): NativeReadback =
+    private suspend fun awaitPreview(preview: MapPreview): NativeReadback =
         withTimeout(90_000) {
             var value: NativeReadback? = null
             while (value == null) {
@@ -1840,7 +2118,7 @@ class MapInputLifecycleTest {
 
     /** All JNI queries stay on Main and no MapLibreMap/Style/native handle escapes the callback. */
     private suspend fun nativePreviewReadback(
-        preview: CourseMapPreview,
+        preview: MapPreview,
         timeoutMs: Long = 5_000,
     ): NativeReadback? {
         val result = CompletableDeferred<NativeReadback?>()
@@ -1871,7 +2149,13 @@ class MapInputLifecycleTest {
                             var valid = styleReady && source != null && layerIdsMatch && layersVisible
                             val features = source?.querySourceFeatures(null).orEmpty()
                             val ids = features.map { it.getStringProperty("point_id") }.toSet()
-                            valid = valid && ids == preview.points.map { it.id }.toSet() && preview.points.size == 3
+                            val pointCountMatches =
+                                when (val sourceKind = preview.source) {
+                                    is MapPreview.Source.FixedOsm -> preview.points.size == 3 && sourceKind.preview.points.size == 3
+                                    is MapPreview.Source.NavigationRequest -> preview.points.size == sourceKind.route.waypoints.size + 1
+                                }
+                            valid = valid && ids == preview.points.map { it.id }.toSet() && pointCountMatches &&
+                                style?.layers?.filterIsInstance<LineLayer>()?.none { it.sourceId == SOURCE_ID } == true
                             for (feature in features) {
                                 val index = preview.points.indexOfFirst { it.id == feature.getStringProperty("point_id") }
                                 if (index < 0) {
@@ -1885,7 +2169,9 @@ class MapInputLifecycleTest {
                                 val actualVersion = feature.getNumberProperty("preview_version").toDouble()
                                 val sameVersion = actualVersion == preview.version.toDouble()
                                 valid = valid && point != null && feature.getStringProperty("title") == expected.title &&
-                                    sameOrder && sameId && sameVersion
+                                    sameOrder && sameId && sameVersion &&
+                                    feature.getStringProperty("preview_source") == preview.sourceCode &&
+                                    feature.getStringProperty("point_role") == expected.role.name
                                 if (point != null) {
                                     val actual = map.projection.toScreenLocation(LatLng(point.latitude(), point.longitude()))
                                     val expectedLocation = LatLng(expected.latitude, expected.longitude)
@@ -1991,6 +2277,11 @@ class MapInputLifecycleTest {
 
         fun setWithoutEmission(value: T) {
             current = value
+        }
+
+        fun publish(value: T) {
+            current = value
+            emitted.value = value
         }
     }
 

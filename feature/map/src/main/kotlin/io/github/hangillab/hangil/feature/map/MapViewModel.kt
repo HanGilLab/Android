@@ -3,7 +3,6 @@ package io.github.hangillab.hangil.feature.map
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
-import io.github.hangillab.hangil.core.domain.CourseMapPreview
 import io.github.hangillab.hangil.core.domain.DrivingRestrictionsProvider
 import io.github.hangillab.hangil.core.domain.PracticeCatalog
 import io.github.hangillab.hangil.core.domain.PracticeRepository
@@ -134,7 +133,7 @@ class MapViewModel
         fun selectPoint(
             attempt: Int,
             token: Long,
-            preview: CourseMapPreview,
+            preview: MapPreview,
             pointId: String,
             canPresent: () -> Boolean,
         ): Long? {
@@ -373,12 +372,18 @@ class MapViewModel
                     if (actual != selection || practice.goal.id !in practice.course.goalIds || practice.task !in practice.course.tasks) {
                         throw InvalidPreparation()
                     }
-                    val preview = practice.course.mapPreview
+                    val preview = MapPreview.from(practice.course)
                     if (preview == null) {
                         MapPreparationState.Unavailable(practice)
+                    } else if (preview.points.any { it.latitude !in -85.0511287798066..85.0511287798066 }) {
+                        MapPreparationState.Unavailable(practice, MapPreparationState.UnavailableReason.OUTSIDE_MAP_RANGE)
                     } else {
-                        val snapshot = preview.copy(points = preview.points.toList())
-                        MapPreparationState.Ready(practice.copy(course = practice.course.copy(mapPreview = snapshot)), snapshot)
+                        val course =
+                            when (val source = preview.source) {
+                                is MapPreview.Source.FixedOsm -> practice.course.copy(mapPreview = source.preview)
+                                is MapPreview.Source.NavigationRequest -> practice.course.copy(navigationRoute = source.route)
+                            }
+                        MapPreparationState.Ready(practice.copy(course = course), preview)
                     }
                 }
             }

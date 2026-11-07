@@ -16,7 +16,7 @@ class CoursePreviewLayersTest {
 
     @Test fun `GeoJSON preserves longitude latitude order and fixed preview identity`() {
         val preview = CourseMapPreview("public-places", 1, "서울 시청 주변", points)
-        val features = checkNotNull(CoursePreviewLayers.features(preview).features())
+        val features = checkNotNull(CoursePreviewLayers.features(MapPreview.from(preview)).features())
         assertEquals(2, features.size)
         features.forEachIndexed { index, feature ->
             assertTrue(feature.geometry() is Point)
@@ -35,7 +35,7 @@ class CoursePreviewLayersTest {
         val filter = CoursePreviewLayers.selectionFilter(null).toArray()
         assertTrue(arrayOf<Any>("literal", false).contentDeepEquals(filter))
         val preview = CourseMapPreview("public-places", 1, "서울 시청 주변", points)
-        val features = checkNotNull(CoursePreviewLayers.features(preview).features())
+        val features = checkNotNull(CoursePreviewLayers.features(MapPreview.from(preview)).features())
         assertEquals(listOf("city-hall", "plaza"), features.map { it.getStringProperty("point_id") })
     }
 
@@ -52,9 +52,9 @@ class CoursePreviewLayersTest {
     }
 
     @Test fun `new preview creates only its own point features without retaining previous content`() {
-        CoursePreviewLayers.features(CourseMapPreview("old", 1, "이전", points))
+        CoursePreviewLayers.features(MapPreview.from(CourseMapPreview("old", 1, "이전", points)))
         val next = CourseMapPreview("new", 2, "새 미리보기", points.reversed())
-        val features = checkNotNull(CoursePreviewLayers.features(next).features())
+        val features = checkNotNull(CoursePreviewLayers.features(MapPreview.from(next)).features())
         assertEquals(listOf("plaza", "city-hall"), features.map { it.getStringProperty("point_id") })
         assertTrue(features.all { it.getStringProperty("preview_id") == "new" && it.getNumberProperty("preview_version").toInt() == 2 })
     }

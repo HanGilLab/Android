@@ -28,7 +28,7 @@ class MapPointHitTestTest {
                 CoursePreviewPoint("one", "Fixed one", 37.0, 127.0, 1, 1),
                 CoursePreviewPoint("two", "Fixed two", 37.1, 127.1, 2, 1),
             ),
-        )
+        ).let(MapPreview::from)
 
     @Test fun noHitsDoNotInventAnIdOrCallProjection() {
         val result = MapPointHitTest.match(preview, emptyList()) { _, _ -> error("Empty hit must not project") }
@@ -98,6 +98,11 @@ class MapPointHitTestTest {
         assertNull(match(listOf(feature().apply { addNumberProperty("order", 0) })))
     }
 
+    @Test fun sourceAndRoleMustBelongToTheCurrentPreview() {
+        assertNull(match(listOf(feature().apply { addStringProperty("preview_source", "NAVIGATION_REQUEST") })))
+        assertNull(match(listOf(feature().apply { addStringProperty("point_role", "DESTINATION") })))
+    }
+
     @Test fun titleMustMatchTheCurrentFrozenPointWithoutTrimmingOrFallback() {
         for (title in listOf("", "Fixed one ", "Fixed two")) {
             assertNull(match(listOf(feature().apply { addStringProperty("title", title) })))
@@ -105,7 +110,7 @@ class MapPointHitTestTest {
     }
 
     @Test fun allTextIdentityFieldsRequireActualJsonStrings() {
-        for (key in listOf("point_id", "title", "preview_id")) {
+        for (key in listOf("point_id", "title", "preview_id", "preview_source", "point_role")) {
             assertNull(match(listOf(feature().apply { addBooleanProperty(key, false) })))
             assertNull(match(listOf(feature().apply { addNumberProperty(key, 1) })))
             val objectValue = feature()
@@ -115,7 +120,7 @@ class MapPointHitTestTest {
     }
 
     @Test fun missingNullObjectAndArrayPropertiesDoNotBecomeDefaultValues() {
-        for (key in listOf("point_id", "title", "preview_id", "preview_version", "order")) {
+        for (key in listOf("point_id", "title", "preview_id", "preview_source", "point_role", "preview_version", "order")) {
             val missing = feature().apply { checkNotNull(properties()).remove(key) }
             assertNull(match(listOf(missing)))
             for (replacement in listOf(JsonNull.INSTANCE, JsonObject(), JsonArray())) {

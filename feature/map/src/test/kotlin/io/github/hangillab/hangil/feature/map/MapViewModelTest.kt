@@ -11,6 +11,7 @@ import io.github.hangillab.hangil.core.domain.ParkingState
 import io.github.hangillab.hangil.core.domain.PracticeCatalog
 import io.github.hangillab.hangil.core.domain.PracticeCourse
 import io.github.hangillab.hangil.core.domain.PracticeGoal
+import io.github.hangillab.hangil.core.domain.PracticeNavigationRoute
 import io.github.hangillab.hangil.core.domain.PracticeRepository
 import io.github.hangillab.hangil.core.domain.PracticeSelection
 import io.github.hangillab.hangil.core.domain.PracticeTask
@@ -44,6 +45,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -110,13 +112,109 @@ class MapViewModelTest {
             assertEquals("b", ready.prepared.course.id)
             assertEquals("task-b", ready.prepared.task.id)
             assertEquals("preview-b", ready.preview.id)
-            assertEquals(CoursePreviewSource.FIXED_OSM_BOUNDING_BOX_CENTERS, ready.preview.source)
+            assertEquals(
+                CoursePreviewSource.FIXED_OSM_BOUNDING_BOX_CENTERS,
+                (ready.preview.source as MapPreview.Source.FixedOsm).preview.source,
+            )
             val attempt = fixture.model.uiState.value.attempt
             val token = checkNotNull(fixture.model.onMapLoading(attempt))
             fixture.model.onMapRendered(attempt, token)
             runCurrent()
             assertEquals(MapLoadState.READY, fixture.model.uiState.value.load)
             assertEquals(ready, fixture.model.uiState.value.preparation)
+            assertEquals(0, fixture.repository.writes)
+        }
+
+    @Test fun `navigation only sources freeze request metadata and retire the renderer on a repeated selection`() =
+        runTest {
+            val fixture = Fixture()
+            val waypoint = PracticeNavigationRoute.Point("Waypoint", 37.0, 127.0, "w:1", "0", "Public waypoint fixture")
+            val destination = PracticeNavigationRoute.Point("Destination", 37.1, 127.1, "d:1", "0", "Public destination fixture")
+            val mutableWaypoints = mutableListOf(waypoint)
+            val route = PracticeNavigationRoute(destination, mutableWaypoints)
+            fixture.catalog.courses = listOf(course("a", map = null).copy(navigationRoute = route))
+            val changes = MutableSharedFlow<PracticeSelection?>(replay = 1)
+            changes.tryEmit(selection("a"))
+            fixture.repository.source = { changes }
+            subscribe(fixture)
+            val first = ready(fixture)
+            assertEquals(listOf("Waypoint", "Destination"), first.preview.points.map { it.title })
+            assertEquals(listOf(MapPreview.Role.WAYPOINT, MapPreview.Role.DESTINATION), first.preview.points.map { it.role })
+            assertEquals(listOf(37.0 to 127.0, 37.1 to 127.1), first.preview.points.map { it.latitude to it.longitude })
+            val originalSource = first.preview.source as MapPreview.Source.NavigationRequest
+            assertEquals(route, originalSource.route)
+            val attempt = fixture.model.uiState.value.attempt
+            val token = checkNotNull(fixture.model.onMapLoading(attempt))
+            fixture.model.onMapRendered(attempt, token)
+            runCurrent()
+            val pointId =
+                first.preview.points
+                    .first()
+                    .id
+            assertNotNull(fixture.model.selectPoint(attempt, token, first.preview, pointId) { true })
+            mutableWaypoints[0] = waypoint.copy(address = "Changed request address")
+            assertEquals(waypoint, originalSource.route.waypoints.single())
+            assertEquals(
+                waypoint,
+                first.prepared.course.navigationRoute
+                    ?.waypoints
+                    ?.single(),
+            )
+            changes.emit(selection("a"))
+            runCurrent()
+            val replacement = ready(fixture)
+            assertEquals(
+                "Changed request address",
+                (replacement.preview.source as MapPreview.Source.NavigationRequest)
+                    .route.waypoints
+                    .single()
+                    .address,
+            )
+            assertNotEquals(first.preview, replacement.preview)
+            assertNotEquals(attempt, fixture.model.uiState.value.attempt)
+            assertFalse(fixture.model.canInteractWithMap(attempt, token))
+            assertNull(fixture.model.selectPoint(attempt, token, first.preview, pointId) { true })
+            fixture.model.onMapRendered(attempt, token)
+            fixture.model.onMapFailed(attempt, token)
+            runCurrent()
+            assertEquals(MapLoadState.LOADING, fixture.model.uiState.value.load)
+            assertNull(fixture.model.uiState.value.pointSelection)
+            assertEquals(0, fixture.repository.writes)
+        }
+
+    @Test fun `coincident navigation POIs remain separate and an existing OSM preview keeps precedence`() =
+        runTest {
+            val fixture = Fixture()
+            val waypoint = PracticeNavigationRoute.Point("Waypoint", 37.0, 127.0, "w", "0", "Waypoint fixture")
+            val destination = waypoint.copy(name = "Destination", poiId = "d", address = "Destination fixture")
+            val route = PracticeNavigationRoute(destination, listOf(waypoint))
+            fixture.catalog.courses = listOf(course("a", map = null).copy(navigationRoute = route))
+            subscribe(fixture)
+            val preview = ready(fixture).preview
+            assertTrue(preview.source is MapPreview.Source.NavigationRequest)
+            assertEquals(2, preview.points.size)
+            assertNotEquals(preview.points[0].id, preview.points[1].id)
+            assertEquals(
+                preview.points[0].latitude to preview.points[0].longitude,
+                preview.points[1].latitude to preview.points[1].longitude,
+            )
+            val fixed = checkNotNull(MapPreview.from(course("a").copy(navigationRoute = route)))
+            assertTrue(fixed.source is MapPreview.Source.FixedOsm)
+            assertEquals(listOf("a-1", "a-2"), fixed.points.map { it.id })
+        }
+
+    @Test fun `out of projection navigation coordinates are unavailable without changing the request`() =
+        runTest {
+            val fixture = Fixture()
+            val waypoint = PracticeNavigationRoute.Point("Polar waypoint", 90.0, 127.0, "w", "0", "Public fixture")
+            val destination = waypoint.copy(name = "Destination", latitude = 37.0, poiId = "d")
+            fixture.catalog.courses =
+                listOf(course("a", map = null).copy(navigationRoute = PracticeNavigationRoute(destination, listOf(waypoint))))
+            subscribe(fixture)
+            val state = fixture.model.uiState.value.preparation as MapPreparationState.Unavailable
+            assertEquals(MapPreparationState.UnavailableReason.OUTSIDE_MAP_RANGE, state.reason)
+            assertEquals(90.0, checkNotNull(state.prepared.course.navigationRoute).waypoints.single().latitude, 0.0)
+            assertNull(fixture.model.onMapLoading(fixture.model.uiState.value.attempt))
             assertEquals(0, fixture.repository.writes)
         }
 

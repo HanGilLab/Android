@@ -147,14 +147,26 @@ private fun PreparedMap(
     onNativeSelect: (String, () -> Boolean) -> Unit,
 ) {
     val preview = preparation.preview
+    val isNavigationRequest = preview.source is MapPreview.Source.NavigationRequest
+    val pointTitles =
+        preview.points.mapIndexed { index, point ->
+            when (point.role) {
+                MapPreview.Role.LANDMARK -> "${index + 1}. ${point.title}"
+                MapPreview.Role.WAYPOINT -> stringResource(R.string.map_point_waypoint, index + 1, point.title)
+                MapPreview.Role.DESTINATION -> stringResource(R.string.map_point_destination, index + 1, point.title)
+            }
+        }
     val dark = isSystemInDarkTheme()
     val scale = LocalDensity.current.fontScale
     Column(verticalArrangement = Arrangement.spacedBy(HanGilSpacing.md)) {
         Text(preview.title, Modifier.testTag("map_preview_title"), style = MaterialTheme.typography.bodyLarge)
-        Column(Modifier.testTag("map_demo_badge")) { PracticeBadge(stringResource(R.string.map_demo_badge)) }
+        Column(Modifier.testTag(if (isNavigationRequest) "map_navigation_request_badge" else "map_demo_badge")) {
+            PracticeBadge(stringResource(if (isNavigationRequest) R.string.map_navigation_request_badge else R.string.map_demo_badge))
+        }
         Text(
-            stringResource(R.string.map_demo_region),
-            style = MaterialTheme.typography.bodyMedium,
+            stringResource(if (isNavigationRequest) R.string.map_navigation_request_scope else R.string.map_demo_region),
+            Modifier.testTag(if (isNavigationRequest) "map_navigation_request_scope" else "map_demo_region"),
+            style = if (isNavigationRequest) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
@@ -182,7 +194,16 @@ private fun PreparedMap(
                     pointFill = MaterialTheme.colorScheme.primary.toArgb(),
                     pointText = MaterialTheme.colorScheme.onPrimary.toArgb(),
                     pointBorder = MaterialTheme.colorScheme.surface.toArgb(),
-                    contentDescription = stringResource(R.string.map_content_description, preparation.prepared.course.title),
+                    contentDescription =
+                        if (isNavigationRequest) {
+                            stringResource(
+                                R.string.map_navigation_request_content_description,
+                                preparation.prepared.course.title,
+                                pointTitles.joinToString(", "),
+                            )
+                        } else {
+                            stringResource(R.string.map_content_description, preparation.prepared.course.title)
+                        },
                     onLoading = viewModel::onMapLoading,
                     canInteract = viewModel::canInteractWithMap,
                     inputChanges = viewModel.mapInputChanges,
@@ -214,16 +235,22 @@ private fun PreparedMap(
         }
     }
     Text(
-        stringResource(R.string.map_point_selection_instruction),
+        stringResource(
+            if (isNavigationRequest) {
+                R.string.map_navigation_request_point_selection_instruction
+            } else {
+                R.string.map_point_selection_instruction
+            },
+        ),
         Modifier.testTag("map_point_selection_instruction"),
         style = MaterialTheme.typography.bodyLarge,
     )
     val selection = state.pointSelection
     key(state.attempt, state.rendererToken, preview, selectionOwner) {
-        Column(verticalArrangement = Arrangement.spacedBy(HanGilSpacing.lg)) {
+        Column(Modifier.testTag("map_point_choices"), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.lg)) {
             preview.points.forEachIndexed { index, point ->
                 ParkedChoice(
-                    title = "${index + 1}. ${point.title}",
+                    title = pointTitles[index],
                     description = "",
                     selected = selection?.pointId == point.id && selection.rendered,
                     enabled = state.load == MapLoadState.READY && canSelect,
@@ -242,11 +269,41 @@ private fun PreparedMap(
         )
     }
     if (selection?.rendered == true) {
-        preview.points.singleOrNull { it.id == selection.pointId }?.let { point ->
+        preview.points.withIndex().singleOrNull { it.value.id == selection.pointId }?.let { (index, point) ->
             PracticePanel(Modifier.testTag("map_selected_point")) {
-                Text(stringResource(R.string.map_selected_point), style = MaterialTheme.typography.labelLarge)
-                Text(point.title, Modifier.testTag("map_selected_point_title"), style = MaterialTheme.typography.titleLarge)
-                Text(stringResource(R.string.map_selected_point_scope), style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    stringResource(
+                        if (isNavigationRequest) {
+                            R.string.map_navigation_request_selected_point
+                        } else {
+                            R.string.map_selected_point
+                        },
+                    ),
+                    Modifier.testTag(if (isNavigationRequest) "map_navigation_request_selected_point" else "map_selected_point_label"),
+                    style = MaterialTheme.typography.labelLarge,
+                )
+                Text(
+                    if (isNavigationRequest) pointTitles[index] else point.title,
+                    Modifier.testTag("map_selected_point_title"),
+                    style = MaterialTheme.typography.titleLarge,
+                )
+                Text(
+                    stringResource(
+                        if (isNavigationRequest) {
+                            R.string.map_navigation_request_selected_point_scope
+                        } else {
+                            R.string.map_selected_point_scope
+                        },
+                    ),
+                    Modifier.testTag(
+                        if (isNavigationRequest) {
+                            "map_navigation_request_selected_point_scope"
+                        } else {
+                            "map_selected_point_scope"
+                        },
+                    ),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
             }
         }
     }
@@ -264,7 +321,13 @@ private fun MapPreparationMessage(
             MapPreparationState.Loading, MapPreparationState.Locked -> R.string.map_preparation_loading to "map_preparation_loading"
             MapPreparationState.Empty -> R.string.map_preparation_empty to "map_preparation_empty"
             MapPreparationState.Outdated -> R.string.map_preparation_outdated to "map_preparation_outdated"
-            is MapPreparationState.Unavailable -> R.string.map_preparation_unavailable to "map_preparation_unavailable"
+            is MapPreparationState.Unavailable ->
+                when (preparation.reason) {
+                    MapPreparationState.UnavailableReason.NO_PREVIEW ->
+                        R.string.map_preparation_unavailable to "map_preparation_unavailable"
+                    MapPreparationState.UnavailableReason.OUTSIDE_MAP_RANGE ->
+                        R.string.map_preparation_outside_map_range to "map_preparation_outside_map_range"
+                }
             is MapPreparationState.Failed -> R.string.map_preparation_failed to "map_preparation_failed"
             is MapPreparationState.Ready -> return
         }
