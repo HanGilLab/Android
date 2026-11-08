@@ -49,6 +49,7 @@ import io.github.hangillab.hangil.core.database.OwnedPracticeTestStore
 import io.github.hangillab.hangil.core.designsystem.HanGilTheme
 import io.github.hangillab.hangil.core.domain.BackgroundRecordingState
 import io.github.hangillab.hangil.core.domain.ConnectionState
+import io.github.hangillab.hangil.core.domain.CourseRoadSnapshot
 import io.github.hangillab.hangil.core.domain.DrivingRestrictions
 import io.github.hangillab.hangil.core.domain.DrivingRestrictionsProvider
 import io.github.hangillab.hangil.core.domain.ForegroundLocationRecordingController
@@ -67,12 +68,16 @@ import io.github.hangillab.hangil.core.domain.LocationUpdateSample
 import io.github.hangillab.hangil.core.domain.LocationUpdateSource
 import io.github.hangillab.hangil.core.domain.NavigationGateway
 import io.github.hangillab.hangil.core.domain.NavigationScreenResult
+import io.github.hangillab.hangil.core.domain.NextPracticeSeed
 import io.github.hangillab.hangil.core.domain.ParkingState
 import io.github.hangillab.hangil.core.domain.PracticeSelection
 import io.github.hangillab.hangil.core.domain.PracticeSession
 import io.github.hangillab.hangil.core.domain.Preparation
 import io.github.hangillab.hangil.core.domain.RecordingController
 import io.github.hangillab.hangil.core.domain.SessionFinishResult
+import io.github.hangillab.hangil.core.domain.SessionReviewRoad
+import io.github.hangillab.hangil.core.domain.SessionReviewRoadRepository
+import io.github.hangillab.hangil.core.domain.SessionReviewRoadWriteResult
 import io.github.hangillab.hangil.core.domain.SessionStartResult
 import io.github.hangillab.hangil.core.domain.UxRestrictionState
 import io.github.hangillab.hangil.core.domain.VehicleGateway
@@ -93,6 +98,8 @@ import io.github.hangillab.hangil.feature.home.SessionHistoryRoute
 import io.github.hangillab.hangil.feature.home.SessionHistoryUiState
 import io.github.hangillab.hangil.feature.home.SessionHistoryViewModel
 import io.github.hangillab.hangil.feature.home.SessionMemoViewModel
+import io.github.hangillab.hangil.feature.home.SessionReviewRoadRoute
+import io.github.hangillab.hangil.feature.home.SessionReviewRoadViewModel
 import io.github.hangillab.hangil.feature.home.SessionViewModel
 import io.github.hangillab.hangil.feature.map.StoredLocationMap
 import kotlinx.coroutines.CompletableDeferred
@@ -111,6 +118,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
@@ -128,9 +137,13 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.maps.MapView
+import org.maplibre.android.style.expressions.Expression
 import org.maplibre.android.style.layers.CircleLayer
+import org.maplibre.android.style.layers.LineLayer
 import org.maplibre.android.style.sources.GeoJsonSource
+import org.maplibre.geojson.LineString
 import java.io.File
+import java.io.IOException
 import java.time.Clock
 import java.util.IdentityHashMap
 import java.util.UUID
@@ -517,6 +530,13 @@ class LocationRecordingFlowTest {
                         .observe(ended.sessionId)
                         .first()
                 }
+            val roads = checkNotNull(NextPracticeSeed.resolve(f.store.catalog, ended)).practice.course.roadSnapshots
+            val roadMemo = "테스트용 선택 도로 메모\n실제 이동 매칭이 아니에요."
+            val firstSaved =
+                runBlocking {
+                    f.store.reviewRoads.save(ended, roads[0], null, memoText = roadMemo) { true }
+                } as SessionReviewRoadWriteResult.Saved
+            assertEquals(ended, firstSaved.review.source)
             f.gateway.permission.set(false)
             val sessionsBefore =
                 runBlocking {
@@ -554,9 +574,66 @@ class LocationRecordingFlowTest {
             assertTrue(hasTextNode(instrument.targetContext.getString(HomeR.string.location_history_sdk_time, "-42")))
             assertTrue(hasTextNode(instrument.targetContext.getString(HomeR.string.location_history_confidence, "-5.0")))
             assertNoStoredMap()
+            assertEquals("A collapsed point map must not start a road query", 0, f.reviewReadAttempts.get())
             val staleOpen = clickAction("location_history_point_map")
             click("location_history_point_map")
+            val originalRoadMap = awaitStoredMap(cityHall, firstSaved.review.road)
+            assertText("review_road_comparison_scope", HomeR.string.review_road_comparison_scope)
+            assertText("review_road_source", HomeR.string.review_road_comparison_source)
+            assertTrue(hasTextNode(roadMemo))
+            assertTrue(nodes("review_road_save").isEmpty() && nodes("review_road_clear").isEmpty())
+            assertTrue(nodes("review_road_memo_edit").isEmpty() && nodes("review_road_memo_create").isEmpty())
+            visual("stored-point-and-user-selected-road", "location_history_point_map_notice", "stored_location_map")
+
+            // A separate real Room write changes the displayed road, never the selected stored sample.
+            val replaced =
+                runBlocking {
+                    f.store.reviewRoads.save(ended, roads[1], firstSaved.review, memoText = "", discardMemo = true) { true }
+                } as SessionReviewRoadWriteResult.Saved
+            val replacementMap = awaitStoredMap(cityHall, replaced.review.road)
+            assertTrue("A changed saved road owns a fresh map", replacementMap !== originalRoadMap)
+            instrument.runOnMainSync { assertFalse(originalRoadMap.isAttachedToWindow) }
+            assertEquals(
+                roads[1].title,
+                nodes("review_road_stored_title")
+                    .single()
+                    .config[SemanticsProperties.Text]
+                    .single()
+                    .text,
+            )
+            assertTrue(nodes("review_road_memo_text").isEmpty())
+
+            // Failure must remove the stale composite, not silently render point-only absence.
+            f.reviewReadFailure.value = true
+            waitTag("review_road_failed")
+            assertNoStoredMap(replacementMap)
+            assertTrue(nodes("review_road_empty").isEmpty())
+            val failedReadAttempts = f.reviewReadAttempts.get()
+            f.reviewReadFailure.value = false
+            assertNoStoredMap()
+            assertEquals("Recovery waits for explicit retry", failedReadAttempts, f.reviewReadAttempts.get())
+            click("review_road_retry")
+            val recoveredMap = awaitStoredMap(cityHall, replaced.review.road)
+            assertTrue(f.reviewReadAttempts.get() > failedReadAttempts && recoveredMap !== replacementMap)
+            assertEquals(
+                replaced.review,
+                runBlocking {
+                    f.store.reviewRoads
+                        .observe(ended.sessionId)
+                        .first()
+                },
+            )
+
+            assertEquals(
+                SessionReviewRoadWriteResult.Cleared,
+                runBlocking { f.store.reviewRoads.clear(ended, replaced.review) { true } },
+            )
+            waitTag("review_road_empty")
+            assertText("review_road_empty", HomeR.string.review_road_comparison_empty)
             val firstMap = awaitStoredMap(cityHall)
+            assertTrue("Actual absence retains only the selected sample", firstMap !== recoveredMap)
+            instrument.runOnMainSync { assertFalse(recoveredMap.isAttachedToWindow) }
+            assertTrue(nodes("review_road_stored_title").isEmpty() && nodes("review_road_memo_text").isEmpty())
             visual("stored-city-hall-point-map", "location_history_point_map_notice", "stored_location_map")
             assertTrue(nodes("location_history_memo_content").isEmpty())
             val retiredMemoOpen = clickAction("location_history_memo")
@@ -672,18 +749,29 @@ class LocationRecordingFlowTest {
                         .first()
                 },
             )
+            assertEquals(
+                null,
+                runBlocking {
+                    f.store.reviewRoads
+                        .observe(ended.sessionId)
+                        .first()
+                },
+            )
             assertEquals(sequencesBefore, f.store.sequenceSnapshot())
             assertEquals(0, f.store.foreignKeyViolationCount())
             assertEquals(streamsBefore, f.gateway.streams.size)
             assertEquals(0, f.gateway.active.get())
             assertFalse(f.gateway.permission.get())
             f.assertNoPlatformActions()
-            phase("CONTROLLED_STORED_POINT_MAP_EXPLICIT_NATIVE_POINT_ACCESS_AND_PRESERVATION")
+            phase("CONTROLLED_STORED_POINT_ROAD_COMPARISON_FAILURE_RETRY_NATIVE_ACCESS_AND_PRESERVATION")
         }
     }
 
     /** Every native source, projection and rendered-feature query remains on its live UI-thread View. */
-    private fun awaitStoredMap(expected: LocationUpdateSample): MapView =
+    private fun awaitStoredMap(
+        expected: LocationUpdateSample,
+        expectedRoad: CourseRoadSnapshot? = null,
+    ): MapView =
         runBlocking {
             waitTag("stored_location_map_view")
             compose.onNodeWithTag("stored_location_map_view", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
@@ -772,8 +860,61 @@ class LocationRecordingFlowTest {
                                             observation.put("renderedSourceMatches", renderedSourceMatches)
                                             observation.put("renderedTypeMatches", renderedTypeMatches)
                                             observation.put("renderedPlacementMatches", renderedPlacementMatches)
+                                            val roadSource = style?.getSourceAs<GeoJsonSource>("hangil-course-preview-roads")
+                                            val roadLayer = style?.getLayerAs<LineLayer>("hangil-course-preview-road-selection")
+                                            val roadFeatures = roadSource?.querySourceFeatures(null).orEmpty()
+                                            val roadMatches =
+                                                if (expectedRoad == null) {
+                                                    roadSource == null && roadLayer == null && roadFeatures.isEmpty()
+                                                } else {
+                                                    val original =
+                                                        expectedRoad.nodes.map { node ->
+                                                            map.projection.toScreenLocation(LatLng(node.latitude, node.longitude))
+                                                        }
+                                                    val paths =
+                                                        roadFeatures.mapNotNull { feature ->
+                                                            (feature.geometry() as? LineString)?.coordinates()?.map { point ->
+                                                                map.projection.toScreenLocation(LatLng(point.latitude(), point.longitude()))
+                                                            }
+                                                        }
+                                                    val filter =
+                                                        Expression.eq(
+                                                            Expression.get("road_id"),
+                                                            Expression.literal(expectedRoad.id),
+                                                        )
+                                                    val renderedRoad =
+                                                        map.queryRenderedFeatures(
+                                                            android.graphics.RectF(0f, 0f, view.width.toFloat(), view.height.toFloat()),
+                                                            "hangil-course-preview-road-selection",
+                                                        )
+                                                    roadLayer != null && roadLayer.sourceId == "hangil-course-preview-roads" &&
+                                                        roadLayer.visibility.value != "none" &&
+                                                        roadLayer.filter?.toArray()?.contentDeepEquals(filter.toArray()) == true &&
+                                                        roadFeatures.isNotEmpty() && renderedRoad.isNotEmpty() &&
+                                                        roadFeatures.all { feature ->
+                                                            feature.geometry() is LineString &&
+                                                                feature.getStringProperty("road_source") == expectedRoad.sourceCode &&
+                                                                feature.getStringProperty("road_id") == expectedRoad.id &&
+                                                                feature.getStringProperty(
+                                                                    "osm_way_id",
+                                                                ) == expectedRoad.osmWayId.toString() &&
+                                                                feature.getNumberProperty("osm_way_version").toInt() ==
+                                                                expectedRoad.osmWayVersion
+                                                        } &&
+                                                        original.all { point ->
+                                                            point.x > 0 && point.y > 0 && point.x < view.width && point.y < view.height
+                                                        } &&
+                                                        paths.isNotEmpty() &&
+                                                        paths.all { path ->
+                                                            path.size >= 2 && path.all { onStoredRoadPath(it, original) }
+                                                        } &&
+                                                        original.all { point -> paths.any { onStoredRoadPath(point, it) } }
+                                                }
+                                            observation.put("roadSourceCount", roadFeatures.size)
+                                            observation.put("roadMatches", roadMatches)
                                             val checks =
                                                 linkedMapOf(
+                                                    "SAVED_ROAD_OR_ACTUAL_ABSENCE_MATCHES" to roadMatches,
                                                     "SOURCE_PRESENT" to (source != null),
                                                     "LAYER_PRESENT" to (circle != null),
                                                     "LAYER_SOURCE_MATCHES" to (circle != null && circle.sourceId == STORED_POINT_SOURCE),
@@ -813,6 +954,21 @@ class LocationRecordingFlowTest {
             } catch (_: TimeoutCancellationException) {
                 throw AssertionError("Stored point native map inspection timed out: " + lastObservation.get())
             }
+        }
+
+    private fun onStoredRoadPath(
+        point: android.graphics.PointF,
+        path: List<android.graphics.PointF>,
+    ): Boolean =
+        path.zipWithNext().any { (start, end) ->
+            val dx = end.x - start.x
+            val dy = end.y - start.y
+            val length = dx * dx + dy * dy
+            val dot = (point.x - start.x) * dx + (point.y - start.y) * dy
+            val fraction = if (length == 0f) 0f else (dot / length).coerceIn(0f, 1f)
+            val x = point.x - (start.x + fraction * dx)
+            val y = point.y - (start.y + fraction * dy)
+            x * x + y * y <= 1f
         }
 
     private fun assertNoStoredMap(previous: MapView? = null) {
@@ -1754,6 +1910,22 @@ class LocationRecordingFlowTest {
         lateinit var recordingModel: LocationRecordingViewModel
         lateinit var historyModel: SessionHistoryViewModel
         lateinit var locationHistoryModel: LocationHistoryViewModel
+        lateinit var reviewRoadModel: SessionReviewRoadViewModel
+        val reviewReadFailure = MutableStateFlow(false)
+        val reviewReadAttempts = AtomicInteger()
+        private val reviewReads =
+            object : SessionReviewRoadRepository by store.reviewRoads {
+                override fun observe(sessionId: String): Flow<SessionReviewRoad?> =
+                    flow {
+                        reviewReadAttempts.incrementAndGet()
+                        emitAll(
+                            combine(reviewReadFailure, store.reviewRoads.observe(sessionId)) { failed, stored ->
+                                if (failed) throw IOException("Controlled read failure in the owned review store")
+                                stored
+                            },
+                        )
+                    }
+            }
         private val navigationCalls = AtomicInteger()
         private val backgroundCalls = AtomicInteger()
         private var historyOpenRunForCleanup: LocationRecordingRun? = null
@@ -1763,9 +1935,19 @@ class LocationRecordingFlowTest {
         }
 
         fun mount() {
-            val pointMap: (@Composable (LocationUpdateSample, () -> Boolean) -> Unit)? =
+            val pointMap: (@Composable (PracticeSession, LocationUpdateSample, () -> Boolean) -> Unit)? =
                 if (mapEnabled) {
-                    { sample, canRead -> StoredLocationMap(sample, canRead) }
+                    { source, sample, canRead ->
+                        SessionReviewRoadRoute(
+                            source,
+                            canRead,
+                            viewModel = reviewRoadModel,
+                            readOnly = true,
+                            comparisonMap = { saved, allowed, changes ->
+                                StoredLocationMap(sample, allowed, reviewRoad = saved, inputChanges = changes)
+                            },
+                        )
+                    }
                 } else {
                     null
                 }
@@ -1843,8 +2025,9 @@ class LocationRecordingFlowTest {
                 )
             locationHistoryModel =
                 LocationHistoryViewModel(store.sessions, store.locationRecordings, vehicleGateway, restrictions, store.memos)
+            reviewRoadModel = SessionReviewRoadViewModel(vehicleGateway, restrictions, store.sessions, reviewReads, store.catalog)
             // Add explicitly passed models so final ViewModelStore.clear closes all their scopes too.
-            val additional = listOf<ViewModel>(recordingModel, historyModel, locationHistoryModel)
+            val additional = listOf<ViewModel>(recordingModel, historyModel, locationHistoryModel, reviewRoadModel)
             val additionalProvider =
                 ViewModelProvider(
                     owner,

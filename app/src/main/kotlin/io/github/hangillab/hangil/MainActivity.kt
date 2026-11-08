@@ -207,7 +207,16 @@ class MainActivity : ComponentActivity() {
                                 LocationHistoryRoute(
                                     expectedSource = expected,
                                     onClose = { navigation.popBackStack() },
-                                    storedPointMap = { sample, canRead -> StoredLocationMap(sample, canRead) },
+                                    storedPointMap = { source, sample, canRead ->
+                                        SessionReviewRoadRoute(
+                                            expectedSource = source,
+                                            canKeepOpen = canRead,
+                                            readOnly = true,
+                                            comparisonMap = { saved, allowed, changes ->
+                                                StoredLocationMap(sample, allowed, reviewRoad = saved, inputChanges = changes)
+                                            },
+                                        )
+                                    },
                                 )
                             }
                         }

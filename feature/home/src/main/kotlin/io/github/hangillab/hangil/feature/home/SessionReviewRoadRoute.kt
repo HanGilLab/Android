@@ -24,6 +24,7 @@ import io.github.hangillab.hangil.core.designsystem.ParkedButton
 import io.github.hangillab.hangil.core.designsystem.ParkedChoice
 import io.github.hangillab.hangil.core.domain.CourseRoadSnapshot
 import io.github.hangillab.hangil.core.domain.PracticeSession
+import io.github.hangillab.hangil.core.domain.SessionReviewRoad
 import kotlinx.coroutines.flow.Flow
 import java.util.concurrent.atomic.AtomicBoolean
 import io.github.hangillab.hangil.feature.home.SessionReviewRoadUiState as RoadState
@@ -36,6 +37,7 @@ fun SessionReviewRoadRoute(
     roadMap: (@Composable (PracticeSession, List<CourseRoadSnapshot>, String?, () -> Boolean, Flow<Unit>) -> Unit)? = null,
     viewModel: SessionReviewRoadViewModel = hiltViewModel(),
     readOnly: Boolean = false,
+    comparisonMap: (@Composable (SessionReviewRoad?, () -> Boolean, Flow<Unit>) -> Unit)? = null,
 ) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val receipt =
@@ -66,6 +68,7 @@ fun SessionReviewRoadRoute(
     )
     val displayed = state
     if (displayed.source != expectedSource) return
+    val comparing = readOnly && comparisonMap != null
     Column(
         Modifier.fillMaxWidth().testTag("review_road_content"),
         verticalArrangement = Arrangement.spacedBy(HanGilSpacing.lg),
@@ -79,8 +82,20 @@ fun SessionReviewRoadRoute(
             return@Column
         }
         Text(
-            stringResource(if (readOnly) R.string.review_road_reference_scope else R.string.review_road_scope),
-            Modifier.fillMaxWidth().testTag(if (readOnly) "review_road_reference_scope" else "review_road_scope"),
+            stringResource(
+                when {
+                    comparing -> R.string.review_road_comparison_scope
+                    readOnly -> R.string.review_road_reference_scope
+                    else -> R.string.review_road_scope
+                },
+            ),
+            Modifier.fillMaxWidth().testTag(
+                when {
+                    comparing -> "review_road_comparison_scope"
+                    readOnly -> "review_road_reference_scope"
+                    else -> "review_road_scope"
+                },
+            ),
             style = MaterialTheme.typography.bodyLarge,
         )
         when (displayed) {
@@ -117,13 +132,25 @@ fun SessionReviewRoadRoute(
             is RoadState.Ready -> {
                 if (displayed.stored == null) {
                     Text(
-                        stringResource(if (readOnly) R.string.review_road_reference_empty else R.string.review_road_empty),
+                        stringResource(
+                            when {
+                                comparing -> R.string.review_road_comparison_empty
+                                readOnly -> R.string.review_road_reference_empty
+                                else -> R.string.review_road_empty
+                            },
+                        ),
                         Modifier.fillMaxWidth().testTag("review_road_empty"),
                         style = MaterialTheme.typography.bodyLarge,
                     )
                 } else {
                     Text(
-                        stringResource(if (readOnly) R.string.review_road_reference_source else R.string.review_road_source),
+                        stringResource(
+                            when {
+                                comparing -> R.string.review_road_comparison_source
+                                readOnly -> R.string.review_road_reference_source
+                                else -> R.string.review_road_source
+                            },
+                        ),
                         Modifier.fillMaxWidth().testTag("review_road_source"),
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.primary,
@@ -134,7 +161,7 @@ fun SessionReviewRoadRoute(
                         style = MaterialTheme.typography.titleLarge,
                     )
                 }
-                displayed.stored?.let { saved ->
+                displayed.stored?.takeIf { !comparing || it.memoText.isNotEmpty() }?.let { saved ->
                     Text(
                         stringResource(R.string.review_road_memo_title),
                         Modifier.fillMaxWidth(),
@@ -150,7 +177,15 @@ fun SessionReviewRoadRoute(
                 }
                 if (readOnly) {
                     val saved = displayed.stored
-                    if (saved != null && roadMap != null) {
+                    if (comparisonMap != null) {
+                        key(displayed.token) {
+                            comparisonMap(
+                                saved,
+                                { allowed() && viewModel.canRead(displayed.token) },
+                                viewModel.inputChanges,
+                            )
+                        }
+                    } else if (saved != null && roadMap != null) {
                         key(displayed.token) {
                             roadMap(
                                 expectedSource,
