@@ -583,13 +583,6 @@ private fun ReviewSampleControls(
             )
         }
     }
-    if (candidate == null) {
-        Text(
-            stringResource(R.string.review_road_sample_no_candidate),
-            Modifier.fillMaxWidth().testTag("review_road_sample_no_candidate"),
-            style = MaterialTheme.typography.bodyLarge,
-        )
-    }
     val canChange = state.canWrite && !state.busy && state.confirmation == null && state.edit == null && state.retainedMemo == null
     if (state.busy) {
         Text(

@@ -321,5 +321,4 @@
     <string name="review_road_sample_discard_warning">직접 연결한 표본도 해제돼요. 표본 원본은 지워지지 않으며 새 도로에 자동으로 옮기지 않아요.</string>
     <string name="review_road_sample_open">연결한 표본 보기</string>
     <string name="review_road_sample_open_failed">연결한 표본을 확인하지 못했어요. 위치 기록을 닫고 다시 열어 주세요.</string>
-    <string name="review_road_sample_no_candidate">선택한 위치 표본이 없어요.</string>
 </resources>
