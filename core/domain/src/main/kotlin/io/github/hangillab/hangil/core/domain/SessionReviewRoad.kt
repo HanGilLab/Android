@@ -8,6 +8,7 @@ class SessionReviewRoad(
     road: CourseRoadSnapshot,
     val version: String,
     val memoText: String = "",
+    val sampleAnchor: SessionReviewSample? = null,
 ) {
     val road: CourseRoadSnapshot = road.copy(nodes = Collections.unmodifiableList(ArrayList(road.nodes)))
     val origin: String get() = "USER_SELECTION"
@@ -23,13 +24,16 @@ class SessionReviewRoad(
         ) { "Invalid review road source" }
         require(version.isNotBlank()) { "Invalid review road version" }
         require(memoText.isEmpty() || SessionMemoPolicy.isValidText(memoText)) { "Invalid review road memo" }
+        require(sampleAnchor == null || sampleAnchor.event.sessionId == source.sessionId) { "Foreign linked review sample" }
     }
 
     override fun equals(other: Any?): Boolean =
         other is SessionReviewRoad && source == other.source && road == other.road &&
-            version == other.version && memoText == other.memoText
+            version == other.version && memoText == other.memoText && sampleAnchor == other.sampleAnchor
 
-    override fun hashCode(): Int = 31 * (31 * (31 * source.hashCode() + road.hashCode()) + version.hashCode()) + memoText.hashCode()
+    override fun hashCode(): Int =
+        31 * (31 * (31 * (31 * source.hashCode() + road.hashCode()) + version.hashCode()) + memoText.hashCode()) +
+            (sampleAnchor?.hashCode() ?: 0)
 
     override fun toString(): String = "SessionReviewRoad(origin=$origin, snapshot=redacted)"
 }

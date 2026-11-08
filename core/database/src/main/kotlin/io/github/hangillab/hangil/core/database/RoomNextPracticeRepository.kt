@@ -88,7 +88,7 @@ internal class RoomNextPracticeRepository
             if (selection.plannedRoad != null) {
                 if (expectedReview == null || expectedReview.source != seed.source ||
                     selection.plannedRoad != PlannedPracticeRoad.from(expectedReview) ||
-                    SessionReviewRoadRow.review(database.sessionReviewRoadDao().find(seed.source.sessionId)) != expectedReview
+                    SessionReviewRoadRow.readValidated(database, seed.source.sessionId) != expectedReview
                 ) {
                     throw WriteRejected(NextPracticeSaveResult.SourceChanged)
                 }

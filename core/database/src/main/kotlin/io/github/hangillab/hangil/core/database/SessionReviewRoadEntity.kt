@@ -44,6 +44,7 @@ internal data class SessionReviewRoadEntity(
     val nodeCount: Int,
     @ColumnInfo(defaultValue = "''") val memoText: String = "",
     @ColumnInfo(defaultValue = "NULL") val plannedRoadJson: String? = null,
+    @ColumnInfo(defaultValue = "NULL") val sampleAnchorJson: String? = null,
 ) {
     fun source() =
         PracticeSession(
@@ -86,6 +87,7 @@ internal data class SessionReviewRoadEntity(
                 road.nodes.size,
                 review.memoText,
                 PlannedPracticeRoadJson.encode(selection.plannedRoad),
+                SessionReviewSampleJson.encode(review.sampleAnchor),
             )
         }
     }

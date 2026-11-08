@@ -528,11 +528,20 @@ class FinishSourceReviewBoundaryTest {
                                 expectedCurrent: SessionReviewRoad?,
                                 memoText: String,
                                 discardMemo: Boolean,
+                                discardSample: Boolean,
                                 canCommit: () -> Boolean,
                             ): SessionReviewRoadWriteResult {
                                 activeWrites.incrementAndGet()
                                 try {
-                                    return repository.save(expectedSource, road, expectedCurrent, memoText, discardMemo, canCommit)
+                                    return repository.save(
+                                        expectedSource,
+                                        road,
+                                        expectedCurrent,
+                                        memoText,
+                                        discardMemo,
+                                        discardSample,
+                                        canCommit,
+                                    )
                                 } finally {
                                     activeWrites.decrementAndGet()
                                 }
@@ -542,11 +551,12 @@ class FinishSourceReviewBoundaryTest {
                                 expectedSource: PracticeSession,
                                 expectedCurrent: SessionReviewRoad,
                                 discardMemo: Boolean,
+                                discardSample: Boolean,
                                 canCommit: () -> Boolean,
                             ): SessionReviewRoadWriteResult {
                                 activeWrites.incrementAndGet()
                                 try {
-                                    return repository.clear(expectedSource, expectedCurrent, discardMemo, canCommit)
+                                    return repository.clear(expectedSource, expectedCurrent, discardMemo, discardSample, canCommit)
                                 } finally {
                                     activeWrites.decrementAndGet()
                                 }

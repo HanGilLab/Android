@@ -64,5 +64,5 @@ sealed interface SessionReviewRoadUiState {
         val expectedCurrent: SessionReviewRoad,
     )
 
-    enum class Feedback { SAVED, CLEARED, MEMO_SAVED, MEMO_CLEARED }
+    enum class Feedback { SAVED, CLEARED, MEMO_SAVED, MEMO_CLEARED, SAMPLE_SAVED, SAMPLE_CLEARED }
 }

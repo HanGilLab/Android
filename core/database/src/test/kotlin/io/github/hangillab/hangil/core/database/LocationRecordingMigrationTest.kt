@@ -41,11 +41,16 @@ class LocationRecordingMigrationTest {
                     context,
                     PreparationDatabase::class.java,
                     name,
-                ).addMigrations(PreparationMigration6To7, PreparationMigration7To8, PreparationMigration8To9, PreparationMigration9To10)
-                .build()
+                ).addMigrations(
+                    PreparationMigration6To7,
+                    PreparationMigration7To8,
+                    PreparationMigration8To9,
+                    PreparationMigration9To10,
+                    PreparationMigration10To11,
+                ).build()
                 .useDatabase { db ->
                     val sqlite = db.openHelper.writableDatabase
-                    assertEquals(10, sqlite.version)
+                    assertEquals(11, sqlite.version)
                     assertTrue("Original schema6 rows/types/order/sequence must remain exact", before == snapshot(sqlite))
                     for (table in listOf("location_recording_run", "location_recording_event")) {
                         sqlite.query("SELECT COUNT(*) FROM $table").use {
@@ -75,11 +80,11 @@ class LocationRecordingMigrationTest {
             val before = createLegacy(name, 7)
             Room
                 .databaseBuilder(context, PreparationDatabase::class.java, name)
-                .addMigrations(PreparationMigration7To8, PreparationMigration8To9, PreparationMigration9To10)
+                .addMigrations(PreparationMigration7To8, PreparationMigration8To9, PreparationMigration9To10, PreparationMigration10To11)
                 .build()
                 .useDatabase { db ->
                     val sqlite = db.openHelper.writableDatabase
-                    assertEquals(10, sqlite.version)
+                    assertEquals(11, sqlite.version)
                     assertTrue("Original rows, types, order and sequence must remain exact", before == snapshot(sqlite, tables(7)))
                     for (table in listOf("session_review_road", "session_review_road_node")) {
                         sqlite.query("SELECT COUNT(*) FROM $table").use {
@@ -102,11 +107,11 @@ class LocationRecordingMigrationTest {
             val before = createLegacy(name, 8)
             Room
                 .databaseBuilder(context, PreparationDatabase::class.java, name)
-                .addMigrations(PreparationMigration8To9, PreparationMigration9To10)
+                .addMigrations(PreparationMigration8To9, PreparationMigration9To10, PreparationMigration10To11)
                 .build()
                 .useDatabase { db ->
                     val sqlite = db.openHelper.writableDatabase
-                    assertEquals(10, sqlite.version)
+                    assertEquals(11, sqlite.version)
                     val after = snapshot(sqlite, tables(8), excludeMemo = true)
                     assertTrue("Original rows, types, order and sequence must remain exact", before == after)
                     sqlite.query("SELECT memoText, typeof(memoText) FROM session_review_road").use {
@@ -129,11 +134,11 @@ class LocationRecordingMigrationTest {
             val before = createLegacy(name, 9)
             Room
                 .databaseBuilder(context, PreparationDatabase::class.java, name)
-                .addMigrations(PreparationMigration9To10)
+                .addMigrations(PreparationMigration9To10, PreparationMigration10To11)
                 .build()
                 .useDatabase { db ->
                     val sqlite = db.openHelper.writableDatabase
-                    assertEquals(10, sqlite.version)
+                    assertEquals(11, sqlite.version)
                     assertEquals(before, snapshot(sqlite, tables(9)))
                     for (table in listOf(
                         "preparation",
@@ -148,6 +153,32 @@ class LocationRecordingMigrationTest {
                                 assertEquals("null", rows.getString(1))
                             }
                         }
+                    }
+                    sqlite.query("PRAGMA foreign_key_check").use { assertEquals(0, it.count) }
+                }
+        } finally {
+            if (context.getDatabasePath(name).exists()) check(context.deleteDatabase(name))
+        }
+    }
+
+    @Test fun `schema ten migration preserves targets raw values order and versions without creating a sample link`() {
+        val context = RuntimeEnvironment.getApplication()
+        val name = "sample-anchor-migration-${UUID.randomUUID()}.db"
+        check(!context.getDatabasePath(name).exists())
+        try {
+            val before = createLegacy(name, 10)
+            Room
+                .databaseBuilder(context, PreparationDatabase::class.java, name)
+                .addMigrations(PreparationMigration10To11)
+                .build()
+                .useDatabase { db ->
+                    val sqlite = db.openHelper.writableDatabase
+                    assertEquals(11, sqlite.version)
+                    assertEquals(before, snapshot(sqlite, tables(10), excludePlannedRoad = false))
+                    sqlite.query("SELECT sampleAnchorJson, typeof(sampleAnchorJson) FROM session_review_road").use { rows ->
+                        check(rows.moveToFirst())
+                        assertTrue(rows.isNull(0))
+                        assertEquals("null", rows.getString(1))
                     }
                     sqlite.query("PRAGMA foreign_key_check").use { assertEquals(0, it.count) }
                 }
@@ -187,9 +218,13 @@ class LocationRecordingMigrationTest {
                     }
                     val setup = schema.getJSONArray("setupQueries")
                     for (index in 0 until setup.length()) db.execSQL(setup.getString(index))
-                    db.execSQL("INSERT INTO preparation VALUES(1, 'commute', 'neighborhood', 1, 1, 'sequence')")
                     db.execSQL(
-                        "INSERT INTO practice_session VALUES(7, 'fixture', 'commute', 'neighborhood', 1, 1, 'sequence', " +
+                        "INSERT INTO preparation (slot,goalId,courseId,courseVersion,briefingVersion,taskId) VALUES(1, 'commute', 'neighborhood', 1, 1, 'sequence')",
+                    )
+                    db.execSQL(
+                        "INSERT INTO practice_session (rowId,sessionId,goalId,courseId,courseVersion,briefingVersion,taskId," +
+                            "goalTitle,courseTitle,taskTitle,courseReviewStatus,startedAtEpochMillis,endedAtEpochMillis,activeSlot) " +
+                            "VALUES(7, 'fixture', 'commute', 'neighborhood', 1, 1, 'sequence', " +
                             "'Goal', 'Course', 'Task', 'DEMO', 1000, 2000, NULL)",
                     )
                     db.execSQL(
@@ -204,7 +239,10 @@ class LocationRecordingMigrationTest {
                         "INSERT INTO vehicle_recording_run VALUES('old-run', 'fixture', 'old-process', 1100, NULL, 'INTERRUPTED', NULL)",
                     )
                     db.execSQL(
-                        "INSERT INTO course_completion_declaration VALUES('fixture', 'commute', 'neighborhood', 1, 1, " +
+                        "INSERT INTO course_completion_declaration (sessionId,goalId,courseId,courseVersion,briefingVersion,taskId," +
+                            "goalTitle,courseTitle,taskTitle,courseReviewStatus,startedAtEpochMillis,endedAtEpochMillis," +
+                            "version,declaredAtEpochMillis,origin) " +
+                            "VALUES('fixture', 'commute', 'neighborhood', 1, 1, " +
                             "'sequence', 'Goal', 'Course', 'Task', 'DEMO', 1000, 2000, 'fixture-version', 2100, 'USER_DECLARATION')",
                     )
                     db.execSQL("UPDATE sqlite_sequence SET seq = 80 WHERE name = 'practice_session'")
@@ -238,6 +276,27 @@ class LocationRecordingMigrationTest {
                         db.execSQL("INSERT INTO session_review_road_node VALUES('fixture',1,2,2,37.1,127.1)")
                         db.execSQL("INSERT INTO session_review_road_node VALUES('fixture',2,1,1,37.0,127.0)")
                     }
+                    if (version >= 10) {
+                        val road =
+                            LocalPracticeCatalog()
+                                .courses
+                                .first()
+                                .roadSnapshots
+                                .first()
+                        val plan =
+                            io.github.hangillab.hangil.core.domain
+                                .PlannedPracticeRoad("origin-fixture", "origin-version", road)
+                        val encoded = PlannedPracticeRoadJson.encode(plan)
+                        for (table in listOf(
+                            "preparation",
+                            "practice_session",
+                            "location_recording_run",
+                            "course_completion_declaration",
+                            "session_review_road",
+                        )) {
+                            db.execSQL("UPDATE `$table` SET plannedRoadJson = ?", arrayOf(encoded))
+                        }
+                    }
                 }
 
                 override fun onUpgrade(
@@ -253,7 +312,14 @@ class LocationRecordingMigrationTest {
                 ).name(name)
                 .callback(callback)
                 .build()
-        return FrameworkSQLiteOpenHelperFactory().create(configuration).use { snapshot(it.writableDatabase, tables(version)) }
+        return FrameworkSQLiteOpenHelperFactory().create(configuration).use {
+            snapshot(
+                it.writableDatabase,
+                tables(version),
+                excludePlannedRoad =
+                    version < 10,
+            )
+        }
     }
 
     private inline fun <T> PreparationDatabase.useDatabase(block: (PreparationDatabase) -> T): T {
@@ -276,6 +342,7 @@ class LocationRecordingMigrationTest {
         db: SupportSQLiteDatabase,
         tables: List<String> = oldTables,
         excludeMemo: Boolean = false,
+        excludePlannedRoad: Boolean = true,
     ): Map<String, List<List<Any?>>> =
         tables.associateWith { table ->
             db.query("SELECT * FROM $table ORDER BY rowid").use { cursor ->
@@ -284,7 +351,8 @@ class LocationRecordingMigrationTest {
                         add(
                             (0 until cursor.columnCount)
                                 .filterNot { column ->
-                                    cursor.getColumnName(column) == "plannedRoadJson" ||
+                                    cursor.getColumnName(column) == "sampleAnchorJson" ||
+                                        (excludePlannedRoad && cursor.getColumnName(column) == "plannedRoadJson") ||
                                         (excludeMemo && table == "session_review_road" && cursor.getColumnName(column) == "memoText")
                                 }.flatMap { column ->
                                     val type = cursor.getType(column)

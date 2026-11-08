@@ -330,12 +330,13 @@ class FinishSourceReviewRoomFlowTest {
                         expectedCurrent: SessionReviewRoad?,
                         memoText: String,
                         discardMemo: Boolean,
+                        discardSample: Boolean,
                         canCommit: () -> Boolean,
                     ): SessionReviewRoadWriteResult {
                         saveCalls.incrementAndGet()
                         if (failBeforeNextSave.getAndSet(false)) throw IOException("Controlled failure before the owned Room write")
                         delegatedSaveCalls.incrementAndGet()
-                        val result = actual.save(expectedSource, road, expectedCurrent, memoText, discardMemo, canCommit)
+                        val result = actual.save(expectedSource, road, expectedCurrent, memoText, discardMemo, discardSample, canCommit)
                         if (result is SessionReviewRoadWriteResult.Saved && loseReply.getAndSet(false)) {
                             throw IOException("Controlled loss of a committed write reply")
                         }

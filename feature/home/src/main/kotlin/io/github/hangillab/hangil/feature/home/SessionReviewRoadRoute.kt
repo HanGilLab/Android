@@ -25,6 +25,7 @@ import io.github.hangillab.hangil.core.designsystem.ParkedChoice
 import io.github.hangillab.hangil.core.domain.CourseRoadSnapshot
 import io.github.hangillab.hangil.core.domain.PracticeSession
 import io.github.hangillab.hangil.core.domain.SessionReviewRoad
+import io.github.hangillab.hangil.core.domain.SessionReviewSample
 import kotlinx.coroutines.flow.Flow
 import java.util.concurrent.atomic.AtomicBoolean
 import io.github.hangillab.hangil.feature.home.SessionReviewRoadUiState as RoadState
@@ -38,10 +39,11 @@ fun SessionReviewRoadRoute(
     viewModel: SessionReviewRoadViewModel = hiltViewModel(),
     readOnly: Boolean = false,
     comparisonMap: (@Composable (SessionReviewRoad?, () -> Boolean, Flow<Unit>) -> Unit)? = null,
+    sampleCandidate: SessionReviewSample? = null,
 ) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val receipt =
-        remember(expectedSource, canKeepOpen, lifecycle, readOnly) {
+        remember(expectedSource, canKeepOpen, lifecycle, readOnly, sampleCandidate) {
             AtomicBoolean(lifecycle.currentState == Lifecycle.State.RESUMED)
         }
     val allowed =
@@ -175,8 +177,20 @@ fun SessionReviewRoadRoute(
                         style = MaterialTheme.typography.bodyLarge,
                     )
                 }
+                if (!comparing && displayed.stored?.sampleAnchor != null) {
+                    Text(
+                        stringResource(R.string.review_road_sample_present),
+                        Modifier.fillMaxWidth().testTag("review_road_sample_present"),
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                }
                 if (readOnly) {
                     val saved = displayed.stored
+                    if (comparing && saved != null && sampleCandidate != null &&
+                        sampleCandidate.event.sessionId == expectedSource.sessionId
+                    ) {
+                        ReviewSampleControls(displayed, sampleCandidate, viewModel)
+                    }
                     if (comparisonMap != null) {
                         key(displayed.token) {
                             comparisonMap(
@@ -270,6 +284,8 @@ fun SessionReviewRoadRoute(
                                     RoadState.Feedback.CLEARED -> R.string.review_road_cleared
                                     RoadState.Feedback.MEMO_SAVED -> R.string.review_road_memo_saved
                                     RoadState.Feedback.MEMO_CLEARED -> R.string.review_road_memo_cleared
+                                    RoadState.Feedback.SAMPLE_SAVED -> R.string.review_road_sample_saved
+                                    RoadState.Feedback.SAMPLE_CLEARED -> R.string.review_road_sample_cleared
                                 }
                             Text(
                                 stringResource(message),
@@ -413,23 +429,42 @@ fun SessionReviewRoadRoute(
                                 modifier = Modifier.testTag("review_road_memo_discard_dialog"),
                                 title = {
                                     Text(
-                                        stringResource(R.string.review_road_memo_discard_title),
+                                        stringResource(
+                                            if (pending.expectedCurrent.sampleAnchor !=
+                                                null
+                                            ) {
+                                                R.string.review_road_sample_discard_title
+                                            } else {
+                                                R.string.review_road_memo_discard_title
+                                            },
+                                        ),
                                         style = MaterialTheme.typography.titleLarge,
                                     )
                                 },
                                 text = {
                                     Column(verticalArrangement = Arrangement.spacedBy(HanGilSpacing.md)) {
                                         Text(pending.expectedCurrent.road.title, style = MaterialTheme.typography.titleLarge)
-                                        Text(
-                                            stringResource(
-                                                if (pending.target == null) {
-                                                    R.string.review_road_memo_clear_warning
-                                                } else {
-                                                    R.string.review_road_memo_replace_warning
-                                                },
-                                            ),
-                                            style = MaterialTheme.typography.bodyLarge,
-                                        )
+                                        if (pending.expectedCurrent.memoText.isNotEmpty()) {
+                                            Text(
+                                                stringResource(
+                                                    if (pending.target ==
+                                                        null
+                                                    ) {
+                                                        R.string.review_road_memo_clear_warning
+                                                    } else {
+                                                        R.string.review_road_memo_replace_warning
+                                                    },
+                                                ),
+                                                style = MaterialTheme.typography.bodyLarge,
+                                            )
+                                        }
+                                        if (pending.expectedCurrent.sampleAnchor != null) {
+                                            Text(
+                                                stringResource(R.string.review_road_sample_discard_warning),
+                                                Modifier.testTag("review_road_sample_discard_warning"),
+                                                style = MaterialTheme.typography.bodyLarge,
+                                            )
+                                        }
                                         pending.target?.let { Text(it.title, style = MaterialTheme.typography.titleLarge) }
                                     }
                                 },
@@ -475,6 +510,94 @@ fun SessionReviewRoadRoute(
                     }
                 }
             }
+        }
+    }
+}
+
+/** Only the explicitly expanded stored-sample comparison opts into this limited write surface. */
+@Composable
+private fun ReviewSampleControls(
+    state: RoadState.Ready,
+    candidate: SessionReviewSample,
+    viewModel: SessionReviewRoadViewModel,
+) {
+    val stored = checkNotNull(state.stored)
+    val anchor = stored.sampleAnchor
+    val status =
+        when {
+            anchor == null -> R.string.review_road_sample_absent to "review_road_sample_absent"
+            anchor == candidate -> R.string.review_road_sample_current to "review_road_sample_current"
+            else -> R.string.review_road_sample_other to "review_road_sample_other"
+        }
+    Text(stringResource(status.first), Modifier.fillMaxWidth().testTag(status.second), style = MaterialTheme.typography.titleLarge)
+    Text(
+        stringResource(R.string.review_road_sample_scope),
+        Modifier.fillMaxWidth().testTag("review_road_sample_scope"),
+        style = MaterialTheme.typography.bodyLarge,
+    )
+    when (state.feedback) {
+        RoadState.Feedback.SAMPLE_SAVED, RoadState.Feedback.SAMPLE_CLEARED ->
+            Text(
+                stringResource(
+                    if (state.feedback ==
+                        RoadState.Feedback.SAMPLE_SAVED
+                    ) {
+                        R.string.review_road_sample_saved
+                    } else {
+                        R.string.review_road_sample_cleared
+                    },
+                ),
+                Modifier.fillMaxWidth().testTag("review_road_sample_feedback"),
+                style = MaterialTheme.typography.bodyLarge,
+            )
+        else -> Unit
+    }
+    val canChange = state.canWrite && !state.busy && state.confirmation == null && state.edit == null && state.retainedMemo == null
+    if (state.busy) {
+        Text(
+            stringResource(R.string.review_road_busy),
+            Modifier.fillMaxWidth().testTag("review_road_busy"),
+            style = MaterialTheme.typography.bodyLarge,
+        )
+    } else if (!state.canWrite) {
+        Text(stringResource(R.string.review_road_sample_active), Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodyLarge)
+    }
+    if (anchor != candidate) {
+        val link = {
+            viewModel.setSample(state.token, candidate)
+            Unit
+        }
+        ParkedButton(
+            onClick = link,
+            enabled = canChange,
+            modifier = Modifier.fillMaxWidth().testTag("review_road_sample_link").frozenObservationClick(link, canChange),
+        ) {
+            Text(
+                stringResource(
+                    if (anchor ==
+                        null
+                    ) {
+                        R.string.review_road_sample_link
+                    } else {
+                        R.string.review_road_sample_replace
+                    },
+                ),
+                style = MaterialTheme.typography.titleMedium,
+            )
+        }
+    }
+    if (anchor != null) {
+        val clear = {
+            viewModel.setSample(state.token, null)
+            Unit
+        }
+        ParkedButton(
+            onClick = clear,
+            enabled = canChange,
+            prominent = false,
+            modifier = Modifier.fillMaxWidth().testTag("review_road_sample_clear").frozenObservationClick(clear, canChange),
+        ) {
+            Text(stringResource(R.string.review_road_sample_clear), style = MaterialTheme.typography.titleMedium)
         }
     }
 }

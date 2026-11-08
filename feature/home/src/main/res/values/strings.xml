@@ -282,7 +282,7 @@
   <string name="history_delete_review_road_present">저장한 복습 구간: %1$s</string>
   <string name="review_road_reference_source">이전 연습에서 직접 고른 도로, 통행 미확인</string>
   <string name="review_road_reference_empty">이전 연습에 저장한 참고 구간이 없어요.</string>
-  <string name="review_road_reference_scope">도로를 목표로 쓸지는 다음 과제 화면에서 직접 선택해요. 메모는 복사하지 않아요.</string>
+  <string name="review_road_reference_scope">도로를 목표로 쓸지는 다음 과제 화면에서 직접 선택해요. 메모와 표본 연결은 복사하지 않아요.</string>
   <string name="review_road_comparison_scope">저장 표본과 복습 도로</string>
   <string name="review_road_comparison_source">이 연습에서 직접 고른 도로, 통행 미확인</string>
   <string name="review_road_comparison_empty">이 연습에 저장한 복습 도로가 없어 표본만 보여줘요.</string>
@@ -306,4 +306,17 @@
   <string name="history_delete_review_road_memo_present">저장한 복습 구간: %1$s (구간 메모 포함)</string>
     <string name="planned_road_summary">연습 전 목표 도로: %1$s</string>
     <string name="planned_road_scope">실제 주행이나 내비 경로가 아닌 연습 목표예요.</string>
+    <string name="review_road_sample_absent">이 도로에 연결한 표본이 없어요.</string>
+    <string name="review_road_sample_current">지금 보는 표본을 이 도로에 연결했어요.</string>
+    <string name="review_road_sample_other">다른 저장 표본이 이 도로에 연결돼 있어요.</string>
+    <string name="review_road_sample_scope">직접 고른 복습 연결이에요. 자동 매칭이나 실제 이동, 위치 정확도를 확인한 결과가 아니에요.</string>
+    <string name="review_road_sample_link">지금 보는 표본 연결</string>
+    <string name="review_road_sample_replace">지금 보는 표본으로 바꾸기</string>
+    <string name="review_road_sample_clear">표본 연결 해제</string>
+    <string name="review_road_sample_saved">표본 연결을 저장했어요.</string>
+    <string name="review_road_sample_cleared">표본 연결을 해제했어요. 저장한 표본 원본은 남아 있어요.</string>
+    <string name="review_road_sample_active">연습 중에는 표본 연결을 바꿀 수 없어요.</string>
+    <string name="review_road_sample_present">이 도로에 직접 연결한 저장 표본이 있어요. 실제 이동 매칭은 미확인이에요.</string>
+    <string name="review_road_sample_discard_title">이 도로의 연결 내용을 지울까요?</string>
+    <string name="review_road_sample_discard_warning">직접 연결한 표본도 해제돼요. 표본 원본은 지워지지 않으며 새 도로에 자동으로 옮기지 않아요.</string>
 </resources>

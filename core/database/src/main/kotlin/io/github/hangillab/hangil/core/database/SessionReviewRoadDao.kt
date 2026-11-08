@@ -14,6 +14,7 @@ private const val REVIEW_ROAD_SELECT =
         "AND typeof(r.origin) = 'text' AND typeof(r.roadId) = 'text' AND typeof(r.roadTitle) = 'text' " +
         "AND typeof(r.memoText) = 'text' " +
         "AND (r.plannedRoadJson IS NULL OR typeof(r.plannedRoadJson) = 'text') " +
+        "AND (r.sampleAnchorJson IS NULL OR typeof(r.sampleAnchorJson) = 'text') " +
         "AND typeof(r.highway) = 'text' AND typeof(r.courseVersion) = 'integer' AND r.courseVersion BETWEEN 1 AND 2147483647 " +
         "AND typeof(r.briefingVersion) = 'integer' AND r.briefingVersion BETWEEN 1 AND 2147483647 " +
         "AND typeof(r.startedAtEpochMillis) = 'integer' AND typeof(r.endedAtEpochMillis) = 'integer' " +
@@ -44,7 +45,7 @@ internal interface SessionReviewRoadDao {
     @Query(
         "UPDATE session_review_road SET version = :version, roadId = :roadId, roadTitle = :title, highway = :highway, " +
             "osmWayId = :wayId, osmWayVersion = :wayVersion, capturedAtEpochMillis = :capturedAt, " +
-            "nodeCount = :nodeCount, memoText = :memoText " +
+            "nodeCount = :nodeCount, memoText = :memoText, sampleAnchorJson = :sampleAnchorJson " +
             "WHERE sessionId = :sessionId AND version = :expectedVersion",
     )
     suspend fun update(
@@ -59,6 +60,7 @@ internal interface SessionReviewRoadDao {
         capturedAt: Long,
         nodeCount: Int,
         memoText: String,
+        sampleAnchorJson: String?,
     ): Int
 
     @Query(
@@ -70,6 +72,17 @@ internal interface SessionReviewRoadDao {
         expectedVersion: String,
         version: String,
         memoText: String,
+    ): Int
+
+    @Query(
+        "UPDATE session_review_road SET version = :version, sampleAnchorJson = :sampleAnchorJson " +
+            "WHERE sessionId = :sessionId AND version = :expectedVersion",
+    )
+    suspend fun updateSample(
+        sessionId: String,
+        expectedVersion: String,
+        version: String,
+        sampleAnchorJson: String?,
     ): Int
 
     @Query("DELETE FROM session_review_road_node WHERE sessionId = :sessionId")

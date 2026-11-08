@@ -56,6 +56,7 @@ import io.github.hangillab.hangil.core.domain.ForegroundLocationRecordingControl
 import io.github.hangillab.hangil.core.domain.GearPosition
 import io.github.hangillab.hangil.core.domain.LocationRecordingBeginResult
 import io.github.hangillab.hangil.core.domain.LocationRecordingEndResult
+import io.github.hangillab.hangil.core.domain.LocationRecordingEvent
 import io.github.hangillab.hangil.core.domain.LocationRecordingRun
 import io.github.hangillab.hangil.core.domain.LocationRecordingRunStatus
 import io.github.hangillab.hangil.core.domain.LocationRecordingSnapshot
@@ -78,6 +79,7 @@ import io.github.hangillab.hangil.core.domain.SessionFinishResult
 import io.github.hangillab.hangil.core.domain.SessionReviewRoad
 import io.github.hangillab.hangil.core.domain.SessionReviewRoadRepository
 import io.github.hangillab.hangil.core.domain.SessionReviewRoadWriteResult
+import io.github.hangillab.hangil.core.domain.SessionReviewSample
 import io.github.hangillab.hangil.core.domain.SessionStartResult
 import io.github.hangillab.hangil.core.domain.UxRestrictionState
 import io.github.hangillab.hangil.core.domain.VehicleGateway
@@ -130,6 +132,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Rule
@@ -551,6 +554,32 @@ class LocationRecordingFlowTest {
                         .first()
                 }
             val storedBefore = f.snapshot(ended)
+            val storedRun = storedBefore.runs.single()
+            val firstSample =
+                SessionReviewSample.from(
+                    storedRun,
+                    storedBefore.events.single {
+                        (it.reading as? LocationUpdateReading.Sample)?.sample ==
+                            cityHall
+                    },
+                )
+            val secondSample =
+                SessionReviewSample.from(
+                    storedRun,
+                    storedBefore.events.single {
+                        (it.reading as? LocationUpdateReading.Sample)?.sample ==
+                            gwanghwamun
+                    },
+                )
+
+            fun storedRoad(): SessionReviewRoad =
+                runBlocking {
+                    checkNotNull(
+                        f.store.reviewRoads
+                            .observe(ended.sessionId)
+                            .first(),
+                    )
+                }
             val sequencesBefore = f.store.sequenceSnapshot()
             val streamsBefore = f.gateway.streams.size
 
@@ -585,12 +614,153 @@ class LocationRecordingFlowTest {
             assertTrue(nodes("review_road_memo_edit").isEmpty() && nodes("review_road_memo_create").isEmpty())
             visual("stored-point-and-user-selected-road", "location_history_point_map_notice", "stored_location_map")
 
-            // A separate real Room write changes the displayed road, never the selected stored sample.
-            val replaced =
+            waitTag("review_road_sample_absent")
+            val staleFirstLink = clickAction("review_road_sample_link")
+            f.sampleWriteFailure.set(1)
+            click("review_road_sample_link")
+            waitTag("review_road_failed")
+            assertNoStoredMap(originalRoadMap)
+            assertTrue(nodes("review_road_sample_feedback").isEmpty())
+            assertEquals(firstSaved.review, storedRoad())
+            assertEquals(1, f.sampleWriteAttempts.get())
+            click("review_road_retry")
+            waitTag("review_road_sample_absent")
+            awaitStoredMap(cityHall, firstSaved.review.road)
+            assertEquals("A retry only reads; it must not replay the failed write", 1, f.sampleWriteAttempts.get())
+
+            f.sampleWriteFailure.set(2)
+            click("review_road_sample_link")
+            waitTag("review_road_failed")
+            assertNoStoredMap()
+            assertTrue(nodes("review_road_sample_feedback").isEmpty())
+            val committedWithoutReply = storedRoad()
+            assertEquals(firstSample, committedWithoutReply.sampleAnchor)
+            assertEquals(roadMemo, committedWithoutReply.memoText)
+            assertEquals(2, f.sampleWriteAttempts.get())
+            click("review_road_retry")
+            waitTag("review_road_sample_current")
+            awaitStoredMap(cityHall, committedWithoutReply.road)
+            assertEquals("Reading a committed result must not write it a second time", 2, f.sampleWriteAttempts.get())
+            visual("explicit-current-sample-association", "review_road_sample_current", "stored_location_map")
+
+            val memoChanged =
                 runBlocking {
-                    f.store.reviewRoads.save(ended, roads[1], firstSaved.review, memoText = "", discardMemo = true) { true }
+                    f.store.reviewRoads.save(
+                        ended,
+                        committedWithoutReply.road,
+                        committedWithoutReply,
+                        memoText = roadMemo + "\n원래 연결 유지",
+                    ) { true }
                 } as SessionReviewRoadWriteResult.Saved
-            val replacementMap = awaitStoredMap(cityHall, replaced.review.road)
+            assertEquals(firstSample, memoChanged.review.sampleAnchor)
+            waitTag("review_road_sample_current")
+            awaitStoredMap(cityHall, memoChanged.review.road)
+            click("location_history_event_next")
+            assertNoStoredMap()
+            click("location_history_point_map")
+            waitTag("review_road_sample_other")
+            awaitStoredMap(gwanghwamun, memoChanged.review.road)
+            val writesBeforeStale = f.sampleWriteAttempts.get()
+            invoke(staleFirstLink)
+            assertEquals(writesBeforeStale, f.sampleWriteAttempts.get())
+            assertEquals(firstSample, storedRoad().sampleAnchor)
+            click("review_road_sample_link")
+            waitTag("review_road_sample_current")
+            awaitStoredMap(gwanghwamun, memoChanged.review.road)
+            assertEquals(secondSample, storedRoad().sampleAnchor)
+            assertEquals(memoChanged.review.memoText, storedRoad().memoText)
+            click("location_history_back")
+            click("history_location_recording")
+            waitTag("location_history_content")
+            click("location_history_event_previous")
+            click("location_history_point_map")
+            waitTag("review_road_sample_current")
+            awaitStoredMap(gwanghwamun, memoChanged.review.road)
+            click("review_road_sample_clear")
+            waitTag("review_road_sample_absent")
+            assertNull(storedRoad().sampleAnchor)
+            assertEquals(memoChanged.review.memoText, storedRoad().memoText)
+            click("review_road_sample_link")
+            waitTag("review_road_sample_current")
+            val beforeUxSampleClear = clickAction("review_road_sample_clear")
+            val writesBeforeUx = f.sampleWriteAttempts.get()
+            instrument.runOnMainSync { f.ux.value = f.ux.value.copy(uxRestrictionState = UxRestrictionState.RESTRICTED) }
+            waitTag("location_history_locked")
+            assertNoStoredMap()
+            invoke(beforeUxSampleClear)
+            instrument.runOnMainSync { f.ux.value = f.ux.value.copy(uxRestrictionState = UxRestrictionState.UNRESTRICTED) }
+            waitTag("location_history_locked")
+            invoke(beforeUxSampleClear)
+            assertEquals(writesBeforeUx, f.sampleWriteAttempts.get())
+            assertEquals(secondSample, storedRoad().sampleAnchor)
+            click("location_history_back")
+            click("history_location_recording")
+            waitTag("location_history_content")
+            click("location_history_event_previous")
+            click("location_history_point_map")
+            waitTag("review_road_sample_current")
+            val beforeDriveSampleClear = clickAction("review_road_sample_clear")
+            val writesBeforeDrive = f.sampleWriteAttempts.get()
+            f.drive(true)
+            waitTag("location_history_locked")
+            invoke(beforeDriveSampleClear)
+            f.drive(false)
+            waitTag("location_history_locked")
+            invoke(beforeDriveSampleClear)
+            assertEquals(writesBeforeDrive, f.sampleWriteAttempts.get())
+            assertEquals(secondSample, storedRoad().sampleAnchor)
+            click("location_history_back")
+            click("history_location_recording")
+            waitTag("location_history_content")
+            click("location_history_event_previous")
+            click("location_history_point_map")
+            waitTag("review_road_sample_current")
+            val beforeStopSampleClear = clickAction("review_road_sample_clear")
+            val writesBeforeStop = f.sampleWriteAttempts.get()
+            f.move(Lifecycle.State.CREATED)
+            assertNoStoredMap()
+            f.move(Lifecycle.State.RESUMED)
+            waitTag("location_history_content")
+            invoke(beforeStopSampleClear)
+            assertEquals(writesBeforeStop, f.sampleWriteAttempts.get())
+            assertEquals(secondSample, storedRoad().sampleAnchor)
+
+            // Reuse the actual review editor for loss confirmation; no direct replacement bypass.
+            click("location_history_back")
+            click("history_review_road")
+            waitTag("review_road_sample_present")
+            val beforeReplace = storedRoad()
+            click("review_road_candidate_1")
+            openRoadDiscardDialog()
+            val cancelledReplacement = roadDiscardConfirmAction()
+            dismissRoadDiscardDialog(confirm = false)
+            invoke(cancelledReplacement)
+            assertEquals(beforeReplace, storedRoad())
+            openRoadDiscardDialog()
+            dismissRoadDiscardDialog(confirm = true)
+            runBlocking {
+                withTimeout(20000) {
+                    f.store.reviewRoads.observe(ended.sessionId).first {
+                        it != null && it.road == roads[1] &&
+                            it.sampleAnchor == null &&
+                            it.memoText.isEmpty()
+                    }
+                }
+            }
+            val replaced = storedRoad()
+            assertEquals(roads[1], replaced.road)
+            assertNull(replaced.sampleAnchor)
+            click("history_location_recording")
+            waitTag("location_history_content")
+            click("location_history_event_previous")
+            click("location_history_event_previous")
+            click("location_history_point_map")
+            waitTag("review_road_sample_absent")
+            val replacementMap = awaitStoredMap(cityHall, replaced.road)
+            val writesBeforeOldRoad = f.sampleWriteAttempts.get()
+            invoke(staleFirstLink)
+            assertEquals(writesBeforeOldRoad, f.sampleWriteAttempts.get())
+            assertNull(storedRoad().sampleAnchor)
             assertTrue("A changed saved road owns a fresh map", replacementMap !== originalRoadMap)
             instrument.runOnMainSync { assertFalse(originalRoadMap.isAttachedToWindow) }
             assertEquals(
@@ -613,10 +783,10 @@ class LocationRecordingFlowTest {
             assertNoStoredMap()
             assertEquals("Recovery waits for explicit retry", failedReadAttempts, f.reviewReadAttempts.get())
             click("review_road_retry")
-            val recoveredMap = awaitStoredMap(cityHall, replaced.review.road)
+            val recoveredMap = awaitStoredMap(cityHall, replaced.road)
             assertTrue(f.reviewReadAttempts.get() > failedReadAttempts && recoveredMap !== replacementMap)
             assertEquals(
-                replaced.review,
+                replaced,
                 runBlocking {
                     f.store.reviewRoads
                         .observe(ended.sessionId)
@@ -626,7 +796,7 @@ class LocationRecordingFlowTest {
 
             assertEquals(
                 SessionReviewRoadWriteResult.Cleared,
-                runBlocking { f.store.reviewRoads.clear(ended, replaced.review) { true } },
+                runBlocking { f.store.reviewRoads.clear(ended, replaced) { true } },
             )
             waitTag("review_road_empty")
             assertText("review_road_empty", HomeR.string.review_road_comparison_empty)
@@ -763,7 +933,7 @@ class LocationRecordingFlowTest {
             assertEquals(0, f.gateway.active.get())
             assertFalse(f.gateway.permission.get())
             f.assertNoPlatformActions()
-            phase("CONTROLLED_STORED_POINT_ROAD_COMPARISON_FAILURE_RETRY_NATIVE_ACCESS_AND_PRESERVATION")
+            phase("CONTROLLED_EXPLICIT_STORED_SAMPLE_ASSOCIATION_FAILURE_REREAD_DISCARD_NATIVE_ACCESS_AND_PRESERVATION")
         }
     }
 
@@ -1215,6 +1385,70 @@ class LocationRecordingFlowTest {
         compose.onNodeWithTag(tag, useUnmergedTree = true).performScrollTo()
         assertActualHost()
         return checkNotNull(nodes(tag).single().config[SemanticsActions.OnClick].action)
+    }
+
+    /** Only this known production dialog may own focus between its verified open and dismissal. */
+    private fun openRoadDiscardDialog() {
+        waitTag("review_road_save")
+        assertActualHost()
+        val save = compose.onNodeWithTag("review_road_save", useUnmergedTree = true)
+        save.performScrollTo().assertIsDisplayed()
+        assertActualHost()
+        save.performClick()
+        compose.waitForIdle()
+        waitTag("review_road_memo_discard_dialog")
+        assertOwnedRoadDiscardDialog()
+    }
+
+    private fun assertOwnedRoadDiscardDialog() {
+        instrument.runOnMainSync {
+            val captured = checkNotNull(actualHost)
+            assertTrue("The owned road dialog must retain the captured Activity", compose.activity === captured)
+            assertEquals(Lifecycle.State.RESUMED, captured.lifecycle.currentState)
+            val display = checkNotNull(captured.display)
+            assertTrue(
+                "The owned road dialog must retain the original valid display",
+                display.isValid && display.displayId == actualHostDisplay,
+            )
+        }
+        assertEquals(
+            "The focused window on the captured display must still belong to this app",
+            instrument.targetContext.packageName,
+            actualFocusedPackage(),
+        )
+        val active = checkNotNull(instrument.uiAutomation.rootInActiveWindow)
+        try {
+            assertEquals(instrument.targetContext.packageName, active.packageName?.toString())
+        } finally {
+            active.recycle()
+        }
+        assertEquals(1, nodes("review_road_memo_discard_dialog").size)
+        compose.onNodeWithTag("review_road_memo_discard_dialog", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithTag("review_road_sample_discard_warning", useUnmergedTree = true).assertIsDisplayed()
+    }
+
+    private fun roadDiscardConfirmAction(): () -> Boolean {
+        assertOwnedRoadDiscardDialog()
+        compose.onNodeWithTag("review_road_memo_discard_confirm", useUnmergedTree = true).assertIsDisplayed()
+        return checkNotNull(nodes("review_road_memo_discard_confirm").single().config[SemanticsActions.OnClick].action)
+    }
+
+    private fun dismissRoadDiscardDialog(confirm: Boolean) {
+        assertOwnedRoadDiscardDialog()
+        val action =
+            compose
+                .onNodeWithTag(
+                    if (confirm) "review_road_memo_discard_confirm" else "review_road_memo_discard_cancel",
+                    useUnmergedTree = true,
+                ).assertIsDisplayed()
+        assertOwnedRoadDiscardDialog()
+        action.performClick()
+        compose.waitForIdle()
+        compose.waitUntil(20_000) {
+            assertEquals(instrument.targetContext.packageName, actualFocusedPackage())
+            nodes("review_road_memo_discard_dialog").isEmpty() && checkNotNull(actualHost).hasWindowFocus()
+        }
+        assertActualHost()
     }
 
     private fun invoke(action: () -> Boolean) {
@@ -1913,6 +2147,8 @@ class LocationRecordingFlowTest {
         lateinit var reviewRoadModel: SessionReviewRoadViewModel
         val reviewReadFailure = MutableStateFlow(false)
         val reviewReadAttempts = AtomicInteger()
+        val sampleWriteFailure = AtomicInteger()
+        val sampleWriteAttempts = AtomicInteger()
         private val reviewReads =
             object : SessionReviewRoadRepository by store.reviewRoads {
                 override fun observe(sessionId: String): Flow<SessionReviewRoad?> =
@@ -1925,6 +2161,22 @@ class LocationRecordingFlowTest {
                             },
                         )
                     }
+
+                override suspend fun setSample(
+                    expectedSource: PracticeSession,
+                    expectedCurrent: SessionReviewRoad,
+                    sample: SessionReviewSample?,
+                    canCommit: () -> Boolean,
+                ): SessionReviewRoadWriteResult {
+                    sampleWriteAttempts.incrementAndGet()
+                    val failure = sampleWriteFailure.getAndSet(0)
+                    if (failure == 1) throw IOException("Controlled failure before the owned sample association write")
+                    val result = store.reviewRoads.setSample(expectedSource, expectedCurrent, sample, canCommit)
+                    if (failure == 2 && result is SessionReviewRoadWriteResult.Saved) {
+                        throw IOException("Controlled acknowledgement loss after the owned sample association commit")
+                    }
+                    return result
+                }
             }
         private val navigationCalls = AtomicInteger()
         private val backgroundCalls = AtomicInteger()
@@ -1935,9 +2187,10 @@ class LocationRecordingFlowTest {
         }
 
         fun mount() {
-            val pointMap: (@Composable (PracticeSession, LocationUpdateSample, () -> Boolean) -> Unit)? =
+            val pointMap: (@Composable (PracticeSession, LocationRecordingRun, LocationRecordingEvent, () -> Boolean) -> Unit)? =
                 if (mapEnabled) {
-                    { source, sample, canRead ->
+                    { source, run, event, canRead ->
+                        val sample = (event.reading as LocationUpdateReading.Sample).sample
                         SessionReviewRoadRoute(
                             source,
                             canRead,
@@ -1946,6 +2199,7 @@ class LocationRecordingFlowTest {
                             comparisonMap = { saved, allowed, changes ->
                                 StoredLocationMap(sample, allowed, reviewRoad = saved, inputChanges = changes)
                             },
+                            sampleCandidate = SessionReviewSample.from(run, event),
                         )
                     }
                 } else {
@@ -2068,6 +2322,12 @@ class LocationRecordingFlowTest {
                                     SessionHistoryRoute(
                                         onClose = { screen.value = Screen.Home },
                                         viewModel = historyModel,
+                                        reviewRoad =
+                                            if (mapEnabled) {
+                                                { source, allowed -> SessionReviewRoadRoute(source, allowed, viewModel = reviewRoadModel) }
+                                            } else {
+                                                null
+                                            },
                                         onOpenLocations = { source ->
                                             selectedHistory = source
                                             historyOpens.incrementAndGet()

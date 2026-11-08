@@ -41,7 +41,7 @@
     <string name="next_practice_close">닫기</string>
     <string name="next_practice_review_road">이전 연습의 참고 구간</string>
     <string name="next_practice_target_road_title">다음 연습의 목표 도로</string>
-    <string name="next_practice_target_road_scope">내가 고른 연습 전 목표예요. 실제 주행이나 내비 경로를 뜻하지 않으며 메모는 복사하지 않아요.</string>
+    <string name="next_practice_target_road_scope">내가 고른 연습 전 목표예요. 실제 주행이나 내비 경로를 뜻하지 않으며 메모와 표본 연결은 복사하지 않아요.</string>
     <string name="next_practice_target_road_changed">고른 도로를 다시 확인해야 해요. 새 도로를 선택하거나 연결 안 함을 눌러 주세요.</string>
     <string name="next_practice_target_road_loading">이전 연습의 복습 도로를 확인하고 있어요.</string>
     <string name="next_practice_target_road_empty">이 연습에 저장한 복습 도로가 없어요.</string>

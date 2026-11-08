@@ -166,6 +166,7 @@ class OwnedPracticeTestStore private constructor(
                     PreparationMigration7To8,
                     PreparationMigration8To9,
                     PreparationMigration9To10,
+                    PreparationMigration10To11,
                 ).build()
         }
     }

@@ -62,6 +62,7 @@ import io.github.hangillab.hangil.core.domain.SessionFinishResult
 import io.github.hangillab.hangil.core.domain.SessionReviewRoad
 import io.github.hangillab.hangil.core.domain.SessionReviewRoadRepository
 import io.github.hangillab.hangil.core.domain.SessionReviewRoadWriteResult
+import io.github.hangillab.hangil.core.domain.SessionReviewSample
 import io.github.hangillab.hangil.core.domain.SessionStartResult
 import io.github.hangillab.hangil.core.domain.UxRestrictionState
 import io.github.hangillab.hangil.core.domain.VehicleGateway
@@ -180,12 +181,20 @@ class HistoryNextPracticeFlowTest {
                         }
                     }
 
+                override suspend fun setSample(
+                    expectedSource: PracticeSession,
+                    expectedCurrent: SessionReviewRoad,
+                    sample: SessionReviewSample?,
+                    canCommit: () -> Boolean,
+                ): SessionReviewRoadWriteResult = error("A next practice reference cannot change a review sample")
+
                 override suspend fun save(
                     expectedSource: PracticeSession,
                     road: CourseRoadSnapshot,
                     expectedCurrent: SessionReviewRoad?,
                     memoText: String,
                     discardMemo: Boolean,
+                    discardSample: Boolean,
                     canCommit: () -> Boolean,
                 ): SessionReviewRoadWriteResult = throw AssertionError("A reference road must never be saved by this UI")
 
@@ -193,6 +202,7 @@ class HistoryNextPracticeFlowTest {
                     expectedSource: PracticeSession,
                     expectedCurrent: SessionReviewRoad,
                     discardMemo: Boolean,
+                    discardSample: Boolean,
                     canCommit: () -> Boolean,
                 ): SessionReviewRoadWriteResult = throw AssertionError("A reference road must never be cleared by this UI")
             }

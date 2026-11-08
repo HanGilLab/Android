@@ -31,10 +31,11 @@ import io.github.hangillab.hangil.core.designsystem.ParkedButton
 import io.github.hangillab.hangil.core.designsystem.ParkedDisclosure
 import io.github.hangillab.hangil.core.designsystem.ParkedPage
 import io.github.hangillab.hangil.core.designsystem.ParkedPanel
+import io.github.hangillab.hangil.core.domain.LocationRecordingEvent
+import io.github.hangillab.hangil.core.domain.LocationRecordingRun
 import io.github.hangillab.hangil.core.domain.LocationRecordingRunStatus
 import io.github.hangillab.hangil.core.domain.LocationRecordingStopReason
 import io.github.hangillab.hangil.core.domain.LocationUpdateReading
-import io.github.hangillab.hangil.core.domain.LocationUpdateSample
 import io.github.hangillab.hangil.core.domain.PracticeSession
 import java.time.Instant
 import java.time.ZoneId
@@ -46,7 +47,7 @@ fun LocationHistoryRoute(
     expectedSource: PracticeSession,
     onClose: () -> Unit,
     viewModel: LocationHistoryViewModel = hiltViewModel(),
-    storedPointMap: (@Composable (PracticeSession, LocationUpdateSample, () -> Boolean) -> Unit)? = null,
+    storedPointMap: (@Composable (PracticeSession, LocationRecordingRun, LocationRecordingEvent, () -> Boolean) -> Unit)? = null,
 ) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     var hostOwner by remember(lifecycle, expectedSource, viewModel) { mutableStateOf(AtomicBoolean(false)) }
@@ -104,7 +105,7 @@ internal fun LocationHistoryScreen(
     state: LocationHistoryUiState,
     onClose: () -> Unit,
     viewModel: LocationHistoryViewModel,
-    storedPointMap: (@Composable (PracticeSession, LocationUpdateSample, () -> Boolean) -> Unit)? = null,
+    storedPointMap: (@Composable (PracticeSession, LocationRecordingRun, LocationRecordingEvent, () -> Boolean) -> Unit)? = null,
 ) {
     ParkedPage {
         TextButton(
@@ -174,7 +175,7 @@ private fun LocationHistoryNotice(
 private fun LocationHistoryReady(
     state: LocationHistoryUiState.Ready,
     viewModel: LocationHistoryViewModel,
-    storedPointMap: (@Composable (PracticeSession, LocationUpdateSample, () -> Boolean) -> Unit)?,
+    storedPointMap: (@Composable (PracticeSession, LocationRecordingRun, LocationRecordingEvent, () -> Boolean) -> Unit)?,
 ) {
     val run = state.run
     val event = state.event
@@ -399,7 +400,7 @@ private fun LocationHistoryReady(
                         { viewModel.canRead(state.token) },
                         Modifier.testTag("location_history_point_map"),
                     ) {
-                        storedPointMap(state.source, sample) { viewModel.canRead(state.token) }
+                        storedPointMap(state.source, run, event) { viewModel.canRead(state.token) }
                     }
                 }
             } else {
