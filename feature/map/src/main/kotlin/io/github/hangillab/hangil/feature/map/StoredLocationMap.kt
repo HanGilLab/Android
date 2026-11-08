@@ -23,6 +23,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,7 +41,9 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import io.github.hangillab.hangil.core.designsystem.HanGilDimensions
 import io.github.hangillab.hangil.core.designsystem.HanGilSpacing
-import io.github.hangillab.hangil.core.domain.LocationUpdateSample
+import io.github.hangillab.hangil.core.domain.LocationRecordingEvent
+import io.github.hangillab.hangil.core.domain.LocationRecordingRun
+import io.github.hangillab.hangil.core.domain.LocationUpdateReading
 import io.github.hangillab.hangil.core.domain.SessionReviewRoad
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -59,22 +62,39 @@ import org.maplibre.android.tile.TileOperation
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.roundToInt
 
-/** The caller creates this component only for an explicitly expanded, source-bound stored row. */
+/** The caller creates this component only for an explicitly expanded, source-bound stored run. */
 @Composable
 fun StoredLocationMap(
-    sample: LocationUpdateSample,
+    run: LocationRecordingRun,
+    events: List<LocationRecordingEvent>,
+    selectedEvent: LocationRecordingEvent?,
     canRead: () -> Boolean,
     modifier: Modifier = Modifier,
     reviewRoad: SessionReviewRoad? = null,
     inputChanges: Flow<Unit> = emptyFlow(),
 ) {
+    val input =
+        remember(run, events, selectedEvent) {
+            runCatching { StoredLocationMapInput.capture(run, events, selectedEvent) }.getOrNull()
+        }
+    // Latest inputs may invalidate a captured map, but never replace its captured permission guard.
+    val suppliedRun by rememberUpdatedState(run)
+    val suppliedEvents by rememberUpdatedState(events)
+    val suppliedSelection by rememberUpdatedState(selectedEvent)
+    val suppliedReview by rememberUpdatedState(reviewRoad)
     val owner = LocalLifecycleOwner.current
-    val receipt = remember(sample, reviewRoad, owner) { AtomicBoolean(true) }
-    val withdrawn = remember(sample, reviewRoad, owner) { mutableStateOf(false) }
-    val capturedGuard = remember(sample, reviewRoad, owner) { canRead }
+    val receipt = remember(input, reviewRoad, owner) { AtomicBoolean(true) }
+    val withdrawn = remember(input, reviewRoad, owner) { mutableStateOf(false) }
+    val inputChanged = remember(input, reviewRoad, owner) { mutableStateOf(false) }
+    val capturedGuard = remember(input, reviewRoad, owner) { canRead }
     val permitted: () -> Boolean =
-        remember(sample, reviewRoad, owner) {
+        remember(input, reviewRoad, owner) {
             {
+                val unchanged = input?.matches(suppliedRun, suppliedEvents, suppliedSelection) != false && reviewRoad == suppliedReview
+                if (!unchanged) {
+                    inputChanged.value = true
+                    receipt.set(false)
+                }
                 val allowed =
                     receipt.get() && owner.lifecycle.currentState == Lifecycle.State.RESUMED &&
                         try {
@@ -106,125 +126,173 @@ fun StoredLocationMap(
     }
     val dark = isSystemInDarkTheme()
     val fontScale = LocalDensity.current.fontScale
-    var attempt by remember(sample, reviewRoad, owner) { mutableIntStateOf(0) }
+    var attempt by remember(input, reviewRoad, owner) { mutableIntStateOf(0) }
     val capturedAttempt = attempt
-    val load = remember(sample, reviewRoad, owner, dark, fontScale, attempt) { mutableStateOf(MapLoadState.LOADING) }
+    val load = remember(input, reviewRoad, owner, dark, fontScale, attempt) { mutableStateOf(MapLoadState.LOADING) }
     val retry: () -> Unit = {
         if (attempt == capturedAttempt && load.value == MapLoadState.FAILED && permitted()) attempt++
     }
     val pointFill = MaterialTheme.colorScheme.primary.toArgb()
     val pointBorder = MaterialTheme.colorScheme.surface.toArgb()
     val roadColor = MaterialTheme.colorScheme.tertiary.toArgb()
+    val sourceMatches = reviewRoad == null || input == null || reviewRoad.source.copy(endedAtEpochMillis = null) == input.run.source
     Column(modifier.fillMaxWidth().testTag("stored_location_map"), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.lg)) {
-        if (withdrawn.value || !permitted()) {
+        if (inputChanged.value) {
+            Text(
+                stringResource(R.string.stored_map_changed),
+                Modifier.testTag("stored_location_map_changed"),
+                style = MaterialTheme.typography.bodyLarge,
+            )
+        } else if (withdrawn.value || !permitted()) {
             Text(
                 stringResource(R.string.stored_map_locked),
                 Modifier.testTag("stored_location_map_locked"),
                 style = MaterialTheme.typography.bodyLarge,
             )
-        } else if (!StoredLocationPoint.canProject(sample)) {
+        } else if (input == null || !sourceMatches) {
             Text(
-                stringResource(R.string.stored_map_unavailable),
-                Modifier.testTag("stored_location_map_unavailable"),
-                style = MaterialTheme.typography.bodyLarge,
-            )
-        } else if (reviewRoad?.road?.nodes?.any { it.latitude !in -85.0511287798066..85.0511287798066 } == true) {
-            Text(
-                stringResource(R.string.stored_map_road_unavailable),
-                Modifier.testTag("stored_location_map_road_unavailable"),
+                stringResource(R.string.stored_map_invalid),
+                Modifier.testTag("stored_location_map_invalid"),
                 style = MaterialTheme.typography.bodyLarge,
             )
         } else {
             Text(
-                stringResource(if (reviewRoad == null) R.string.stored_map_scope else R.string.stored_map_review_road_scope),
-                Modifier.fillMaxWidth().testTag(
-                    if (reviewRoad ==
-                        null
-                    ) {
-                        "stored_location_map_scope"
-                    } else {
-                        "stored_location_map_review_road_scope"
-                    },
-                ),
+                stringResource(R.string.stored_map_counts, input.samples.size, input.nonSampleCount),
+                Modifier.fillMaxWidth().testTag("stored_location_map_counts"),
                 style = MaterialTheme.typography.bodyLarge,
             )
-            Text(
-                stringResource(R.string.stored_map_uncertain),
-                Modifier.fillMaxWidth(),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(HanGilDimensions.mapPreviewHeight)
-                    .testTag(if (load.value == MapLoadState.READY) "stored_location_map_ready" else "stored_location_map_container"),
-            ) {
-                if (load.value == MapLoadState.FAILED) {
-                    Column(Modifier.testTag("stored_location_map_failed"), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.lg)) {
-                        Text(stringResource(R.string.map_failed), style = MaterialTheme.typography.bodyLarge)
-                        Button(
-                            onClick = retry,
-                            modifier =
-                                Modifier
-                                    .heightIn(min = HanGilDimensions.secondaryActionMinHeight)
-                                    .testTag("stored_location_map_retry")
-                                    .semantics {
-                                        onClick {
-                                            retry()
-                                            true
-                                        }
-                                    },
-                        ) { Text(stringResource(R.string.map_retry), style = MaterialTheme.typography.titleMedium) }
-                    }
-                } else {
-                    key(sample, reviewRoad, owner, dark, fontScale, attempt) {
-                        NativeStoredLocationMap(
-                            sample,
-                            reviewRoad,
-                            dark,
-                            fontScale,
-                            pointFill,
-                            pointBorder,
-                            roadColor,
-                            permitted,
-                            inputChanges = inputChanges,
-                            canInteract = { permitted() && load.value == MapLoadState.READY },
-                            onRendered = { if (permitted() && load.value == MapLoadState.LOADING) load.value = MapLoadState.READY },
-                            onFailed = { if (permitted()) load.value = MapLoadState.FAILED },
-                            modifier = Modifier.matchParentSize().testTag("stored_location_map_view"),
-                        )
-                    }
-                    if (load.value == MapLoadState.LOADING) {
-                        Column(
-                            Modifier.align(Alignment.Center).testTag("stored_location_map_loading"),
-                            verticalArrangement = Arrangement.spacedBy(HanGilSpacing.md),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                        ) {
-                            CircularProgressIndicator()
-                            Text(stringResource(R.string.map_loading), style = MaterialTheme.typography.bodyLarge)
-                        }
-                    }
-                }
-            }
-            if (reviewRoad != null) {
+            if (input.samples.isEmpty()) {
                 Text(
-                    stringResource(R.string.map_road_attribution),
+                    stringResource(R.string.stored_map_empty),
+                    Modifier.testTag("stored_location_map_empty"),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+            } else if (!StoredLocationPoint.canProject(input)) {
+                Text(
+                    stringResource(R.string.stored_map_unavailable),
+                    Modifier.testTag("stored_location_map_unavailable"),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+            } else if (reviewRoad?.road?.nodes?.any { it.latitude !in -85.0511287798066..85.0511287798066 } == true) {
+                Text(
+                    stringResource(R.string.stored_map_road_unavailable),
+                    Modifier.testTag("stored_location_map_road_unavailable"),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+            } else {
+                val selectedDescription =
+                    if (input.selectedEvent?.reading is LocationUpdateReading.Sample) {
+                        stringResource(R.string.stored_map_selected_sample, input.selectedEvent.ordinal)
+                    } else {
+                        stringResource(R.string.stored_map_selected_without_coordinates)
+                    }
+                Text(
+                    selectedDescription,
+                    Modifier.fillMaxWidth().testTag("stored_location_map_selected"),
+                    style = MaterialTheme.typography.titleLarge,
+                )
+                Text(
+                    stringResource(if (reviewRoad == null) R.string.stored_map_scope else R.string.stored_map_review_road_scope),
+                    Modifier.fillMaxWidth().testTag(
+                        if (reviewRoad == null) "stored_location_map_scope" else "stored_location_map_review_road_scope",
+                    ),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                Text(
+                    stringResource(R.string.stored_map_uncertain),
                     Modifier.fillMaxWidth(),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-            }
-            Text(
-                stringResource(R.string.map_sources),
-                Modifier.fillMaxWidth(),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            LaunchedEffect(load, load.value) {
-                if (load.value == MapLoadState.LOADING) {
-                    delay(20_000)
-                    if (permitted() && load.value == MapLoadState.LOADING) load.value = MapLoadState.FAILED
+                val description =
+                    if (reviewRoad == null) {
+                        stringResource(R.string.stored_map_content_description, input.samples.size, selectedDescription)
+                    } else {
+                        stringResource(
+                            R.string.stored_map_review_road_content_description,
+                            input.samples.size,
+                            reviewRoad.road.title,
+                            selectedDescription,
+                        )
+                    }
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(HanGilDimensions.mapPreviewHeight)
+                        .testTag(if (load.value == MapLoadState.READY) "stored_location_map_ready" else "stored_location_map_container"),
+                ) {
+                    if (load.value == MapLoadState.FAILED) {
+                        Column(
+                            Modifier.testTag("stored_location_map_failed"),
+                            verticalArrangement = Arrangement.spacedBy(HanGilSpacing.lg),
+                        ) {
+                            Text(stringResource(R.string.map_failed), style = MaterialTheme.typography.bodyLarge)
+                            Button(
+                                onClick = retry,
+                                modifier =
+                                    Modifier
+                                        .heightIn(min = HanGilDimensions.secondaryActionMinHeight)
+                                        .testTag("stored_location_map_retry")
+                                        .semantics {
+                                            onClick {
+                                                retry()
+                                                true
+                                            }
+                                        },
+                            ) {
+                                Text(stringResource(R.string.map_retry), style = MaterialTheme.typography.titleMedium)
+                            }
+                        }
+                    } else {
+                        key(input, reviewRoad, owner, dark, fontScale, attempt) {
+                            NativeStoredLocationMap(
+                                input,
+                                reviewRoad,
+                                dark,
+                                fontScale,
+                                pointFill,
+                                pointBorder,
+                                roadColor,
+                                permitted,
+                                inputChanges = inputChanges,
+                                canInteract = { permitted() && load.value == MapLoadState.READY },
+                                onRendered = { if (permitted() && load.value == MapLoadState.LOADING) load.value = MapLoadState.READY },
+                                onFailed = { if (permitted()) load.value = MapLoadState.FAILED },
+                                contentDescription = description,
+                                modifier = Modifier.matchParentSize().testTag("stored_location_map_view"),
+                            )
+                        }
+                        if (load.value == MapLoadState.LOADING) {
+                            Column(
+                                Modifier.align(Alignment.Center).testTag("stored_location_map_loading"),
+                                verticalArrangement = Arrangement.spacedBy(HanGilSpacing.md),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                            ) {
+                                CircularProgressIndicator()
+                                Text(stringResource(R.string.map_loading), style = MaterialTheme.typography.bodyLarge)
+                            }
+                        }
+                    }
+                }
+                if (reviewRoad != null) {
+                    Text(
+                        stringResource(R.string.map_road_attribution),
+                        Modifier.fillMaxWidth(),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Text(
+                    stringResource(R.string.map_sources),
+                    Modifier.fillMaxWidth(),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                LaunchedEffect(load, load.value) {
+                    if (load.value == MapLoadState.LOADING) {
+                        delay(20_000)
+                        if (permitted() && load.value == MapLoadState.LOADING) load.value = MapLoadState.FAILED
+                    }
                 }
             }
         }
@@ -233,7 +301,7 @@ fun StoredLocationMap(
 
 @Composable
 private fun NativeStoredLocationMap(
-    sample: LocationUpdateSample,
+    input: StoredLocationMapInput,
     reviewRoad: SessionReviewRoad?,
     dark: Boolean,
     fontScale: Float,
@@ -245,17 +313,18 @@ private fun NativeStoredLocationMap(
     canInteract: () -> Boolean,
     onRendered: () -> Unit,
     onFailed: () -> Unit,
+    contentDescription: String,
     modifier: Modifier,
 ) {
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
-    val active = remember(sample, reviewRoad, owner) { AtomicBoolean(true) }
-    val savedState = remember(sample, reviewRoad, owner) { MapViewSavedState() }
+    val active = remember(input, reviewRoad, owner) { AtomicBoolean(true) }
+    val savedState = remember(input, reviewRoad, owner) { MapViewSavedState() }
     val result =
-        remember(context, sample, reviewRoad, owner) {
+        remember(context, input, reviewRoad, owner) {
             createStoredMap(
                 context,
-                sample,
+                input,
                 reviewRoad,
                 dark,
                 fontScale,
@@ -299,17 +368,11 @@ private fun NativeStoredLocationMap(
             observer.destroy()
         }
     }
-    val description =
-        if (reviewRoad == null) {
-            stringResource(R.string.stored_map_content_description)
-        } else {
-            stringResource(R.string.stored_map_review_road_content_description, reviewRoad.road.title)
-        }
     AndroidView(
         factory = { view },
         modifier = modifier,
         update = {
-            it.contentDescription = description
+            it.contentDescription = contentDescription
             it.recheckInput()
         },
     )
@@ -317,7 +380,7 @@ private fun NativeStoredLocationMap(
 
 private fun createStoredMap(
     context: Context,
-    sample: LocationUpdateSample,
+    input: StoredLocationMapInput,
     reviewRoad: SessionReviewRoad?,
     dark: Boolean,
     fontScale: Float,
@@ -370,10 +433,13 @@ private fun createStoredMap(
                                     RoadPreviewLayers.add(loaded, listOf(it.road), roadColor)
                                     RoadPreviewLayers.select(loaded, it.road.id)
                                 }
-                                StoredLocationPoint.add(loaded, sample, pointFill, pointBorder, fontScale)
+                                StoredLocationPoint.add(loaded, input, pointFill, pointBorder, fontScale)
                                 styled.set(true)
                                 val coordinates =
-                                    listOf(LatLng(sample.latitude, sample.longitude)) +
+                                    input.samples.map { event ->
+                                        val sample = (event.reading as LocationUpdateReading.Sample).sample
+                                        LatLng(sample.latitude, sample.longitude)
+                                    } +
                                         reviewRoad
                                             ?.road
                                             ?.nodes

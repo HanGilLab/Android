@@ -56,7 +56,8 @@ fun LocationHistoryRoute(
         @Composable (
             PracticeSession,
             LocationRecordingRun,
-            LocationRecordingEvent,
+            List<LocationRecordingEvent>,
+            LocationRecordingEvent?,
             () -> Boolean,
             (SessionReviewSample) -> Boolean,
         ) -> Unit
@@ -122,7 +123,8 @@ internal fun LocationHistoryScreen(
         @Composable (
             PracticeSession,
             LocationRecordingRun,
-            LocationRecordingEvent,
+            List<LocationRecordingEvent>,
+            LocationRecordingEvent?,
             () -> Boolean,
             (SessionReviewSample) -> Boolean,
         ) -> Unit
@@ -232,7 +234,8 @@ private fun LocationHistoryReady(
         @Composable (
             PracticeSession,
             LocationRecordingRun,
-            LocationRecordingEvent,
+            List<LocationRecordingEvent>,
+            LocationRecordingEvent?,
             () -> Boolean,
             (SessionReviewSample) -> Boolean,
         ) -> Unit
@@ -243,6 +246,7 @@ private fun LocationHistoryReady(
 ) {
     val run = state.run
     val event = state.event
+    val events = state.events
     val eventHeading = remember { BringIntoViewRequester() }
     LaunchedEffect(state.token) {
         val anchor = linkedSampleToPresent ?: return@LaunchedEffect
@@ -251,6 +255,7 @@ private fun LocationHistoryReady(
         if (event == null || event.reading !is LocationUpdateReading.Sample || SessionReviewSample.from(run, event) != anchor) {
             return@LaunchedEffect
         }
+        if (!viewModel.canRead(state.token)) return@LaunchedEffect
         withFrameNanos { }
         if (viewModel.canRead(state.token)) {
             eventHeading.bringIntoView()
@@ -354,14 +359,28 @@ private fun LocationHistoryReady(
         Text(
             stringResource(
                 R.string.location_history_counts,
-                state.events.count {
+                events.count {
                     it.reading is LocationUpdateReading.Sample
                 },
-                state.events.size,
+                events.size,
             ),
             modifier = Modifier.fillMaxWidth(),
             style = MaterialTheme.typography.bodyLarge,
         )
+        if (storedPointMap != null) {
+            Text(
+                stringResource(R.string.location_history_point_map_notice),
+                Modifier.fillMaxWidth().testTag("location_history_point_map_notice"),
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            ParkedDisclosure(
+                stringResource(R.string.location_history_point_map),
+                { viewModel.canRead(state.token) },
+                Modifier.testTag("location_history_point_map"),
+            ) {
+                storedPointMap(state.source, run, events, event, { viewModel.canRead(state.token) }, openLinkedSample)
+            }
+        }
         val previous: () -> Unit = { viewModel.previousRun(state.token, run.runId) }
         val next: () -> Unit = { viewModel.nextRun(state.token, run.runId) }
         ParkedButton(
@@ -404,7 +423,7 @@ private fun LocationHistoryReady(
                 verticalArrangement = Arrangement.spacedBy(HanGilSpacing.lg),
             ) {
                 Text(
-                    stringResource(R.string.location_history_event_position, state.eventIndex + 1, state.events.size),
+                    stringResource(R.string.location_history_event_position, state.eventIndex + 1, events.size),
                     modifier = Modifier.fillMaxWidth().testTag("location_history_event_heading"),
                     style = MaterialTheme.typography.titleLarge,
                 )
@@ -469,20 +488,6 @@ private fun LocationHistoryReady(
                             modifier = Modifier.fillMaxWidth(),
                             style = MaterialTheme.typography.bodyLarge,
                         )
-                    }
-                }
-                if (storedPointMap != null) {
-                    Text(
-                        stringResource(R.string.location_history_point_map_notice),
-                        Modifier.fillMaxWidth().testTag("location_history_point_map_notice"),
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
-                    ParkedDisclosure(
-                        stringResource(R.string.location_history_point_map),
-                        { viewModel.canRead(state.token) },
-                        Modifier.testTag("location_history_point_map"),
-                    ) {
-                        storedPointMap(state.source, run, event, { viewModel.canRead(state.token) }, openLinkedSample)
                     }
                 }
             } else {

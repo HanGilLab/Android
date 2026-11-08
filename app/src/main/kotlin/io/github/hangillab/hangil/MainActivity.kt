@@ -31,6 +31,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import io.github.hangillab.hangil.core.designsystem.HanGilTheme
 import io.github.hangillab.hangil.core.designsystem.ParkedPage
 import io.github.hangillab.hangil.core.domain.LocationRecordingController
+import io.github.hangillab.hangil.core.domain.LocationUpdateReading
 import io.github.hangillab.hangil.core.domain.PracticeSession
 import io.github.hangillab.hangil.core.domain.SessionReviewSample
 import io.github.hangillab.hangil.core.vehicle.FusedLocationPermission
@@ -208,9 +209,11 @@ class MainActivity : ComponentActivity() {
                                 LocationHistoryRoute(
                                     expectedSource = expected,
                                     onClose = { navigation.popBackStack() },
-                                    storedPointMap = { source, run, event, canRead, openLinkedSample ->
-                                        val candidate = SessionReviewSample.from(run, event)
-                                        val sample = candidate.sample
+                                    storedPointMap = { source, run, events, selectedEvent, canRead, openLinkedSample ->
+                                        val candidate =
+                                            selectedEvent?.takeIf { it.reading is LocationUpdateReading.Sample }?.let {
+                                                SessionReviewSample.from(run, it)
+                                            }
                                         SessionReviewRoadRoute(
                                             expectedSource = source,
                                             canKeepOpen = canRead,
@@ -218,7 +221,14 @@ class MainActivity : ComponentActivity() {
                                             sampleCandidate = candidate,
                                             onOpenLinkedSample = openLinkedSample,
                                             comparisonMap = { saved, allowed, changes ->
-                                                StoredLocationMap(sample, allowed, reviewRoad = saved, inputChanges = changes)
+                                                StoredLocationMap(
+                                                    run,
+                                                    events,
+                                                    selectedEvent,
+                                                    allowed,
+                                                    reviewRoad = saved,
+                                                    inputChanges = changes,
+                                                )
                                             },
                                         )
                                     },
