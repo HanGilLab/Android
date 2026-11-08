@@ -170,12 +170,15 @@ class HistoryNextPracticeFlowTest {
                     expectedSource: PracticeSession,
                     road: CourseRoadSnapshot,
                     expectedCurrent: SessionReviewRoad?,
+                    memoText: String,
+                    discardMemo: Boolean,
                     canCommit: () -> Boolean,
                 ): SessionReviewRoadWriteResult = throw AssertionError("A reference road must never be saved by this UI")
 
                 override suspend fun clear(
                     expectedSource: PracticeSession,
                     expectedCurrent: SessionReviewRoad,
+                    discardMemo: Boolean,
                     canCommit: () -> Boolean,
                 ): SessionReviewRoadWriteResult = throw AssertionError("A reference road must never be cleared by this UI")
             }
@@ -221,7 +224,13 @@ class HistoryNextPracticeFlowTest {
             runBlocking { seed(store, previousPractice.copy(task = targetTask), 3000) }
             val savedRoad =
                 runBlocking {
-                    val result = store.reviewRoads.save(older, course.roadSnapshots.first(), null) { true }
+                    val result =
+                        store.reviewRoads.save(
+                            older,
+                            course.roadSnapshots.first(),
+                            null,
+                            memoText = "  지도에서 고른 구간 🧭\n표지를 다시 살펴보기  ",
+                        ) { true }
                     check(result is SessionReviewRoadWriteResult.Saved)
                     result.review
                 }
@@ -484,6 +493,7 @@ class HistoryNextPracticeFlowTest {
         waitTag("review_road_stored_title")
         assertEquals("USER_SELECTION", saved.origin)
         compose.onNodeWithTag("review_road_stored_title", useUnmergedTree = true).assertTextEquals(saved.road.title)
+        compose.onNodeWithTag("review_road_memo_text", useUnmergedTree = true).assertTextEquals(saved.memoText)
         compose
             .onNodeWithTag("review_road_source", useUnmergedTree = true)
             .assertTextEquals(compose.activity.getString(HomeR.string.review_road_reference_source))
@@ -498,10 +508,18 @@ class HistoryNextPracticeFlowTest {
             "review_road_cancel",
             "review_road_busy",
             "review_road_feedback",
+            "review_road_memo_edit",
+            "review_road_memo_textfield",
+            "review_road_memo_save",
+            "review_road_memo_cancel_edit",
+            "review_road_memo_count",
+            "review_road_memo_writing",
+            "review_road_memo_edit_context",
         )) {
             assertMissing(tag)
         }
         assertTextFits("review_road_stored_title")
+        assertTextFits("review_road_memo_text")
         assertTextFits("review_road_reference_scope")
     }
 

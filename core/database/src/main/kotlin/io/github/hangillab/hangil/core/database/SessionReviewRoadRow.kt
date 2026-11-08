@@ -41,6 +41,7 @@ internal data class SessionReviewRoadRow(
                     nodes,
                 ),
                 first.version,
+                first.memoText,
             )
         }
     }

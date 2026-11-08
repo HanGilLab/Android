@@ -532,7 +532,7 @@ class ManualCourseCompletionRoomFlowTest {
             }
             attempt { f.ui?.dispose() }
             attempt {
-                assertTrue("owned Room remains schema8/FK clean", f.store.schemaVersion() == 8 && f.store.foreignKeyViolationCount() == 0)
+                assertTrue("owned Room remains schema9/FK clean", f.store.schemaVersion() == 9 && f.store.foreignKeyViolationCount() == 0)
             }
             // Source additions in the explicit active-session test are owned fixtures. All originals survive.
             attempt { f.assertSeedPreserved() }

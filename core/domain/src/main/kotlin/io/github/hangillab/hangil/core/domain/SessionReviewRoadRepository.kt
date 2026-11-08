@@ -8,8 +8,11 @@ interface SessionReviewRoadRepository {
 
     /**
      * Save for this exact ended source with no active session. The whole current choice, including
-     * absence, must match. The candidate and its complete catalog seed must still match before and
-     * after the transaction's work. Same-road saves with a matching current choice preserve its token.
+     * absence and memo text, must match. A new road and its complete catalog seed must still match
+     * before and after the transaction's work. Editing the same stored road's memo needs no catalog.
+     * Identical road and memo preserve the token; changed memo gets a new token without changing nodes.
+     * Replacing a road with a memo requires explicit discard and an empty new memo; never copy notes
+     * to another road. Text is preserved exactly, with empty meaning no memo.
      * Pure live permission and cancellation checks before COMMIT roll back a rejected write.
      * If result delivery is cancelled after COMMIT, reread rather than assuming the write failed.
      */
@@ -17,13 +20,16 @@ interface SessionReviewRoadRepository {
         expectedSource: PracticeSession,
         road: CourseRoadSnapshot,
         expectedCurrent: SessionReviewRoad?,
+        memoText: String = expectedCurrent?.memoText.orEmpty(),
+        discardMemo: Boolean = false,
         canCommit: () -> Boolean,
     ): SessionReviewRoadWriteResult
 
-    /** Clear only this whole current choice. Never require its old road to remain in the catalog. */
+    /** Clear only this whole choice, requiring explicit discard for a memo. No current catalog is needed. */
     suspend fun clear(
         expectedSource: PracticeSession,
         expectedCurrent: SessionReviewRoad,
+        discardMemo: Boolean = false,
         canCommit: () -> Boolean,
     ): SessionReviewRoadWriteResult
 }

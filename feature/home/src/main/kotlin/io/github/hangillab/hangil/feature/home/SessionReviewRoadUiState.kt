@@ -33,6 +33,7 @@ sealed interface SessionReviewRoadUiState {
         override val source: PracticeSession,
         override val token: Token,
         val writeUnconfirmed: Boolean,
+        val retainedMemo: String? = null,
     ) : SessionReviewRoadUiState
 
     data class Ready(
@@ -44,9 +45,24 @@ sealed interface SessionReviewRoadUiState {
         val busy: Boolean,
         val canWrite: Boolean,
         val feedback: Feedback? = null,
+        val edit: Edit? = null,
+        val confirmation: Confirmation? = null,
+        val retainedMemo: Edit? = null,
     ) : SessionReviewRoadUiState {
         val draftRoadId: String? get() = draft?.id
     }
 
-    enum class Feedback { SAVED, CLEARED }
+    data class Edit(
+        val nonce: Long,
+        val text: String,
+        val expectedCurrent: SessionReviewRoad,
+    )
+
+    data class Confirmation(
+        val nonce: Long,
+        val target: CourseRoadSnapshot?,
+        val expectedCurrent: SessionReviewRoad,
+    )
+
+    enum class Feedback { SAVED, CLEARED, MEMO_SAVED, MEMO_CLEARED }
 }

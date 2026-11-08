@@ -1,5 +1,6 @@
 package io.github.hangillab.hangil.core.database
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.PrimaryKey
@@ -41,6 +42,7 @@ internal data class SessionReviewRoadEntity(
     val osmWayVersion: Int,
     val capturedAtEpochMillis: Long,
     val nodeCount: Int,
+    @ColumnInfo(defaultValue = "''") val memoText: String = "",
 ) {
     fun source() =
         PracticeSession(
@@ -81,6 +83,7 @@ internal data class SessionReviewRoadEntity(
                 road.osmWayVersion,
                 road.capturedAtEpochMillis,
                 road.nodes.size,
+                review.memoText,
             )
         }
     }

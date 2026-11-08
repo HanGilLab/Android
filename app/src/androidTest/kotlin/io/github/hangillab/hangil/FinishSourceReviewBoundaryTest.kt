@@ -526,11 +526,13 @@ class FinishSourceReviewBoundaryTest {
                                 expectedSource: PracticeSession,
                                 road: CourseRoadSnapshot,
                                 expectedCurrent: SessionReviewRoad?,
+                                memoText: String,
+                                discardMemo: Boolean,
                                 canCommit: () -> Boolean,
                             ): SessionReviewRoadWriteResult {
                                 activeWrites.incrementAndGet()
                                 try {
-                                    return repository.save(expectedSource, road, expectedCurrent, canCommit)
+                                    return repository.save(expectedSource, road, expectedCurrent, memoText, discardMemo, canCommit)
                                 } finally {
                                     activeWrites.decrementAndGet()
                                 }
@@ -539,11 +541,12 @@ class FinishSourceReviewBoundaryTest {
                             override suspend fun clear(
                                 expectedSource: PracticeSession,
                                 expectedCurrent: SessionReviewRoad,
+                                discardMemo: Boolean,
                                 canCommit: () -> Boolean,
                             ): SessionReviewRoadWriteResult {
                                 activeWrites.incrementAndGet()
                                 try {
-                                    return repository.clear(expectedSource, expectedCurrent, canCommit)
+                                    return repository.clear(expectedSource, expectedCurrent, discardMemo, canCommit)
                                 } finally {
                                     activeWrites.decrementAndGet()
                                 }

@@ -311,6 +311,322 @@ class SessionReviewRoadViewModelTest {
             assertTrue(f.reviews.cleared.isEmpty())
         }
 
+    @Test fun memoEditingRequiresStoredRoadAndRetiresOldTypingCallbacks() =
+        runTest {
+            val absent = Fixture()
+            val empty = watch(absent)
+            runCurrent()
+            assertFalse(absent.vm.beginMemo(empty.ready().token))
+            assertTrue(absent.reviews.saved.isEmpty())
+
+            val original = SessionReviewRoad(ended(), firstRoad(), "original", "Original road note")
+            val f = Fixture(original)
+            val trace = watch(f)
+            runCurrent()
+            assertTrue(f.vm.select(trace.ready().token, secondRoad().id))
+            runCurrent()
+            assertFalse(f.vm.beginMemo(trace.ready().token))
+            assertTrue(f.vm.cancel(trace.ready().token))
+            runCurrent()
+            assertTrue(f.vm.beginMemo(trace.ready().token))
+            runCurrent()
+            val receipt = trace.ready().token
+            val edit = checkNotNull(trace.ready().edit)
+            assertEquals(original.memoText, edit.text)
+            val exact = "  Merge check\nSecond line 🚗  "
+            assertTrue(f.vm.editMemo(receipt, edit.nonce, exact))
+            runCurrent()
+            val typed = trace.ready().token
+            assertFalse(receipt == typed)
+            assertEquals(edit.nonce, trace.ready().edit?.nonce)
+            assertEquals(exact, trace.ready().edit?.text)
+            assertFalse(f.vm.saveMemo(receipt, edit.nonce))
+            assertFalse(f.vm.editMemo(receipt, edit.nonce, "Old typing callback"))
+            assertEquals(exact, trace.ready().edit?.text)
+            assertFalse(f.vm.select(typed, secondRoad().id))
+            assertFalse(f.vm.save(typed))
+            assertFalse(f.vm.clear(typed))
+            assertTrue(f.reviews.saved.isEmpty())
+            assertTrue(f.vm.cancelMemo(typed, edit.nonce))
+            runCurrent()
+            assertNull(trace.ready().edit)
+            assertEquals(original, trace.ready().stored)
+            assertFalse(f.vm.editMemo(typed, edit.nonce, "Retired draft"))
+            assertFalse(f.vm.saveMemo(typed, edit.nonce))
+            assertTrue(f.reviews.saved.isEmpty())
+
+            assertTrue(f.vm.beginMemo(trace.ready().token))
+            runCurrent()
+            val next = checkNotNull(trace.ready().edit)
+            val current = trace.ready().token
+            assertFalse(next.nonce == edit.nonce)
+            assertFalse(f.vm.editMemo(current, edit.nonce, "Wrong edit nonce"))
+            assertTrue(f.vm.editMemo(current, next.nonce, exact))
+            runCurrent()
+            val latest = trace.ready().token
+            assertFalse(current == latest)
+            assertEquals(next.nonce, trace.ready().edit?.nonce)
+            assertFalse(f.vm.saveMemo(current, next.nonce))
+            assertFalse(f.vm.editMemo(current, next.nonce, "Superseded content"))
+            assertTrue(f.reviews.saved.isEmpty())
+            assertTrue(f.vm.saveMemo(latest, next.nonce))
+            assertFalse(f.vm.saveMemo(latest, next.nonce))
+            runCurrent()
+            val request = f.reviews.saved.single()
+            assertEquals(f.source, request.source)
+            assertEquals(original.road, request.road)
+            assertEquals(original, request.expectedCurrent)
+            assertEquals(exact, request.memoText)
+            assertFalse(request.discardMemo)
+            assertEquals(exact, trace.ready().stored?.memoText)
+            assertNull(trace.ready().edit)
+            assertFalse(f.vm.editMemo(latest, next.nonce, "After save"))
+        }
+
+    @Test fun replacingOrClearingANotedRoadRequiresCurrentDiscardConfirmationExactlyOnce() =
+        runTest {
+            val original = SessionReviewRoad(ended(), firstRoad(), "noted-road", "Keep until confirmed")
+            val f = Fixture(original)
+            val trace = watch(f)
+            runCurrent()
+            assertTrue(f.vm.select(trace.ready().token, secondRoad().id))
+            runCurrent()
+            assertEquals(original, trace.ready().stored)
+            assertTrue(f.reviews.saved.isEmpty())
+            assertTrue(f.vm.save(trace.ready().token))
+            runCurrent()
+            val firstToken = trace.ready().token
+            val first = checkNotNull(trace.ready().confirmation)
+            assertEquals(secondRoad(), first.target)
+            assertEquals(original, trace.ready().stored)
+            assertTrue(f.reviews.saved.isEmpty())
+            assertTrue(f.reviews.cleared.isEmpty())
+            assertTrue(f.vm.cancelDiscard(firstToken, first.nonce))
+            runCurrent()
+            assertNull(trace.ready().confirmation)
+            assertEquals(original, trace.ready().stored)
+            assertFalse(f.vm.confirmDiscard(firstToken, first.nonce))
+            assertTrue(f.reviews.saved.isEmpty())
+
+            if (trace.ready().draft != secondRoad()) {
+                assertTrue(f.vm.select(trace.ready().token, secondRoad().id))
+                runCurrent()
+            }
+            assertTrue(f.vm.save(trace.ready().token))
+            runCurrent()
+            val secondToken = trace.ready().token
+            val second = checkNotNull(trace.ready().confirmation)
+            assertTrue(f.vm.confirmDiscard(secondToken, second.nonce))
+            assertFalse(f.vm.confirmDiscard(secondToken, second.nonce))
+            runCurrent()
+            val replacement = f.reviews.saved.single()
+            assertEquals(original, replacement.expectedCurrent)
+            assertEquals(secondRoad(), replacement.road)
+            assertEquals("", replacement.memoText)
+            assertTrue(replacement.discardMemo)
+            assertEquals(secondRoad(), trace.ready().stored?.road)
+            assertEquals("", trace.ready().stored?.memoText)
+
+            val clearFixture = Fixture(original)
+            val clearing = watch(clearFixture)
+            runCurrent()
+            assertTrue(clearFixture.vm.clear(clearing.ready().token))
+            runCurrent()
+            val cancelToken = clearing.ready().token
+            val cancel = checkNotNull(clearing.ready().confirmation)
+            assertNull(cancel.target)
+            assertTrue(clearFixture.reviews.cleared.isEmpty())
+            assertTrue(clearFixture.vm.cancelDiscard(cancelToken, cancel.nonce))
+            runCurrent()
+            assertEquals(original, clearing.ready().stored)
+            assertTrue(clearFixture.reviews.cleared.isEmpty())
+            assertTrue(clearFixture.vm.clear(clearing.ready().token))
+            runCurrent()
+            val clearToken = clearing.ready().token
+            val clear = checkNotNull(clearing.ready().confirmation)
+            assertFalse(clearFixture.vm.confirmDiscard(cancelToken, cancel.nonce))
+            assertTrue(clearFixture.vm.confirmDiscard(clearToken, clear.nonce))
+            assertFalse(clearFixture.vm.confirmDiscard(clearToken, clear.nonce))
+            runCurrent()
+            assertEquals(
+                original,
+                clearFixture.reviews.cleared
+                    .single()
+                    .expectedCurrent,
+            )
+            assertTrue(
+                clearFixture.reviews.cleared
+                    .single()
+                    .discardMemo,
+            )
+            assertNull(clearing.ready().stored)
+        }
+
+    @Test fun memoCanBeEditedOnTheExactStoredSnapshotEvenWhenTheCatalogHasGone() =
+        runTest {
+            val archived = firstRoad().copy(title = "Archived exact snapshot", osmWayVersion = 1)
+            val original = SessionReviewRoad(ended(), archived, "archived", "Old road note")
+            val f = Fixture(original)
+            f.catalog.courses = emptyList()
+            val trace = watch(f)
+            runCurrent()
+            assertTrue(trace.ready().candidates.isEmpty())
+            assertEquals(archived, trace.ready().stored?.road)
+            assertTrue(f.vm.beginMemo(trace.ready().token))
+            runCurrent()
+            val current = trace.ready().token
+            val edit = checkNotNull(trace.ready().edit)
+            assertTrue(f.vm.editMemo(current, edit.nonce, "Updated road note"))
+            runCurrent()
+            assertFalse(f.vm.saveMemo(current, edit.nonce))
+            assertTrue(f.vm.saveMemo(trace.ready().token, edit.nonce))
+            runCurrent()
+            val request = f.reviews.saved.single()
+            assertEquals(archived, request.road)
+            assertEquals(original, request.expectedCurrent)
+            assertEquals("Updated road note", request.memoText)
+            assertFalse(request.discardMemo)
+            assertEquals(archived, trace.ready().stored?.road)
+            assertEquals("Updated road note", trace.ready().stored?.memoText)
+        }
+
+    @Test fun failedMemoWriteRestoresDraftAfterFreshReadAndWaitsForAnExplicitNewSave() =
+        runTest {
+            val original = SessionReviewRoad(ended(), firstRoad(), "original", "Saved note A")
+            val draft = "Unsaved note B 🚗"
+            val f = Fixture(original)
+            val successfulSave = f.reviews.saveAction
+            f.reviews.saveAction = { request ->
+                if (f.reviews.saved.size == 1) {
+                    check(request.canCommit())
+                    throw IOException("Controlled failure before write")
+                }
+                successfulSave(request)
+            }
+            val trace = watch(f)
+            runCurrent()
+            assertTrue(f.vm.beginMemo(trace.ready().token))
+            runCurrent()
+            val beforeTyping = trace.ready().token
+            val edit = checkNotNull(trace.ready().edit)
+            assertTrue(f.vm.editMemo(beforeTyping, edit.nonce, draft))
+            runCurrent()
+            val submitted = trace.ready().token
+            assertFalse(f.vm.saveMemo(beforeTyping, edit.nonce))
+            assertTrue(f.vm.saveMemo(submitted, edit.nonce))
+            runCurrent()
+            val failed = trace.last() as SessionReviewRoadUiState.Failed
+            assertTrue(failed.writeUnconfirmed)
+            assertEquals(draft, failed.retainedMemo)
+            assertEquals(original, f.reviews.value.value)
+            assertEquals(1, f.reviews.saved.size)
+
+            val readsBeforeRetry = f.reviews.requested.size
+            assertTrue(f.vm.retry(failed.token))
+            runCurrent()
+            assertTrue(f.reviews.requested.size > readsBeforeRetry)
+            val restored = checkNotNull(trace.ready().edit)
+            val current = trace.ready().token
+            assertEquals(draft, restored.text)
+            assertFalse(edit.nonce == restored.nonce)
+            assertEquals(original, trace.ready().stored)
+            assertEquals(1, f.reviews.saved.size)
+            assertFalse(f.vm.saveMemo(submitted, edit.nonce))
+            assertFalse(f.vm.editMemo(submitted, edit.nonce, "Retired failed input"))
+            assertFalse(f.vm.saveMemo(current, edit.nonce))
+            assertEquals(1, f.reviews.saved.size)
+
+            assertTrue(f.vm.saveMemo(current, restored.nonce))
+            assertFalse(f.vm.saveMemo(current, restored.nonce))
+            runCurrent()
+            assertEquals(2, f.reviews.saved.size)
+            val retried = f.reviews.saved.last()
+            assertEquals(original, retried.expectedCurrent)
+            assertEquals(original.source, retried.source)
+            assertEquals(original.road, retried.road)
+            assertEquals(draft, retried.memoText)
+            assertFalse(retried.discardMemo)
+            assertEquals(draft, trace.ready().stored?.memoText)
+            assertFalse(original.version == trace.ready().stored?.version)
+            assertNull(trace.ready().edit)
+            assertTrue(f.reviews.cleared.isEmpty())
+        }
+
+    @Test fun uncertainMemoCommitNeedsFreshReadAndPreservesItsExactRoadAndNote() =
+        runTest {
+            val original = SessionReviewRoad(ended(), firstRoad(), "original", "Original note")
+            val f = Fixture(original)
+            f.reviews.saveAction = { request ->
+                check(request.canCommit())
+                f.reviews.value.value = SessionReviewRoad(request.source, request.road, "committed-note", request.memoText)
+                throw IOException("Controlled note result delivery failure")
+            }
+            val trace = watch(f)
+            runCurrent()
+            assertTrue(f.vm.beginMemo(trace.ready().token))
+            runCurrent()
+            val current = trace.ready().token
+            val edit = checkNotNull(trace.ready().edit)
+            assertTrue(f.vm.editMemo(current, edit.nonce, "Committed note 🚗"))
+            runCurrent()
+            val latest = trace.ready().token
+            assertFalse(f.vm.saveMemo(current, edit.nonce))
+            assertTrue(f.vm.saveMemo(latest, edit.nonce))
+            runCurrent()
+            val failed = trace.last() as SessionReviewRoadUiState.Failed
+            assertTrue(failed.writeUnconfirmed)
+            assertFalse(f.vm.saveMemo(latest, edit.nonce))
+            assertFalse(f.vm.editMemo(latest, edit.nonce, "Retired note"))
+            assertEquals(1, f.reviews.saved.size)
+            val previousReads = f.reviews.requested.size
+            assertTrue(f.vm.retry(failed.token))
+            runCurrent()
+            assertTrue(f.reviews.requested.size > previousReads)
+            assertEquals(f.reviews.value.value, trace.ready().stored)
+            assertEquals(original.source, trace.ready().stored?.source)
+            assertEquals(original.road, trace.ready().stored?.road)
+            assertEquals("Committed note 🚗", trace.ready().stored?.memoText)
+            assertNull(trace.ready().edit)
+            assertEquals(1, f.reviews.saved.size)
+            assertTrue(f.reviews.cleared.isEmpty())
+        }
+
+    @Test fun sourceReplacementOrObservedLockRetiresTheOldMemoTokenAndNonce() =
+        runTest {
+            for (replaceSource in listOf(false, true)) {
+                val original = SessionReviewRoad(ended(), firstRoad(), "original", "Original note")
+                val f = Fixture(original)
+                val trace = watch(f)
+                runCurrent()
+                assertTrue(f.vm.beginMemo(trace.ready().token))
+                runCurrent()
+                val beforeTyping = trace.ready().token
+                val edit = checkNotNull(trace.ready().edit)
+                assertTrue(f.vm.editMemo(beforeTyping, edit.nonce, "Unsaved note"))
+                runCurrent()
+                val old = trace.ready().token
+                assertFalse(beforeTyping == old)
+                if (replaceSource) {
+                    f.sessions.values.value = listOf(f.source.copy(taskTitle = "New source"))
+                    runCurrent()
+                } else {
+                    f.vehicle.state.value = parked().copy(gear = VehicleReading.Available(GearPosition.DRIVE))
+                    assertFalse(f.vm.saveMemo(old, edit.nonce))
+                }
+                f.vehicle.state.value = parked()
+                f.sessions.values.value = listOf(f.source)
+                runCurrent()
+                assertFalse(f.vm.canRead(old))
+                assertFalse(f.vm.editMemo(old, edit.nonce, "Old callback"))
+                assertFalse(f.vm.saveMemo(old, edit.nonce))
+                assertFalse(f.vm.cancelMemo(old, edit.nonce))
+                assertEquals(original, f.reviews.value.value)
+                assertTrue(f.reviews.saved.isEmpty())
+                assertTrue(f.reviews.cleared.isEmpty())
+                trace.job.cancelAndJoin()
+            }
+        }
+
     private fun TestScope.watch(f: Fixture): Trace {
         val states = mutableListOf<SessionReviewRoadUiState>()
         val job =
@@ -398,12 +714,15 @@ class SessionReviewRoadViewModelTest {
         val source: PracticeSession,
         val road: CourseRoadSnapshot,
         val expectedCurrent: SessionReviewRoad?,
+        val memoText: String,
+        val discardMemo: Boolean,
         val canCommit: () -> Boolean,
     )
 
     private data class ClearRequest(
         val source: PracticeSession,
         val expectedCurrent: SessionReviewRoad,
+        val discardMemo: Boolean,
         val canCommit: () -> Boolean,
     )
 
@@ -419,8 +738,10 @@ class SessionReviewRoadViewModelTest {
             when {
                 !request.canCommit() -> SessionReviewRoadWriteResult.Blocked
                 value.value != request.expectedCurrent -> SessionReviewRoadWriteResult.Conflict
+                request.expectedCurrent?.memoText?.isNotEmpty() == true &&
+                    request.expectedCurrent.road != request.road && !request.discardMemo -> SessionReviewRoadWriteResult.MemoPresent
                 else -> {
-                    val review = SessionReviewRoad(request.source, request.road, "version-${saved.size}")
+                    val review = SessionReviewRoad(request.source, request.road, "version-${saved.size}", request.memoText)
                     value.value = review
                     SessionReviewRoadWriteResult.Saved(review)
                 }
@@ -430,6 +751,7 @@ class SessionReviewRoadViewModelTest {
             when {
                 !request.canCommit() -> SessionReviewRoadWriteResult.Blocked
                 value.value != request.expectedCurrent -> SessionReviewRoadWriteResult.Conflict
+                request.expectedCurrent.memoText.isNotEmpty() && !request.discardMemo -> SessionReviewRoadWriteResult.MemoPresent
                 else -> {
                     value.value = null
                     SessionReviewRoadWriteResult.Cleared
@@ -453,9 +775,11 @@ class SessionReviewRoadViewModelTest {
             expectedSource: PracticeSession,
             road: CourseRoadSnapshot,
             expectedCurrent: SessionReviewRoad?,
+            memoText: String,
+            discardMemo: Boolean,
             canCommit: () -> Boolean,
         ): SessionReviewRoadWriteResult {
-            val request = SaveRequest(expectedSource, road, expectedCurrent, canCommit)
+            val request = SaveRequest(expectedSource, road, expectedCurrent, memoText, discardMemo, canCommit)
             saved += request
             return saveAction(request)
         }
@@ -463,9 +787,10 @@ class SessionReviewRoadViewModelTest {
         override suspend fun clear(
             expectedSource: PracticeSession,
             expectedCurrent: SessionReviewRoad,
+            discardMemo: Boolean,
             canCommit: () -> Boolean,
         ): SessionReviewRoadWriteResult {
-            val request = ClearRequest(expectedSource, expectedCurrent, canCommit)
+            val request = ClearRequest(expectedSource, expectedCurrent, discardMemo, canCommit)
             cleared += request
             return clearAction(request)
         }

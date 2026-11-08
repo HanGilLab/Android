@@ -80,7 +80,11 @@ class RoomSessionReviewRoadRepositoryTest {
                 try {
                     source = seed(first, catalog)
                     original = snapshot(first, includeReview = false)
-                    review = saved(RoomSessionReviewRoadRepository(first, catalog).save(source, closed, null) { true })
+                    review =
+                        saved(
+                            RoomSessionReviewRoadRepository(first, catalog)
+                                .save(source, closed, null, memoText = "  원문\n메모 🙂  ") { true },
+                        )
                 } finally {
                     first.close()
                 }
@@ -97,7 +101,10 @@ class RoomSessionReviewRoadRepositoryTest {
                             ?.road
                             ?.nodes,
                     )
-                    assertEquals(SessionReviewRoadWriteResult.Cleared, repo.clear(source, review) { true })
+                    assertEquals("  원문\n메모 🙂  ", repo.observe(source.sessionId).first()?.memoText)
+                    val edited = saved(repo.save(source, review.road, review, memoText = "카탈로그 없이 고친 메모") { true })
+                    assertEquals(review.road, edited.road)
+                    assertEquals(SessionReviewRoadWriteResult.Cleared, repo.clear(source, edited, discardMemo = true) { true })
                     assertNull(repo.observe(source.sessionId).first())
                     assertEquals(SessionReviewRoadWriteResult.Conflict, repo.clear(source, review) { true })
                     assertEquals(original, snapshot(reopened, includeReview = false))
@@ -147,6 +154,84 @@ class RoomSessionReviewRoadRepositoryTest {
             }
         }
 
+    @Test fun `memo edits preserve exact text and nodes and compare the whole memo before no op`() =
+        runBlocking {
+            withDatabase { db ->
+                val catalog = MutableCatalog()
+                val source = seed(db, catalog)
+                val repo = RoomSessionReviewRoadRepository(db, catalog)
+                val road =
+                    catalog.courses
+                        .first()
+                        .roadSnapshots
+                        .first()
+                val first = saved(repo.save(source, road, null) { true })
+                val originalNodes = snapshot(db)["session_review_road_node"]
+                val text = "  줄바꿈\n사용자 원문 🙂\n  "
+                val noted = saved(repo.save(source, road, first, memoText = text) { true })
+                assertEquals(text, noted.memoText)
+                assertNotEquals(first.version, noted.version)
+                assertEquals(originalNodes, snapshot(db)["session_review_road_node"])
+                assertEquals(noted, saved(repo.save(source, road, noted) { true }))
+                val forged = SessionReviewRoad(source, road, noted.version, "다른 원문")
+                assertEquals(SessionReviewRoadWriteResult.Conflict, repo.save(source, road, forged, memoText = "덮지 않음") { true })
+                assertEquals(SessionReviewRoadWriteResult.InvalidMemo, repo.save(source, road, noted, memoText = " \n ") { true })
+                assertEquals(noted, repo.observe(source.sessionId).first())
+                var checks = 0
+                val before = snapshot(db)
+                assertEquals(
+                    SessionReviewRoadWriteResult.Blocked,
+                    repo.save(source, road, noted, memoText = "차단된 메모") { ++checks == 1 },
+                )
+                assertEquals(before, snapshot(db))
+                checks = 0
+                val pending =
+                    async {
+                        val owner = checkNotNull(currentCoroutineContext()[Job])
+                        repo.save(source, road, noted, memoText = "취소된 메모") {
+                            if (++checks == 2) owner.cancel()
+                            true
+                        }
+                    }
+                try {
+                    pending.await()
+                    fail("Cancelled memo write must not return a result")
+                } catch (_: CancellationException) {
+                }
+                assertEquals(before, snapshot(db))
+                val empty = saved(repo.save(source, road, noted, memoText = "") { true })
+                assertEquals("", empty.memoText)
+                assertEquals(originalNodes, snapshot(db)["session_review_road_node"])
+            }
+        }
+
+    @Test fun `road replacement and clear require explicit memo discard and never copy it to the new road`() =
+        runBlocking {
+            withDatabase { db ->
+                val catalog = MutableCatalog()
+                val source = seed(db, catalog)
+                val repo = RoomSessionReviewRoadRepository(db, catalog)
+                val roads = catalog.courses.first().roadSnapshots
+                val first = saved(repo.save(source, roads[0], null, memoText = "첫 도로 메모") { true })
+                val before = snapshot(db)
+                assertEquals(SessionReviewRoadWriteResult.MemoPresent, repo.save(source, roads[1], first) { true })
+                assertEquals(SessionReviewRoadWriteResult.MemoPresent, repo.clear(source, first) { true })
+                assertEquals(SessionReviewRoadWriteResult.InvalidMemo, repo.save(source, roads[1], first, discardMemo = true) { true })
+                assertEquals(before, snapshot(db))
+                val replaced = saved(repo.save(source, roads[1], first, memoText = "", discardMemo = true) { true })
+                assertEquals("", replaced.memoText)
+                assertEquals(roads[1], replaced.road)
+                assertEquals(SessionReviewRoadWriteResult.Conflict, repo.clear(source, first, discardMemo = true) { true })
+                val noted = saved(repo.save(source, replaced.road, replaced, memoText = "두 번째 도로 메모") { true })
+                var checks = 0
+                val notedBefore = snapshot(db)
+                assertEquals(SessionReviewRoadWriteResult.Blocked, repo.clear(source, noted, discardMemo = true) { ++checks == 1 })
+                assertEquals(notedBefore, snapshot(db))
+                assertEquals(SessionReviewRoadWriteResult.Cleared, repo.clear(source, noted, discardMemo = true) { true })
+                assertNull(repo.observe(source.sessionId).first())
+            }
+        }
+
     @Test fun `source active state and complete catalog provenance are rechecked without writes`() =
         runBlocking {
             withDatabase { db ->
@@ -192,6 +277,8 @@ class RoomSessionReviewRoadRepositoryTest {
                 listOf(
                     "UPDATE session_review_road SET origin = 'UNKNOWN'",
                     "UPDATE session_review_road SET roadTitle = CAST(roadTitle AS BLOB)",
+                    "UPDATE session_review_road SET memoText = CAST('fixture' AS BLOB)",
+                    "UPDATE session_review_road SET memoText = '   '",
                     "UPDATE session_review_road_node SET osmNodeVersion = 4294967297 WHERE ordinal = 0",
                     "UPDATE session_review_road_node SET latitude = 'not-a-coordinate' WHERE ordinal = 0",
                     "DELETE FROM session_review_road_node WHERE ordinal = 0",
@@ -248,7 +335,10 @@ class RoomSessionReviewRoadRepositoryTest {
                 assertEquals(review, present.reviewRoad)
                 assertEquals(SessionReviewRoadWriteResult.Cleared, repo.clear(source, review) { true })
                 assertEquals(SessionDeletionResult.Changed, deletions.delete(present) { true })
-                saved(repo.save(source, road, null) { true })
+                val restored = saved(repo.save(source, road, null) { true })
+                val beforeMemo = (deletions.prepare(source) { true } as SessionDeletionPreparation.Ready).target
+                saved(repo.save(source, road, restored, memoText = "구간에 남긴 메모") { true })
+                assertEquals(SessionDeletionResult.Changed, deletions.delete(beforeMemo) { true })
                 val current = (deletions.prepare(source) { true } as SessionDeletionPreparation.Ready).target
                 val before = snapshot(db)
                 var checks = 0

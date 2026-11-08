@@ -4,6 +4,9 @@ import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.view.ViewGroup
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
@@ -67,7 +70,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.roundToInt
 import io.github.hangillab.hangil.feature.home.R as HomeR
 
-/** Real production routes and strict Room repository in a UUID-owned schema8 store; no SDK or user database. */
+/** Real production routes and strict Room repository in a UUID-owned schema9 store; no SDK or user database. */
 @RunWith(AndroidJUnit4::class)
 class FinishSourceReviewRoomFlowTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentCatalogActivity>()
@@ -315,18 +318,24 @@ class FinishSourceReviewRoomFlowTest {
             val newer = f.addNewerEnded()
             val before = f.snapshot()
             val actual = f.store.reviewRoads
-            val writes = AtomicInteger()
+            val saveCalls = AtomicInteger()
+            val delegatedSaveCalls = AtomicInteger()
             val loseReply = AtomicBoolean(true)
+            val failBeforeNextSave = AtomicBoolean(false)
             val interruptedReply =
                 object : SessionReviewRoadRepository by actual {
                     override suspend fun save(
                         expectedSource: PracticeSession,
                         road: CourseRoadSnapshot,
                         expectedCurrent: SessionReviewRoad?,
+                        memoText: String,
+                        discardMemo: Boolean,
                         canCommit: () -> Boolean,
                     ): SessionReviewRoadWriteResult {
-                        writes.incrementAndGet()
-                        val result = actual.save(expectedSource, road, expectedCurrent, canCommit)
+                        saveCalls.incrementAndGet()
+                        if (failBeforeNextSave.getAndSet(false)) throw IOException("Controlled failure before the owned Room write")
+                        delegatedSaveCalls.incrementAndGet()
+                        val result = actual.save(expectedSource, road, expectedCurrent, memoText, discardMemo, canCommit)
                         if (result is SessionReviewRoadWriteResult.Saved && loseReply.getAndSet(false)) {
                             throw IOException("Controlled loss of a committed write reply")
                         }
@@ -349,13 +358,50 @@ class FinishSourceReviewRoomFlowTest {
             ui.invoke(oldSave, oldSave)
             ui.waitTag("review_road_failed")
             check(ui.nodes("review_road_save").isEmpty())
-            val saved = checkNotNull(runBlocking { actual.observe(ended.sessionId).first() })
+            var saved = checkNotNull(runBlocking { actual.observe(ended.sessionId).first() })
             check(saved.source == ended && saved.road == road && saved.origin == "USER_SELECTION")
-            check(writes.get() == 1 && f.snapshot() == before)
+            check(saveCalls.get() == 1 && delegatedSaveCalls.get() == 1 && f.snapshot() == before)
             check(runBlocking { actual.observe(newer.sessionId).first() } == null)
             ui.touch("review_road_retry")
             ui.waitTag("review_road_stored_title")
-            check(ui.text("review_road_stored_title") == road.title && writes.get() == 1)
+            check(ui.text("review_road_stored_title") == road.title && saveCalls.get() == 1)
+            check(saved.memoText.isEmpty())
+            val firstMemo = "  지도에서 고른 구간 🧭\n표지를 다시 살펴보기  "
+            val revisedMemo = "  지도에서 고른 구간 🧭\n다음에는 진입 전 표지 살펴보기  "
+            val emptyMemoVersion = saved.version
+            writeRoadMemo(ui, firstMemo)
+            val firstMemoStored = checkNotNull(runBlocking { actual.observe(ended.sessionId).first() })
+            check(firstMemoStored.memoText == firstMemo && firstMemoStored.version != emptyMemoVersion)
+            val oldMemoClear = ui.action("review_road_clear")
+            val oldMemoSave =
+                writeRoadMemo(ui, revisedMemo, afterFailedSave = {
+                    ui.waitTag("review_road_failed")
+                    check(ui.text("review_road_memo_unsaved") == revisedMemo)
+                    check(runBlocking { actual.observe(ended.sessionId).first() } == firstMemoStored)
+                    // The failed API attempt never reached Room. These are calls, not COMMIT counts.
+                    check(saveCalls.get() == 3 && delegatedSaveCalls.get() == 2)
+                    ui.touch("review_road_retry")
+                    ui.waitTag("review_road_memo_textfield")
+                    compose.onNodeWithTag("review_road_memo_textfield", useUnmergedTree = true).assertTextEquals(revisedMemo)
+                    check(runBlocking { actual.observe(ended.sessionId).first() } == firstMemoStored)
+                    check(saveCalls.get() == 3 && delegatedSaveCalls.get() == 2)
+                    ui.touch("review_road_memo_save")
+                }) {
+                    check(runBlocking { actual.observe(ended.sessionId).first() } == firstMemoStored && saveCalls.get() == 2)
+                    failBeforeNextSave.set(true)
+                }
+            saved = checkNotNull(runBlocking { actual.observe(ended.sessionId).first() })
+            check(saved.memoText == revisedMemo && saved.version != firstMemoStored.version && saved.road == road && saved.source == ended)
+            ui.invoke(oldMemoClear, oldMemoSave)
+            check(ui.nodes("review_road_memo_discard_dialog").isEmpty())
+            check(runBlocking { actual.observe(ended.sessionId).first() } == saved)
+            check(
+                runBlocking {
+                    actual.save(ended, road, firstMemoStored, memoText = firstMemo) { true }
+                } == SessionReviewRoadWriteResult.Conflict,
+            )
+            check(runBlocking { actual.observe(ended.sessionId).first() } == saved && saveCalls.get() == 4 && delegatedSaveCalls.get() == 3)
+            check(f.snapshot() == before)
             awaitReviewRoad(road)
             val directory =
                 File(
@@ -366,6 +412,7 @@ class FinishSourceReviewRoomFlowTest {
             captureReviewRoad(ui, directory, "saved-road-map.png", "session_review_road_map_view")
             captureReviewRoad(ui, directory, "saved-road-title.png", "review_road_stored_title")
             captureReviewRoad(ui, directory, "selection-source.png", "review_road_source")
+            captureReviewRoad(ui, directory, "saved-road-memo.png", "review_road_memo_text")
             val oldClear = ui.action("review_road_clear")
             ui.dispose()
             runBlocking { f.store.reopen() }
@@ -381,7 +428,7 @@ class FinishSourceReviewRoomFlowTest {
             ui.ready(ended)
             ui.touch("history_review_road")
             ui.waitTag("review_road_stored_title")
-            ui.invoke(oldSave, oldClear)
+            ui.invoke(oldSave, oldClear, oldMemoSave)
             check(
                 runBlocking {
                     f.store.reviewRoads
@@ -390,6 +437,28 @@ class FinishSourceReviewRoomFlowTest {
                 } == saved,
             )
             awaitReviewRoad(road)
+            check(ui.text("review_road_memo_text") == revisedMemo)
+            ui.touch("review_road_candidate_0")
+            awaitRoadMemoDialog(ui)
+            dismissRoadMemoDialog(ui, confirm = false)
+            check(
+                runBlocking {
+                    f.store.reviewRoads
+                        .observe(ended.sessionId)
+                        .first()
+                } == saved,
+            )
+            check(ui.text("review_road_memo_text") == revisedMemo)
+            ui.touch("review_road_clear")
+            awaitRoadMemoDialog(ui)
+            dismissRoadMemoDialog(ui, confirm = false)
+            check(
+                runBlocking {
+                    f.store.reviewRoads
+                        .observe(ended.sessionId)
+                        .first()
+                } == saved,
+            )
             val beforeDialogClear = ui.action("review_road_clear")
             ui.touch("history_delete")
             compose.waitUntil(TIMEOUT) { ui.nodes("history_delete_confirm").size == 1 }
@@ -424,9 +493,13 @@ class FinishSourceReviewRoomFlowTest {
             ui.waitTag("review_road_stored_title")
             awaitReviewRoad(road)
             val staleClear = ui.action("review_road_clear")
+            ui.touch("review_road_clear")
+            awaitRoadMemoDialog(ui)
+            val staleConfirm = ui.action("review_road_memo_discard_confirm")
             compose.runOnIdle { ui.live.publish(FinishSourceReviewBoundaryTest.driving()) }
+            compose.waitUntil(TIMEOUT) { ui.nodes("review_road_memo_discard_dialog").isEmpty() && compose.activity.hasWindowFocus() }
             ui.waitTag("history_locked")
-            ui.invoke(staleClear)
+            ui.invoke(staleClear, staleConfirm)
             check(
                 runBlocking {
                     f.store.reviewRoads
@@ -438,7 +511,7 @@ class FinishSourceReviewRoomFlowTest {
             ui.ready(ended)
             ui.touch("history_review_road")
             ui.waitTag("review_road_stored_title")
-            ui.invoke(staleClear)
+            ui.invoke(staleClear, staleConfirm)
             check(
                 runBlocking {
                     f.store.reviewRoads
@@ -469,6 +542,8 @@ class FinishSourceReviewRoomFlowTest {
                 } == saved,
             )
             ui.touch("review_road_clear")
+            awaitRoadMemoDialog(ui)
+            dismissRoadMemoDialog(ui, confirm = true)
             ui.waitTag("review_road_empty")
             check(
                 runBlocking {
@@ -479,7 +554,7 @@ class FinishSourceReviewRoomFlowTest {
             )
             ui.openExact(newer)
             ui.ready(newer)
-            ui.invoke(oldSave, staleClear, stoppedClear)
+            ui.invoke(oldSave, oldMemoSave, staleClear, staleConfirm, stoppedClear)
             check(
                 runBlocking {
                     f.store.reviewRoads
@@ -494,8 +569,84 @@ class FinishSourceReviewRoomFlowTest {
                         .first()
                 } == null,
             )
-            check(f.snapshot() == before && writes.get() == 1)
+            check(f.snapshot() == before && saveCalls.get() == 4 && delegatedSaveCalls.get() == 3)
         }
+    }
+
+    private fun writeRoadMemo(
+        ui: FinishSourceReviewBoundaryTest.Driver,
+        text: String,
+        afterFailedSave: (() -> Unit)? = null,
+        assertStaleSaveRejected: (() -> Unit)? = null,
+    ): () -> Boolean {
+        val roadTitle = ui.text("review_road_stored_title")
+        ui.touch("review_road_memo_edit")
+        ui.waitTag("review_road_memo_textfield")
+        check(ui.text("review_road_memo_edit_context").contains(roadTitle))
+        for (tag in listOf(
+            "review_road_save",
+            "review_road_clear",
+            "review_road_candidate_0",
+            "review_road_candidate_1",
+            "session_review_road_map_view",
+        )) {
+            check(ui.nodes(tag).isEmpty()) { "An editing memo must not retain road actions or the native map" }
+        }
+        val staleSave =
+            if (assertStaleSaveRejected != null) {
+                compose.onNodeWithTag("review_road_memo_save", useUnmergedTree = true).assertIsEnabled()
+                ui.action("review_road_memo_save")
+            } else {
+                null
+            }
+        val field =
+            compose
+                .onNodeWithTag("review_road_memo_textfield", useUnmergedTree = true)
+                .performScrollTo()
+                .performClick()
+                .assertIsFocused()
+        field.performTextReplacement(text)
+        field.assertIsFocused()
+        if (staleSave != null) {
+            ui.invoke(staleSave)
+            checkNotNull(assertStaleSaveRejected).invoke()
+            check(ui.nodes("review_road_memo_textfield").size == 1)
+        }
+        val save = ui.action("review_road_memo_save")
+        ui.touch("review_road_memo_save")
+        afterFailedSave?.invoke()
+        compose.waitUntil(TIMEOUT) {
+            ui.nodes("review_road_memo_text").size == 1 && ui.text("review_road_memo_text") == text &&
+                ui.nodes("review_road_memo_textfield").isEmpty()
+        }
+        ui.requireHost()
+        return save
+    }
+
+    private fun awaitRoadMemoDialog(ui: FinishSourceReviewBoundaryTest.Driver) {
+        compose.waitUntil(TIMEOUT) { ui.nodes("review_road_memo_discard_dialog").size == 1 }
+        check(compose.activity.lifecycle.currentState == Lifecycle.State.RESUMED)
+        val active = checkNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.rootInActiveWindow)
+        try {
+            check(active.packageName?.toString() == InstrumentationRegistry.getInstrumentation().targetContext.packageName)
+        } finally {
+            active.recycle()
+        }
+        compose.onNodeWithTag("review_road_memo_discard_dialog", useUnmergedTree = true).assertIsDisplayed()
+    }
+
+    private fun dismissRoadMemoDialog(
+        ui: FinishSourceReviewBoundaryTest.Driver,
+        confirm: Boolean,
+    ) {
+        compose
+            .onNodeWithTag(
+                if (confirm) "review_road_memo_discard_confirm" else "review_road_memo_discard_cancel",
+                useUnmergedTree = true,
+            ).assertIsDisplayed()
+            .performClick()
+        compose.waitUntil(TIMEOUT) { ui.nodes("review_road_memo_discard_dialog").isEmpty() && compose.activity.hasWindowFocus() }
+        ui.requireHost()
     }
 
     private fun awaitReviewRoad(road: CourseRoadSnapshot) =
@@ -648,7 +799,7 @@ class FinishSourceReviewRoomFlowTest {
                 }
             }
             attempt { f.ui?.dispose() }
-            attempt { check(f.store.schemaVersion() == 8 && f.store.foreignKeyViolationCount() == 0) }
+            attempt { check(f.store.schemaVersion() == 9 && f.store.foreignKeyViolationCount() == 0) }
             attempt {
                 check(f.ui == null || f.ui!!.isStopped)
                 f.store.close()
@@ -667,7 +818,7 @@ class FinishSourceReviewRoomFlowTest {
         fun seed() =
             runBlocking {
                 check(
-                    store.schemaVersion() == 8 &&
+                    store.schemaVersion() == 9 &&
                         store.sessions
                             .observeSessions()
                             .first()

@@ -718,7 +718,14 @@ private fun HistoryDeletionTarget(target: SessionDeletionTarget) {
         if (reviewRoad == null) {
             stringResource(R.string.history_delete_review_road_absent)
         } else {
-            stringResource(R.string.history_delete_review_road_present, reviewRoad.road.title)
+            stringResource(
+                if (reviewRoad.memoText.isEmpty()) {
+                    R.string.history_delete_review_road_present
+                } else {
+                    R.string.history_delete_review_road_memo_present
+                },
+                reviewRoad.road.title,
+            )
         },
         Modifier.fillMaxWidth().testTag("history_delete_review_road"),
         style = MaterialTheme.typography.bodyLarge,
