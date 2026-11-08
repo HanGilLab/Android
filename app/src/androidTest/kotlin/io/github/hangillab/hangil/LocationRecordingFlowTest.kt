@@ -1667,6 +1667,8 @@ class LocationRecordingFlowTest {
                             mapOf(
                                 "fontSp" to layout.layoutInput.style.fontSize.value,
                                 "overflow" to layout.hasVisualOverflow,
+                                "overflowWidth" to layout.didOverflowWidth,
+                                "overflowHeight" to layout.didOverflowHeight,
                                 "size" to layout.size,
                                 "lines" to layout.lineCount,
                                 "characters" to text.length,

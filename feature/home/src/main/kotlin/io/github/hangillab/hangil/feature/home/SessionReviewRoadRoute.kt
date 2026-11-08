@@ -16,6 +16,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -567,7 +568,12 @@ private fun ReviewSampleControls(
             prominent = false,
             modifier = Modifier.fillMaxWidth().testTag("review_road_sample_open").frozenObservationClick(open, !state.busy),
         ) {
-            Text(stringResource(R.string.review_road_sample_open), style = MaterialTheme.typography.titleMedium)
+            Text(
+                stringResource(R.string.review_road_sample_open),
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.titleMedium,
+            )
         }
         if (openFailed) {
             Text(
