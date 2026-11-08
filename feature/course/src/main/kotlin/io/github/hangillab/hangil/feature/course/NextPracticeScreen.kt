@@ -24,6 +24,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
@@ -210,6 +212,98 @@ private fun NextPracticeChoices(
                 )
             }
         }
+        ParkedPanel {
+            Text(stringResource(R.string.next_practice_target_road_title), style = MaterialTheme.typography.titleLarge)
+            val target = state.targetReview
+            if (target != null) {
+                Text(target.road.title, Modifier.testTag("next_practice_target_road"), style = MaterialTheme.typography.titleLarge)
+                Text(stringResource(R.string.next_practice_target_road_scope), style = MaterialTheme.typography.bodyLarge)
+            }
+            if (state.targetChoiceRequired) {
+                Text(
+                    stringResource(R.string.next_practice_target_road_changed),
+                    Modifier.testTag("next_practice_target_road_changed"),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+            when (val road = state.reviewRoad) {
+                NextPracticeUiState.ReviewRoad.Loading ->
+                    Text(
+                        stringResource(R.string.next_practice_target_road_loading),
+                        Modifier.testTag("next_practice_target_road_loading"),
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                NextPracticeUiState.ReviewRoad.Absent ->
+                    Text(
+                        stringResource(R.string.next_practice_target_road_empty),
+                        Modifier.testTag("next_practice_target_road_empty"),
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                NextPracticeUiState.ReviewRoad.Failed -> {
+                    Text(
+                        stringResource(R.string.next_practice_target_road_failed),
+                        Modifier.testTag("next_practice_target_road_failed"),
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    val retryRoad = {
+                        viewModel.retryReviewRoad(source.sessionId, state.generation)
+                        Unit
+                    }
+                    ParkedButton(
+                        onClick = retryRoad,
+                        prominent = false,
+                        enabled = !state.saving,
+                        modifier = Modifier.testTag("next_practice_target_road_retry").frozenNextClick(retryRoad, !state.saving),
+                    ) {
+                        Text(stringResource(R.string.next_practice_target_road_retry), style = MaterialTheme.typography.titleLarge)
+                    }
+                }
+                is NextPracticeUiState.ReviewRoad.Available -> {
+                    if (target != road.review) {
+                        Text(road.review.road.title, style = MaterialTheme.typography.titleLarge)
+                        val useRoad = {
+                            viewModel.useReviewRoad(source.sessionId, state.generation)
+                            Unit
+                        }
+                        ParkedButton(
+                            onClick = useRoad,
+                            enabled = !state.saving,
+                            prominent = false,
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .testTag(
+                                        "next_practice_target_road_use",
+                                    ).frozenNextClick(useRoad, !state.saving),
+                        ) {
+                            Text(stringResource(R.string.next_practice_target_road_use), style = MaterialTheme.typography.titleLarge)
+                        }
+                    }
+                }
+            }
+            if (target != null || state.targetChoiceRequired) {
+                val unlinkRoad = {
+                    viewModel.unlinkReviewRoad(source.sessionId, state.generation)
+                    Unit
+                }
+                ParkedButton(
+                    onClick = unlinkRoad,
+                    enabled = !state.saving,
+                    prominent = false,
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .testTag(
+                                "next_practice_target_road_unlink",
+                            ).frozenNextClick(unlinkRoad, !state.saving),
+                ) {
+                    Text(stringResource(R.string.next_practice_target_road_unlink), style = MaterialTheme.typography.titleLarge)
+                }
+            } else {
+                Text(stringResource(R.string.next_practice_target_road_none), style = MaterialTheme.typography.bodyLarge)
+            }
+        }
         if (reviewRoad != null) {
             key(source, state.generation) {
                 val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -265,12 +359,16 @@ private fun NextPracticeChoices(
                     state.summary.tasks
                         .singleOrNull { it.taskId == task.id && it.taskTitle == task.title }
                         ?.sessionCount ?: 0
+                val selectTask = {
+                    viewModel.selectTask(task.id, source.sessionId, state.generation)
+                    Unit
+                }
                 ParkedChoice(
                     task.title,
                     stringResource(R.string.next_practice_task_history, task.description, count),
                     selected = state.taskId == task.id,
-                    onClick = { viewModel.selectTask(task.id, source.sessionId, state.generation) },
-                    modifier = Modifier.fillMaxWidth().testTag("next_task_${task.id}"),
+                    onClick = selectTask,
+                    modifier = Modifier.fillMaxWidth().testTag("next_task_${task.id}").frozenNextClick(selectTask, !state.saving),
                     enabled = !state.saving,
                 )
             }
@@ -291,10 +389,14 @@ private fun NextPracticeChoices(
                 color = MaterialTheme.colorScheme.error,
             )
         }
+        val save = {
+            viewModel.save(source.sessionId, state.generation)
+            Unit
+        }
         ParkedButton(
-            onClick = { viewModel.save(source.sessionId, state.generation) },
+            onClick = save,
             enabled = state.canSave,
-            modifier = Modifier.fillMaxWidth().testTag("next_practice_save"),
+            modifier = Modifier.fillMaxWidth().testTag("next_practice_save").frozenNextClick(save, state.canSave),
         ) {
             Text(
                 stringResource(if (state.saving) R.string.next_practice_saving else R.string.next_practice_save),
@@ -318,3 +420,16 @@ private fun GeneralPreparationButton(onClick: () -> Unit) {
         Text(stringResource(R.string.next_practice_normal), style = MaterialTheme.typography.titleLarge)
     }
 }
+
+private fun Modifier.frozenNextClick(
+    action: () -> Unit,
+    enabled: Boolean,
+): Modifier =
+    semantics {
+        if (enabled) {
+            onClick {
+                action()
+                true
+            }
+        }
+    }

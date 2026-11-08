@@ -61,14 +61,24 @@ internal class RoomPracticeSessionRepository
                                         startedAtEpochMillis = startedAtEpochMillis,
                                         endedAtEpochMillis = null,
                                         activeSlot = 1,
+                                        plannedRoadJson = PlannedPracticeRoadJson.encode(practice.plannedRoad),
                                     )
                                 database.practiceSessionDao().insert(entity)
                                 SessionStartResult.Started(entity.session())
                             }
                         }
                     requirePermission(canCommit)
+                    if (result is SessionStartResult.Started &&
+                        (catalog.resolve(database.preparationDao().currentChecked()?.selection()) as? Preparation.Ready)?.practice !=
+                        practice
+                    ) {
+                        throw PreparationReplaced()
+                    }
+                    currentCoroutineContext().ensureActive()
                     result
                 }
+            } catch (_: PreparationReplaced) {
+                SessionStartResult.PreparationChanged
             } catch (_: WriteBlocked) {
                 SessionStartResult.Blocked
             }
@@ -149,6 +159,8 @@ internal class RoomPracticeSessionRepository
         private fun requirePermission(canCommit: () -> Boolean) {
             if (!canCommit()) throw WriteBlocked()
         }
+
+        private class PreparationReplaced : RuntimeException()
 
         private class WriteBlocked : RuntimeException()
     }

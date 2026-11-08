@@ -15,6 +15,7 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextContains
@@ -49,11 +50,14 @@ import io.github.hangillab.hangil.core.domain.DrivingRestrictions
 import io.github.hangillab.hangil.core.domain.DrivingRestrictionsProvider
 import io.github.hangillab.hangil.core.domain.GearPosition
 import io.github.hangillab.hangil.core.domain.ParkingState
+import io.github.hangillab.hangil.core.domain.PlannedPracticeRoad
 import io.github.hangillab.hangil.core.domain.PracticeSelection
 import io.github.hangillab.hangil.core.domain.PracticeSession
 import io.github.hangillab.hangil.core.domain.PracticeSessionRepository
 import io.github.hangillab.hangil.core.domain.Preparation
 import io.github.hangillab.hangil.core.domain.PreparedPractice
+import io.github.hangillab.hangil.core.domain.SessionDeletionPreparation
+import io.github.hangillab.hangil.core.domain.SessionDeletionResult
 import io.github.hangillab.hangil.core.domain.SessionFinishResult
 import io.github.hangillab.hangil.core.domain.SessionReviewRoad
 import io.github.hangillab.hangil.core.domain.SessionReviewRoadRepository
@@ -76,6 +80,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
@@ -147,6 +152,15 @@ class HistoryNextPracticeFlowTest {
         val store = OwnedPracticeTestStore.create(instrument.targetContext)
         val trackedSessions = TrackedSessions(store.sessions)
         val referenceEnabled = mutableStateOf(false)
+        val targetReadFailure = MutableStateFlow(false)
+        val targetRepository =
+            object : SessionReviewRoadRepository by store.reviewRoads {
+                override fun observe(sessionId: String): Flow<SessionReviewRoad?> =
+                    combine(store.reviewRoads.observe(sessionId), targetReadFailure) { road, failed ->
+                        check(!failed) { "Controlled target read failure" }
+                        road
+                    }
+            }
         val referenceModels = mutableMapOf<String, SessionReviewRoadViewModel>()
         val referenceCreations = AtomicInteger()
         val referenceQueries = AtomicInteger()
@@ -183,6 +197,7 @@ class HistoryNextPracticeFlowTest {
                 ): SessionReviewRoadWriteResult = throw AssertionError("A reference road must never be cleared by this UI")
             }
         val models = Models()
+        val nextModels = mutableListOf<Models>()
         val nextOwner = FinishSourceReviewBoundaryTest.Owner(models.viewModelStore)
         val referenceGates = mutableListOf<() -> Boolean>()
         val vehicleState = MutableStateFlow(VehicleState(ConnectionState.CONNECTED, VehicleReading.Available(GearPosition.PARK)))
@@ -213,6 +228,7 @@ class HistoryNextPracticeFlowTest {
                 ),
             )
         var primary: Throwable? = null
+        var home: FinishSourceReviewBoundaryTest.Driver? = null
         try {
             val course = store.catalog.courses.first { it.tasks.size >= 2 && it.goalIds.isNotEmpty() && it.roadSnapshots.isNotEmpty() }
             val goal = store.catalog.goals.first { it.id in course.goalIds }
@@ -222,7 +238,7 @@ class HistoryNextPracticeFlowTest {
             fun selection(taskId: String) = PracticeSelection(goal.id, course.id, course.version, course.briefingVersion, taskId)
             val older = runBlocking { seed(store, previousPractice, 1000) }
             runBlocking { seed(store, previousPractice.copy(task = targetTask), 3000) }
-            val savedRoad =
+            var savedRoad =
                 runBlocking {
                     val result =
                         store.reviewRoads.save(
@@ -239,7 +255,7 @@ class HistoryNextPracticeFlowTest {
             val originalPreparation = selection(previousPractice.task.id)
             runBlocking { store.preparation.saveSelection(originalPreparation) { true } }
             val sessionsBefore = runBlocking { store.sessions.observeSessions().first() }
-            val reviewRoadsBefore = reviewRoadSnapshot(store, sessionsBefore)
+            var reviewRoadsBefore = reviewRoadSnapshot(store, sessionsBefore)
             val sequencesBefore = store.sequenceSnapshot()
             instrument.runOnMainSync {
                 nextOwner.move(Lifecycle.State.RESUMED)
@@ -252,8 +268,16 @@ class HistoryNextPracticeFlowTest {
                                 viewModel = history,
                                 onPrepareNext = { source ->
                                     val token = checkNotNull(memory.open(source))
+                                    val state =
+                                        SavedStateHandle(
+                                            mapOf(
+                                                "historyNextToken" to token,
+                                                "nextPracticeSourceId" to source.sessionId,
+                                            ),
+                                        )
+                                    val entryModels = Models().also { nextModels += it }
                                     val model =
-                                        models.keep(
+                                        entryModels.keep(
                                             token,
                                             NextPracticeViewModel(
                                                 vehicle,
@@ -261,12 +285,11 @@ class HistoryNextPracticeFlowTest {
                                                 trackedSessions,
                                                 store.catalog,
                                                 store.nextPractice,
-                                                SavedStateHandle(
-                                                    mapOf("historyNextToken" to token, "nextPracticeSourceId" to source.sessionId),
-                                                ),
+                                                state,
+                                                targetRepository,
                                             ),
                                         )
-                                    opened.value = Opened(token, source, model)
+                                    opened.value = Opened(token, source, model, state, entryModels)
                                 },
                             )
                         } else {
@@ -389,6 +412,78 @@ class HistoryNextPracticeFlowTest {
             assertReferenceRoad(savedRoad)
             assertTrue(awaitReferenceMap(savedRoad.road) !== firstRoadMap)
             compose.onNodeWithTag("next_task_${targetTask.id}").assertIsSelected()
+            waitTag("next_practice_target_road_use")
+            val staleUseTarget = clickAction("next_practice_target_road_use")
+            click("next_practice_target_road_use")
+            waitTag("next_practice_target_road_unlink")
+            assertTextFits("next_practice_target_road")
+            val beforeTargetStop = clickAction("next_practice_save")
+            instrument.runOnMainSync {
+                nextOwner.move(Lifecycle.State.STARTED)
+                nextOwner.move(Lifecycle.State.CREATED)
+            }
+            compose.waitForIdle()
+            instrument.runOnMainSync { nextOwner.move(Lifecycle.State.RESUMED) }
+            waitTag("next_practice_target_road_changed")
+            compose.onNodeWithTag("next_practice_save").performScrollTo().assertIsNotEnabled()
+            invoke(beforeTargetStop)
+            assertEquals(originalPreparation, runBlocking { store.preparation.observeSelection().first() })
+            click("next_practice_target_road_use")
+            waitTag("next_practice_target_road_unlink")
+            val staleUnlink = clickAction("next_practice_target_road_unlink")
+            click("next_practice_target_road_unlink")
+            waitTag("next_practice_target_road_use")
+            assertMissing("next_practice_target_road")
+            assertEquals(originalPreparation, runBlocking { store.preparation.observeSelection().first() })
+            click("next_practice_target_road_use")
+            waitTag("next_practice_target_road_unlink")
+            invoke(staleUnlink)
+            waitTag("next_practice_target_road")
+            click("next_task_${previousPractice.task.id}")
+            waitTag("next_practice_target_road")
+            click("next_task_${targetTask.id}")
+            waitTag("next_practice_target_road")
+            val beforeRecreationSave = clickAction("next_practice_save")
+            val priorEntry = checkNotNull(opened.value)
+            instrument.runOnMainSync {
+                assertEquals(true, priorEntry.savedState.get<Boolean>("nextPracticeTargetChoicePending"))
+                val copied =
+                    priorEntry.savedState.keys().associateWith { stateKey ->
+                        when (val value = priorEntry.savedState.get<Any?>(stateKey)) {
+                            is ArrayList<*> -> ArrayList(value)
+                            else -> value
+                        }
+                    }
+                val restoredState = SavedStateHandle(copied)
+                val restoredModels = Models().also { nextModels += it }
+                val restored =
+                    restoredModels.keep(
+                        priorEntry.token,
+                        NextPracticeViewModel(
+                            vehicle,
+                            restrictions,
+                            trackedSessions,
+                            store.catalog,
+                            store.nextPractice,
+                            restoredState,
+                            targetRepository,
+                        ),
+                    )
+                opened.value = Opened(priorEntry.token, priorEntry.source, restored, restoredState, restoredModels)
+                priorEntry.models.viewModelStore.clear()
+            }
+            runBlocking { withTimeout(20000) { priorEntry.models.awaitStopped() } }
+            waitTag("next_practice_target_road_changed")
+            compose.onNodeWithTag("next_task_${targetTask.id}").performScrollTo().assertIsSelected()
+            assertMissing("next_practice_target_road")
+            compose.onNodeWithTag("next_practice_save").performScrollTo().assertIsNotEnabled()
+            assertTextFits("next_practice_target_road_changed")
+            invoke(beforeRecreationSave)
+            assertEquals(originalPreparation, runBlocking { store.preparation.observeSelection().first() })
+            click("next_practice_target_road_use")
+            waitTag("next_practice_target_road_unlink")
+            compose.onNodeWithTag("next_practice_save").performScrollTo().assertIsEnabled()
+            // Controlled ViewModel/SavedState recreation, not an OS process kill.
             val staleSave = clickAction("next_practice_save")
             click("next_practice_close")
             waitTag("history_prepare_next")
@@ -402,6 +497,8 @@ class HistoryNextPracticeFlowTest {
             click("next_task_${targetTask.id}")
             click("next_practice_review_road")
             assertReferenceRoad(savedRoad)
+            click("next_practice_target_road_use")
+            waitTag("next_practice_target_road_unlink")
             val preUxSave = clickAction("next_practice_save")
             instrument.runOnMainSync { uxState.value = uxState.value.copy(uxRestrictionState = UxRestrictionState.RESTRICTED) }
             waitTag("next_practice_locked")
@@ -412,6 +509,8 @@ class HistoryNextPracticeFlowTest {
             assertMissing("review_road_content")
             invoke(preUxSave)
             assertEquals(originalPreparation, runBlocking { store.preparation.observeSelection().first() })
+            compose.onNodeWithTag("next_practice_save").performScrollTo().assertIsNotEnabled()
+            click("next_practice_target_road_use")
             click("next_practice_review_road")
             assertReferenceRoad(savedRoad)
             val preDriveSave = clickAction("next_practice_save")
@@ -424,14 +523,159 @@ class HistoryNextPracticeFlowTest {
             assertMissing("review_road_content")
             invoke(preDriveSave)
             assertEquals(originalPreparation, runBlocking { store.preparation.observeSelection().first() })
+            compose.onNodeWithTag("next_practice_save").performScrollTo().assertIsNotEnabled()
+            click("next_practice_target_road_use")
+            val beforeReadFailure = clickAction("next_practice_save")
+            instrument.runOnMainSync { targetReadFailure.value = true }
+            waitTag("next_practice_target_road_failed")
+            compose.onNodeWithTag("next_practice_save").performScrollTo().assertIsNotEnabled()
+            invoke(beforeReadFailure)
+            assertEquals(originalPreparation, runBlocking { store.preparation.observeSelection().first() })
+            instrument.runOnMainSync { targetReadFailure.value = false }
+            click("next_practice_target_road_retry")
+            waitTag("next_practice_target_road_use")
+            compose.onNodeWithTag("next_practice_save").performScrollTo().assertIsNotEnabled()
+            click("next_practice_target_road_use")
+            val beforeReviewChange = clickAction("next_practice_save")
+            savedRoad =
+                runBlocking {
+                    val result =
+                        store.reviewRoads.save(
+                            older,
+                            savedRoad.road,
+                            savedRoad,
+                            memoText = savedRoad.memoText + "\n다음 선택 전 원본 변경",
+                        ) { true }
+                    check(result is SessionReviewRoadWriteResult.Saved)
+                    result.review
+                }
+            reviewRoadsBefore = reviewRoadSnapshot(store, sessionsBefore)
+            waitTag("next_practice_target_road_changed")
+            compose.onNodeWithTag("next_practice_save").performScrollTo().assertIsNotEnabled()
+            invoke(beforeReviewChange)
+            invoke(staleUseTarget)
+            assertEquals(originalPreparation, runBlocking { store.preparation.observeSelection().first() })
+            click("next_practice_target_road_use")
+            waitTag("next_practice_target_road_unlink")
+            val planned = PlannedPracticeRoad.from(savedRoad)
+            assertEquals(savedRoad.source.sessionId, planned.sourceSessionId)
+            assertEquals(savedRoad.version, planned.reviewVersion)
+            assertEquals(savedRoad.road, planned.road)
             assertTextFits("next_practice_save")
             click("next_practice_save")
             waitTag("history_prepare_next")
-            assertEquals(selection(targetTask.id), runBlocking { store.preparation.observeSelection().first() })
+            val preparedSelection = selection(targetTask.id).copy(plannedRoad = planned)
+            assertEquals(preparedSelection, runBlocking { store.preparation.observeSelection().first() })
             assertEquals(sessionsBefore, runBlocking { store.sessions.observeSessions().first() })
             assertEquals(reviewRoadsBefore, reviewRoadSnapshot(store, sessionsBefore))
             assertEquals(sequencesBefore, store.sequenceSnapshot())
             assertEquals(0, store.foreignKeyViolationCount())
+            val prepared = (store.catalog.resolve(preparedSelection) as Preparation.Ready).practice
+            assertEquals(planned, prepared.plannedRoad)
+            // Reuse the existing SDK-free production Home driver, preserving this same owned Room.
+            instrument.runOnMainSync {
+                opened.value = null
+                compose.activity.setContent {}
+                nextOwner.move(Lifecycle.State.DESTROYED)
+                models.viewModelStore.clear()
+                nextModels.forEach { it.viewModelStore.clear() }
+            }
+            compose.waitForIdle()
+            runBlocking {
+                withTimeout(20000) {
+                    models.awaitStopped()
+                    nextModels.forEach { it.awaitStopped() }
+                    trackedSessions.awaitStopped()
+                    referenceJobs.toList().forEach { it.join() }
+                    check(referenceReaders.get() == 0)
+                }
+            }
+            val homeUi =
+                FinishSourceReviewBoundaryTest.Driver(
+                    compose,
+                    store.catalog,
+                    store.preparation,
+                    store.sessions,
+                    store.memos,
+                    store.observations,
+                    store.recordingRuns,
+                    store.courseCompletions,
+                    store.deletions,
+                    store.historyMemoWriter,
+                    store.reviewRoads,
+                )
+            home = homeUi
+            homeUi.mount()
+            homeUi.waitTag("saved_planned_road")
+            compose
+                .onNodeWithTag("saved_planned_road", useUnmergedTree = true)
+                .assertTextEquals(instrument.targetContext.getString(HomeR.string.planned_road_summary, planned.road.title))
+            assertTextFits("saved_planned_road")
+            homeUi.touch("session_start")
+            homeUi.waitTag("session_active")
+            homeUi.waitTag("session_planned_road")
+            compose
+                .onNodeWithTag("session_planned_road", useUnmergedTree = true)
+                .assertTextEquals(instrument.targetContext.getString(HomeR.string.planned_road_summary, planned.road.title))
+            assertTextFits("session_planned_road")
+            val started =
+                runBlocking {
+                    store.sessions
+                        .observeSessions()
+                        .first { rows -> rows.any { it.isActive } }
+                        .single { it.isActive }
+                }
+            assertEquals(preparedSelection, started.selection)
+            assertEquals(planned, started.selection.plannedRoad)
+            assertNull(runBlocking { store.reviewRoads.observe(started.sessionId).first() })
+            homeUi.touch("session_finish")
+            homeUi.waitTag("session_latest_planned_road")
+            compose
+                .onNodeWithTag("session_latest_planned_road", useUnmergedTree = true)
+                .assertTextEquals(instrument.targetContext.getString(HomeR.string.planned_road_summary, planned.road.title))
+            assertTextFits("session_latest_planned_road")
+            val finished =
+                runBlocking {
+                    store.sessions
+                        .observeSessions()
+                        .first { rows ->
+                            rows
+                                .singleOrNull {
+                                    it.sessionId ==
+                                        started.sessionId
+                                }?.isActive ==
+                                false
+                        }.single { it.sessionId == started.sessionId }
+                }
+            assertEquals(planned, finished.selection.plannedRoad)
+            assertNull(runBlocking { store.reviewRoads.observe(finished.sessionId).first() })
+            val deletion = runBlocking { store.deletions.prepare(older) { true } }
+            check(deletion is SessionDeletionPreparation.Ready)
+            assertEquals(savedRoad, deletion.target.reviewRoad)
+            assertEquals(SessionDeletionResult.Deleted, runBlocking { store.deletions.delete(deletion.target) { true } })
+            val afterDelete = runBlocking { store.sessions.observeSessions().first() }
+            assertTrue(afterDelete.none { it.sessionId == older.sessionId })
+            val copied = afterDelete.single { it.sessionId == finished.sessionId }
+            assertEquals(planned, copied.selection.plannedRoad)
+            assertEquals(
+                planned.road.nodes,
+                copied.selection.plannedRoad
+                    ?.road
+                    ?.nodes,
+            )
+            assertEquals(preparedSelection, runBlocking { store.preparation.observeSelection().first() })
+            assertNull(runBlocking { store.reviewRoads.observe(copied.sessionId).first() })
+            assertEquals(0, store.foreignKeyViolationCount())
+            homeUi.waitTag("saved_planned_road")
+            homeUi.waitTag("session_latest_planned_road")
+            assertTextFits("session_latest_planned_road")
+            homeUi.waitReceipt()
+            homeUi.touch("session_finish_review")
+            homeUi.waitTag("history_planned_road")
+            compose
+                .onNodeWithTag("history_planned_road", useUnmergedTree = true)
+                .assertTextEquals(instrument.targetContext.getString(HomeR.string.planned_road_summary, planned.road.title))
+            assertTextFits("history_planned_road")
             assertHost()
         } catch (failure: Throwable) {
             primary = failure
@@ -444,6 +688,7 @@ class HistoryNextPracticeFlowTest {
                     if (primary == null) primary = failure else primary?.addSuppressed(failure)
                 }
             }
+            cleanup { home?.dispose() }
             cleanup {
                 instrument.runOnMainSync {
                     compose.activity.lifecycle.removeObserver(observer)
@@ -453,6 +698,7 @@ class HistoryNextPracticeFlowTest {
                     compose.activity.setContent {}
                     if (nextOwner.lifecycle.currentState != Lifecycle.State.INITIALIZED) nextOwner.move(Lifecycle.State.DESTROYED)
                     models.viewModelStore.clear()
+                    nextModels.forEach { it.viewModelStore.clear() }
                 }
             }
             cleanup { compose.waitForIdle() }
@@ -461,9 +707,11 @@ class HistoryNextPracticeFlowTest {
                 runBlocking {
                     withTimeout(20000) {
                         models.awaitStopped()
+                        nextModels.forEach { it.awaitStopped() }
                         trackedSessions.awaitStopped()
                         referenceJobs.toList().forEach { it.join() }
                         check(referenceReaders.get() == 0 && referenceJobs.all { it.isCompleted })
+                        check(home == null || home?.isStopped == true) { "Home fixture must stop before its owned Room closes" }
                     }
                 }
                 jobsStopped = true
@@ -831,5 +1079,7 @@ class HistoryNextPracticeFlowTest {
         val token: String,
         val source: PracticeSession,
         val model: NextPracticeViewModel,
+        val savedState: SavedStateHandle,
+        val models: Models,
     )
 }

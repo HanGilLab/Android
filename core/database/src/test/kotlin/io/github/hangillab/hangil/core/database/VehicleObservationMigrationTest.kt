@@ -37,7 +37,7 @@ class VehicleObservationMigrationTest {
                 verifyVersionThreeBoundary(name, before)
                 open(name).useDatabase { database ->
                     val sqlite = database.openHelper.writableDatabase
-                    assertEquals(9, sqlite.version)
+                    assertEquals(10, sqlite.version)
                     assertEquals(before.getValue("preparation"), rows(sqlite, "preparation", "slot"))
                     assertEquals(before.getValue("practice_session"), rows(sqlite, "practice_session", "rowId"))
                     assertEquals(emptyList<List<Any?>>(), rows(sqlite, "vehicle_observation", "id"))
@@ -69,7 +69,7 @@ class VehicleObservationMigrationTest {
                 val before = createLegacy(name, 1)
                 open(name).useDatabase { database ->
                     val sqlite = database.openHelper.writableDatabase
-                    assertEquals(9, sqlite.version)
+                    assertEquals(10, sqlite.version)
                     assertEquals(before.getValue("preparation"), rows(sqlite, "preparation", "slot"))
                     assertTrue(rows(sqlite, "practice_session", "rowId").isEmpty())
                     assertTrue(rows(sqlite, "vehicle_observation", "id").isEmpty())
@@ -101,6 +101,7 @@ class VehicleObservationMigrationTest {
                 PreparationMigration6To7,
                 PreparationMigration7To8,
                 PreparationMigration8To9,
+                PreparationMigration9To10,
             ).build()
 
     /** Keep the original v2 to v3 contract explicit although the production Room target is v4. */
@@ -230,7 +231,7 @@ class VehicleObservationMigrationTest {
             buildList {
                 while (cursor.moveToNext()) {
                     add(
-                        (0 until cursor.columnCount).map { index ->
+                        (0 until cursor.columnCount).filterNot { cursor.getColumnName(it) == "plannedRoadJson" }.map { index ->
                             when (cursor.getType(index)) {
                                 Cursor.FIELD_TYPE_NULL -> null
                                 Cursor.FIELD_TYPE_INTEGER -> cursor.getLong(index)

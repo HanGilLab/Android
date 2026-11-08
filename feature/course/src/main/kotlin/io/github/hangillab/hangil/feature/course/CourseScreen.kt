@@ -26,6 +26,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -63,18 +65,19 @@ fun CourseRoute(
     LaunchedEffect(viewModel, lifecycle) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { viewModel.saved.collect { close() } }
     }
-    val back = { if (!viewModel.back()) close() }
+    val displayed = state
+    val back = { if (!viewModel.back(displayed.readGeneration)) close() }
     BackHandler(onBack = back)
     CourseScreen(
-        state,
-        viewModel::selectGoal,
-        viewModel::selectCourse,
-        viewModel::selectTask,
-        viewModel::next,
+        displayed,
+        { viewModel.selectGoal(it, displayed.readGeneration) },
+        { viewModel.selectCourse(it, displayed.readGeneration) },
+        { viewModel.selectTask(it, displayed.readGeneration) },
+        { viewModel.next(displayed.readGeneration) },
         back,
-        onRetryPreparationRead = viewModel::retryPreparationRead,
+        onRetryPreparationRead = { viewModel.retryPreparationRead(displayed.readGeneration) },
     ) {
-        viewModel.canRevealDetails(state)
+        viewModel.canRevealDetails(displayed)
     }
 }
 
@@ -103,7 +106,13 @@ internal fun CourseScreen(
                     Text(stringResource(R.string.preparation_read_failed), style = MaterialTheme.typography.titleLarge)
                     ParkedButton(
                         onClick = onRetryPreparationRead,
-                        modifier = Modifier.fillMaxWidth().testTag("preparation_read_retry"),
+                        modifier =
+                            Modifier.fillMaxWidth().testTag("preparation_read_retry").semantics {
+                                onClick {
+                                    onRetryPreparationRead()
+                                    true
+                                }
+                            },
                     ) {
                         Text(stringResource(R.string.preparation_read_retry), style = MaterialTheme.typography.titleLarge)
                     }
@@ -117,18 +126,35 @@ internal fun CourseScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+                state.plannedRoad?.let { plan ->
+                    Text(
+                        stringResource(R.string.preparation_planned_road_title, plan.road.title),
+                        Modifier.testTag("preparation_planned_road"),
+                        style = MaterialTheme.typography.titleLarge,
+                    )
+                    Text(stringResource(R.string.preparation_planned_road_scope), style = MaterialTheme.typography.bodyLarge)
+                }
+                if (state.plannedRoadCleared) {
+                    Text(
+                        stringResource(R.string.preparation_planned_road_cleared),
+                        Modifier.testTag("preparation_planned_road_cleared"),
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                }
                 when (state.step) {
                     PreparationStep.GOAL -> {
                         PreparationChoices(state.goals.size, Modifier.testTag("goal_choices")) { index, modifier ->
                             val goal = state.goals[index]
                             val selected = state.goal?.id == goal.id
+                            val chooseGoal = { onGoal(goal.id) }
                             ParkedChoice(
                                 goal.title,
                                 goal.description,
                                 selected,
-                                { onGoal(goal.id) },
-                                modifier.testTag("goal_${goal.id}"),
+                                chooseGoal,
+                                modifier.testTag("goal_${goal.id}").frozenPreparationClick(chooseGoal, !state.saving),
                                 showDescription = selected,
+                                enabled = !state.saving,
                             )
                         }
                     }
@@ -137,9 +163,16 @@ internal fun CourseScreen(
                         PreparationChoices(state.courses.size, Modifier.testTag("course_choices")) { index, modifier ->
                             val course = state.courses[index]
                             val selected = state.course?.id == course.id
-                            ParkedChoice(course.title, course.summary, selected, {
-                                onCourse(course.id)
-                            }, modifier.testTag("course_${course.id}"), showDescription = selected)
+                            val chooseCourse = { onCourse(course.id) }
+                            ParkedChoice(
+                                course.title,
+                                course.summary,
+                                selected,
+                                chooseCourse,
+                                modifier.testTag("course_${course.id}").frozenPreparationClick(chooseCourse, !state.saving),
+                                showDescription = selected,
+                                enabled = !state.saving,
+                            )
                         }
                         DemoDetails(canExpandDetails)
                     }
@@ -149,13 +182,15 @@ internal fun CourseScreen(
                             PreparationChoices(course.tasks.size, Modifier.testTag("briefing_tasks")) { index, modifier ->
                                 val task = course.tasks[index]
                                 val selected = state.taskId == task.id
+                                val chooseTask = { onTask(task.id) }
                                 ParkedChoice(
                                     task.title,
                                     task.description,
                                     selected,
-                                    { onTask(task.id) },
-                                    modifier.testTag("task_${task.id}"),
+                                    chooseTask,
+                                    modifier.testTag("task_${task.id}").frozenPreparationClick(chooseTask, !state.saving),
                                     showDescription = selected,
+                                    enabled = !state.saving,
                                 )
                             }
                             Column(Modifier.fillMaxWidth().testTag("briefing_summary")) {
@@ -205,13 +240,38 @@ internal fun CourseScreen(
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodyLarge,
                     )
+                    ParkedButton(
+                        onClick = onRetryPreparationRead,
+                        prominent = false,
+                        modifier =
+                            Modifier.fillMaxWidth().testTag("preparation_reload_saved").semantics {
+                                onClick {
+                                    onRetryPreparationRead()
+                                    true
+                                }
+                            },
+                    ) {
+                        Text(stringResource(R.string.preparation_reload_saved), style = MaterialTheme.typography.titleLarge)
+                    }
                 }
                 Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
                     ParkedButton(
                         onClick = onNext,
                         enabled = state.canContinue,
                         modifier =
-                            Modifier.widthIn(max = HanGilDimensions.parkedActionMaxWidth).fillMaxWidth().testTag("preparation_next"),
+                            Modifier
+                                .widthIn(
+                                    max = HanGilDimensions.parkedActionMaxWidth,
+                                ).fillMaxWidth()
+                                .testTag("preparation_next")
+                                .semantics {
+                                    if (state.canContinue) {
+                                        onClick {
+                                            onNext()
+                                            true
+                                        }
+                                    }
+                                },
                     ) {
                         Text(
                             stringResource(
@@ -251,7 +311,12 @@ private fun PreparationHeader(
                     style = MaterialTheme.typography.titleLarge,
                 )
             }
-            ParkedButton(onClick = onBack, enabled = !state.saving, prominent = false) {
+            ParkedButton(
+                onClick = onBack,
+                enabled = !state.saving,
+                prominent = false,
+                modifier = Modifier.frozenPreparationClick(onBack, !state.saving),
+            ) {
                 Text(stringResource(R.string.course_back), style = MaterialTheme.typography.titleMedium)
             }
         }
@@ -323,3 +388,16 @@ private fun DemoDetails(canExpandDetails: () -> Boolean) {
         )
     }
 }
+
+private fun Modifier.frozenPreparationClick(
+    action: () -> Unit,
+    enabled: Boolean,
+): Modifier =
+    semantics {
+        if (enabled) {
+            onClick {
+                action()
+                true
+            }
+        }
+    }

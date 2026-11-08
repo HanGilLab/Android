@@ -11,7 +11,8 @@ internal interface PreparationDao {
 
     @Query(
         "SELECT preparation.*, typeof(goalId) AS goalStorageType, typeof(courseId) AS courseStorageType, " +
-            "typeof(taskId) AS taskStorageType, typeof(courseVersion) AS courseVersionStorageType, " +
+            "typeof(taskId) AS taskStorageType, typeof(plannedRoadJson) AS plannedRoadStorageType, " +
+            "typeof(courseVersion) AS courseVersionStorageType, " +
             "typeof(briefingVersion) AS briefingVersionStorageType, courseVersion AS storedCourseVersion, " +
             "briefingVersion AS storedBriefingVersion FROM preparation WHERE slot = 1",
     )
@@ -19,7 +20,8 @@ internal interface PreparationDao {
 
     @Query(
         "SELECT preparation.*, typeof(goalId) AS goalStorageType, typeof(courseId) AS courseStorageType, " +
-            "typeof(taskId) AS taskStorageType, typeof(courseVersion) AS courseVersionStorageType, " +
+            "typeof(taskId) AS taskStorageType, typeof(plannedRoadJson) AS plannedRoadStorageType, " +
+            "typeof(courseVersion) AS courseVersionStorageType, " +
             "typeof(briefingVersion) AS briefingVersionStorageType, courseVersion AS storedCourseVersion, " +
             "briefingVersion AS storedBriefingVersion FROM preparation WHERE slot = 1",
     )

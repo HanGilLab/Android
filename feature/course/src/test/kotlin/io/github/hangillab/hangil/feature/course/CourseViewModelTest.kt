@@ -2,10 +2,12 @@ package io.github.hangillab.hangil.feature.course
 
 import androidx.lifecycle.SavedStateHandle
 import io.github.hangillab.hangil.core.domain.ConnectionState
+import io.github.hangillab.hangil.core.domain.CourseRoadSnapshot
 import io.github.hangillab.hangil.core.domain.DrivingRestrictions
 import io.github.hangillab.hangil.core.domain.DrivingRestrictionsProvider
 import io.github.hangillab.hangil.core.domain.GearPosition
 import io.github.hangillab.hangil.core.domain.ParkingState
+import io.github.hangillab.hangil.core.domain.PlannedPracticeRoad
 import io.github.hangillab.hangil.core.domain.PracticeCatalog
 import io.github.hangillab.hangil.core.domain.PracticeCourse
 import io.github.hangillab.hangil.core.domain.PracticeGoal
@@ -446,7 +448,7 @@ class CourseViewModelTest {
     @Test fun `owned partial and invalid drafts do not backfill from a different stored selection`() =
         runTest {
             repository.selection.value = PracticeSelection("b", "c", 2, 3, "u")
-            repository.read = { error("An owned draft must not query storage") }
+            repository.read = { repository.selection }
             for ((state, expectedGoal) in listOf(
                 SavedStateHandle(mapOf("goal" to "a")) to "a",
                 SavedStateHandle(mapOf("goal" to "missing")) to null,
@@ -462,7 +464,7 @@ class CourseViewModelTest {
                 )
                 assertNull(model.uiState.value.course)
                 assertNull(model.uiState.value.taskId)
-                assertEquals(0, repository.readCalls)
+                assertEquals(if (expectedGoal == "a") 1 else 2, repository.readCalls)
                 assertEquals(0, repository.calls)
             }
         }
@@ -657,7 +659,7 @@ class CourseViewModelTest {
             val restored = model(state)
             observe(restored)
             assertEquals(PreparationReadState.OUTDATED, restored.uiState.value.preparationRead)
-            assertEquals(1, repository.readCalls)
+            assertEquals(2, repository.readCalls)
             restored.selectGoal("a")
             runCurrent()
             assertEquals(PreparationReadState.READY, restored.uiState.value.preparationRead)
@@ -730,13 +732,13 @@ class CourseViewModelTest {
             prepare(first)
             val restored = model(state)
             observe(restored)
-            assertEquals(1, repository.readCalls)
+            assertEquals(2, repository.readCalls)
             assertEquals(PreparationStep.BRIEFING, restored.uiState.value.step)
             assertEquals("t", restored.uiState.value.taskId)
             state["briefingVersion"] = 1
             val outdated = model(state)
             observe(outdated)
-            assertEquals(1, repository.readCalls)
+            assertEquals(3, repository.readCalls)
             assertEquals(PreparationStep.COURSE, outdated.uiState.value.step)
             assertNull(outdated.uiState.value.course)
         }
@@ -778,4 +780,169 @@ class CourseViewModelTest {
             assertNull(model.uiState.value.goal)
             assertFalse(model.uiState.value.allowsInteraction)
         }
+
+    @Test fun plannedTargetSurvivesSameContextTaskSaveAndAChangedStoredPreparationRejectsTheOldDraft() =
+        runTest {
+            val plan = plan()
+            val original = PracticeSelection("a", "c", 2, 3, "t", plan)
+            repository.selection.value = original
+            val model = model()
+            observe(model)
+            assertEquals(plan, model.uiState.value.plannedRoad)
+            model.next()
+            model.next()
+            model.selectTask("u")
+            model.next()
+            runCurrent()
+            assertEquals(original.copy(taskId = "u"), repository.selection.value)
+            val stale = this@CourseViewModelTest.model()
+            observe(stale)
+            stale.next()
+            stale.next()
+            stale.selectTask("t")
+            val replacement = original.copy(goalId = "b", plannedRoad = null)
+            repository.selection.value = replacement
+            stale.next()
+            runCurrent()
+            assertEquals(replacement, repository.selection.value)
+            assertTrue(stale.uiState.value.saveFailed)
+        }
+
+    @Test fun restoredDraftOnlyRecoversItsTargetFromTheSameFullStoredBinding() =
+        runTest {
+            val original = PracticeSelection("a", "c", 2, 3, "t", plan())
+            repository.selection.value = original
+            val state = SavedStateHandle()
+            val first = model(state)
+            observe(first)
+            first.next()
+            first.next()
+            first.selectTask("u")
+            val snapshot = SavedStateHandle(state.keys().associateWith { state.get<Any?>(it) })
+            val restored = model(snapshot)
+            observe(restored)
+            assertEquals(original.plannedRoad, restored.uiState.value.plannedRoad)
+            assertEquals("u", restored.uiState.value.taskId)
+            val changed = original.copy(plannedRoad = PlannedPracticeRoad("previous", "v2", checkNotNull(original.plannedRoad).road))
+            repository.selection.value = changed
+            val different = model(SavedStateHandle(state.keys().associateWith { state.get<Any?>(it) }))
+            observe(different)
+            assertEquals(PreparationReadState.FAILED, different.uiState.value.preparationRead)
+            assertFalse(different.uiState.value.canContinue)
+            different.retryPreparationRead()
+            runCurrent()
+            assertEquals(changed.plannedRoad, different.uiState.value.plannedRoad)
+            assertEquals("t", different.uiState.value.taskId)
+            assertEquals(0, repository.calls)
+            state.keys().forEach { assertFalse(state.get<Any?>(it) is PlannedPracticeRoad) }
+        }
+
+    @Test fun changingGoalPreviewsTargetRemovalAndReturningToTheOriginalContextRestoresItWithoutWriting() =
+        runTest {
+            val original = PracticeSelection("a", "c", 2, 3, "t", plan())
+            repository.selection.value = original
+            val model = model()
+            observe(model)
+            model.selectGoal("b")
+            runCurrent()
+            assertNull(model.uiState.value.plannedRoad)
+            assertTrue(model.uiState.value.plannedRoadCleared)
+            model.selectGoal("a")
+            model.next()
+            model.selectCourse("c")
+            runCurrent()
+            assertEquals(original.plannedRoad, model.uiState.value.plannedRoad)
+            assertFalse(model.uiState.value.plannedRoadCleared)
+            model.leave()
+            runCurrent()
+            assertEquals(original, repository.selection.value)
+            assertEquals(0, repository.calls)
+        }
+
+    @Test fun stalePreparationCanBeExplicitlyReloadedAfterARejectedSaveWithoutReusingTheFailedDraftOrOldAction() =
+        runTest {
+            catalog.courses = catalog.courses + catalog.courses.single().copy(id = "other")
+            val original = PracticeSelection("a", "c", 2, 3, "t", plan())
+            repository.selection.value = original
+            val state = SavedStateHandle()
+            val model = model(state)
+            observe(model)
+            model.next()
+            model.next()
+            model.selectTask("u")
+            runCurrent()
+            val displayed = model.uiState.value
+            val replacement =
+                original.copy(
+                    goalId = "b",
+                    taskId = "t",
+                    plannedRoad = PlannedPracticeRoad("different-source", "new-version", plan().road),
+                )
+            repository.selection.value = replacement
+            model.next(displayed.readGeneration)
+            runCurrent()
+            assertTrue(model.uiState.value.saveFailed)
+            assertEquals("u", model.uiState.value.taskId)
+            assertEquals(original.plannedRoad, model.uiState.value.plannedRoad)
+            val writesAfterFailure = repository.calls
+            model.next(displayed.readGeneration)
+            runCurrent()
+            assertTrue(model.uiState.value.saveFailed)
+            assertEquals(replacement, repository.selection.value)
+            model.retryPreparationRead()
+            runCurrent()
+            assertFalse(model.uiState.value.saveFailed)
+            assertEquals(PreparationStep.GOAL, model.uiState.value.step)
+            assertEquals(
+                "b",
+                model.uiState.value.goal
+                    ?.id,
+            )
+            assertEquals("t", model.uiState.value.taskId)
+            assertEquals(replacement.plannedRoad, model.uiState.value.plannedRoad)
+            val fresh = model.uiState.value
+            model.next(displayed.readGeneration)
+            model.selectGoal("a", displayed.readGeneration)
+            assertTrue("A stale Back is consumed without closing fresh preparation", model.back(displayed.readGeneration))
+            runCurrent()
+            assertEquals(fresh, model.uiState.value)
+            assertEquals(replacement, repository.selection.value)
+            assertEquals(writesAfterFailure + 1, repository.calls)
+            model.next(fresh.readGeneration)
+            runCurrent()
+            val courseStep = model.uiState.value
+            assertEquals(PreparationStep.COURSE, courseStep.step)
+            model.selectCourse("other", displayed.readGeneration)
+            assertTrue(model.back(displayed.readGeneration))
+            runCurrent()
+            assertEquals(courseStep, model.uiState.value)
+            model.next(fresh.readGeneration)
+            runCurrent()
+            val briefing = model.uiState.value
+            assertEquals(PreparationStep.BRIEFING, briefing.step)
+            model.selectTask("u", displayed.readGeneration)
+            assertTrue(model.back(displayed.readGeneration))
+            runCurrent()
+            assertEquals(briefing, model.uiState.value)
+            model.selectTask("u", fresh.readGeneration)
+            runCurrent()
+            assertEquals("u", model.uiState.value.taskId)
+            assertEquals(replacement, repository.selection.value)
+            assertEquals(replacement.savedFields(), state.get<Any?>("preparationBaselineFields"))
+        }
+
+    private fun plan() =
+        PlannedPracticeRoad(
+            "previous",
+            "v1",
+            CourseRoadSnapshot(
+                "road",
+                "목표 도로",
+                "residential",
+                99,
+                1,
+                1000,
+                listOf(CourseRoadSnapshot.Node(1, 1, 37.0, 127.0), CourseRoadSnapshot.Node(2, 1, 37.001, 127.001)),
+            ),
+        )
 }

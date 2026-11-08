@@ -4,4 +4,5 @@ data class PreparedPractice(
     val goal: PracticeGoal,
     val course: PracticeCourse,
     val task: PracticeTask,
+    val plannedRoad: PlannedPracticeRoad? = null,
 )

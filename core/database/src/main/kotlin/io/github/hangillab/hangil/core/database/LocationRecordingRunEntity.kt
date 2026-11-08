@@ -1,5 +1,6 @@
 package io.github.hangillab.hangil.core.database
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -52,6 +53,7 @@ internal data class LocationRecordingRunEntity(
     val status: String,
     val stopReason: String?,
     val openSlot: Long?,
+    @ColumnInfo(defaultValue = "NULL") val plannedRoadJson: String? = null,
 ) {
     fun run(): LocationRecordingRun {
         check(rowId > 0) { "Invalid location run row" }
@@ -62,7 +64,14 @@ internal data class LocationRecordingRunEntity(
             processId,
             PracticeSession(
                 sessionId,
-                PracticeSelection(goalId, courseId, courseVersion, briefingVersion, taskId),
+                PracticeSelection(
+                    goalId,
+                    courseId,
+                    courseVersion,
+                    briefingVersion,
+                    taskId,
+                    PlannedPracticeRoadJson.decode(plannedRoadJson),
+                ),
                 goalTitle,
                 courseTitle,
                 taskTitle,
@@ -84,6 +93,7 @@ internal data class LocationRecordingRunEntity(
             val source = run.source
             val selection = source.selection
             return LocationRecordingRunEntity(
+                plannedRoadJson = PlannedPracticeRoadJson.encode(selection.plannedRoad),
                 runId = run.runId,
                 sessionId = source.sessionId,
                 processId = run.processId,

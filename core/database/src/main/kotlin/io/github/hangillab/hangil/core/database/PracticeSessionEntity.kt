@@ -1,5 +1,6 @@
 package io.github.hangillab.hangil.core.database
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -27,13 +28,22 @@ internal data class PracticeSessionEntity(
     val endedAtEpochMillis: Long?,
     // A unique nullable slot allows many finished sessions and at most one active session.
     val activeSlot: Int?,
+    @ColumnInfo(defaultValue = "NULL") val plannedRoadJson: String? = null,
 ) {
     fun session(): PracticeSession {
         check(activeSlot == if (endedAtEpochMillis == null) 1 else null)
         check(startedAtEpochMillis > 0 && (endedAtEpochMillis == null || endedAtEpochMillis >= startedAtEpochMillis))
         return PracticeSession(
             sessionId = sessionId,
-            selection = PracticeSelection(goalId, courseId, courseVersion, briefingVersion, taskId),
+            selection =
+                PracticeSelection(
+                    goalId,
+                    courseId,
+                    courseVersion,
+                    briefingVersion,
+                    taskId,
+                    PlannedPracticeRoadJson.decode(plannedRoadJson),
+                ),
             goalTitle = goalTitle,
             courseTitle = courseTitle,
             taskTitle = taskTitle,

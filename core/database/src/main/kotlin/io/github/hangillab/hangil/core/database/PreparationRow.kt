@@ -9,6 +9,7 @@ internal data class PreparationRow(
     val goalStorageType: String,
     val courseStorageType: String,
     val taskStorageType: String,
+    val plannedRoadStorageType: String,
     val courseVersionStorageType: String,
     val briefingVersionStorageType: String,
     val storedCourseVersion: Long,
@@ -19,7 +20,8 @@ internal data class PreparationRow(
             goalStorageType == "text" && courseStorageType == "text" && taskStorageType == "text" &&
                 courseVersionStorageType == "integer" && briefingVersionStorageType == "integer" &&
                 storedCourseVersion in Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong() &&
-                storedBriefingVersion in Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong(),
+                storedBriefingVersion in Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong() &&
+                plannedRoadStorageType in listOf("null", "text"),
         ) { "Invalid stored preparation types or version range" }
         return entity.selection()
     }

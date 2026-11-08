@@ -219,6 +219,14 @@ internal fun HomeScreen(
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                     Text(ready.task.title, Modifier.testTag("saved_task"), style = MaterialTheme.typography.titleLarge)
+                                    ready.plannedRoad?.let { plan ->
+                                        Text(
+                                            stringResource(R.string.planned_road_summary, plan.road.title),
+                                            Modifier.testTag("saved_planned_road"),
+                                            style = MaterialTheme.typography.titleLarge,
+                                        )
+                                        Text(stringResource(R.string.planned_road_scope), style = MaterialTheme.typography.bodyLarge)
+                                    }
                                     key(ready) {
                                         ParkedDisclosure(
                                             stringResource(R.string.preparation_details),

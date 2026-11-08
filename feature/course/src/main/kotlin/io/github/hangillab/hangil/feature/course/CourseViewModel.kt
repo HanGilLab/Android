@@ -5,8 +5,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.github.hangillab.hangil.core.domain.DrivingRestrictionsProvider
+import io.github.hangillab.hangil.core.domain.PlannedPracticeRoad
 import io.github.hangillab.hangil.core.domain.PracticeCatalog
 import io.github.hangillab.hangil.core.domain.PracticeRepository
+import io.github.hangillab.hangil.core.domain.PracticeSelection
 import io.github.hangillab.hangil.core.domain.Preparation
 import io.github.hangillab.hangil.core.domain.VehicleGateway
 import io.github.hangillab.hangil.core.domain.allowsPracticeInteraction
@@ -37,14 +39,10 @@ class CourseViewModel
         private val savedState: SavedStateHandle,
     ) : ViewModel() {
         private var ownsDraft = listOf("step", "goal", "course", "courseVersion", "briefingVersion", "task").any(savedState::contains)
-        private val preparationRead =
-            MutableStateFlow(
-                when {
-                    !ownsDraft -> PreparationReadState.LOADING
-                    savedState.get<Boolean>("initialPreparationOutdated") == true -> PreparationReadState.OUTDATED
-                    else -> PreparationReadState.READY
-                },
-            )
+        private val preparationRead = MutableStateFlow(PreparationReadState.LOADING)
+        private var expectedCurrent: PracticeSelection? = null
+        private var expectedLoaded = false
+        private var originalPlannedRoad: PlannedPracticeRoad? = null
         private val draft = MutableStateFlow(restoreDraft())
         private val saving = MutableStateFlow(false)
         private val saveFailed = MutableStateFlow(false)
@@ -52,6 +50,7 @@ class CourseViewModel
         private var saveJob: Job? = null
         private var readJob: Job? = null
         private var readOwner: Any? = null
+        private var readGeneration = 0L
 
         @Volatile private var visible = false
         private val savedEvents = Channel<Unit>(Channel.BUFFERED)
@@ -77,6 +76,9 @@ class CourseViewModel
                     saving = busy,
                     saveFailed = failed,
                     preparationRead = read,
+                    plannedRoad = current.plannedRoad,
+                    plannedRoadCleared = originalPlannedRoad != null && current.plannedRoad == null,
+                    readGeneration = readGeneration,
                 )
             }.onStart {
                 visible = true
@@ -89,10 +91,14 @@ class CourseViewModel
 
         /** Rechecks the displayed draft directly, before a delayed combined UI update. */
         internal fun canRevealDetails(expected: CourseUiState): Boolean {
-            if (!preparationRead.value.allowsEditing || !livePermission() || !expected.allowsInteraction) return false
+            if (expected.readGeneration != readGeneration || !preparationRead.value.allowsEditing || !livePermission() ||
+                !expected.allowsInteraction
+            ) {
+                return false
+            }
             val current = draft.value
             if (current.step != expected.step || current.goalId != expected.goal?.id ||
-                current.courseId != expected.course?.id || current.taskId != expected.taskId
+                current.courseId != expected.course?.id || current.taskId != expected.taskId || current.plannedRoad != expected.plannedRoad
             ) {
                 return false
             }
@@ -103,12 +109,20 @@ class CourseViewModel
                 catalog.courses.find { it.id == current.courseId && current.goalId in it.goalIds } == course
         }
 
-        fun selectGoal(id: String) {
+        fun selectGoal(
+            id: String,
+            expectedReadGeneration: Long? = null,
+        ) {
+            if (expectedReadGeneration != null && expectedReadGeneration != readGeneration) return
             if (!canEdit() || draft.value.step != PreparationStep.GOAL || catalog.goals.none { it.id == id }) return
             if (draft.value.goalId != id) update(PreparationDraft(goalId = id))
         }
 
-        fun selectCourse(id: String) {
+        fun selectCourse(
+            id: String,
+            expectedReadGeneration: Long? = null,
+        ) {
+            if (expectedReadGeneration != null && expectedReadGeneration != readGeneration) return
             if (!canEdit() || draft.value.step != PreparationStep.COURSE) return
             val current = draft.value
             val course = catalog.courses.find { it.id == id && current.goalId in it.goalIds } ?: return
@@ -117,16 +131,35 @@ class CourseViewModel
             ) {
                 return
             }
-            update(current.copy(courseId = id, courseVersion = course.version, briefingVersion = course.briefingVersion, taskId = null))
+            val expected = expectedCurrent
+            val retainedPlan =
+                expected?.plannedRoad?.takeIf {
+                    expected.goalId == current.goalId && expected.courseId == id &&
+                        expected.courseVersion == course.version && expected.briefingVersion == course.briefingVersion
+                }
+            update(
+                current.copy(
+                    courseId = id,
+                    courseVersion = course.version,
+                    briefingVersion = course.briefingVersion,
+                    taskId = null,
+                    plannedRoad = retainedPlan,
+                ),
+            )
         }
 
-        fun selectTask(id: String) {
+        fun selectTask(
+            id: String,
+            expectedReadGeneration: Long? = null,
+        ) {
+            if (expectedReadGeneration != null && expectedReadGeneration != readGeneration) return
             if (!canEdit() || draft.value.step != PreparationStep.BRIEFING) return
             val course = catalog.courses.find { it.id == draft.value.courseId } ?: return
             if (course.tasks.any { it.id == id }) update(draft.value.copy(taskId = id))
         }
 
-        fun next() {
+        fun next(expectedReadGeneration: Long? = null) {
+            if (expectedReadGeneration != null && expectedReadGeneration != readGeneration) return
             if (!canEdit()) return
             when (draft.value.step) {
                 PreparationStep.GOAL -> if (draft.value.goalId != null) update(draft.value.copy(step = PreparationStep.COURSE))
@@ -135,7 +168,9 @@ class CourseViewModel
             }
         }
 
-        fun back(): Boolean {
+        fun back(expectedReadGeneration: Long? = null): Boolean {
+            // A retired Back is consumed; it must not close the replacement preparation.
+            if (expectedReadGeneration != null && expectedReadGeneration != readGeneration) return true
             if (!canEdit()) {
                 leave()
                 return false
@@ -159,16 +194,40 @@ class CourseViewModel
             saveJob?.cancel()
         }
 
-        fun retryPreparationRead() {
-            if (preparationRead.value != PreparationReadState.FAILED || !livePermission()) return
-            startPreparationRead()
+        fun retryPreparationRead(expectedReadGeneration: Long? = null) {
+            if (expectedReadGeneration != null && expectedReadGeneration != readGeneration) return
+            if (!livePermission() || saving.value) return
+            if (saveFailed.value) {
+                // Only this explicit reload discards the failed draft and its old compare-and-set source.
+                cancelPreparationRead()
+                expectedLoaded = false
+                expectedCurrent = null
+                originalPlannedRoad = null
+                ownsDraft = false
+                listOf(
+                    "step",
+                    "goal",
+                    "course",
+                    "courseVersion",
+                    "briefingVersion",
+                    "task",
+                    "initialPreparationOutdated",
+                    "preparationBaselineFields",
+                ).forEach { savedState.remove<Any?>(it) }
+                draft.value = PreparationDraft()
+                saveFailed.value = false
+            } else if (preparationRead.value != PreparationReadState.FAILED) {
+                return
+            }
+            startPreparationRead(reload = true)
         }
 
-        private fun startPreparationRead() {
-            if (ownsDraft || !visible || !sessionOpen.value) return
+        private fun startPreparationRead(reload: Boolean = false) {
+            if (!visible || !sessionOpen.value) return
             cancelPreparationRead()
             val owner = Any()
             readOwner = owner
+            readGeneration++
             preparationRead.value = PreparationReadState.LOADING
             val job =
                 viewModelScope.launch(start = CoroutineStart.LAZY) {
@@ -177,10 +236,26 @@ class CourseViewModel
                         coroutineContext.ensureActive()
                         val resolved = catalog.resolve(selection)
                         coroutineContext.ensureActive()
-                        if (readOwner !== owner || ownsDraft || !visible || !sessionOpen.value) return@launch
+                        if (readOwner !== owner || !visible || !sessionOpen.value) return@launch
                         val practice = (resolved as? Preparation.Ready)?.practice
+                        val priorBinding = savedState.get<Any?>("preparationBaselineFields")
+                        val sameBaseline = priorBinding is ArrayList<*> && priorBinding == selection.savedFields()
+                        if (!reload && ownsDraft &&
+                            ((priorBinding != null && !sameBaseline) || (priorBinding == null && selection?.plannedRoad != null))
+                        ) {
+                            preparationRead.value = PreparationReadState.FAILED
+                            return@launch
+                        }
+                        val currentDraft = draft.value
+                        val restoreOwned = ownsDraft && !reload && (sameBaseline || priorBinding == null)
                         val initial =
-                            if (practice == null) {
+                            if (restoreOwned) {
+                                val sameContext =
+                                    currentDraft.goalId == selection?.goalId && currentDraft.courseId == selection?.courseId &&
+                                        currentDraft.courseVersion == selection?.courseVersion &&
+                                        currentDraft.briefingVersion == selection?.briefingVersion
+                                currentDraft.copy(plannedRoad = if (sameContext) selection?.plannedRoad else null)
+                            } else if (practice == null) {
                                 PreparationDraft()
                             } else {
                                 PreparationDraft(
@@ -189,16 +264,27 @@ class CourseViewModel
                                     courseVersion = practice.course.version,
                                     briefingVersion = practice.course.briefingVersion,
                                     taskId = practice.task.id,
+                                    plannedRoad = practice.plannedRoad,
                                 )
                             }
-                        val outdated = resolved == Preparation.Outdated
+                        expectedCurrent = selection
+                        expectedLoaded = true
+                        originalPlannedRoad = selection?.plannedRoad
+                        savedState["preparationBaselineFields"] = selection.savedFields()
+                        val outdated =
+                            if (restoreOwned) {
+                                savedState.get<Boolean>("initialPreparationOutdated") == true
+                            } else {
+                                resolved ==
+                                    Preparation.Outdated
+                            }
                         update(initial, initialOutdated = outdated)
                         preparationRead.value = if (outdated) PreparationReadState.OUTDATED else PreparationReadState.READY
                     } catch (cancelled: CancellationException) {
                         throw cancelled
                     } catch (_: Exception) {
                         coroutineContext.ensureActive()
-                        if (readOwner === owner && !ownsDraft && visible && sessionOpen.value) {
+                        if (readOwner === owner && visible && sessionOpen.value) {
                             preparationRead.value = PreparationReadState.FAILED
                         }
                     } finally {
@@ -222,6 +308,8 @@ class CourseViewModel
         private fun save() {
             val snapshot = draft.value
             val selection = snapshot.selection() ?: return
+            if (!expectedLoaded) return
+            val expected = expectedCurrent
             if (catalog.resolve(selection) !is Preparation.Ready) return
             saving.value = true
             saveFailed.value = false
@@ -230,11 +318,17 @@ class CourseViewModel
                     try {
                         val job = coroutineContext[Job]!!
                         val committed =
-                            repository.saveSelection(selection) {
-                                job.isActive && preparationRead.value.allowsEditing && livePermission() && draft.value == snapshot
+                            repository.replaceSelection(expected, selection) {
+                                job.isActive && expectedLoaded && expectedCurrent == expected && preparationRead.value.allowsEditing &&
+                                    livePermission() &&
+                                    draft.value == snapshot
                             }
                         coroutineContext.ensureActive()
-                        if (committed && sessionOpen.value) savedEvents.send(Unit)
+                        if (committed && sessionOpen.value) {
+                            savedEvents.send(Unit)
+                        } else if (sessionOpen.value) {
+                            saveFailed.value = true
+                        }
                     } catch (cancelled: CancellationException) {
                         throw cancelled
                     } catch (_: Exception) {

@@ -13,6 +13,7 @@ private const val REVIEW_ROAD_SELECT =
         "AND typeof(r.taskTitle) = 'text' AND typeof(r.courseReviewStatus) = 'text' AND typeof(r.version) = 'text' " +
         "AND typeof(r.origin) = 'text' AND typeof(r.roadId) = 'text' AND typeof(r.roadTitle) = 'text' " +
         "AND typeof(r.memoText) = 'text' " +
+        "AND (r.plannedRoadJson IS NULL OR typeof(r.plannedRoadJson) = 'text') " +
         "AND typeof(r.highway) = 'text' AND typeof(r.courseVersion) = 'integer' AND r.courseVersion BETWEEN 1 AND 2147483647 " +
         "AND typeof(r.briefingVersion) = 'integer' AND r.briefingVersion BETWEEN 1 AND 2147483647 " +
         "AND typeof(r.startedAtEpochMillis) = 'integer' AND typeof(r.endedAtEpochMillis) = 'integer' " +

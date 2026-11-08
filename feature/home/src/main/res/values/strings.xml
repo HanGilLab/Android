@@ -157,7 +157,7 @@
 
     <string name="history_delete">이 기록 삭제</string>
     <string name="history_delete_title">기록을 삭제할까요?</string>
-    <string name="history_delete_warning">이 연습과 연결된 차량 관찰, 메모, 배경 실행, 위치 표본과 수집 상태, 마무리 선언을\n이 기기에서 영구 삭제해요. 복구할 수 없어요.</string>
+    <string name="history_delete_warning">이 연습과 연결된 차량 관찰, 메모, 배경 실행, 위치 표본과 수집 상태, 마무리 선언을\n이 기기에서 영구 삭제해요. 복구할 수 없어요. 다른 준비나 연습으로 가져온 목표 도로는 남아요.</string>
     <string name="history_delete_observation_count">저장된 차량 관찰 %1$d개</string>
     <string name="history_delete_location_counts">위치 표본 %1$d개, 수집 상태 %2$d개</string>
     <string name="history_delete_location_run_count">위치 수집 실행 %1$d개</string>
@@ -282,7 +282,7 @@
   <string name="history_delete_review_road_present">저장한 복습 구간: %1$s</string>
   <string name="review_road_reference_source">이전 연습에서 직접 고른 도로, 통행 미확인</string>
   <string name="review_road_reference_empty">이전 연습에 저장한 참고 구간이 없어요.</string>
-  <string name="review_road_reference_scope">이번 준비에는 코스와 과제만 저장돼요.</string>
+  <string name="review_road_reference_scope">도로를 목표로 쓸지는 다음 과제 화면에서 직접 선택해요. 메모는 복사하지 않아요.</string>
   <string name="review_road_comparison_scope">저장 표본과 복습 도로</string>
   <string name="review_road_comparison_source">이 연습에서 직접 고른 도로, 통행 미확인</string>
   <string name="review_road_comparison_empty">이 연습에 저장한 복습 도로가 없어 표본만 보여줘요.</string>
@@ -304,4 +304,6 @@
   <string name="review_road_memo_replace_confirm">메모 지우고 구간 변경</string>
   <string name="review_road_memo_keep">그대로 유지</string>
   <string name="history_delete_review_road_memo_present">저장한 복습 구간: %1$s (구간 메모 포함)</string>
+    <string name="planned_road_summary">연습 전 목표 도로: %1$s</string>
+    <string name="planned_road_scope">실제 주행이나 내비 경로가 아닌 연습 목표예요.</string>
 </resources>

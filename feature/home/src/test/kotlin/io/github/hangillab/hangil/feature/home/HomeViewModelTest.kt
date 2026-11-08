@@ -85,6 +85,12 @@ class HomeViewModelTest {
                     emitAll(selectionSource)
                 }
 
+            override suspend fun replaceSelection(
+                expectedCurrent: PracticeSelection?,
+                selection: PracticeSelection,
+                canCommit: () -> Boolean,
+            ): Boolean = error("Unexpected preparation edit in a read-only host test")
+
             override suspend fun saveSelection(
                 selection: PracticeSelection,
                 canCommit: () -> Boolean,

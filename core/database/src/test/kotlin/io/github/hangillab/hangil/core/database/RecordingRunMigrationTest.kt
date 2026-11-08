@@ -32,7 +32,7 @@ class RecordingRunMigrationTest {
                     val database = open(name)
                     try {
                         val sqlite = database.openHelper.writableDatabase
-                        assertEquals(9, sqlite.version)
+                        assertEquals(10, sqlite.version)
                         for ((table, original) in before) assertEquals(original, readTable(sqlite, table))
                         assertTrue(RoomRecordingRunRepository(database).observe("active-fixture").first().isEmpty())
                         assertEquals(null, RoomCourseCompletionRepository(database).observe("finished-fixture").first())
@@ -91,6 +91,7 @@ class RecordingRunMigrationTest {
                 PreparationMigration6To7,
                 PreparationMigration7To8,
                 PreparationMigration8To9,
+                PreparationMigration9To10,
             ).build()
 
     private fun createLegacy(
@@ -281,11 +282,11 @@ class RecordingRunMigrationTest {
             }
         return db.query("SELECT * FROM $table ORDER BY $order").use { cursor ->
             TableRows(
-                cursor.columnNames.toList(),
+                cursor.columnNames.filterNot { it == "plannedRoadJson" },
                 buildList {
                     while (cursor.moveToNext()) {
                         add(
-                            (0 until cursor.columnCount).map { column ->
+                            (0 until cursor.columnCount).filterNot { cursor.getColumnName(it) == "plannedRoadJson" }.map { column ->
                                 val value: Any? =
                                     when (cursor.getType(column)) {
                                         Cursor.FIELD_TYPE_NULL -> null

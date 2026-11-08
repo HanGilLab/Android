@@ -1,5 +1,6 @@
 package io.github.hangillab.hangil.core.database
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.PrimaryKey
@@ -36,12 +37,20 @@ internal data class CourseCompletionDeclarationEntity(
     val version: String,
     val declaredAtEpochMillis: Long,
     val origin: String,
+    @ColumnInfo(defaultValue = "NULL") val plannedRoadJson: String? = null,
 ) {
     fun declaration() =
         CourseCompletionDeclaration(
             PracticeSession(
                 sessionId,
-                PracticeSelection(goalId, courseId, courseVersion, briefingVersion, taskId),
+                PracticeSelection(
+                    goalId,
+                    courseId,
+                    courseVersion,
+                    briefingVersion,
+                    taskId,
+                    PlannedPracticeRoadJson.decode(plannedRoadJson),
+                ),
                 goalTitle,
                 courseTitle,
                 taskTitle,
@@ -74,6 +83,7 @@ internal data class CourseCompletionDeclarationEntity(
                 declaration.version,
                 declaration.declaredAtEpochMillis,
                 declaration.origin.name,
+                PlannedPracticeRoadJson.encode(selection.plannedRoad),
             )
         }
     }

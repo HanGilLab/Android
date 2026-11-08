@@ -33,7 +33,7 @@ class SessionMemoMigrationTest {
                 val before = createVersionThree(name)
                 open(name).useDatabase { database ->
                     val sqlite = database.openHelper.writableDatabase
-                    assertEquals(9, sqlite.version)
+                    assertEquals(10, sqlite.version)
                     assertEquals(before, snapshot(sqlite))
                     assertTrue(rows(sqlite, "SELECT * FROM session_memo ORDER BY sessionId").values.isEmpty())
                     sqlite.query("PRAGMA foreign_key_check").use { assertEquals(0, it.count) }
@@ -105,6 +105,7 @@ class SessionMemoMigrationTest {
                 PreparationMigration6To7,
                 PreparationMigration7To8,
                 PreparationMigration8To9,
+                PreparationMigration9To10,
             ).build()
 
     private fun createVersionThree(name: String): Map<String, TableData> {
@@ -236,11 +237,11 @@ class SessionMemoMigrationTest {
     ): TableData =
         db.query(query).use { cursor ->
             TableData(
-                cursor.columnNames.toList(),
+                cursor.columnNames.filterNot { it == "plannedRoadJson" },
                 buildList {
                     while (cursor.moveToNext()) {
                         add(
-                            (0 until cursor.columnCount).map { column ->
+                            (0 until cursor.columnCount).filterNot { cursor.getColumnName(it) == "plannedRoadJson" }.map { column ->
                                 cursor.getType(column) to
                                     when (cursor.getType(column)) {
                                         Cursor.FIELD_TYPE_NULL -> null

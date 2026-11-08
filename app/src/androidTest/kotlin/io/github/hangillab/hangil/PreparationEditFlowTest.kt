@@ -20,6 +20,7 @@ import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -44,9 +45,16 @@ import io.github.hangillab.hangil.core.domain.ConnectionState
 import io.github.hangillab.hangil.core.domain.DrivingRestrictions
 import io.github.hangillab.hangil.core.domain.DrivingRestrictionsProvider
 import io.github.hangillab.hangil.core.domain.GearPosition
+import io.github.hangillab.hangil.core.domain.NextPracticeSaveResult
+import io.github.hangillab.hangil.core.domain.NextPracticeSeed
 import io.github.hangillab.hangil.core.domain.ParkingState
+import io.github.hangillab.hangil.core.domain.PlannedPracticeRoad
 import io.github.hangillab.hangil.core.domain.PracticeRepository
 import io.github.hangillab.hangil.core.domain.PracticeSelection
+import io.github.hangillab.hangil.core.domain.Preparation
+import io.github.hangillab.hangil.core.domain.SessionFinishResult
+import io.github.hangillab.hangil.core.domain.SessionReviewRoadWriteResult
+import io.github.hangillab.hangil.core.domain.SessionStartResult
 import io.github.hangillab.hangil.core.domain.UxRestrictionState
 import io.github.hangillab.hangil.core.domain.VehicleGateway
 import io.github.hangillab.hangil.core.domain.VehicleReading
@@ -69,6 +77,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.abs
@@ -85,6 +94,9 @@ class PreparationEditFlowTest {
     private var expectedScale = Float.NaN
     private var expectedDark = false
     private var imageIndex = 0
+    private val captures by lazy {
+        File(instrument.targetContext.cacheDir, "preparation-edit-${UUID.randomUUID()}").also { check(it.mkdirs()) }
+    }
 
     @Test fun savedPreparationPrefillsCancelsAndExplicitlySavesThroughTheRealRoute() {
         val args = InstrumentationRegistry.getArguments()
@@ -122,12 +134,33 @@ class PreparationEditFlowTest {
                 compose.activity.window.decorView.viewTreeObserver
                     .addOnWindowFocusChangeListener(focusObserver)
             }
-            val course = store.catalog.courses.first { it.tasks.size >= 2 && it.goalIds.size >= 2 }
+            val course = store.catalog.courses.first { it.tasks.size >= 2 && it.goalIds.size >= 2 && it.roadSnapshots.isNotEmpty() }
             val goals = store.catalog.goals.filter { it.id in course.goalIds }
             check(goals.size >= 2)
-            val original = PracticeSelection(goals.first().id, course.id, course.version, course.briefingVersion, course.tasks.first().id)
-            val target = original.copy(goalId = goals.last().id, taskId = course.tasks.last().id)
-            runBlocking { assertTrue(store.preparation.saveSelection(original) { true }) }
+            val plain = PracticeSelection(goals.first().id, course.id, course.version, course.briefingVersion, course.tasks.first().id)
+            val original =
+                runBlocking {
+                    check(store.preparation.saveSelection(plain) { true })
+                    val sourcePractice = (store.catalog.resolve(plain) as Preparation.Ready).practice
+                    val start = store.sessions.start(sourcePractice, 1000) { true }
+                    check(start is SessionStartResult.Started)
+                    val finish = store.sessions.finish(start.session, 1500) { true }
+                    check(finish is SessionFinishResult.Finished)
+                    val review = store.reviewRoads.save(finish.session, course.roadSnapshots.first(), null) { true }
+                    check(review is SessionReviewRoadWriteResult.Saved)
+                    val copied = plain.copy(plannedRoad = PlannedPracticeRoad.from(review.review))
+                    assertEquals(
+                        NextPracticeSaveResult.Saved,
+                        store.nextPractice.saveSelection(
+                            checkNotNull(NextPracticeSeed.resolve(store.catalog, finish.session)),
+                            copied,
+                            review.review,
+                        ) { true },
+                    )
+                    copied
+                }
+            val sameCourseTask = original.copy(taskId = course.tasks.last().id)
+            val target = sameCourseTask.copy(goalId = goals.last().id, plannedRoad = null)
             val sessions = runBlocking { store.sessions.observeSessions().first() }
             val sequences = store.sequenceSnapshot()
             instrument.runOnMainSync {
@@ -167,6 +200,19 @@ class PreparationEditFlowTest {
             assertEquals(2, preparation.reads.get())
             invoke(cancelledSave)
             assertStored(store, original, 0, preparation)
+            click("task_${sameCourseTask.taskId}")
+            waitTag("preparation_planned_road")
+            assertTextFits(compose.onNodeWithTag("preparation_planned_road", useUnmergedTree = true))
+            click("preparation_next")
+            runBlocking { withTimeout(20000) { store.preparation.observeSelection().first { it == sameCourseTask } } }
+            compose.waitUntil(20000) { closed.get() == 2 }
+            assertStored(store, sameCourseTask, 1, preparation)
+            assertEquals(original.plannedRoad, sameCourseTask.plannedRoad)
+            phase("PREPARATION_TASK_ONLY_EDIT_KEPT_THE_COPIED_TARGET")
+
+            instrument.runOnMainSync { current.value = createModel(store, preparation, vehicle, restrictions) }
+            assertPrefilled(sameCourseTask)
+            assertEquals(3, preparation.reads.get())
             back()
             waitTag("course_choices")
             back()
@@ -185,11 +231,40 @@ class PreparationEditFlowTest {
                 .assertIsDisplayed()
                 .assertIsNotEnabled()
             click("task_${target.taskId}")
+            waitTag("preparation_planned_road_cleared")
+            assertTextFits(compose.onNodeWithTag("preparation_planned_road_cleared", useUnmergedTree = true))
+            val cancelledClear = clickAction("preparation_next")
+            closeFromBriefing(closed, 3)
+            invoke(cancelledClear)
+            assertStored(store, sameCourseTask, 1, preparation)
+
+            instrument.runOnMainSync { current.value = createModel(store, preparation, vehicle, restrictions) }
+            assertPrefilled(sameCourseTask)
+            assertEquals(4, preparation.reads.get())
+            back()
+            waitTag("course_choices")
+            back()
+            waitTag("goal_choices")
+            click("goal_${target.goalId}")
+            click("preparation_next")
+            waitTag("course_choices")
+            click("course_${course.id}")
+            click("preparation_next")
+            waitTag("briefing_tasks")
+            click("task_${target.taskId}")
+            waitTag("preparation_planned_road_cleared")
+            preparation.rejectNext.set(true)
+            click("preparation_next")
+            val failureText = instrument.targetContext.getString(CourseR.string.save_failed)
+            compose.waitUntil(20000) { compose.onAllNodes(hasText(failureText)).fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithText(failureText).performScrollTo().assertIsDisplayed()
+            selected("task_${target.taskId}")
+            assertStored(store, sameCourseTask, 1, preparation)
             val beforeDrive = clickAction("preparation_next")
             instrument.runOnMainSync { vehicleState.value = vehicleState.value.copy(gear = VehicleReading.Available(GearPosition.DRIVE)) }
             assertLocked()
             invoke(beforeDrive)
-            assertStored(store, original, 0, preparation)
+            assertStored(store, sameCourseTask, 1, preparation)
             instrument.runOnMainSync { vehicleState.value = vehicleState.value.copy(gear = VehicleReading.Available(GearPosition.PARK)) }
             waitTag("briefing_tasks")
             selected("task_${target.taskId}")
@@ -197,22 +272,45 @@ class PreparationEditFlowTest {
             instrument.runOnMainSync { uxState.value = uxState.value.copy(uxRestrictionState = UxRestrictionState.RESTRICTED) }
             assertLocked()
             invoke(beforeUx)
-            assertStored(store, original, 0, preparation)
+            assertStored(store, sameCourseTask, 1, preparation)
             instrument.runOnMainSync { uxState.value = uxState.value.copy(uxRestrictionState = UxRestrictionState.UNRESTRICTED) }
             waitTag("briefing_tasks")
             selected("task_${target.taskId}")
             phase("PREPARATION_EDIT_CONTROLLED_LOCKS_PRESERVED_DRAFT")
             click("preparation_next")
             runBlocking { withTimeout(20000) { store.preparation.observeSelection().first { it == target } } }
-            compose.waitUntil(20000) { closed.get() == 2 }
-            assertStored(store, target, 1, preparation)
+            compose.waitUntil(20000) { closed.get() == 4 }
+            assertStored(store, target, 2, preparation)
             phase("PREPARATION_EDIT_EXPLICIT_SAVE_COMMITTED")
 
             instrument.runOnMainSync { current.value = createModel(store, preparation, vehicle, restrictions) }
             assertPrefilled(target)
-            assertEquals(3, preparation.reads.get())
-            closeFromBriefing(closed, 3)
-            assertStored(store, target, 1, preparation)
+            assertEquals(5, preparation.reads.get())
+            closeFromBriefing(closed, 5)
+            assertStored(store, target, 2, preparation)
+
+            instrument.runOnMainSync { current.value = createModel(store, preparation, vehicle, restrictions) }
+            assertPrefilled(target)
+            assertEquals(6, preparation.reads.get())
+            val oldBaselineSave = clickAction("preparation_next")
+            val concurrent = target.copy(taskId = course.tasks.first().id)
+            runBlocking { assertTrue(store.preparation.replaceSelection(target, concurrent) { true }) }
+            click("preparation_next")
+            waitTag("preparation_reload_saved")
+            selected("task_${target.taskId}")
+            assertStored(store, concurrent, 2, preparation)
+            click("preparation_reload_saved")
+            waitTag("goal_choices")
+            invoke(oldBaselineSave)
+            waitTag("goal_choices")
+            assertPrefilled(concurrent)
+            assertEquals(7, preparation.reads.get())
+            invoke(oldBaselineSave)
+            selected("task_${concurrent.taskId}")
+            assertStored(store, concurrent, 2, preparation)
+            closeFromBriefing(closed, 6)
+            assertStored(store, concurrent, 2, preparation)
+            phase("PREPARATION_STALE_BASELINE_REQUIRED_EXPLICIT_RELOAD_AND_REJECTED_OLD_SAVE")
             assertEquals(sessions, runBlocking { store.sessions.observeSessions().first() })
             assertEquals(sequences, store.sequenceSnapshot())
             assertEquals(0, store.foreignKeyViolationCount())
@@ -382,7 +480,7 @@ class PreparationEditFlowTest {
 
     private fun assertTextFits(node: SemanticsNodeInteraction) {
         val image = compose.onRoot().captureToImage().asAndroidBitmap()
-        File(instrument.targetContext.cacheDir, "preparation-edit-$expectedScale-$expectedDark-${imageIndex++}.png").outputStream().use {
+        File(captures, "screen-${imageIndex++}.png").outputStream().use {
             check(image.compress(Bitmap.CompressFormat.PNG, 100, it))
         }
         val root = node.fetchSemanticsNode()
@@ -450,6 +548,7 @@ class PreparationEditFlowTest {
     ) : PracticeRepository {
         val reads = AtomicInteger()
         val writes = AtomicInteger()
+        val rejectNext = AtomicBoolean(false)
 
         override fun observeSelection(): Flow<PracticeSelection?> =
             flow {
@@ -461,8 +560,20 @@ class PreparationEditFlowTest {
             selection: PracticeSelection,
             canCommit: () -> Boolean,
         ): Boolean {
-            writes.incrementAndGet()
-            return delegate.saveSelection(selection, canCommit)
+            val saved = delegate.saveSelection(selection, canCommit)
+            if (saved) writes.incrementAndGet()
+            return saved
+        }
+
+        override suspend fun replaceSelection(
+            expectedCurrent: PracticeSelection?,
+            selection: PracticeSelection,
+            canCommit: () -> Boolean,
+        ): Boolean {
+            if (rejectNext.getAndSet(false)) return false
+            val saved = delegate.replaceSelection(expectedCurrent, selection, canCommit)
+            if (saved) writes.incrementAndGet()
+            return saved
         }
     }
 }

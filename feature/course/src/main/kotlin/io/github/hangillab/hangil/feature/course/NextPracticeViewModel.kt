@@ -8,11 +8,14 @@ import io.github.hangillab.hangil.core.domain.DrivingRestrictionsProvider
 import io.github.hangillab.hangil.core.domain.NextPracticeRepository
 import io.github.hangillab.hangil.core.domain.NextPracticeSaveResult
 import io.github.hangillab.hangil.core.domain.NextPracticeSeed
+import io.github.hangillab.hangil.core.domain.PlannedPracticeRoad
 import io.github.hangillab.hangil.core.domain.PracticeCatalog
 import io.github.hangillab.hangil.core.domain.PracticeSelection
 import io.github.hangillab.hangil.core.domain.PracticeSession
 import io.github.hangillab.hangil.core.domain.PracticeSessionRepository
 import io.github.hangillab.hangil.core.domain.SessionCourseSummary
+import io.github.hangillab.hangil.core.domain.SessionReviewRoad
+import io.github.hangillab.hangil.core.domain.SessionReviewRoadRepository
 import io.github.hangillab.hangil.core.domain.VehicleGateway
 import io.github.hangillab.hangil.core.domain.allowsPracticeInteraction
 import io.github.hangillab.hangil.feature.course.NextPracticeUiState.FailureReason
@@ -56,6 +59,7 @@ class NextPracticeViewModel
         private val catalog: PracticeCatalog,
         private val nextRepository: NextPracticeRepository,
         private val savedState: SavedStateHandle,
+        private val reviews: SessionReviewRoadRepository,
     ) : ViewModel() {
         private val lock = Any()
         private val sourceId = (savedState.get<Any?>("nextPracticeSourceId") as? String)?.takeIf { it.isNotBlank() }
@@ -76,6 +80,9 @@ class NextPracticeViewModel
         private var pinned: NextPracticeSeed? = null
         private var received: NextPracticeSeed? = null
         private var taskId: String? = null
+        private var reviewRoad: NextPracticeUiState.ReviewRoad = NextPracticeUiState.ReviewRoad.Loading
+        private var targetReview: SessionReviewRoad? = null
+        private var targetChoiceRequired = pendingTargetChoice()
         private var activeAction: Action? = null
         private var completion: Completion? = null
 
@@ -117,9 +124,12 @@ class NextPracticeViewModel
                                 pinnedEntry = key
                                 pinned = null
                                 taskId = null
+                                targetReview = null
+                                targetChoiceRequired = pendingTargetChoice()
                                 expired = null
                             }
                             received = null
+                            resetReviewLocked()
                             requests.value = ++epoch
                             publishLocked(if (closed) NextPracticeUiState.Locked else NextPracticeUiState.Loading)
                             true
@@ -175,6 +185,54 @@ class NextPracticeViewModel
                 true
             }
 
+        fun useReviewRoad(
+            expectedSourceId: String,
+            generation: Long,
+        ): Boolean =
+            synchronized(lock) {
+                val current = currentReady(expectedSourceId, generation) ?: return@synchronized false
+                val available = current.reviewRoad as? NextPracticeUiState.ReviewRoad.Available ?: return@synchronized false
+                if (current.saving || (current.targetReview == available.review && !current.targetChoiceRequired)) return@synchronized false
+                invalidateActionLocked()
+                targetReview = available.review
+                targetChoiceRequired = false
+                savedState["nextPracticeTargetChoicePending"] = true
+                published.value =
+                    current.copy(
+                        targetReview = targetReview,
+                        targetChoiceRequired = false,
+                        generation = ++this.generation,
+                        saveFailed = false,
+                    )
+                true
+            }
+
+        fun unlinkReviewRoad(
+            expectedSourceId: String,
+            generation: Long,
+        ): Boolean =
+            synchronized(lock) {
+                val current = currentReady(expectedSourceId, generation) ?: return@synchronized false
+                if (current.saving || (current.targetReview == null && !current.targetChoiceRequired)) return@synchronized false
+                invalidateActionLocked()
+                targetReview = null
+                targetChoiceRequired = false
+                savedState["nextPracticeTargetChoicePending"] = false
+                published.value =
+                    current.copy(targetReview = null, targetChoiceRequired = false, generation = ++this.generation, saveFailed = false)
+                true
+            }
+
+        fun retryReviewRoad(
+            expectedSourceId: String,
+            generation: Long,
+        ): Boolean =
+            synchronized(lock) {
+                val current = currentReady(expectedSourceId, generation) ?: return@synchronized false
+                if (current.saving || current.reviewRoad != NextPracticeUiState.ReviewRoad.Failed) return@synchronized false
+                retry()
+            }
+
         fun save(
             expectedSourceId: String,
             generation: Long,
@@ -194,8 +252,9 @@ class NextPracticeViewModel
                             courseVersion = practice.course.version,
                             briefingVersion = practice.course.briefingVersion,
                             taskId = task,
+                            plannedRoad = current.targetReview?.let { PlannedPracticeRoad.from(it) },
                         )
-                    val action = Action(++actionSerial, owner, query, current.seed, selection, generation)
+                    val action = Action(++actionSerial, owner, query, current.seed, selection, generation, current.targetReview)
                     completion = null
                     val work = viewModelScope.launch(start = CoroutineStart.LAZY) { performSave(action) }
                     action.job = work
@@ -237,6 +296,7 @@ class NextPracticeViewModel
                 owner.query = null
                 received = null
                 invalidateActionLocked()
+                resetReviewLocked()
                 publishLocked(NextPracticeUiState.Loading)
                 requests.value = ++epoch
                 oldQuery?.job?.cancel()
@@ -277,8 +337,18 @@ class NextPracticeViewModel
                 if (!canCommit(action)) return
                 val result =
                     when (action.owner.entry) {
-                        Entry.Latest -> nextRepository.saveSelection(action.seed, action.selection) { canCommit(action) }
-                        is Entry.History -> nextRepository.saveHistorySelection(action.seed, action.selection) { canCommit(action) }
+                        Entry.Latest ->
+                            nextRepository.saveSelection(
+                                action.seed,
+                                action.selection,
+                                action.expectedReview,
+                            ) { canCommit(action) }
+                        is Entry.History ->
+                            nextRepository.saveHistorySelection(
+                                action.seed,
+                                action.selection,
+                                action.expectedReview,
+                            ) { canCommit(action) }
                     }
                 currentCoroutineContext().ensureActive()
                 val token =
@@ -344,7 +414,12 @@ class NextPracticeViewModel
             val current = currentReady(action.seed.source.sessionId, action.generation) ?: return false
             return activeAction === action && action.id == actionSerial && action.job?.isActive == true &&
                 reader === action.owner && action.owner.query === action.query && current.seed == action.seed &&
-                pinned == action.seed && current.taskId == action.selection.taskId && current.saving
+                pinned == action.seed && current.taskId == action.selection.taskId && current.saving &&
+                !current.targetChoiceRequired && current.targetReview == action.expectedReview &&
+                (
+                    action.expectedReview == null ||
+                        (current.reviewRoad as? NextPracticeUiState.ReviewRoad.Available)?.review == action.expectedReview
+                )
         }
 
         private fun saveFailedLocked(action: Action) {
@@ -397,8 +472,15 @@ class NextPracticeViewModel
                 try {
                     emitAll(
                         flow { emitAll(sessions.observeSessions()) }
-                            .map { receive(owner, query, it) }
-                            .onCompletion {
+                            .map {
+                                receive(owner, query, it)
+                                synchronized(lock) {
+                                    (published.value as? NextPracticeUiState.Ready)?.seed?.takeIf {
+                                        currentQuery(owner, query) &&
+                                            received == it
+                                    }
+                                }
+                            }.onCompletion {
                                 if (it == null) {
                                     publishFailure(
                                         owner,
@@ -417,13 +499,77 @@ class NextPracticeViewModel
                                         FailureReason.SESSION_READ
                                     },
                                 )
-                                emit(Unit)
+                                emit(null)
+                            }.distinctUntilChanged()
+                            .flatMapLatest { seed ->
+                                if (seed == null) flowOf(Unit) else watchReview(owner, query, seed)
                             },
                     )
                 } finally {
                     synchronized(lock) { if (reader === owner && owner.query === query) owner.query = null }
                 }
             }
+
+        /** SavedState remembers unfinished intent only, never restores an unvalidated road payload. */
+        private fun pendingTargetChoice(): Boolean =
+            savedState.contains("nextPracticeTargetChoicePending") && savedState.get<Any?>("nextPracticeTargetChoicePending") != false
+
+        private fun resetReviewLocked() {
+            if (targetReview != null) targetChoiceRequired = true
+            targetReview = null
+            reviewRoad = NextPracticeUiState.ReviewRoad.Loading
+        }
+
+        private fun watchReview(
+            owner: Reader,
+            query: Query,
+            seed: NextPracticeSeed,
+        ): Flow<Unit> =
+            flow {
+                try {
+                    emitAll(
+                        reviews.observe(seed.source.sessionId).map { review ->
+                            check(review == null || review.source == seed.source) { "Review road source changed" }
+                            receiveReview(
+                                owner,
+                                query,
+                                seed,
+                                review?.let { NextPracticeUiState.ReviewRoad.Available(it) } ?: NextPracticeUiState.ReviewRoad.Absent,
+                            )
+                        },
+                    )
+                    receiveReview(owner, query, seed, NextPracticeUiState.ReviewRoad.Failed)
+                } catch (_: Exception) {
+                    currentCoroutineContext().ensureActive()
+                    receiveReview(owner, query, seed, NextPracticeUiState.ReviewRoad.Failed)
+                }
+            }
+
+        private fun receiveReview(
+            owner: Reader,
+            query: Query,
+            seed: NextPracticeSeed,
+            value: NextPracticeUiState.ReviewRoad,
+        ) = synchronized(lock) {
+            if (!currentQuery(owner, query) || !permitted() || received != seed) return@synchronized
+            val current = published.value as? NextPracticeUiState.Ready ?: return@synchronized
+            if (current.seed != seed || reviewRoad == value) return@synchronized
+            if (targetReview != null && (value as? NextPracticeUiState.ReviewRoad.Available)?.review != targetReview) {
+                targetReview = null
+                targetChoiceRequired = true
+            }
+            reviewRoad = value
+            invalidateActionLocked()
+            published.value =
+                current.copy(
+                    reviewRoad = value,
+                    targetReview = targetReview,
+                    targetChoiceRequired = targetChoiceRequired,
+                    generation = ++generation,
+                    saving = false,
+                    saveFailed = false,
+                )
+        }
 
         private fun publishAccess(
             owner: Reader,
@@ -459,6 +605,7 @@ class NextPracticeViewModel
                 }
                 owner.query = query
                 received = null
+                resetReviewLocked()
                 invalidateActionLocked()
                 publishLocked(NextPracticeUiState.Loading)
                 true
@@ -518,7 +665,15 @@ class NextPracticeViewModel
                 val current = published.value as? NextPracticeUiState.Ready
                 if (current == null || current.seed != seed || current.taskId != taskId) {
                     published.value =
-                        NextPracticeUiState.Ready(seed, taskId, ++generation, summary)
+                        NextPracticeUiState.Ready(
+                            seed,
+                            taskId,
+                            ++generation,
+                            summary,
+                            reviewRoad = reviewRoad,
+                            targetReview = targetReview,
+                            targetChoiceRequired = targetChoiceRequired,
+                        )
                 } else if (current.summary != summary) {
                     published.value = current.copy(summary = summary)
                 }
@@ -637,6 +792,7 @@ class NextPracticeViewModel
             }
             val source = seed.source
             val selection = source.selection
+            fields.addAll(selection.savedFields())
             fields.add(source.sessionId)
             fields.add(selection.goalId)
             fields.add(selection.courseId)
@@ -788,6 +944,7 @@ class NextPracticeViewModel
             val seed: NextPracticeSeed,
             val selection: PracticeSelection,
             val generation: Long,
+            val expectedReview: SessionReviewRoad?,
         ) {
             var job: Job? = null
         }

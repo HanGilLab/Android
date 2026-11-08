@@ -14,6 +14,6 @@ interface PracticeCatalog {
         ) {
             return Preparation.Outdated
         }
-        return Preparation.Ready(PreparedPractice(goal, course, task))
+        return Preparation.Ready(PreparedPractice(goal, course, task, selection.plannedRoad))
     }
 }

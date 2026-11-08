@@ -1,11 +1,12 @@
 package io.github.hangillab.hangil.core.domain
 
-/** Saves a next preparation without starting a session. */
+/** Saves a next preparation without starting a session. A copied road requires the exact current review, including its memo/version. */
 interface NextPracticeRepository {
     /** Revalidate the latest ended source, live permission and complete catalog seed before and after the write. */
     suspend fun saveSelection(
         seed: NextPracticeSeed,
         selection: PracticeSelection,
+        expectedReview: SessionReviewRoad? = null,
         canCommit: () -> Boolean,
     ): NextPracticeSaveResult
 
@@ -17,6 +18,7 @@ interface NextPracticeRepository {
     suspend fun saveHistorySelection(
         seed: NextPracticeSeed,
         selection: PracticeSelection,
+        expectedReview: SessionReviewRoad? = null,
         canCommit: () -> Boolean,
     ): NextPracticeSaveResult
 }

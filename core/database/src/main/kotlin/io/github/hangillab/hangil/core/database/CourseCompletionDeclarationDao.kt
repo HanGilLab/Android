@@ -10,6 +10,7 @@ private const val COMPLETION_SELECT =
         "typeof(sessionId) = 'text' AND typeof(goalId) = 'text' AND typeof(courseId) = 'text' " +
         "AND typeof(taskId) = 'text' AND typeof(goalTitle) = 'text' AND typeof(courseTitle) = 'text' " +
         "AND typeof(taskTitle) = 'text' AND typeof(courseReviewStatus) = 'text' " +
+        "AND (plannedRoadJson IS NULL OR typeof(plannedRoadJson) = 'text') " +
         "AND typeof(version) = 'text' AND typeof(origin) = 'text' " +
         "AND typeof(courseVersion) = 'integer' AND courseVersion BETWEEN 1 AND 2147483647 " +
         "AND typeof(briefingVersion) = 'integer' AND briefingVersion BETWEEN 1 AND 2147483647 " +
