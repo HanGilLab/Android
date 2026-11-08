@@ -39,4 +39,5 @@
     <string name="next_practice_task_history">%1$s\n남긴 마무리 기록 %2$d개</string>
     <string name="next_practice_choose_first">과제 하나를 골라 주세요.</string>
     <string name="next_practice_close">닫기</string>
+    <string name="next_practice_review_road">이전 연습의 참고 구간</string>
 </resources>

@@ -3,7 +3,11 @@ package io.github.hangillab.hangil
 import android.app.KeyguardManager
 import android.content.res.Configuration
 import android.graphics.Bitmap
+import android.graphics.RectF
+import android.view.View
+import android.view.ViewGroup
 import androidx.activity.compose.setContent
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.graphics.asAndroidBitmap
@@ -12,9 +16,12 @@ import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
@@ -30,12 +37,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewModelScope
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.hangillab.hangil.core.database.OwnedPracticeTestStore
 import io.github.hangillab.hangil.core.designsystem.HanGilTheme
 import io.github.hangillab.hangil.core.domain.ConnectionState
+import io.github.hangillab.hangil.core.domain.CourseRoadSnapshot
 import io.github.hangillab.hangil.core.domain.DrivingRestrictions
 import io.github.hangillab.hangil.core.domain.DrivingRestrictionsProvider
 import io.github.hangillab.hangil.core.domain.GearPosition
@@ -46,6 +55,9 @@ import io.github.hangillab.hangil.core.domain.PracticeSessionRepository
 import io.github.hangillab.hangil.core.domain.Preparation
 import io.github.hangillab.hangil.core.domain.PreparedPractice
 import io.github.hangillab.hangil.core.domain.SessionFinishResult
+import io.github.hangillab.hangil.core.domain.SessionReviewRoad
+import io.github.hangillab.hangil.core.domain.SessionReviewRoadRepository
+import io.github.hangillab.hangil.core.domain.SessionReviewRoadWriteResult
 import io.github.hangillab.hangil.core.domain.SessionStartResult
 import io.github.hangillab.hangil.core.domain.UxRestrictionState
 import io.github.hangillab.hangil.core.domain.VehicleGateway
@@ -55,8 +67,13 @@ import io.github.hangillab.hangil.feature.course.NextPracticeRoute
 import io.github.hangillab.hangil.feature.course.NextPracticeViewModel
 import io.github.hangillab.hangil.feature.home.SessionHistoryRoute
 import io.github.hangillab.hangil.feature.home.SessionHistoryViewModel
+import io.github.hangillab.hangil.feature.home.SessionReviewRoadRoute
+import io.github.hangillab.hangil.feature.home.SessionReviewRoadViewModel
+import io.github.hangillab.hangil.feature.map.SessionReviewRoadMap
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emitAll
@@ -72,12 +89,22 @@ import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.maplibre.android.geometry.LatLng
+import org.maplibre.android.maps.MapView
+import org.maplibre.android.style.expressions.Expression
+import org.maplibre.android.style.layers.LineLayer
+import org.maplibre.android.style.sources.GeoJsonSource
+import org.maplibre.geojson.Feature
+import org.maplibre.geojson.LineString
 import java.io.File
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.abs
+import kotlin.math.hypot
 import kotlin.math.roundToInt
+import io.github.hangillab.hangil.feature.home.R as HomeR
 
 /** Explicit opt-in: real Compose and nonce-owned Room, entirely controlled vehicle inputs, no SDK clients. */
 @RunWith(AndroidJUnit4::class)
@@ -87,6 +114,9 @@ class HistoryNextPracticeFlowTest {
     private val hostLeft = AtomicBoolean(false)
     private var expectedFontScale = Float.NaN
     private var expectedNight: Boolean? = null
+    private val captures by lazy {
+        File(instrument.targetContext.cacheDir, "history-next-${UUID.randomUUID()}").also { check(it.mkdirs()) }
+    }
 
     @Test fun selectedOlderSourceManualTaskCancelLocksAndSavePreserveStoredSessions() {
         val args = InstrumentationRegistry.getArguments()
@@ -116,7 +146,42 @@ class HistoryNextPracticeFlowTest {
         }
         val store = OwnedPracticeTestStore.create(instrument.targetContext)
         val trackedSessions = TrackedSessions(store.sessions)
+        val referenceEnabled = mutableStateOf(false)
+        val referenceModels = mutableMapOf<String, SessionReviewRoadViewModel>()
+        val referenceCreations = AtomicInteger()
+        val referenceQueries = AtomicInteger()
+        val referenceReaders = AtomicInteger()
+        val referenceJobs = ConcurrentHashMap.newKeySet<Job>()
+        val referenceRepository =
+            object : SessionReviewRoadRepository by store.reviewRoads {
+                override fun observe(sessionId: String): Flow<SessionReviewRoad?> =
+                    flow {
+                        referenceQueries.incrementAndGet()
+                        referenceReaders.incrementAndGet()
+                        referenceJobs += checkNotNull(currentCoroutineContext()[Job])
+                        try {
+                            emitAll(store.reviewRoads.observe(sessionId))
+                        } finally {
+                            referenceReaders.decrementAndGet()
+                        }
+                    }
+
+                override suspend fun save(
+                    expectedSource: PracticeSession,
+                    road: CourseRoadSnapshot,
+                    expectedCurrent: SessionReviewRoad?,
+                    canCommit: () -> Boolean,
+                ): SessionReviewRoadWriteResult = throw AssertionError("A reference road must never be saved by this UI")
+
+                override suspend fun clear(
+                    expectedSource: PracticeSession,
+                    expectedCurrent: SessionReviewRoad,
+                    canCommit: () -> Boolean,
+                ): SessionReviewRoadWriteResult = throw AssertionError("A reference road must never be cleared by this UI")
+            }
         val models = Models()
+        val nextOwner = FinishSourceReviewBoundaryTest.Owner(models.viewModelStore)
+        val referenceGates = mutableListOf<() -> Boolean>()
         val vehicleState = MutableStateFlow(VehicleState(ConnectionState.CONNECTED, VehicleReading.Available(GearPosition.PARK)))
         val uxState = MutableStateFlow(DrivingRestrictions(ParkingState.PARKED, UxRestrictionState.UNRESTRICTED))
         val vehicle =
@@ -146,7 +211,7 @@ class HistoryNextPracticeFlowTest {
             )
         var primary: Throwable? = null
         try {
-            val course = store.catalog.courses.first { it.tasks.size >= 2 && it.goalIds.isNotEmpty() }
+            val course = store.catalog.courses.first { it.tasks.size >= 2 && it.goalIds.isNotEmpty() && it.roadSnapshots.isNotEmpty() }
             val goal = store.catalog.goals.first { it.id in course.goalIds }
             val previousPractice = PreparedPractice(goal, course, course.tasks.first())
             val targetTask = course.tasks.last()
@@ -154,11 +219,21 @@ class HistoryNextPracticeFlowTest {
             fun selection(taskId: String) = PracticeSelection(goal.id, course.id, course.version, course.briefingVersion, taskId)
             val older = runBlocking { seed(store, previousPractice, 1000) }
             runBlocking { seed(store, previousPractice.copy(task = targetTask), 3000) }
+            val savedRoad =
+                runBlocking {
+                    val result = store.reviewRoads.save(older, course.roadSnapshots.first(), null) { true }
+                    check(result is SessionReviewRoadWriteResult.Saved)
+                    result.review
+                }
+            assertEquals(older, savedRoad.source)
+            assertEquals(course.roadSnapshots.first(), savedRoad.road)
             val originalPreparation = selection(previousPractice.task.id)
             runBlocking { store.preparation.saveSelection(originalPreparation) { true } }
             val sessionsBefore = runBlocking { store.sessions.observeSessions().first() }
+            val reviewRoadsBefore = reviewRoadSnapshot(store, sessionsBefore)
             val sequencesBefore = store.sequenceSnapshot()
             instrument.runOnMainSync {
+                nextOwner.move(Lifecycle.State.RESUMED)
                 compose.activity.setContent {
                     HanGilTheme {
                         val current by opened
@@ -187,22 +262,55 @@ class HistoryNextPracticeFlowTest {
                             )
                         } else {
                             val entry = checkNotNull(current)
-                            NextPracticeRoute(
-                                onClose = {
-                                    memory.clear(entry.token)
-                                    opened.value = null
-                                },
-                                onPrepareNormally = { error("No fallback is expected for a valid selected fixture") },
-                                viewModel = entry.model,
-                                expectedHistorySource = entry.source,
-                                historyEntryRequired = true,
-                                isHistoryEntryCurrent = {
-                                    opened.value === entry &&
-                                        memory.source(entry.token, entry.source.sessionId) == entry.source &&
-                                        // Room validation may call this under a VM lock; avoid the test rule's main-thread synchronization.
-                                        hostLifecycle.currentState == Lifecycle.State.RESUMED
-                                },
-                            )
+                            CompositionLocalProvider(LocalLifecycleOwner provides nextOwner) {
+                                NextPracticeRoute(
+                                    reviewRoad =
+                                        if (!referenceEnabled.value) {
+                                            null
+                                        } else {
+                                            { source, canKeepOpen ->
+                                                if (referenceGates.lastOrNull() !== canKeepOpen) referenceGates += canKeepOpen
+                                                val reference =
+                                                    referenceModels.getOrPut(entry.token) {
+                                                        referenceCreations.incrementAndGet()
+                                                        models.keep(
+                                                            "reference-${entry.token}",
+                                                            SessionReviewRoadViewModel(
+                                                                vehicle,
+                                                                restrictions,
+                                                                trackedSessions,
+                                                                referenceRepository,
+                                                                store.catalog,
+                                                            ),
+                                                        )
+                                                    }
+                                                SessionReviewRoadRoute(
+                                                    expectedSource = source,
+                                                    canKeepOpen = canKeepOpen,
+                                                    readOnly = true,
+                                                    viewModel = reference,
+                                                    roadMap = { snapshot, roads, selected, canPresent, changes ->
+                                                        SessionReviewRoadMap(snapshot, roads, selected, canPresent, changes)
+                                                    },
+                                                )
+                                            }
+                                        },
+                                    onClose = {
+                                        memory.clear(entry.token)
+                                        opened.value = null
+                                    },
+                                    onPrepareNormally = { error("No fallback is expected for a valid selected fixture") },
+                                    viewModel = entry.model,
+                                    expectedHistorySource = entry.source,
+                                    historyEntryRequired = true,
+                                    isHistoryEntryCurrent = {
+                                        opened.value === entry &&
+                                            memory.source(entry.token, entry.source.sessionId) == entry.source &&
+                                            // Room validation may call this under a VM lock; avoid the test rule's main-thread synchronization.
+                                            hostLifecycle.currentState == Lifecycle.State.RESUMED
+                                    },
+                                )
+                            }
                         }
                     }
                 }
@@ -216,6 +324,42 @@ class HistoryNextPracticeFlowTest {
             waitTag("next_practice_ready")
             assertEquals(older, opened.value?.source)
             assertHost()
+            assertMissing("next_practice_review_road")
+            assertEquals(0, referenceCreations.get())
+            assertEquals(0, referenceQueries.get())
+            instrument.runOnMainSync { referenceEnabled.value = true }
+            waitTag("next_practice_review_road")
+            assertEquals(0, referenceCreations.get())
+            assertEquals(0, referenceQueries.get())
+            assertMissing("review_road_content")
+            click("next_practice_review_road")
+            assertReferenceRoad(savedRoad)
+            var firstRoadMap = awaitReferenceMap(savedRoad.road)
+            captureReferenceMap()
+            assertEquals(reviewRoadsBefore, reviewRoadSnapshot(store, sessionsBefore))
+            // Only this synthetic owner's lifecycle changes; the actual Activity stays resumed.
+            val preStopGate = referenceGates.last()
+            instrument.runOnMainSync {
+                assertTrue(preStopGate())
+                nextOwner.move(Lifecycle.State.STARTED)
+                nextOwner.move(Lifecycle.State.CREATED)
+            }
+            compose.waitForIdle()
+            compose.waitUntil(20000) { referenceReaders.get() == 0 }
+            instrument.runOnMainSync {
+                assertFalse(preStopGate())
+                assertFalse(firstRoadMap.isAttachedToWindow)
+                nextOwner.move(Lifecycle.State.RESUMED)
+            }
+            waitTag("next_practice_ready")
+            assertMissing("review_road_content")
+            instrument.runOnMainSync { assertFalse(preStopGate()) }
+            compose.onNodeWithTag("next_practice_save").performScrollTo().assertIsNotEnabled()
+            click("next_practice_review_road")
+            assertReferenceRoad(savedRoad)
+            val resumedRoadMap = awaitReferenceMap(savedRoad.road)
+            assertTrue(resumedRoadMap !== firstRoadMap)
+            firstRoadMap = resumedRoadMap
             for (task in course.tasks) {
                 val tag = "next_task_${task.id}"
                 val expectedRecords = sessionsBefore.count { it.selection.taskId == task.id && it.taskTitle == task.title }
@@ -228,29 +372,47 @@ class HistoryNextPracticeFlowTest {
             compose.onNodeWithTag("next_practice_previous_task").performScrollTo().assertTextContains(older.taskTitle, substring = true)
             assertTextFits("next_practice_previous_task")
             click("next_task_${targetTask.id}")
+            compose.onNodeWithTag("next_task_${targetTask.id}").assertIsSelected()
+            assertMissing("review_road_content")
+            compose.waitUntil(20000) { referenceReaders.get() == 0 }
+            instrument.runOnMainSync { assertFalse(firstRoadMap.isAttachedToWindow) }
+            click("next_practice_review_road")
+            assertReferenceRoad(savedRoad)
+            assertTrue(awaitReferenceMap(savedRoad.road) !== firstRoadMap)
+            compose.onNodeWithTag("next_task_${targetTask.id}").assertIsSelected()
             val staleSave = clickAction("next_practice_save")
             click("next_practice_close")
             waitTag("history_prepare_next")
             assertEquals(originalPreparation, runBlocking { store.preparation.observeSelection().first() })
+            assertEquals(reviewRoadsBefore, reviewRoadSnapshot(store, sessionsBefore))
             invoke(staleSave)
             assertEquals(originalPreparation, runBlocking { store.preparation.observeSelection().first() })
             click("history_prepare_next")
             waitTag("next_practice_choose_first")
+            assertMissing("review_road_content")
             click("next_task_${targetTask.id}")
+            click("next_practice_review_road")
+            assertReferenceRoad(savedRoad)
             val preUxSave = clickAction("next_practice_save")
             instrument.runOnMainSync { uxState.value = uxState.value.copy(uxRestrictionState = UxRestrictionState.RESTRICTED) }
             waitTag("next_practice_locked")
+            assertMissing("review_road_content")
             invoke(preUxSave)
             instrument.runOnMainSync { uxState.value = uxState.value.copy(uxRestrictionState = UxRestrictionState.UNRESTRICTED) }
             waitTag("next_practice_ready")
+            assertMissing("review_road_content")
             invoke(preUxSave)
             assertEquals(originalPreparation, runBlocking { store.preparation.observeSelection().first() })
+            click("next_practice_review_road")
+            assertReferenceRoad(savedRoad)
             val preDriveSave = clickAction("next_practice_save")
             instrument.runOnMainSync { vehicleState.value = vehicleState.value.copy(gear = VehicleReading.Available(GearPosition.DRIVE)) }
             waitTag("next_practice_locked")
+            assertMissing("review_road_content")
             invoke(preDriveSave)
             instrument.runOnMainSync { vehicleState.value = vehicleState.value.copy(gear = VehicleReading.Available(GearPosition.PARK)) }
             waitTag("next_practice_ready")
+            assertMissing("review_road_content")
             invoke(preDriveSave)
             assertEquals(originalPreparation, runBlocking { store.preparation.observeSelection().first() })
             assertTextFits("next_practice_save")
@@ -258,6 +420,7 @@ class HistoryNextPracticeFlowTest {
             waitTag("history_prepare_next")
             assertEquals(selection(targetTask.id), runBlocking { store.preparation.observeSelection().first() })
             assertEquals(sessionsBefore, runBlocking { store.sessions.observeSessions().first() })
+            assertEquals(reviewRoadsBefore, reviewRoadSnapshot(store, sessionsBefore))
             assertEquals(sequencesBefore, store.sequenceSnapshot())
             assertEquals(0, store.foreignKeyViolationCount())
             assertHost()
@@ -279,6 +442,7 @@ class HistoryNextPracticeFlowTest {
                         .removeOnWindowFocusChangeListener(focusObserver)
                     opened.value = null
                     compose.activity.setContent {}
+                    if (nextOwner.lifecycle.currentState != Lifecycle.State.INITIALIZED) nextOwner.move(Lifecycle.State.DESTROYED)
                     models.viewModelStore.clear()
                 }
             }
@@ -289,6 +453,8 @@ class HistoryNextPracticeFlowTest {
                     withTimeout(20000) {
                         models.awaitStopped()
                         trackedSessions.awaitStopped()
+                        referenceJobs.toList().forEach { it.join() }
+                        check(referenceReaders.get() == 0 && referenceJobs.all { it.isCompleted })
                     }
                 }
                 jobsStopped = true
@@ -297,6 +463,159 @@ class HistoryNextPracticeFlowTest {
             // If joining fails, retain this owned fixture instead of closing/deleting under a writer.
             primary?.let { throw it }
         }
+    }
+
+    private fun reviewRoadSnapshot(
+        store: OwnedPracticeTestStore,
+        sessions: List<PracticeSession>,
+    ): Map<String, SessionReviewRoad?> =
+        runBlocking {
+            withTimeout(20000) { sessions.associate { it.sessionId to store.reviewRoads.observe(it.sessionId).first() } }
+        }
+
+    private fun assertMissing(tag: String) {
+        assertTrue(
+            "$tag must not be composed",
+            compose.onAllNodes(hasTestTag(tag), useUnmergedTree = true).fetchSemanticsNodes(false).isEmpty(),
+        )
+    }
+
+    private fun assertReferenceRoad(saved: SessionReviewRoad) {
+        waitTag("review_road_stored_title")
+        assertEquals("USER_SELECTION", saved.origin)
+        compose.onNodeWithTag("review_road_stored_title", useUnmergedTree = true).assertTextEquals(saved.road.title)
+        compose
+            .onNodeWithTag("review_road_source", useUnmergedTree = true)
+            .assertTextEquals(compose.activity.getString(HomeR.string.review_road_reference_source))
+        compose
+            .onNodeWithTag("review_road_reference_scope", useUnmergedTree = true)
+            .assertTextEquals(compose.activity.getString(HomeR.string.review_road_reference_scope))
+        for (tag in listOf(
+            "review_road_candidate_0",
+            "review_road_candidate_1",
+            "review_road_save",
+            "review_road_clear",
+            "review_road_cancel",
+            "review_road_busy",
+            "review_road_feedback",
+        )) {
+            assertMissing(tag)
+        }
+        assertTextFits("review_road_stored_title")
+        assertTextFits("review_road_reference_scope")
+    }
+
+    private fun awaitReferenceMap(road: CourseRoadSnapshot): MapView =
+        runBlocking {
+            waitTag("session_review_road_map_view")
+            compose.onNodeWithTag("session_review_road_map_view", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
+            withTimeout(90_000) {
+                var accepted: MapView? = null
+                while (accepted == null) {
+                    val result = CompletableDeferred<MapView?>()
+                    instrument.runOnMainSync {
+                        fun views(view: View): List<MapView> =
+                            (if (view is MapView) listOf(view) else emptyList()) +
+                                (if (view is ViewGroup) (0 until view.childCount).flatMap { views(view.getChildAt(it)) } else emptyList())
+                        val view = views(compose.activity.window.decorView).singleOrNull { it.isAttachedToWindow }
+                        if (view == null) {
+                            result.complete(null)
+                        } else {
+                            view.getMapAsync { map ->
+                                try {
+                                    val style = map.style
+                                    val source = style?.getSourceAs<GeoJsonSource>("hangil-course-preview-roads")
+                                    val selected = style?.getLayerAs<LineLayer>("hangil-course-preview-road-selection")
+                                    val points = style?.getSourceAs<GeoJsonSource>("hangil-course-preview-points")
+                                    val features = source?.querySourceFeatures(null).orEmpty()
+                                    val expectedFilter = Expression.eq(Expression.get("road_id"), Expression.literal(road.id))
+                                    val expectedShape =
+                                        road.nodes.map {
+                                            map.projection.toScreenLocation(
+                                                LatLng(it.latitude, it.longitude),
+                                            )
+                                        }
+
+                                    // Native tiles may split or simplify the line. Check observed vertices
+                                    // against the stored shape in screen pixels, not a node count or GPS accuracy.
+                                    fun matches(feature: Feature): Boolean {
+                                        val line = feature.geometry() as? LineString ?: return false
+                                        if (feature.getStringProperty("road_id") != road.id ||
+                                            feature.getStringProperty("osm_way_id") != road.osmWayId.toString() ||
+                                            feature.getNumberProperty("osm_way_version").toDouble() != road.osmWayVersion.toDouble() ||
+                                            feature.getStringProperty("road_source") != road.sourceCode
+                                        ) {
+                                            return false
+                                        }
+                                        return line.coordinates().size >= 2 &&
+                                            line.coordinates().all { point ->
+                                                val actual = map.projection.toScreenLocation(LatLng(point.latitude(), point.longitude()))
+                                                expectedShape.zipWithNext().any { (start, end) ->
+                                                    val dx = (end.x - start.x).toDouble()
+                                                    val dy = (end.y - start.y).toDouble()
+                                                    val length = dx * dx + dy * dy
+                                                    val along =
+                                                        if (length == 0.0) {
+                                                            0.0
+                                                        } else {
+                                                            (((actual.x - start.x) * dx + (actual.y - start.y) * dy) / length).coerceIn(
+                                                                0.0,
+                                                                1.0,
+                                                            )
+                                                        }
+                                                    hypot(actual.x - start.x - along * dx, actual.y - start.y - along * dy) <= 1.0
+                                                }
+                                            }
+                                    }
+                                    val rendered =
+                                        map.queryRenderedFeatures(
+                                            RectF(0f, 0f, view.width.toFloat(), view.height.toFloat()),
+                                            "hangil-course-preview-road-selection",
+                                        )
+                                    val valid =
+                                        view.isAttachedToWindow && style?.isFullyLoaded == true && features.isNotEmpty() &&
+                                            features.all(::matches) && rendered.isNotEmpty() && rendered.all(::matches) &&
+                                            selected?.sourceId == "hangil-course-preview-roads" &&
+                                            selected?.filter?.toArray()?.contentDeepEquals(expectedFilter.toArray()) == true &&
+                                            points?.querySourceFeatures(null)?.isEmpty() == true
+                                    result.complete(view.takeIf { valid })
+                                } catch (_: Exception) {
+                                    result.complete(null)
+                                }
+                            }
+                        }
+                    }
+                    accepted = result.await()
+                    if (accepted == null) delay(50)
+                }
+                accepted
+            }
+        }
+
+    private fun captureReferenceMap() {
+        compose.onNodeWithTag("session_review_road_map_view", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
+        compose.waitForIdle()
+        assertHost()
+        val node = compose.onNodeWithTag("session_review_road_map_view", useUnmergedTree = true).fetchSemanticsNode()
+        val origin = node.positionOnScreen - node.positionInWindow
+        val bounds = node.boundsInWindow
+        val left = (bounds.left + origin.x).roundToInt()
+        val top = (bounds.top + origin.y).roundToInt()
+        val width = bounds.width.roundToInt()
+        val height = bounds.height.roundToInt()
+        val bitmap = checkNotNull(instrument.uiAutomation.takeScreenshot())
+        try {
+            check(left >= 0 && top >= 0 && width > 0 && height > 0 && left + width <= bitmap.width && top + height <= bitmap.height)
+            val crop = Bitmap.createBitmap(bitmap, left, top, width, height)
+            try {
+                File(captures, "reference-road-map.png").outputStream().use { check(crop.compress(Bitmap.CompressFormat.PNG, 100, it)) }
+            } finally {
+                if (crop !== bitmap) crop.recycle()
+            }
+        } finally {
+            bitmap.recycle()
+        }
+        assertHost()
     }
 
     private suspend fun seed(
@@ -373,7 +692,7 @@ class HistoryNextPracticeFlowTest {
         // Only this controlled fixture is rendered; keep the actual window image in target-private cache.
         val mode = "${if (expectedNight == true) "dark" else "light"}-${expectedFontScale.toString().replace('.', '_')}"
         val image = compose.onRoot().captureToImage().asAndroidBitmap()
-        File(instrument.targetContext.cacheDir, "history-next-$mode-$tag.png").outputStream().use {
+        File(captures, "history-next-$mode-$tag.png").outputStream().use {
             check(image.compress(Bitmap.CompressFormat.PNG, 100, it))
         }
         assertHost()
