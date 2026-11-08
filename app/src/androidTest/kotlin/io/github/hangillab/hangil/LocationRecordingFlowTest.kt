@@ -731,16 +731,13 @@ class LocationRecordingFlowTest {
             waitTag("review_road_sample_present")
             val beforeReplace = storedRoad()
             click("review_road_candidate_1")
-            click("review_road_save")
-            waitTag("review_road_memo_discard_dialog")
-            waitTag("review_road_sample_discard_warning")
-            val cancelledReplacement = clickAction("review_road_memo_discard_confirm")
-            click("review_road_memo_discard_cancel")
+            openRoadDiscardDialog()
+            val cancelledReplacement = roadDiscardConfirmAction()
+            dismissRoadDiscardDialog(confirm = false)
             invoke(cancelledReplacement)
             assertEquals(beforeReplace, storedRoad())
-            click("review_road_save")
-            waitTag("review_road_sample_discard_warning")
-            click("review_road_memo_discard_confirm")
+            openRoadDiscardDialog()
+            dismissRoadDiscardDialog(confirm = true)
             runBlocking {
                 withTimeout(20000) {
                     f.store.reviewRoads.observe(ended.sessionId).first {
@@ -1388,6 +1385,70 @@ class LocationRecordingFlowTest {
         compose.onNodeWithTag(tag, useUnmergedTree = true).performScrollTo()
         assertActualHost()
         return checkNotNull(nodes(tag).single().config[SemanticsActions.OnClick].action)
+    }
+
+    /** Only this known production dialog may own focus between its verified open and dismissal. */
+    private fun openRoadDiscardDialog() {
+        waitTag("review_road_save")
+        assertActualHost()
+        val save = compose.onNodeWithTag("review_road_save", useUnmergedTree = true)
+        save.performScrollTo().assertIsDisplayed()
+        assertActualHost()
+        save.performClick()
+        compose.waitForIdle()
+        waitTag("review_road_memo_discard_dialog")
+        assertOwnedRoadDiscardDialog()
+    }
+
+    private fun assertOwnedRoadDiscardDialog() {
+        instrument.runOnMainSync {
+            val captured = checkNotNull(actualHost)
+            assertTrue("The owned road dialog must retain the captured Activity", compose.activity === captured)
+            assertEquals(Lifecycle.State.RESUMED, captured.lifecycle.currentState)
+            val display = checkNotNull(captured.display)
+            assertTrue(
+                "The owned road dialog must retain the original valid display",
+                display.isValid && display.displayId == actualHostDisplay,
+            )
+        }
+        assertEquals(
+            "The focused window on the captured display must still belong to this app",
+            instrument.targetContext.packageName,
+            actualFocusedPackage(),
+        )
+        val active = checkNotNull(instrument.uiAutomation.rootInActiveWindow)
+        try {
+            assertEquals(instrument.targetContext.packageName, active.packageName?.toString())
+        } finally {
+            active.recycle()
+        }
+        assertEquals(1, nodes("review_road_memo_discard_dialog").size)
+        compose.onNodeWithTag("review_road_memo_discard_dialog", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithTag("review_road_sample_discard_warning", useUnmergedTree = true).assertIsDisplayed()
+    }
+
+    private fun roadDiscardConfirmAction(): () -> Boolean {
+        assertOwnedRoadDiscardDialog()
+        compose.onNodeWithTag("review_road_memo_discard_confirm", useUnmergedTree = true).assertIsDisplayed()
+        return checkNotNull(nodes("review_road_memo_discard_confirm").single().config[SemanticsActions.OnClick].action)
+    }
+
+    private fun dismissRoadDiscardDialog(confirm: Boolean) {
+        assertOwnedRoadDiscardDialog()
+        val action =
+            compose
+                .onNodeWithTag(
+                    if (confirm) "review_road_memo_discard_confirm" else "review_road_memo_discard_cancel",
+                    useUnmergedTree = true,
+                ).assertIsDisplayed()
+        assertOwnedRoadDiscardDialog()
+        action.performClick()
+        compose.waitForIdle()
+        compose.waitUntil(20_000) {
+            assertEquals(instrument.targetContext.packageName, actualFocusedPackage())
+            nodes("review_road_memo_discard_dialog").isEmpty() && checkNotNull(actualHost).hasWindowFocus()
+        }
+        assertActualHost()
     }
 
     private fun invoke(action: () -> Boolean) {
