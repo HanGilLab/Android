@@ -473,7 +473,7 @@ class FinishSourceReviewRoomFlowTest {
             check(
                 ui.text("history_delete_review_road") ==
                     compose.activity.getString(
-                        HomeR.string.history_delete_review_road_present,
+                        HomeR.string.history_delete_review_road_memo_present,
                         road.title,
                     ),
             )
