@@ -208,7 +208,7 @@ class MainActivity : ComponentActivity() {
                                 LocationHistoryRoute(
                                     expectedSource = expected,
                                     onClose = { navigation.popBackStack() },
-                                    storedPointMap = { source, run, event, canRead ->
+                                    storedPointMap = { source, run, event, canRead, openLinkedSample ->
                                         val candidate = SessionReviewSample.from(run, event)
                                         val sample = candidate.sample
                                         SessionReviewRoadRoute(
@@ -216,6 +216,7 @@ class MainActivity : ComponentActivity() {
                                             canKeepOpen = canRead,
                                             readOnly = true,
                                             sampleCandidate = candidate,
+                                            onOpenLinkedSample = openLinkedSample,
                                             comparisonMap = { saved, allowed, changes ->
                                                 StoredLocationMap(sample, allowed, reviewRoad = saved, inputChanges = changes)
                                             },

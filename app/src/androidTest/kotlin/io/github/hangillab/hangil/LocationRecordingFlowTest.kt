@@ -25,6 +25,7 @@ import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -75,6 +76,8 @@ import io.github.hangillab.hangil.core.domain.PracticeSelection
 import io.github.hangillab.hangil.core.domain.PracticeSession
 import io.github.hangillab.hangil.core.domain.Preparation
 import io.github.hangillab.hangil.core.domain.RecordingController
+import io.github.hangillab.hangil.core.domain.SessionDeletionPreparation
+import io.github.hangillab.hangil.core.domain.SessionDeletionResult
 import io.github.hangillab.hangil.core.domain.SessionFinishResult
 import io.github.hangillab.hangil.core.domain.SessionReviewRoad
 import io.github.hangillab.hangil.core.domain.SessionReviewRoadRepository
@@ -580,7 +583,7 @@ class LocationRecordingFlowTest {
                             .first(),
                     )
                 }
-            val sequencesBefore = f.store.sequenceSnapshot()
+            var sequencesBefore = f.store.sequenceSnapshot()
             val streamsBefore = f.gateway.streams.size
 
             click("home_history")
@@ -660,6 +663,92 @@ class LocationRecordingFlowTest {
             click("location_history_point_map")
             waitTag("review_road_sample_other")
             awaitStoredMap(gwanghwamun, memoChanged.review.road)
+            val anotherActive = f.startOwned()
+            compose.waitUntil(20_000) {
+                nodes("review_road_sample_link").singleOrNull()?.config?.getOrNull(SemanticsProperties.Disabled) != null
+            }
+            compose.onNodeWithTag("review_road_sample_open", useUnmergedTree = true).assertIsEnabled()
+            val mapBeforeJump = awaitStoredMap(gwanghwamun, memoChanged.review.road)
+            val jumpSessions =
+                runBlocking {
+                    f.store.sessions
+                        .observeSessions()
+                        .first()
+                }
+            val jumpSequence = f.store.sequenceSnapshot()
+            val jumpWrites = f.sampleWriteAttempts.get()
+            val oldJump = clickAction("review_road_sample_open")
+            visual("linked-sample-open-action", "review_road_sample_open")
+            click("review_road_sample_open")
+            assertLinkedEventVisible(firstSample.event.ordinal, storedBefore.events.size)
+            assertNoStoredMap(mapBeforeJump)
+            visual("linked-sample-opened-event", "location_history_event_heading")
+            assertEquals(
+                jumpSessions,
+                runBlocking {
+                    f.store.sessions
+                        .observeSessions()
+                        .first()
+                },
+            )
+            assertEquals(
+                preparationBefore,
+                runBlocking {
+                    f.store.preparation
+                        .observeSelection()
+                        .first()
+                },
+            )
+            assertEquals(storedBefore, f.snapshot(ended))
+            assertEquals(memoChanged.review, storedRoad())
+            assertEquals(jumpSequence, f.store.sequenceSnapshot())
+            assertEquals(jumpWrites, f.sampleWriteAttempts.get())
+            assertEquals(streamsBefore, f.gateway.streams.size)
+            assertTrue(f.snapshot(anotherActive).runs.isEmpty())
+            invoke(oldJump)
+            assertLinkedEventVisible(firstSample.event.ordinal, storedBefore.events.size)
+            assertNoStoredMap()
+            click("location_history_point_map")
+            waitTag("review_road_sample_current")
+            awaitStoredMap(cityHall, memoChanged.review.road)
+            click("location_history_event_next")
+            assertNoStoredMap()
+            click("location_history_point_map")
+            waitTag("review_road_sample_other")
+            val returnedMap = awaitStoredMap(gwanghwamun, memoChanged.review.road)
+            invoke(oldJump)
+            assertTrue(
+                "An old jump must not borrow a later visit to the original event",
+                awaitStoredMap(gwanghwamun, memoChanged.review.road) === returnedMap,
+            )
+            assertEquals(jumpWrites, f.sampleWriteAttempts.get())
+            val anotherFinish =
+                runBlocking { f.store.sessions.finish(anotherActive, maxOf(f.clock.millis(), anotherActive.startedAtEpochMillis)) { true } }
+            check(anotherFinish is SessionFinishResult.Finished)
+            val anotherEnded = anotherFinish.session
+            val temporaryDeletion = runBlocking { f.store.deletions.prepare(anotherEnded) { true } }
+            check(temporaryDeletion is SessionDeletionPreparation.Ready)
+            assertEquals(anotherEnded, temporaryDeletion.target.session)
+            assertTrue(temporaryDeletion.target.session.sessionId != ended.sessionId)
+            assertEquals(SessionDeletionResult.Deleted, runBlocking { f.store.deletions.delete(temporaryDeletion.target) { true } })
+            assertEquals(
+                sessionsBefore,
+                runBlocking {
+                    f.store.sessions
+                        .observeSessions()
+                        .first()
+                },
+            )
+            assertEquals(jumpSequence, f.store.sequenceSnapshot())
+            // Only the intentional temporary fixture insert advanced counters; the jump did not.
+            sequencesBefore = jumpSequence
+            waitTag("review_road_sample_other")
+            compose.waitUntil(20_000) {
+                nodes("review_road_sample_link").singleOrNull()?.let { node ->
+                    node.config.getOrNull(SemanticsProperties.Disabled) == null
+                } == true
+            }
+            phase("LINKED_SAMPLE_JUMP_KEPT_OTHER_ACTIVE_SESSION_AND_FOCUSED_EVENT_WITHOUT_SCROLL_HELP")
             val writesBeforeStale = f.sampleWriteAttempts.get()
             invoke(staleFirstLink)
             assertEquals(writesBeforeStale, f.sampleWriteAttempts.get())
@@ -934,6 +1023,40 @@ class LocationRecordingFlowTest {
             assertFalse(f.gateway.permission.get())
             f.assertNoPlatformActions()
             phase("CONTROLLED_EXPLICIT_STORED_SAMPLE_ASSOCIATION_FAILURE_REREAD_DISCARD_NATIVE_ACCESS_AND_PRESERVATION")
+        }
+    }
+
+    /** This assertion must precede any scroll helper after a linked-sample jump. */
+    private fun assertLinkedEventVisible(
+        ordinal: Int,
+        count: Int,
+    ) {
+        waitTag("location_history_event_heading")
+        compose.waitForIdle()
+        assertActualHost()
+        val heading = nodes("location_history_event_heading").single()
+        assertTrue(
+            heading.config[SemanticsProperties.Text].any {
+                it.text == instrument.targetContext.getString(HomeR.string.location_history_event_position, ordinal, count)
+            },
+        )
+        assertText("location_history_event_state", HomeR.string.location_history_sample)
+        val viewport = visualViewport()
+        for (tag in listOf("location_history_event_heading", "location_history_event_state")) {
+            compose.onNodeWithTag(tag, useUnmergedTree = true).assertIsDisplayed()
+            val node = nodes(tag).single()
+            val bounds = node.boundsInWindow
+            val origin = node.positionOnScreen - node.positionInWindow
+            assertTrue("The linked event $tag must have visible area", node.size.width > 0 && node.size.height > 0)
+            assertTrue(
+                "The linked event $tag must not be clipped",
+                bounds.width >= node.size.width - 1 && bounds.height >= node.size.height - 1,
+            )
+            assertTrue(
+                "The linked event $tag must be in the actual viewport without manual scrolling",
+                bounds.left + origin.x >= viewport.left - 1 && bounds.top + origin.y >= viewport.top - 1 &&
+                    bounds.right + origin.x <= viewport.right + 1 && bounds.bottom + origin.y <= viewport.bottom + 1,
+            )
         }
     }
 
@@ -2187,9 +2310,17 @@ class LocationRecordingFlowTest {
         }
 
         fun mount() {
-            val pointMap: (@Composable (PracticeSession, LocationRecordingRun, LocationRecordingEvent, () -> Boolean) -> Unit)? =
+            val pointMap: (
+                @Composable (
+                    PracticeSession,
+                    LocationRecordingRun,
+                    LocationRecordingEvent,
+                    () -> Boolean,
+                    (SessionReviewSample) -> Boolean,
+                ) -> Unit
+            )? =
                 if (mapEnabled) {
-                    { source, run, event, canRead ->
+                    { source, run, event, canRead, openLinked ->
                         val sample = (event.reading as LocationUpdateReading.Sample).sample
                         SessionReviewRoadRoute(
                             source,
@@ -2200,6 +2331,7 @@ class LocationRecordingFlowTest {
                                 StoredLocationMap(sample, allowed, reviewRoad = saved, inputChanges = changes)
                             },
                             sampleCandidate = SessionReviewSample.from(run, event),
+                            onOpenLinkedSample = openLinked,
                         )
                     }
                 } else {

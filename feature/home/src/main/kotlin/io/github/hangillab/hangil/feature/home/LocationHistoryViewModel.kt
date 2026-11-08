@@ -14,6 +14,7 @@ import io.github.hangillab.hangil.core.domain.ParkingState
 import io.github.hangillab.hangil.core.domain.PracticeSession
 import io.github.hangillab.hangil.core.domain.PracticeSessionRepository
 import io.github.hangillab.hangil.core.domain.SessionMemoRepository
+import io.github.hangillab.hangil.core.domain.SessionReviewSample
 import io.github.hangillab.hangil.core.domain.UxRestrictionState
 import io.github.hangillab.hangil.core.domain.VehicleGateway
 import io.github.hangillab.hangil.core.domain.VehicleReading
@@ -190,6 +191,41 @@ class LocationHistoryViewModel
             if (!matches() || !context(owner) || !matches()) return null
             return owner
         }
+
+        /** Move within this reader's exact received snapshot; equal coordinates never substitute for the linked event. */
+        fun openLinkedSample(
+            token: Token,
+            anchor: SessionReviewSample,
+        ): Boolean =
+            synchronized(lock) {
+                val owner = owner(token) ?: return@synchronized false
+                val ready = owner.states.value as? LocationHistoryUiState.Ready ?: return@synchronized false
+                val query = owner.queryJob ?: return@synchronized false
+                if (!query.isActive || anchor.event.sessionId != ready.source.sessionId) return@synchronized false
+                val run = ready.snapshot.runs.singleOrNull { it.runId == anchor.event.runId } ?: return@synchronized false
+                if (run.source != ready.source.copy(endedAtEpochMillis = null)) return@synchronized false
+                val event =
+                    ready.snapshot.events.singleOrNull { it.id == anchor.event.id && it.runId == run.runId }
+                        ?: return@synchronized false
+                if (event != anchor.event) return@synchronized false
+                val actual =
+                    try {
+                        SessionReviewSample.from(run, event)
+                    } catch (_: IllegalArgumentException) {
+                        return@synchronized false
+                    }
+                if (actual != anchor || this.owner(token) !== owner || owner.queryJob !== query ||
+                    owner.states.value !== ready
+                ) {
+                    return@synchronized false
+                }
+                if (ready.run.runId == run.runId && ready.event == event) return@synchronized true
+                owner.selectedRun = run.runId
+                owner.selectedEvent = event.id
+                publishReady(owner, ready.snapshot)
+                val selected = owner.states.value as? LocationHistoryUiState.Ready
+                selected != null && selected.run.runId == run.runId && selected.event == event
+            }
 
         fun previousRun(
             token: Token,

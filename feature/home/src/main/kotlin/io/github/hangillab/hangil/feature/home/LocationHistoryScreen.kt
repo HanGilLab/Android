@@ -4,16 +4,20 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -37,6 +41,7 @@ import io.github.hangillab.hangil.core.domain.LocationRecordingRunStatus
 import io.github.hangillab.hangil.core.domain.LocationRecordingStopReason
 import io.github.hangillab.hangil.core.domain.LocationUpdateReading
 import io.github.hangillab.hangil.core.domain.PracticeSession
+import io.github.hangillab.hangil.core.domain.SessionReviewSample
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -47,7 +52,15 @@ fun LocationHistoryRoute(
     expectedSource: PracticeSession,
     onClose: () -> Unit,
     viewModel: LocationHistoryViewModel = hiltViewModel(),
-    storedPointMap: (@Composable (PracticeSession, LocationRecordingRun, LocationRecordingEvent, () -> Boolean) -> Unit)? = null,
+    storedPointMap: (
+        @Composable (
+            PracticeSession,
+            LocationRecordingRun,
+            LocationRecordingEvent,
+            () -> Boolean,
+            (SessionReviewSample) -> Boolean,
+        ) -> Unit
+    )? = null,
 ) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     var hostOwner by remember(lifecycle, expectedSource, viewModel) { mutableStateOf(AtomicBoolean(false)) }
@@ -105,8 +118,35 @@ internal fun LocationHistoryScreen(
     state: LocationHistoryUiState,
     onClose: () -> Unit,
     viewModel: LocationHistoryViewModel,
-    storedPointMap: (@Composable (PracticeSession, LocationRecordingRun, LocationRecordingEvent, () -> Boolean) -> Unit)? = null,
+    storedPointMap: (
+        @Composable (
+            PracticeSession,
+            LocationRecordingRun,
+            LocationRecordingEvent,
+            () -> Boolean,
+            (SessionReviewSample) -> Boolean,
+        ) -> Unit
+    )? = null,
 ) {
+    // This focus request belongs to one successful read-only jump, not a saved or reusable selection.
+    var linkedFocus by remember(state.source, viewModel) {
+        mutableStateOf<Pair<SessionReviewSample, LocationHistoryUiState.Token>?>(null)
+    }
+    val focus = linkedFocus
+    val focusToPresent =
+        focus
+            ?.takeIf {
+                state.token.readerId == it.second.readerId && state.token.queryNonce == it.second.queryNonce
+            }?.first
+    LaunchedEffect(state.token, focus) {
+        if (focus != null && (
+                state !is LocationHistoryUiState.Ready ||
+                    state.token.readerId != focus.second.readerId || state.token.queryNonce != focus.second.queryNonce
+            )
+        ) {
+            linkedFocus = null
+        }
+    }
     ParkedPage {
         TextButton(
             onClick = onClose,
@@ -151,7 +191,20 @@ internal fun LocationHistoryScreen(
                 }
                 is LocationHistoryUiState.Ready ->
                     if (viewModel.canRead(state.token)) {
-                        key(state.token) { LocationHistoryReady(state, viewModel, storedPointMap) }
+                        key(state.token) {
+                            LocationHistoryReady(
+                                state,
+                                viewModel,
+                                storedPointMap,
+                                focusToPresent,
+                                onLinkedSamplePresented = { if (linkedFocus === focus) linkedFocus = null },
+                                openLinkedSample = { anchor ->
+                                    val opened = viewModel.openLinkedSample(state.token, anchor)
+                                    if (opened) linkedFocus = anchor to state.token
+                                    opened
+                                },
+                            )
+                        }
                         key(state.token.readerId, state.token.queryNonce) {
                             LocationHistorySessionMemoRoute(state.source, state.token, viewModel)
                         }
@@ -175,10 +228,34 @@ private fun LocationHistoryNotice(
 private fun LocationHistoryReady(
     state: LocationHistoryUiState.Ready,
     viewModel: LocationHistoryViewModel,
-    storedPointMap: (@Composable (PracticeSession, LocationRecordingRun, LocationRecordingEvent, () -> Boolean) -> Unit)?,
+    storedPointMap: (
+        @Composable (
+            PracticeSession,
+            LocationRecordingRun,
+            LocationRecordingEvent,
+            () -> Boolean,
+            (SessionReviewSample) -> Boolean,
+        ) -> Unit
+    )?,
+    linkedSampleToPresent: SessionReviewSample?,
+    onLinkedSamplePresented: () -> Unit,
+    openLinkedSample: (SessionReviewSample) -> Boolean,
 ) {
     val run = state.run
     val event = state.event
+    val eventHeading = remember { BringIntoViewRequester() }
+    LaunchedEffect(state.token) {
+        val anchor = linkedSampleToPresent ?: return@LaunchedEffect
+        // Consume before suspending or validating so a rejected focus request never waits for a later selection.
+        onLinkedSamplePresented()
+        if (event == null || event.reading !is LocationUpdateReading.Sample || SessionReviewSample.from(run, event) != anchor) {
+            return@LaunchedEffect
+        }
+        withFrameNanos { }
+        if (viewModel.canRead(state.token)) {
+            eventHeading.bringIntoView()
+        }
+    }
     ParkedPanel(Modifier.testTag("location_history_content")) {
         Text(state.source.courseTitle, modifier = Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleLarge)
         Text(state.source.taskTitle, modifier = Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodyLarge)
@@ -322,30 +399,35 @@ private fun LocationHistoryReady(
                 style = MaterialTheme.typography.bodyLarge,
             )
         } else {
-            Text(
-                stringResource(R.string.location_history_event_position, state.eventIndex + 1, state.events.size),
-                modifier = Modifier.fillMaxWidth(),
-                style = MaterialTheme.typography.titleLarge,
-            )
-            Text(
-                stringResource(
-                    when (event.reading) {
-                        is LocationUpdateReading.Sample -> R.string.location_history_sample
-                        is LocationUpdateReading.Empty -> R.string.location_history_callback_empty
-                        is LocationUpdateReading.PermissionDenied -> R.string.location_history_permission_denied
-                        is LocationUpdateReading.Unsupported -> R.string.location_history_unsupported
-                        is LocationUpdateReading.NoUpdate -> R.string.location_history_no_update
-                        is LocationUpdateReading.Error -> R.string.location_history_error
-                    },
-                ),
-                Modifier.fillMaxWidth().testTag("location_history_event_state"),
-                style = MaterialTheme.typography.titleLarge,
-            )
-            Text(
-                stringResource(R.string.location_history_record_time, locationHistoryTime(event.observedAtEpochMillis)),
-                modifier = Modifier.fillMaxWidth(),
-                style = MaterialTheme.typography.bodyLarge,
-            )
+            Column(
+                Modifier.fillMaxWidth().bringIntoViewRequester(eventHeading),
+                verticalArrangement = Arrangement.spacedBy(HanGilSpacing.lg),
+            ) {
+                Text(
+                    stringResource(R.string.location_history_event_position, state.eventIndex + 1, state.events.size),
+                    modifier = Modifier.fillMaxWidth().testTag("location_history_event_heading"),
+                    style = MaterialTheme.typography.titleLarge,
+                )
+                Text(
+                    stringResource(
+                        when (event.reading) {
+                            is LocationUpdateReading.Sample -> R.string.location_history_sample
+                            is LocationUpdateReading.Empty -> R.string.location_history_callback_empty
+                            is LocationUpdateReading.PermissionDenied -> R.string.location_history_permission_denied
+                            is LocationUpdateReading.Unsupported -> R.string.location_history_unsupported
+                            is LocationUpdateReading.NoUpdate -> R.string.location_history_no_update
+                            is LocationUpdateReading.Error -> R.string.location_history_error
+                        },
+                    ),
+                    Modifier.fillMaxWidth().testTag("location_history_event_state"),
+                    style = MaterialTheme.typography.titleLarge,
+                )
+                Text(
+                    stringResource(R.string.location_history_record_time, locationHistoryTime(event.observedAtEpochMillis)),
+                    modifier = Modifier.fillMaxWidth(),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+            }
             val sample = (event.reading as? LocationUpdateReading.Sample)?.sample
             if (sample != null) {
                 ParkedDisclosure(stringResource(R.string.location_history_raw_details), {
@@ -400,7 +482,7 @@ private fun LocationHistoryReady(
                         { viewModel.canRead(state.token) },
                         Modifier.testTag("location_history_point_map"),
                     ) {
-                        storedPointMap(state.source, run, event) { viewModel.canRead(state.token) }
+                        storedPointMap(state.source, run, event, { viewModel.canRead(state.token) }, openLinkedSample)
                     }
                 }
             } else {

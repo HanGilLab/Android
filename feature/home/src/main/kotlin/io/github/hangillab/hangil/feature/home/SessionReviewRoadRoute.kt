@@ -10,7 +10,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -40,6 +42,7 @@ fun SessionReviewRoadRoute(
     readOnly: Boolean = false,
     comparisonMap: (@Composable (SessionReviewRoad?, () -> Boolean, Flow<Unit>) -> Unit)? = null,
     sampleCandidate: SessionReviewSample? = null,
+    onOpenLinkedSample: ((SessionReviewSample) -> Boolean)? = null,
 ) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val receipt =
@@ -189,7 +192,7 @@ fun SessionReviewRoadRoute(
                     if (comparing && saved != null && sampleCandidate != null &&
                         sampleCandidate.event.sessionId == expectedSource.sessionId
                     ) {
-                        ReviewSampleControls(displayed, sampleCandidate, viewModel)
+                        ReviewSampleControls(displayed, sampleCandidate, viewModel, onOpenLinkedSample)
                     }
                     if (comparisonMap != null) {
                         key(displayed.token) {
@@ -520,6 +523,7 @@ private fun ReviewSampleControls(
     state: RoadState.Ready,
     candidate: SessionReviewSample,
     viewModel: SessionReviewRoadViewModel,
+    onOpenLinkedSample: ((SessionReviewSample) -> Boolean)?,
 ) {
     val stored = checkNotNull(state.stored)
     val anchor = stored.sampleAnchor
@@ -551,6 +555,28 @@ private fun ReviewSampleControls(
                 style = MaterialTheme.typography.bodyLarge,
             )
         else -> Unit
+    }
+    if (anchor != null && anchor != candidate && onOpenLinkedSample != null) {
+        var openFailed by remember(state.token, anchor) { mutableStateOf(false) }
+        val open = {
+            openFailed = !viewModel.canRead(state.token) || !onOpenLinkedSample(anchor)
+        }
+        ParkedButton(
+            onClick = open,
+            enabled = !state.busy,
+            prominent = false,
+            modifier = Modifier.fillMaxWidth().testTag("review_road_sample_open").frozenObservationClick(open, !state.busy),
+        ) {
+            Text(stringResource(R.string.review_road_sample_open), style = MaterialTheme.typography.titleMedium)
+        }
+        if (openFailed) {
+            Text(
+                stringResource(R.string.review_road_sample_open_failed),
+                Modifier.fillMaxWidth().testTag("review_road_sample_open_failed"),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
     }
     val canChange = state.canWrite && !state.busy && state.confirmation == null && state.edit == null && state.retainedMemo == null
     if (state.busy) {
