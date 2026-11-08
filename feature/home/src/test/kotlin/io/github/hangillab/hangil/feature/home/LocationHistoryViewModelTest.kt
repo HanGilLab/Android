@@ -25,6 +25,7 @@ import io.github.hangillab.hangil.core.domain.SessionFinishResult
 import io.github.hangillab.hangil.core.domain.SessionMemo
 import io.github.hangillab.hangil.core.domain.SessionMemoRepository
 import io.github.hangillab.hangil.core.domain.SessionMemoWriteResult
+import io.github.hangillab.hangil.core.domain.SessionReviewSample
 import io.github.hangillab.hangil.core.domain.SessionStartResult
 import io.github.hangillab.hangil.core.domain.UxRestrictionState
 import io.github.hangillab.hangil.core.domain.VehicleGateway
@@ -159,6 +160,7 @@ class LocationHistoryViewModelTest {
             val display = open(f)
             val old = display.ready()
             f.host.set(false)
+            assertFalse(f.model.openLinkedSample(old.token, SessionReviewSample.from(old.run, checkNotNull(old.event))))
             assertFalse(f.model.canRead(old.token))
             runCurrent()
             assertTrue(display.value is LocationHistoryUiState.Unavailable)
@@ -176,9 +178,11 @@ class LocationHistoryViewModelTest {
             f.vehicle.value = vehicleState(GearPosition.DRIVE)
             runCurrent()
             assertTrue(display.value is LocationHistoryUiState.Locked)
+            assertFalse(f.model.openLinkedSample(old.token, SessionReviewSample.from(old.run, checkNotNull(old.event))))
             f.vehicle.value = vehicleState(GearPosition.PARK)
             runCurrent()
             assertFalse(f.model.canRead(old.token))
+            assertFalse(f.model.openLinkedSample(old.token, SessionReviewSample.from(old.run, checkNotNull(old.event))))
             assertTrue(display.value is LocationHistoryUiState.Locked)
             assertEquals(1, f.recordings.calls)
         }
@@ -192,6 +196,7 @@ class LocationHistoryViewModelTest {
             runCurrent()
             assertTrue(display.value is LocationHistoryUiState.Unavailable)
             assertFalse(f.model.canRead(old.token))
+            assertFalse(f.model.openLinkedSample(old.token, SessionReviewSample.from(old.run, checkNotNull(old.event))))
             f.sessions.values.value = listOf(source())
             runCurrent()
             assertTrue(display.value is LocationHistoryUiState.Unavailable)
@@ -227,6 +232,10 @@ class LocationHistoryViewModelTest {
             assertNotEquals(old.token, current.token)
             assertEquals(2, f.recordings.calls)
             assertFalse(f.model.retry(old.token))
+            val anchor = SessionReviewSample.from(current.run, checkNotNull(current.event))
+            assertFalse(f.model.openLinkedSample(old.token, anchor))
+            assertTrue(f.model.openLinkedSample(current.token, anchor))
+            assertEquals(2, f.recordings.calls)
         }
 
     @Test fun `foreign source duplicate identities and event gaps fail validation`() =
@@ -309,6 +318,9 @@ class LocationHistoryViewModelTest {
             assertFalse(f.model.canRead(old.token))
             val current = open(f).ready()
             assertNotEquals(old.token.readerId, current.token.readerId)
+            val anchor = SessionReviewSample.from(old.run, checkNotNull(old.event))
+            assertFalse(f.model.openLinkedSample(old.token, anchor))
+            assertTrue(f.model.openLinkedSample(current.token, anchor))
             assertEquals(2, f.recordings.calls)
         }
 
@@ -526,6 +538,100 @@ class LocationHistoryViewModelTest {
                 memo.job.cancelAndJoin()
                 parent.job.cancelAndJoin()
             }
+        }
+
+    @Test fun `linked sample opens its exact older run and duplicate coordinate event without reads or writes`() =
+        runTest {
+            val f = Fixture()
+            val first = run("first")
+            val last = run("last")
+            val events =
+                listOf(
+                    event(1, first.runId),
+                    event(2, first.runId, ordinal = 2),
+                    event(3, last.runId).copy(reading = LocationUpdateReading.Empty(101)),
+                )
+            val stored = LocationRecordingSnapshot(listOf(first, last), events)
+            f.recordings.values.value = stored
+            // Reading an ended record does not require ending a different active practice while parked.
+            f.sessions.values.value = listOf(source().copy(sessionId = "other-active", endedAtEpochMillis = null), source())
+            val display = open(f)
+            val old = display.ready()
+            assertEquals("last", old.run.runId)
+            val linked =
+                SessionReviewSample.from(
+                    first.copy(
+                        status = LocationRecordingRunStatus.OPEN,
+                        stopReason = null,
+                        endedAtEpochMillis = null,
+                        endedAtElapsedRealtimeMillis = null,
+                    ),
+                    events[1],
+                )
+            assertEquals((events[0].reading as LocationUpdateReading.Sample).sample, linked.sample)
+            assertTrue(f.model.openLinkedSample(old.token, linked))
+            runCurrent()
+            val current = display.ready()
+            assertEquals("first", current.run.runId)
+            assertEquals(2L, current.event?.id)
+            assertNotEquals(old.token, current.token)
+            assertFalse(f.model.openLinkedSample(old.token, linked))
+            assertTrue(f.model.openLinkedSample(current.token, linked))
+            runCurrent()
+            assertEquals("An already selected exact sample is a read-only no-op", current, display.ready())
+            assertEquals(stored, f.recordings.values.value)
+            assertEquals(1, f.sessions.calls)
+            assertEquals(1, f.recordings.calls)
+            assertEquals(0, f.recordings.writes)
+            assertEquals(0, f.memos.calls)
+            assertEquals(0, f.memos.writes)
+        }
+
+    @Test fun `linked sample navigation rejects live UX denial before policy delivery`() =
+        runTest {
+            val f = Fixture()
+            val display = open(f)
+            val before = display.ready()
+            val anchor = SessionReviewSample.from(before.run, checkNotNull(before.event))
+            f.restrictions.value = DrivingRestrictions(ParkingState.PARKED, UxRestrictionState.RESTRICTED)
+            assertFalse(f.model.openLinkedSample(before.token, anchor))
+            runCurrent()
+            assertTrue(display.value is LocationHistoryUiState.Locked)
+            f.restrictions.value = DrivingRestrictions(ParkingState.PARKED, UxRestrictionState.UNRESTRICTED)
+            runCurrent()
+            assertFalse(f.model.openLinkedSample(before.token, anchor))
+            assertEquals(1, f.recordings.calls)
+            assertEquals(0, f.recordings.writes)
+        }
+
+    @Test fun `missing or changed linked event and immutable run owners never select a substitute`() =
+        runTest {
+            val f = Fixture()
+            val display = open(f)
+            val before = display.ready()
+            val anchor = SessionReviewSample.from(before.run, checkNotNull(before.event))
+            val alteredPayload = anchor.event.copy(reading = LocationUpdateReading.Sample(anchor.sample.copy(latitude = 13.5)))
+            val processId = anchor.processId
+            val wall = anchor.startedAtEpochMillis
+            val elapsed = anchor.startedAtElapsedRealtimeMillis
+            val invalid =
+                listOf(
+                    SessionReviewSample(anchor.event.copy(id = 999), processId, wall, elapsed),
+                    SessionReviewSample(anchor.event.copy(runId = "missing-run"), processId, wall, elapsed),
+                    SessionReviewSample(anchor.event.copy(sessionId = "foreign"), processId, wall, elapsed),
+                    SessionReviewSample(alteredPayload, processId, wall, elapsed),
+                    SessionReviewSample(anchor.event, "another process", wall, elapsed),
+                    SessionReviewSample(anchor.event, processId, wall + 1, elapsed),
+                    SessionReviewSample(anchor.event, processId, wall, elapsed - 1),
+                )
+            invalid.forEach { candidate ->
+                assertFalse(f.model.openLinkedSample(before.token, candidate))
+                runCurrent()
+                assertEquals(before, display.ready())
+            }
+            assertEquals(1, f.recordings.calls)
+            assertEquals(0, f.recordings.writes)
+            assertEquals(0, f.memos.calls)
         }
 
     private fun TestScope.openMemo(
