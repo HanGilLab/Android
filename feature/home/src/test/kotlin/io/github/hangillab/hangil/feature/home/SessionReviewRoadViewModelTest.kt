@@ -6,6 +6,9 @@ import io.github.hangillab.hangil.core.domain.CourseRoadSnapshot
 import io.github.hangillab.hangil.core.domain.DrivingRestrictions
 import io.github.hangillab.hangil.core.domain.DrivingRestrictionsProvider
 import io.github.hangillab.hangil.core.domain.GearPosition
+import io.github.hangillab.hangil.core.domain.LocationRecordingEvent
+import io.github.hangillab.hangil.core.domain.LocationUpdateReading
+import io.github.hangillab.hangil.core.domain.LocationUpdateSample
 import io.github.hangillab.hangil.core.domain.ParkingState
 import io.github.hangillab.hangil.core.domain.PracticeCatalog
 import io.github.hangillab.hangil.core.domain.PracticeCourse
@@ -19,14 +22,17 @@ import io.github.hangillab.hangil.core.domain.SessionFinishResult
 import io.github.hangillab.hangil.core.domain.SessionReviewRoad
 import io.github.hangillab.hangil.core.domain.SessionReviewRoadRepository
 import io.github.hangillab.hangil.core.domain.SessionReviewRoadWriteResult
+import io.github.hangillab.hangil.core.domain.SessionReviewSample
 import io.github.hangillab.hangil.core.domain.SessionStartResult
 import io.github.hangillab.hangil.core.domain.UxRestrictionState
 import io.github.hangillab.hangil.core.domain.VehicleGateway
 import io.github.hangillab.hangil.core.domain.VehicleReading
 import io.github.hangillab.hangil.core.domain.VehicleState
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -41,6 +47,7 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.withContext
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -627,6 +634,187 @@ class SessionReviewRoadViewModelTest {
             }
         }
 
+    @Test fun explicitSampleLinkKeepsTheWholeRawOwnerAndMemoAndUnlinkLeavesTheRoad() =
+        runTest {
+            val original = SessionReviewRoad(ended(), firstRoad(), "original", "Original road memo")
+            val f = Fixture(original)
+            val candidate = linkedSample()
+            val trace = watch(f)
+            runCurrent()
+            val before = trace.ready().token
+            assertFalse(f.vm.setSample(before, linkedSample("foreign")))
+            assertTrue(f.vm.setSample(before, candidate))
+            runCurrent()
+            val linked = checkNotNull(trace.ready().stored)
+            assertEquals(candidate, linked.sampleAnchor)
+            assertEquals(original.road, linked.road)
+            assertEquals(original.memoText, linked.memoText)
+            assertEquals(
+                original,
+                f.reviews.sampled
+                    .single()
+                    .expectedCurrent,
+            )
+            assertEquals(
+                candidate,
+                f.reviews.sampled
+                    .single()
+                    .sample,
+            )
+            assertFalse(f.vm.setSample(before, null))
+            assertFalse(f.vm.setSample(trace.ready().token, candidate))
+            assertEquals(SessionReviewRoadUiState.Feedback.SAMPLE_SAVED, trace.ready().feedback)
+            assertTrue(f.vm.beginMemo(trace.ready().token))
+            runCurrent()
+            val edit = checkNotNull(trace.ready().edit)
+            assertTrue(f.vm.editMemo(trace.ready().token, edit.nonce, "Updated memo"))
+            runCurrent()
+            assertTrue(f.vm.saveMemo(trace.ready().token, edit.nonce))
+            runCurrent()
+            assertEquals(candidate, trace.ready().stored?.sampleAnchor)
+            assertEquals("Updated memo", trace.ready().stored?.memoText)
+            assertTrue(f.vm.setSample(trace.ready().token, null))
+            runCurrent()
+            assertNull(trace.ready().stored?.sampleAnchor)
+            assertEquals(original.road, trace.ready().stored?.road)
+            assertEquals("Updated memo", trace.ready().stored?.memoText)
+            assertEquals(SessionReviewRoadUiState.Feedback.SAMPLE_CLEARED, trace.ready().feedback)
+            assertEquals(listOf(f.source), f.sessions.values.value)
+            assertTrue(f.reviews.cleared.isEmpty())
+        }
+
+    @Test fun sampleIntentNeverBorrowsAReturnedHostOrAnotherActiveSession() =
+        runTest {
+            val original = SessionReviewRoad(ended(), firstRoad(), "original")
+            val f = Fixture(original)
+            val candidate = linkedSample()
+            val trace = watch(f)
+            runCurrent()
+            val old = trace.ready().token
+            val release = CompletableDeferred<Unit>()
+            val saveSample = f.reviews.sampleAction
+            f.reviews.sampleAction = { request ->
+                withContext(NonCancellable) { release.await() }
+                saveSample(request)
+            }
+            assertTrue(f.vm.setSample(old, candidate))
+            runCurrent()
+            f.host = false
+            assertFalse(f.vm.canRead(old))
+            f.host = true
+            release.complete(Unit)
+            runCurrent()
+            assertEquals(original, f.reviews.value.value)
+            assertFalse(f.vm.setSample(old, candidate))
+            val reopened = watch(f)
+            runCurrent()
+            f.sessions.values.value = listOf(ended("active").copy(endedAtEpochMillis = null), f.source)
+            runCurrent()
+            assertFalse(reopened.ready().canWrite)
+            assertFalse(f.vm.setSample(reopened.ready().token, candidate))
+            assertEquals(1, f.reviews.sampled.size)
+            assertEquals(original, reopened.ready().stored)
+        }
+
+    @Test fun anchoredRoadNeedsCurrentDiscardAndAConcurrentMemoCannotReuseAnOldSampleOrConfirmation() =
+        runTest {
+            val anchor = linkedSample()
+            val original = SessionReviewRoad(ended(), firstRoad(), "original", sampleAnchor = anchor)
+            val f = Fixture(original)
+            val trace = watch(f)
+            runCurrent()
+            val oldSampleIntent = trace.ready().token
+            assertTrue(f.vm.select(trace.ready().token, secondRoad().id))
+            runCurrent()
+            assertTrue(f.vm.save(trace.ready().token))
+            runCurrent()
+            val pending = checkNotNull(trace.ready().confirmation)
+            val oldConfirm = trace.ready().token
+            assertTrue(f.reviews.saved.isEmpty())
+            val modified = SessionReviewRoad(ended(), firstRoad(), "new-note-version", "Changed note", anchor)
+            f.reviews.value.value = modified
+            runCurrent()
+            val failed = trace.last() as SessionReviewRoadUiState.Failed
+            assertFalse(f.vm.confirmDiscard(oldConfirm, pending.nonce))
+            assertFalse(f.vm.setSample(oldSampleIntent, null))
+            assertTrue(f.vm.retry(failed.token))
+            runCurrent()
+            assertEquals(anchor, trace.ready().stored?.sampleAnchor)
+            assertTrue(f.vm.select(trace.ready().token, secondRoad().id))
+            runCurrent()
+            assertTrue(f.vm.save(trace.ready().token))
+            runCurrent()
+            val confirmed = checkNotNull(trace.ready().confirmation)
+            assertTrue(f.vm.confirmDiscard(trace.ready().token, confirmed.nonce))
+            runCurrent()
+            assertEquals(secondRoad(), trace.ready().stored?.road)
+            assertNull(trace.ready().stored?.sampleAnchor)
+            assertEquals("", trace.ready().stored?.memoText)
+            assertTrue(
+                f.reviews.saved
+                    .single()
+                    .discardSample,
+            )
+            assertTrue(
+                f.reviews.saved
+                    .single()
+                    .discardMemo,
+            )
+        }
+
+    @Test fun sampleFailureAndLostCommittedReplyRequireReadbackWithoutAutomaticResubmission() =
+        runTest {
+            val original = SessionReviewRoad(ended(), firstRoad(), "original")
+            val f = Fixture(original)
+            val trace = watch(f)
+            runCurrent()
+            val candidate = linkedSample()
+            val saveSample = f.reviews.sampleAction
+            f.reviews.sampleAction = { throw IOException("Controlled before-write failure") }
+            assertTrue(f.vm.setSample(trace.ready().token, candidate))
+            runCurrent()
+            var failed = trace.last() as SessionReviewRoadUiState.Failed
+            assertTrue(failed.writeUnconfirmed)
+            assertEquals(original, f.reviews.value.value)
+            assertTrue(f.vm.retry(failed.token))
+            runCurrent()
+            assertEquals(1, f.reviews.sampled.size)
+            assertNull(trace.ready().stored?.sampleAnchor)
+            f.reviews.sampleAction = { request ->
+                saveSample(request)
+                throw IOException("Controlled post-COMMIT reply failure")
+            }
+            assertTrue(f.vm.setSample(trace.ready().token, candidate))
+            runCurrent()
+            failed = trace.last() as SessionReviewRoadUiState.Failed
+            assertTrue(failed.writeUnconfirmed)
+            assertEquals(
+                candidate,
+                f.reviews.value.value
+                    ?.sampleAnchor,
+            )
+            assertTrue(f.vm.retry(failed.token))
+            runCurrent()
+            assertEquals(candidate, trace.ready().stored?.sampleAnchor)
+            assertEquals(2, f.reviews.sampled.size)
+            assertFalse(f.vm.setSample(trace.ready().token, candidate))
+        }
+
+    private fun linkedSample(sessionId: String = "session") =
+        SessionReviewSample(
+            LocationRecordingEvent(
+                1,
+                sessionId,
+                "run",
+                1,
+                150,
+                LocationUpdateReading.Sample(LocationUpdateSample(37.0, 127.0, -2.0, 421f, -5f, -42, 20)),
+            ),
+            "controlled-process",
+            120,
+            10,
+        )
+
     private fun TestScope.watch(f: Fixture): Trace {
         val states = mutableListOf<SessionReviewRoadUiState>()
         val job =
@@ -716,6 +904,7 @@ class SessionReviewRoadViewModelTest {
         val expectedCurrent: SessionReviewRoad?,
         val memoText: String,
         val discardMemo: Boolean,
+        val discardSample: Boolean,
         val canCommit: () -> Boolean,
     )
 
@@ -723,6 +912,14 @@ class SessionReviewRoadViewModelTest {
         val source: PracticeSession,
         val expectedCurrent: SessionReviewRoad,
         val discardMemo: Boolean,
+        val discardSample: Boolean,
+        val canCommit: () -> Boolean,
+    )
+
+    private data class SampleRequest(
+        val source: PracticeSession,
+        val expectedCurrent: SessionReviewRoad,
+        val sample: SessionReviewSample?,
         val canCommit: () -> Boolean,
     )
 
@@ -734,14 +931,39 @@ class SessionReviewRoadViewModelTest {
         var active = 0
         val saved = mutableListOf<SaveRequest>()
         val cleared = mutableListOf<ClearRequest>()
-        var saveAction: suspend (SaveRequest) -> SessionReviewRoadWriteResult = { request ->
+        val sampled = mutableListOf<SampleRequest>()
+        var sampleAction: suspend (SampleRequest) -> SessionReviewRoadWriteResult = { request ->
+            val candidate = request.sample
             when {
                 !request.canCommit() -> SessionReviewRoadWriteResult.Blocked
                 value.value != request.expectedCurrent -> SessionReviewRoadWriteResult.Conflict
-                request.expectedCurrent?.memoText?.isNotEmpty() == true &&
-                    request.expectedCurrent.road != request.road && !request.discardMemo -> SessionReviewRoadWriteResult.MemoPresent
+                candidate != null && candidate.event.sessionId != request.source.sessionId -> SessionReviewRoadWriteResult.SampleChanged
                 else -> {
-                    val review = SessionReviewRoad(request.source, request.road, "version-${saved.size}", request.memoText)
+                    val current = request.expectedCurrent
+                    val updated =
+                        SessionReviewRoad(request.source, current.road, "sample-version-${sampled.size}", current.memoText, request.sample)
+                    value.value = updated
+                    SessionReviewRoadWriteResult.Saved(updated)
+                }
+            }
+        }
+        var saveAction: suspend (SaveRequest) -> SessionReviewRoadWriteResult = { request ->
+            val current = request.expectedCurrent
+            when {
+                !request.canCommit() -> SessionReviewRoadWriteResult.Blocked
+                value.value != current -> SessionReviewRoadWriteResult.Conflict
+                current?.memoText?.isNotEmpty() == true &&
+                    current.road != request.road && !request.discardMemo -> {
+                    SessionReviewRoadWriteResult.MemoPresent
+                }
+                current?.sampleAnchor != null &&
+                    current.road != request.road &&
+                    !request.discardSample -> {
+                    SessionReviewRoadWriteResult.SamplePresent
+                }
+                else -> {
+                    val retainedSample = current?.takeIf { it.road == request.road }?.sampleAnchor
+                    val review = SessionReviewRoad(request.source, request.road, "version-${saved.size}", request.memoText, retainedSample)
                     value.value = review
                     SessionReviewRoadWriteResult.Saved(review)
                 }
@@ -752,6 +974,9 @@ class SessionReviewRoadViewModelTest {
                 !request.canCommit() -> SessionReviewRoadWriteResult.Blocked
                 value.value != request.expectedCurrent -> SessionReviewRoadWriteResult.Conflict
                 request.expectedCurrent.memoText.isNotEmpty() && !request.discardMemo -> SessionReviewRoadWriteResult.MemoPresent
+                request.expectedCurrent.sampleAnchor != null && !request.discardSample -> {
+                    SessionReviewRoadWriteResult.SamplePresent
+                }
                 else -> {
                     value.value = null
                     SessionReviewRoadWriteResult.Cleared
@@ -777,20 +1002,33 @@ class SessionReviewRoadViewModelTest {
             expectedCurrent: SessionReviewRoad?,
             memoText: String,
             discardMemo: Boolean,
+            discardSample: Boolean,
             canCommit: () -> Boolean,
         ): SessionReviewRoadWriteResult {
-            val request = SaveRequest(expectedSource, road, expectedCurrent, memoText, discardMemo, canCommit)
+            val request = SaveRequest(expectedSource, road, expectedCurrent, memoText, discardMemo, discardSample, canCommit)
             saved += request
             return saveAction(request)
+        }
+
+        override suspend fun setSample(
+            expectedSource: PracticeSession,
+            expectedCurrent: SessionReviewRoad,
+            sample: SessionReviewSample?,
+            canCommit: () -> Boolean,
+        ): SessionReviewRoadWriteResult {
+            val request = SampleRequest(expectedSource, expectedCurrent, sample, canCommit)
+            sampled += request
+            return sampleAction(request)
         }
 
         override suspend fun clear(
             expectedSource: PracticeSession,
             expectedCurrent: SessionReviewRoad,
             discardMemo: Boolean,
+            discardSample: Boolean,
             canCommit: () -> Boolean,
         ): SessionReviewRoadWriteResult {
-            val request = ClearRequest(expectedSource, expectedCurrent, discardMemo, canCommit)
+            val request = ClearRequest(expectedSource, expectedCurrent, discardMemo, discardSample, canCommit)
             cleared += request
             return clearAction(request)
         }

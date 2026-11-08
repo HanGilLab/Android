@@ -52,6 +52,7 @@ class RoomPracticeSessionRepositoryTest {
                 PreparationMigration7To8,
                 PreparationMigration8To9,
                 PreparationMigration9To10,
+                PreparationMigration10To11,
             ).build()
 
     @Test fun `version one migration preserves preparation and permits new sessions`() =
@@ -103,7 +104,7 @@ class RoomPracticeSessionRepositoryTest {
                 val repository = RoomPracticeSessionRepository(it, catalog)
                 assertTrue(repository.observeSessions().first().isEmpty())
                 assertTrue(repository.start(practice, 1_000) { true } is SessionStartResult.Started)
-                assertEquals(10, it.openHelper.writableDatabase.version)
+                assertEquals(11, it.openHelper.writableDatabase.version)
                 assertEquals(null, RoomSessionMemoRepository(it).observe("absent-fixture").first())
             }
         }

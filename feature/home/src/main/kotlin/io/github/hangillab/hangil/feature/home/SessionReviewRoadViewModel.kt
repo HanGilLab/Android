@@ -12,6 +12,7 @@ import io.github.hangillab.hangil.core.domain.SessionMemoPolicy
 import io.github.hangillab.hangil.core.domain.SessionReviewRoad
 import io.github.hangillab.hangil.core.domain.SessionReviewRoadRepository
 import io.github.hangillab.hangil.core.domain.SessionReviewRoadWriteResult
+import io.github.hangillab.hangil.core.domain.SessionReviewSample
 import io.github.hangillab.hangil.core.domain.VehicleGateway
 import io.github.hangillab.hangil.core.domain.allowsPracticeInteraction
 import kotlinx.coroutines.CancellationException
@@ -214,6 +215,26 @@ class SessionReviewRoadViewModel
             return true
         }
 
+        /** The caller's immutable comparison host binds this intent to its currently selected event. */
+        fun setSample(
+            token: RoadState.Token,
+            sample: SessionReviewSample?,
+        ): Boolean {
+            val job =
+                synchronized(lock) {
+                    val owner = owner(token) ?: return@synchronized null
+                    val stored = owner.stored ?: return@synchronized null
+                    if (!editable(owner) || owner.edit != null || owner.confirmation != null || owner.retainedMemo != null ||
+                        (sample != null && sample.event.sessionId != owner.source.sessionId) || stored.sampleAnchor == sample
+                    ) {
+                        return@synchronized null
+                    }
+                    schedule(owner, stored.road, stored.memoText, discardMemo = false, memoEdit = false, sampleEdit = true, sample = sample)
+                } ?: return false
+            job.start()
+            return true
+        }
+
         fun cancelDiscard(
             token: RoadState.Token,
             confirmationNonce: Long,
@@ -238,13 +259,22 @@ class SessionReviewRoadViewModel
                     val owner = owner(token) ?: return@synchronized null
                     val pending = owner.confirmation ?: return@synchronized null
                     if (!editable(owner) || owner.edit != null || pending.nonce != confirmationNonce ||
-                        owner.stored != pending.expectedCurrent || pending.expectedCurrent.memoText.isEmpty()
+                        owner.stored != pending.expectedCurrent ||
+                        (pending.expectedCurrent.memoText.isEmpty() && pending.expectedCurrent.sampleAnchor == null)
                     ) {
                         return@synchronized null
                     }
                     if (pending.target != null && owner.candidates.none { it == pending.target }) return@synchronized null
                     owner.confirmation = null
-                    schedule(owner, pending.target, "", discardMemo = true, memoEdit = false)
+                    schedule(
+                        owner,
+                        pending.target,
+                        "",
+                        discardMemo = true,
+                        memoEdit = false,
+                        discardSample =
+                            pending.expectedCurrent.sampleAnchor != null,
+                    )
                 } ?: return false
             job.start()
             return true
@@ -417,7 +447,7 @@ class SessionReviewRoadViewModel
                     val road = if (clear) null else (owner.draft ?: return@synchronized null)
                     if (road != null && road != expected?.road && owner.candidates.none { it == road }) return@synchronized null
                     accepted = true
-                    if (expected != null && expected.memoText.isNotEmpty() && road != expected.road) {
+                    if (expected != null && (expected.memoText.isNotEmpty() || expected.sampleAnchor != null) && road != expected.road) {
                         owner.confirmation = RoadState.Confirmation(++actionSerial, road, expected)
                         publish(owner)
                         null
@@ -436,8 +466,12 @@ class SessionReviewRoadViewModel
             memoText: String,
             discardMemo: Boolean,
             memoEdit: Boolean,
+            discardSample: Boolean = false,
+            sampleEdit: Boolean = false,
+            sample: SessionReviewSample? = null,
         ): Job {
-            val action = Action(owner.stored, road, memoText, discardMemo, memoEdit)
+            val expectedSample = if (sampleEdit) sample else owner.stored?.takeIf { it.road == road }?.sampleAnchor
+            val action = Action(owner.stored, road, memoText, discardMemo, memoEdit, discardSample, sampleEdit, expectedSample)
             owner.action = action
             val work = owner.scope.launch(start = CoroutineStart.LAZY) { write(owner, action) }
             action.job = work
@@ -463,10 +497,24 @@ class SessionReviewRoadViewModel
             try {
                 if (!commit(owner, action, job)) return
                 val result =
-                    if (action.road == null) {
-                        reviews.clear(owner.source, checkNotNull(action.expected), action.discardMemo) { commit(owner, action, job) }
+                    if (action.sampleEdit) {
+                        reviews.setSample(owner.source, checkNotNull(action.expected), action.sample) { commit(owner, action, job) }
+                    } else if (action.road == null) {
+                        reviews.clear(
+                            owner.source,
+                            checkNotNull(action.expected),
+                            action.discardMemo,
+                            action.discardSample,
+                        ) { commit(owner, action, job) }
                     } else {
-                        reviews.save(owner.source, action.road, action.expected, action.memoText, action.discardMemo) {
+                        reviews.save(
+                            owner.source,
+                            action.road,
+                            action.expected,
+                            action.memoText,
+                            action.discardMemo,
+                            action.discardSample,
+                        ) {
                             commit(owner, action, job)
                         }
                     }
@@ -477,13 +525,15 @@ class SessionReviewRoadViewModel
                     when (result) {
                         is SessionReviewRoadWriteResult.Saved -> {
                             if (action.road == null || !valid(owner, result.review) || result.review.road != action.road ||
-                                result.review.memoText != action.memoText
+                                result.review.memoText != action.memoText || result.review.sampleAnchor != action.sample
                             ) {
                                 failed(owner, true)
                             } else {
                                 owner.edit = null
                                 val feedback =
-                                    if (action.memoEdit) {
+                                    if (action.sampleEdit) {
+                                        if (action.sample == null) RoadState.Feedback.SAMPLE_CLEARED else RoadState.Feedback.SAMPLE_SAVED
+                                    } else if (action.memoEdit) {
                                         if (action.memoText.isEmpty()) RoadState.Feedback.MEMO_CLEARED else RoadState.Feedback.MEMO_SAVED
                                     } else {
                                         RoadState.Feedback.SAVED
@@ -635,6 +685,9 @@ class SessionReviewRoadViewModel
             val memoText: String,
             val discardMemo: Boolean,
             val memoEdit: Boolean,
+            val discardSample: Boolean,
+            val sampleEdit: Boolean,
+            val sample: SessionReviewSample?,
         ) {
             var job: Job? = null
         }

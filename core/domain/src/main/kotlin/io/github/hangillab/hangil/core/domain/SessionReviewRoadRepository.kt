@@ -11,6 +11,7 @@ interface SessionReviewRoadRepository {
      * absence and memo text, must match. A new road and its complete catalog seed must still match
      * before and after the transaction's work. Editing the same stored road's memo needs no catalog.
      * Identical road and memo preserve the token; changed memo gets a new token without changing nodes.
+     * Replacing a road with a linked sample requires explicit sample discard. The original callback stays stored.
      * Replacing a road with a memo requires explicit discard and an empty new memo; never copy notes
      * to another road. Text is preserved exactly, with empty meaning no memo.
      * Pure live permission and cancellation checks before COMMIT roll back a rejected write.
@@ -22,6 +23,15 @@ interface SessionReviewRoadRepository {
         expectedCurrent: SessionReviewRoad?,
         memoText: String = expectedCurrent?.memoText.orEmpty(),
         discardMemo: Boolean = false,
+        discardSample: Boolean = false,
+        canCommit: () -> Boolean,
+    ): SessionReviewRoadWriteResult
+
+    /** Link or unlink only the exact current choice. The whole callback and immutable run owner are rechecked before COMMIT. */
+    suspend fun setSample(
+        expectedSource: PracticeSession,
+        expectedCurrent: SessionReviewRoad,
+        sample: SessionReviewSample?,
         canCommit: () -> Boolean,
     ): SessionReviewRoadWriteResult
 
@@ -30,6 +40,7 @@ interface SessionReviewRoadRepository {
         expectedSource: PracticeSession,
         expectedCurrent: SessionReviewRoad,
         discardMemo: Boolean = false,
+        discardSample: Boolean = false,
         canCommit: () -> Boolean,
     ): SessionReviewRoadWriteResult
 }

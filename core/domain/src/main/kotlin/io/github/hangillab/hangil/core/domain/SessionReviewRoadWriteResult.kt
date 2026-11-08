@@ -21,5 +21,9 @@ sealed interface SessionReviewRoadWriteResult {
 
     data object MemoPresent : SessionReviewRoadWriteResult
 
+    data object SampleChanged : SessionReviewRoadWriteResult
+
+    data object SamplePresent : SessionReviewRoadWriteResult
+
     data object Blocked : SessionReviewRoadWriteResult
 }

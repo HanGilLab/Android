@@ -2,7 +2,9 @@ package io.github.hangillab.hangil.core.database
 
 import androidx.room.Embedded
 import io.github.hangillab.hangil.core.domain.CourseRoadSnapshot
+import io.github.hangillab.hangil.core.domain.PracticeSession
 import io.github.hangillab.hangil.core.domain.SessionReviewRoad
+import io.github.hangillab.hangil.core.domain.SessionReviewSample
 import java.util.UUID
 
 /** One joined SQLite read includes even a parent whose node rows are missing. */
@@ -13,6 +15,42 @@ internal data class SessionReviewRoadRow(
     val nodeValidStorage: Int,
 ) {
     companion object {
+        /** Call within the caller's Room transaction so header, original event and owner are one snapshot. */
+        suspend fun readValidated(
+            database: PreparationDatabase,
+            sessionId: String,
+        ): SessionReviewRoad? {
+            val stored = review(database.sessionReviewRoadDao().find(sessionId)) ?: return null
+            stored.sampleAnchor?.let { anchor ->
+                val sessions = database.practiceSessionDao()
+                val source = sessions.find(sessionId)
+                check(
+                    source != null && sessions.countValidDeletionStorage(sessionId) == 1 && source.session() == stored.source &&
+                        sampleMatches(database, stored.source, anchor),
+                ) { "Stored linked review sample changed" }
+            }
+            return stored
+        }
+
+        suspend fun sampleMatches(
+            database: PreparationDatabase,
+            source: PracticeSession,
+            sample: SessionReviewSample,
+        ): Boolean {
+            if (sample.event.sessionId != source.sessionId) return false
+            val dao = database.locationRecordingDao()
+            val event = dao.findEvent(sample.event.id)?.event() ?: return false
+            if (event != sample.event) return false
+            val run = dao.findRun(event.runId)?.run() ?: return false
+            val endedElapsed = run.endedAtElapsedRealtimeMillis
+            if (run.source != source.copy(endedAtEpochMillis = null) ||
+                (endedElapsed != null && endedElapsed < event.reading.receivedAtElapsedRealtimeMillis)
+            ) {
+                return false
+            }
+            return SessionReviewSample.from(run, event) == sample
+        }
+
         fun review(rows: List<SessionReviewRoadRow>): SessionReviewRoad? {
             if (rows.isEmpty()) return null
             val first = rows.first().entity
@@ -42,6 +80,7 @@ internal data class SessionReviewRoadRow(
                 ),
                 first.version,
                 first.memoText,
+                SessionReviewSampleJson.decode(first.sampleAnchorJson),
             )
         }
     }

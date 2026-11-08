@@ -32,6 +32,7 @@ import io.github.hangillab.hangil.core.designsystem.HanGilTheme
 import io.github.hangillab.hangil.core.designsystem.ParkedPage
 import io.github.hangillab.hangil.core.domain.LocationRecordingController
 import io.github.hangillab.hangil.core.domain.PracticeSession
+import io.github.hangillab.hangil.core.domain.SessionReviewSample
 import io.github.hangillab.hangil.core.vehicle.FusedLocationPermission
 import io.github.hangillab.hangil.feature.course.CourseRoute
 import io.github.hangillab.hangil.feature.course.NextPracticeRoute
@@ -207,11 +208,14 @@ class MainActivity : ComponentActivity() {
                                 LocationHistoryRoute(
                                     expectedSource = expected,
                                     onClose = { navigation.popBackStack() },
-                                    storedPointMap = { source, sample, canRead ->
+                                    storedPointMap = { source, run, event, canRead ->
+                                        val candidate = SessionReviewSample.from(run, event)
+                                        val sample = candidate.sample
                                         SessionReviewRoadRoute(
                                             expectedSource = source,
                                             canKeepOpen = canRead,
                                             readOnly = true,
+                                            sampleCandidate = candidate,
                                             comparisonMap = { saved, allowed, changes ->
                                                 StoredLocationMap(sample, allowed, reviewRoad = saved, inputChanges = changes)
                                             },

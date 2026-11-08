@@ -32,7 +32,7 @@ class RecordingRunMigrationTest {
                     val database = open(name)
                     try {
                         val sqlite = database.openHelper.writableDatabase
-                        assertEquals(10, sqlite.version)
+                        assertEquals(11, sqlite.version)
                         for ((table, original) in before) assertEquals(original, readTable(sqlite, table))
                         assertTrue(RoomRecordingRunRepository(database).observe("active-fixture").first().isEmpty())
                         assertEquals(null, RoomCourseCompletionRepository(database).observe("finished-fixture").first())
@@ -92,6 +92,7 @@ class RecordingRunMigrationTest {
                 PreparationMigration7To8,
                 PreparationMigration8To9,
                 PreparationMigration9To10,
+                PreparationMigration10To11,
             ).build()
 
     private fun createLegacy(

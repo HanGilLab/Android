@@ -50,6 +50,9 @@ internal interface LocationRecordingDao {
     @Query(RUN_SELECT + " WHERE runId = :runId")
     suspend fun findRun(runId: String): LocationRecordingRunRow?
 
+    @Query(EVENT_SELECT + " WHERE id = :id")
+    suspend fun findEvent(id: Long): LocationRecordingEventRow?
+
     @Insert
     suspend fun insertRun(entity: LocationRecordingRunEntity): Long
 

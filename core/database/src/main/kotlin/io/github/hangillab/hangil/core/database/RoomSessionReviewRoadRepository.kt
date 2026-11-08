@@ -9,8 +9,10 @@ import io.github.hangillab.hangil.core.domain.SessionMemoPolicy
 import io.github.hangillab.hangil.core.domain.SessionReviewRoad
 import io.github.hangillab.hangil.core.domain.SessionReviewRoadRepository
 import io.github.hangillab.hangil.core.domain.SessionReviewRoadWriteResult
+import io.github.hangillab.hangil.core.domain.SessionReviewSample
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import java.util.UUID
 import javax.inject.Inject
@@ -21,7 +23,19 @@ internal class RoomSessionReviewRoadRepository
         private val database: PreparationDatabase,
         private val catalog: PracticeCatalog,
     ) : SessionReviewRoadRepository {
-        override fun observe(sessionId: String) = database.sessionReviewRoadDao().observe(sessionId).map { SessionReviewRoadRow.review(it) }
+        override fun observe(sessionId: String) =
+            database.invalidationTracker
+                .createFlow(
+                    "session_review_road",
+                    "session_review_road_node",
+                    "location_recording_run",
+                    "location_recording_event",
+                    "practice_session",
+                ).map {
+                    database.withTransaction {
+                        SessionReviewRoadRow.readValidated(database, sessionId)
+                    }
+                }.distinctUntilChanged()
 
         override suspend fun save(
             expectedSource: PracticeSession,
@@ -29,6 +43,7 @@ internal class RoomSessionReviewRoadRepository
             expectedCurrent: SessionReviewRoad?,
             memoText: String,
             discardMemo: Boolean,
+            discardSample: Boolean,
             canCommit: () -> Boolean,
         ): SessionReviewRoadWriteResult {
             var pinned: NextPracticeSeed? = null
@@ -40,7 +55,9 @@ internal class RoomSessionReviewRoadRepository
                 if (memoText.isNotEmpty() && !SessionMemoPolicy.isValidText(memoText)) {
                     return@mutate SessionReviewRoadWriteResult.InvalidMemo
                 }
-                val candidate = SessionReviewRoad(actual, road, nextVersion(current?.version), memoText)
+                val sameRoad = current?.road == road
+                val candidate =
+                    SessionReviewRoad(actual, road, nextVersion(current?.version), memoText, if (sameRoad) current?.sampleAnchor else null)
                 if (current != null && current.road == candidate.road) {
                     if (current.memoText == memoText) {
                         return@mutate SessionReviewRoadWriteResult.Saved(current)
@@ -53,6 +70,7 @@ internal class RoomSessionReviewRoadRepository
                     if (current.memoText.isNotEmpty() && !discardMemo) {
                         return@mutate SessionReviewRoadWriteResult.MemoPresent
                     }
+                    if (current.sampleAnchor != null && !discardSample) return@mutate SessionReviewRoadWriteResult.SamplePresent
                     if (memoText.isNotEmpty()) return@mutate SessionReviewRoadWriteResult.InvalidMemo
                 }
                 val seed = NextPracticeSeed.resolve(catalog, actual)
@@ -76,6 +94,7 @@ internal class RoomSessionReviewRoadRepository
             expectedSource: PracticeSession,
             expectedCurrent: SessionReviewRoad,
             discardMemo: Boolean,
+            discardSample: Boolean,
             canCommit: () -> Boolean,
         ): SessionReviewRoadWriteResult =
             mutate(expectedSource, expectedCurrent, canCommit) { actual, current ->
@@ -83,9 +102,39 @@ internal class RoomSessionReviewRoadRepository
                     SessionReviewRoadWriteResult.Conflict
                 } else if (current.memoText.isNotEmpty() && !discardMemo) {
                     SessionReviewRoadWriteResult.MemoPresent
+                } else if (current.sampleAnchor != null && !discardSample) {
+                    SessionReviewRoadWriteResult.SamplePresent
                 } else {
                     check(database.sessionReviewRoadDao().delete(actual.sessionId, current.version) == 1)
                     SessionReviewRoadWriteResult.Cleared
+                }
+            }
+
+        override suspend fun setSample(
+            expectedSource: PracticeSession,
+            expectedCurrent: SessionReviewRoad,
+            sample: SessionReviewSample?,
+            canCommit: () -> Boolean,
+        ): SessionReviewRoadWriteResult =
+            mutate(expectedSource, expectedCurrent, canCommit) { actual, current ->
+                if (current == null) {
+                    SessionReviewRoadWriteResult.Conflict
+                } else if (sample != null && !sampleMatches(actual, sample)) {
+                    SessionReviewRoadWriteResult.SampleChanged
+                } else if (current.sampleAnchor == sample) {
+                    SessionReviewRoadWriteResult.Saved(current)
+                } else {
+                    val saved = SessionReviewRoad(actual, current.road, nextVersion(current.version), current.memoText, sample)
+                    check(
+                        database.sessionReviewRoadDao().updateSample(
+                            actual.sessionId,
+                            current.version,
+                            saved.version,
+                            SessionReviewSampleJson.encode(sample),
+                        ) ==
+                            1,
+                    )
+                    SessionReviewRoadWriteResult.Saved(saved)
                 }
             }
 
@@ -93,33 +142,14 @@ internal class RoomSessionReviewRoadRepository
             expectedSource: PracticeSession,
             expectedCurrent: SessionReviewRoad?,
             canCommit: () -> Boolean,
-            afterPermission: () -> Unit = {},
+            afterPermission: suspend () -> Unit = {},
             action: suspend (PracticeSession, SessionReviewRoad?) -> SessionReviewRoadWriteResult,
         ): SessionReviewRoadWriteResult =
             try {
                 database.withTransaction {
                     requirePermission(canCommit)
                     val sessions = database.practiceSessionDao()
-                    val entity = sessions.find(expectedSource.sessionId)
-                    val actual =
-                        entity?.let {
-                            val validStorage = sessions.countValidDeletionStorage(expectedSource.sessionId) == 1
-                            check(validStorage) { "Invalid review road source storage" }
-                            it.session().also { source ->
-                                val selection = source.selection
-                                val validSource =
-                                    source.sessionId.isNotBlank() &&
-                                        selection.goalId.isNotBlank() &&
-                                        selection.courseId.isNotBlank() &&
-                                        selection.taskId.isNotBlank() &&
-                                        selection.courseVersion > 0 &&
-                                        selection.briefingVersion > 0 &&
-                                        source.goalTitle.isNotBlank() &&
-                                        source.courseTitle.isNotBlank() &&
-                                        source.taskTitle.isNotBlank()
-                                check(validSource) { "Invalid review road source snapshot" }
-                            }
-                        }
+                    val actual = readSource(expectedSource.sessionId)
                     val result =
                         when {
                             actual == null -> SessionReviewRoadWriteResult.MissingSession
@@ -137,7 +167,32 @@ internal class RoomSessionReviewRoadRepository
                         }
                     requirePermission(canCommit)
                     afterPermission()
-                    currentCoroutineContext().ensureActive()
+                    if (result is SessionReviewRoadWriteResult.Saved || result == SessionReviewRoadWriteResult.Cleared) {
+                        if (readSource(expectedSource.sessionId) !=
+                            expectedSource
+                        ) {
+                            throw WriteRejected(SessionReviewRoadWriteResult.SourceChanged)
+                        }
+                        if (sessions.unfinishedCount() != 0L) throw WriteRejected(SessionReviewRoadWriteResult.SessionActive)
+                        val stored = SessionReviewRoadRow.review(database.sessionReviewRoadDao().find(expectedSource.sessionId))
+                        when (result) {
+                            is SessionReviewRoadWriteResult.Saved -> {
+                                if (stored != result.review) throw WriteRejected(SessionReviewRoadWriteResult.Conflict)
+                                checkNotNull(stored).sampleAnchor?.let { anchor ->
+                                    if (!sampleMatches(
+                                            expectedSource,
+                                            anchor,
+                                        )
+                                    ) {
+                                        throw WriteRejected(SessionReviewRoadWriteResult.SampleChanged)
+                                    }
+                                }
+                            }
+                            else -> if (stored != null) throw WriteRejected(SessionReviewRoadWriteResult.Conflict)
+                        }
+                    }
+                    // No database suspension follows this final pure live owner/parking/UX check.
+                    requirePermission(canCommit)
                     result
                 }
             } catch (rejected: WriteRejected) {
@@ -166,6 +221,7 @@ internal class RoomSessionReviewRoadRepository
                         entity.capturedAtEpochMillis,
                         entity.nodeCount,
                         entity.memoText,
+                        entity.sampleAnchorJson,
                     )
                 check(updated == 1)
                 check(dao.deleteNodes(entity.sessionId) == current.road.nodes.size)
@@ -182,6 +238,25 @@ internal class RoomSessionReviewRoadRepository
                     )
                 },
             )
+        }
+
+        private suspend fun sampleMatches(
+            source: PracticeSession,
+            sample: SessionReviewSample,
+        ): Boolean = SessionReviewRoadRow.sampleMatches(database, source, sample)
+
+        private suspend fun readSource(sessionId: String): PracticeSession? {
+            val sessions = database.practiceSessionDao()
+            val entity = sessions.find(sessionId) ?: return null
+            check(sessions.countValidDeletionStorage(sessionId) == 1) { "Invalid review road source storage" }
+            return entity.session().also { source ->
+                val selection = source.selection
+                check(
+                    source.sessionId.isNotBlank() && selection.goalId.isNotBlank() && selection.courseId.isNotBlank() &&
+                        selection.taskId.isNotBlank() && selection.courseVersion > 0 && selection.briefingVersion > 0 &&
+                        source.goalTitle.isNotBlank() && source.courseTitle.isNotBlank() && source.taskTitle.isNotBlank(),
+                ) { "Invalid review road source snapshot" }
+            }
         }
 
         private suspend fun requirePermission(canCommit: () -> Boolean) {
