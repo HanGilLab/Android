@@ -34,10 +34,11 @@ fun SessionReviewRoadRoute(
     canKeepOpen: () -> Boolean,
     roadMap: (@Composable (PracticeSession, List<CourseRoadSnapshot>, String?, () -> Boolean, Flow<Unit>) -> Unit)? = null,
     viewModel: SessionReviewRoadViewModel = hiltViewModel(),
+    readOnly: Boolean = false,
 ) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val receipt =
-        remember(expectedSource, canKeepOpen, lifecycle) {
+        remember(expectedSource, canKeepOpen, lifecycle, readOnly) {
             AtomicBoolean(lifecycle.currentState == Lifecycle.State.RESUMED)
         }
     val allowed =
@@ -81,6 +82,13 @@ fun SessionReviewRoadRoute(
             Modifier.fillMaxWidth().testTag("review_road_scope"),
             style = MaterialTheme.typography.bodyLarge,
         )
+        if (readOnly) {
+            Text(
+                stringResource(R.string.review_road_reference_scope),
+                Modifier.fillMaxWidth().testTag("review_road_reference_scope"),
+                style = MaterialTheme.typography.bodyLarge,
+            )
+        }
         when (displayed) {
             is RoadState.Loading ->
                 Text(
@@ -107,13 +115,13 @@ fun SessionReviewRoadRoute(
             is RoadState.Ready -> {
                 if (displayed.stored == null) {
                     Text(
-                        stringResource(R.string.review_road_empty),
+                        stringResource(if (readOnly) R.string.review_road_reference_empty else R.string.review_road_empty),
                         Modifier.fillMaxWidth().testTag("review_road_empty"),
                         style = MaterialTheme.typography.bodyLarge,
                     )
                 } else {
                     Text(
-                        stringResource(R.string.review_road_source),
+                        stringResource(if (readOnly) R.string.review_road_reference_source else R.string.review_road_source),
                         Modifier.fillMaxWidth().testTag("review_road_source"),
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.primary,
@@ -124,93 +132,122 @@ fun SessionReviewRoadRoute(
                         style = MaterialTheme.typography.titleLarge,
                     )
                 }
-                displayed.feedback?.let {
-                    Text(
-                        stringResource(if (it == RoadState.Feedback.SAVED) R.string.review_road_saved else R.string.review_road_cleared),
-                        Modifier.fillMaxWidth().testTag("review_road_feedback"),
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
-                }
-                if (displayed.candidates.isEmpty()) {
-                    Text(
-                        stringResource(R.string.review_road_no_candidates),
-                        Modifier.fillMaxWidth(),
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
-                }
-                displayed.candidates.forEachIndexed { index, road ->
-                    val select = {
-                        viewModel.select(displayed.token, road.id)
-                        Unit
+                if (readOnly) {
+                    val saved = displayed.stored
+                    if (saved != null && roadMap != null) {
+                        key(displayed.token) {
+                            roadMap(
+                                expectedSource,
+                                listOf(saved.road),
+                                saved.road.id,
+                                { allowed() && viewModel.canRead(displayed.token) },
+                                viewModel.inputChanges,
+                            )
+                        }
                     }
-                    ParkedChoice(
-                        title = road.title,
-                        description = "",
-                        selected = displayed.draft == road,
-                        enabled = displayed.canWrite,
-                        showDescription = false,
-                        onClick = select,
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .testTag("review_road_candidate_$index")
-                                .frozenObservationClick(select, displayed.canWrite),
-                    )
-                }
-                val roads = displayed.draft?.let(::listOf) ?: displayed.candidates
-                if (roadMap != null && roads.isNotEmpty()) {
-                    key(displayed.token) {
-                        roadMap(
-                            expectedSource,
-                            roads,
-                            displayed.draftRoadId,
-                            { allowed() && viewModel.canRead(displayed.token) },
-                            viewModel.inputChanges,
+                } else {
+                    displayed.feedback?.let {
+                        Text(
+                            stringResource(
+                                if (it == RoadState.Feedback.SAVED) R.string.review_road_saved else R.string.review_road_cleared,
+                            ),
+                            Modifier.fillMaxWidth().testTag("review_road_feedback"),
+                            style = MaterialTheme.typography.bodyLarge,
                         )
                     }
-                }
-                if (displayed.busy) {
-                    Text(
-                        stringResource(R.string.review_road_busy),
-                        Modifier.fillMaxWidth().testTag("review_road_busy"),
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
-                } else if (!displayed.canWrite) {
-                    Text(stringResource(R.string.review_road_active), Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodyLarge)
-                }
-                val canSave = displayed.canWrite && displayed.draft != null && displayed.candidates.any { it == displayed.draft }
-                val save = {
-                    viewModel.save(displayed.token)
-                    Unit
-                }
-                ParkedButton(
-                    onClick = save,
-                    enabled = canSave,
-                    modifier = Modifier.fillMaxWidth().testTag("review_road_save").frozenObservationClick(save, canSave),
-                ) { Text(stringResource(R.string.review_road_save), style = MaterialTheme.typography.titleMedium) }
-                if (displayed.draft != displayed.stored?.road) {
-                    val cancel = {
-                        viewModel.cancel(displayed.token)
+                    if (displayed.candidates.isEmpty()) {
+                        Text(
+                            stringResource(R.string.review_road_no_candidates),
+                            Modifier.fillMaxWidth(),
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                    }
+                    displayed.candidates.forEachIndexed { index, road ->
+                        val select = {
+                            viewModel.select(displayed.token, road.id)
+                            Unit
+                        }
+                        ParkedChoice(
+                            title = road.title,
+                            description = "",
+                            selected = displayed.draft == road,
+                            enabled = displayed.canWrite,
+                            showDescription = false,
+                            onClick = select,
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .testTag("review_road_candidate_$index")
+                                    .frozenObservationClick(select, displayed.canWrite),
+                        )
+                    }
+                    val roads = displayed.draft?.let(::listOf) ?: displayed.candidates
+                    if (roadMap != null && roads.isNotEmpty()) {
+                        key(displayed.token) {
+                            roadMap(
+                                expectedSource,
+                                roads,
+                                displayed.draftRoadId,
+                                { allowed() && viewModel.canRead(displayed.token) },
+                                viewModel.inputChanges,
+                            )
+                        }
+                    }
+                    if (displayed.busy) {
+                        Text(
+                            stringResource(R.string.review_road_busy),
+                            Modifier.fillMaxWidth().testTag("review_road_busy"),
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                    } else if (!displayed.canWrite) {
+                        Text(
+                            stringResource(R.string.review_road_active),
+                            Modifier.fillMaxWidth(),
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                    }
+                    val canSave = displayed.canWrite && displayed.draft != null && displayed.candidates.any { it == displayed.draft }
+                    val save = {
+                        viewModel.save(displayed.token)
                         Unit
                     }
                     ParkedButton(
-                        onClick = cancel,
-                        enabled = !displayed.busy,
-                        prominent = false,
-                        modifier = Modifier.fillMaxWidth().testTag("review_road_cancel").frozenObservationClick(cancel, !displayed.busy),
-                    ) { Text(stringResource(R.string.review_road_cancel), style = MaterialTheme.typography.titleMedium) }
-                }
-                if (displayed.stored != null) {
-                    val clear = {
-                        viewModel.clear(displayed.token)
-                        Unit
+                        onClick = save,
+                        enabled = canSave,
+                        modifier = Modifier.fillMaxWidth().testTag("review_road_save").frozenObservationClick(save, canSave),
+                    ) { Text(stringResource(R.string.review_road_save), style = MaterialTheme.typography.titleMedium) }
+                    if (displayed.draft != displayed.stored?.road) {
+                        val cancel = {
+                            viewModel.cancel(displayed.token)
+                            Unit
+                        }
+                        ParkedButton(
+                            onClick = cancel,
+                            enabled = !displayed.busy,
+                            prominent = false,
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .testTag("review_road_cancel")
+                                    .frozenObservationClick(cancel, !displayed.busy),
+                        ) { Text(stringResource(R.string.review_road_cancel), style = MaterialTheme.typography.titleMedium) }
                     }
-                    ParkedButton(
-                        onClick = clear,
-                        enabled = displayed.canWrite,
-                        prominent = false,
-                        modifier = Modifier.fillMaxWidth().testTag("review_road_clear").frozenObservationClick(clear, displayed.canWrite),
-                    ) { Text(stringResource(R.string.review_road_clear), style = MaterialTheme.typography.titleMedium) }
+                    if (displayed.stored != null) {
+                        val clear = {
+                            viewModel.clear(displayed.token)
+                            Unit
+                        }
+                        ParkedButton(
+                            onClick = clear,
+                            enabled = displayed.canWrite,
+                            prominent = false,
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .testTag("review_road_clear")
+                                    .frozenObservationClick(clear, displayed.canWrite),
+                        ) { Text(stringResource(R.string.review_road_clear), style = MaterialTheme.typography.titleMedium) }
+                    }
                 }
             }
         }

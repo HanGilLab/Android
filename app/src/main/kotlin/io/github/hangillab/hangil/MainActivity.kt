@@ -217,6 +217,17 @@ class MainActivity : ComponentActivity() {
                             arguments = listOf(navArgument("nextPracticeSourceId") { type = NavType.StringType }),
                         ) {
                             NextPracticeRoute(
+                                reviewRoad = { source, allowed ->
+                                    SessionReviewRoadRoute(source, allowed, readOnly = true, roadMap = {
+                                        snapshot,
+                                        roads,
+                                        selected,
+                                        canPresent,
+                                        changes,
+                                        ->
+                                        SessionReviewRoadMap(snapshot, roads, selected, canPresent, changes)
+                                    })
+                                },
                                 onClose = { navigation.popBackStack() },
                                 onPrepareNormally = {
                                     navigation.popBackStack()
@@ -264,6 +275,17 @@ class MainActivity : ComponentActivity() {
                                 }
                             } else {
                                 NextPracticeRoute(
+                                    reviewRoad = { source, allowed ->
+                                        SessionReviewRoadRoute(source, allowed, readOnly = true, roadMap = {
+                                            snapshot,
+                                            roads,
+                                            selected,
+                                            canPresent,
+                                            changes,
+                                            ->
+                                            SessionReviewRoadMap(snapshot, roads, selected, canPresent, changes)
+                                        })
+                                    },
                                     expectedHistorySource = expected,
                                     historyEntryRequired = true,
                                     isHistoryEntryCurrent = currentEntry,

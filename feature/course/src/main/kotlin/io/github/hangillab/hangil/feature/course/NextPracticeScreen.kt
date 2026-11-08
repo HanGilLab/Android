@@ -12,6 +12,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -26,6 +27,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
@@ -53,6 +55,7 @@ fun NextPracticeRoute(
     expectedHistorySource: PracticeSession? = null,
     historyEntryRequired: Boolean = false,
     isHistoryEntryCurrent: () -> Boolean = { false },
+    reviewRoad: (@Composable (PracticeSession, () -> Boolean) -> Unit)? = null,
 ) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val historyReceipt =
@@ -158,7 +161,7 @@ fun NextPracticeRoute(
                         ) { Text(stringResource(R.string.next_practice_retry), style = MaterialTheme.typography.titleLarge) }
                         GeneralPreparationButton { normal(current.generation) }
                     }
-                    is NextPracticeUiState.Ready -> NextPracticeChoices(current, viewModel, historyEntryRequired)
+                    is NextPracticeUiState.Ready -> NextPracticeChoices(current, viewModel, historyEntryRequired, reviewRoad)
                 }
             }
         }
@@ -170,6 +173,7 @@ private fun NextPracticeChoices(
     state: NextPracticeUiState.Ready,
     viewModel: NextPracticeViewModel,
     historyEntry: Boolean,
+    reviewRoad: (@Composable (PracticeSession, () -> Boolean) -> Unit)?,
 ) {
     val source = state.seed.source
     Column(Modifier.testTag("next_practice_ready"), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.lg)) {
@@ -204,6 +208,55 @@ private fun NextPracticeChoices(
                     Modifier.testTag("next_practice_previous_task"),
                     style = MaterialTheme.typography.bodyLarge,
                 )
+            }
+        }
+        if (reviewRoad != null) {
+            key(source, state.generation) {
+                val lifecycle = LocalLifecycleOwner.current.lifecycle
+                var referenceOwner by remember(lifecycle) {
+                    mutableStateOf(AtomicBoolean(lifecycle.currentState == Lifecycle.State.RESUMED))
+                }
+                DisposableEffect(lifecycle) {
+                    val observer =
+                        LifecycleEventObserver { _, event ->
+                            when (event) {
+                                Lifecycle.Event.ON_RESUME -> {
+                                    referenceOwner.set(false)
+                                    referenceOwner = AtomicBoolean(true)
+                                }
+                                Lifecycle.Event.ON_PAUSE, Lifecycle.Event.ON_STOP, Lifecycle.Event.ON_DESTROY -> {
+                                    referenceOwner.set(false)
+                                    referenceOwner = AtomicBoolean(false)
+                                }
+                                else -> Unit
+                            }
+                        }
+                    lifecycle.addObserver(observer)
+                    onDispose {
+                        referenceOwner.set(false)
+                        lifecycle.removeObserver(observer)
+                    }
+                }
+                // Each closure retains the displayed source, task generation and resumed owner.
+                val capturedOwner = referenceOwner
+                key(capturedOwner) {
+                    val canKeepOpen =
+                        remember(source, state.generation, viewModel, lifecycle, capturedOwner) {
+                            {
+                                capturedOwner.get() && lifecycle.currentState == Lifecycle.State.RESUMED &&
+                                    viewModel.canRevealSource(source.sessionId, state.generation)
+                            }
+                        }
+                    ParkedPanel {
+                        ParkedDisclosure(
+                            title = stringResource(R.string.next_practice_review_road),
+                            canExpand = canKeepOpen,
+                            modifier = Modifier.testTag("next_practice_review_road"),
+                        ) {
+                            reviewRoad(source, canKeepOpen)
+                        }
+                    }
+                }
             }
         }
         Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.lg)) {
