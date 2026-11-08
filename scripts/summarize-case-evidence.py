@@ -91,7 +91,7 @@ def main():
             "are not fresh runs. No combined test total is computed; shared supporting/legacy receipts are not additive. "
             "FinishSourceReviewBoundaryTest uses real Home/History Compose with controlled lifecycle, source and P/UX, "
             "not actual SDK or production Room. FinishSourceReviewRoomFlowTest uses production repositories in a UUID-owned "
-            "schema6 store with controlled source/ACK delivery; it does not prove an internal Room dispatcher defect. "
+            "current-schema store with controlled source/ACK delivery; it does not prove an internal Room dispatcher defect. "
             "FinishedSessionReviewFlowTest actual Hilt Main/SDK/Room, theme, lifecycle and original-data preservation runs "
             "are opt-in and tracked separately, including failed or incomplete attempts. These JVM receipts do not prove "
             "app SDK or native screen success. Controlled BackgroundRecordingBoundaryTest uses real "

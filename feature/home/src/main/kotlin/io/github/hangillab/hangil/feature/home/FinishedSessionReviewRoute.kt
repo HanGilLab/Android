@@ -12,6 +12,7 @@ fun FinishedSessionReviewRoute(
     viewModel: SessionHistoryViewModel = hiltViewModel(),
     onOpenLocations: (PracticeSession) -> Unit = {},
     onPrepareNext: ((PracticeSession) -> Unit)? = null,
+    reviewRoad: (@Composable (PracticeSession, () -> Boolean) -> Unit)? = null,
 ) {
     SessionHistoryEntryContent(
         entry = SessionHistoryEntry.FinishedReview(expectedSource),
@@ -19,5 +20,6 @@ fun FinishedSessionReviewRoute(
         viewModel = viewModel,
         onOpenLocations = onOpenLocations,
         onPrepareNext = onPrepareNext,
+        reviewRoad = reviewRoad,
     )
 }

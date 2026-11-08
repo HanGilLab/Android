@@ -42,6 +42,7 @@ import io.github.hangillab.hangil.core.domain.CourseCompletionDeclaration
 import io.github.hangillab.hangil.core.domain.CourseCompletionDeclarationResult
 import io.github.hangillab.hangil.core.domain.CourseCompletionRepository
 import io.github.hangillab.hangil.core.domain.CourseReviewStatus
+import io.github.hangillab.hangil.core.domain.CourseRoadSnapshot
 import io.github.hangillab.hangil.core.domain.DrivingRestrictions
 import io.github.hangillab.hangil.core.domain.DrivingRestrictionsProvider
 import io.github.hangillab.hangil.core.domain.GearPosition
@@ -70,6 +71,9 @@ import io.github.hangillab.hangil.core.domain.SessionFinishResult
 import io.github.hangillab.hangil.core.domain.SessionMemo
 import io.github.hangillab.hangil.core.domain.SessionMemoRepository
 import io.github.hangillab.hangil.core.domain.SessionMemoWriteResult
+import io.github.hangillab.hangil.core.domain.SessionReviewRoad
+import io.github.hangillab.hangil.core.domain.SessionReviewRoadRepository
+import io.github.hangillab.hangil.core.domain.SessionReviewRoadWriteResult
 import io.github.hangillab.hangil.core.domain.SessionStartResult
 import io.github.hangillab.hangil.core.domain.SessionVehicleObservation
 import io.github.hangillab.hangil.core.domain.UxRestrictionState
@@ -90,7 +94,10 @@ import io.github.hangillab.hangil.feature.home.RecentVehicleObservationViewModel
 import io.github.hangillab.hangil.feature.home.SessionFinishReceipt
 import io.github.hangillab.hangil.feature.home.SessionHistoryViewModel
 import io.github.hangillab.hangil.feature.home.SessionMemoViewModel
+import io.github.hangillab.hangil.feature.home.SessionReviewRoadRoute
+import io.github.hangillab.hangil.feature.home.SessionReviewRoadViewModel
 import io.github.hangillab.hangil.feature.home.SessionViewModel
+import io.github.hangillab.hangil.feature.map.SessionReviewRoadMap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalForInheritanceCoroutinesApi
 import kotlinx.coroutines.InternalCoroutinesApi
@@ -394,6 +401,7 @@ class FinishSourceReviewBoundaryTest {
         private val completions: CourseCompletionRepository,
         private val deletions: SessionDeletionRepository,
         private val writer: HistorySessionMemoWriter,
+        private val reviewRoads: SessionReviewRoadRepository? = null,
     ) {
         val live = SilentVehicle(parked())
         val restrictions = MutableStateFlow(DrivingRestrictions(ParkingState.PARKED, UxRestrictionState.UNRESTRICTED))
@@ -509,8 +517,41 @@ class FinishSourceReviewBoundaryTest {
                         watchedCompletions,
                         writer,
                     )
+                val watchedReviewRoads =
+                    reviewRoads?.let { repository ->
+                        object : SessionReviewRoadRepository by repository {
+                            override fun observe(sessionId: String): Flow<SessionReviewRoad?> = counted(repository.observe(sessionId))
+
+                            override suspend fun save(
+                                expectedSource: PracticeSession,
+                                road: CourseRoadSnapshot,
+                                expectedCurrent: SessionReviewRoad?,
+                                canCommit: () -> Boolean,
+                            ): SessionReviewRoadWriteResult {
+                                activeWrites.incrementAndGet()
+                                try {
+                                    return repository.save(expectedSource, road, expectedCurrent, canCommit)
+                                } finally {
+                                    activeWrites.decrementAndGet()
+                                }
+                            }
+
+                            override suspend fun clear(
+                                expectedSource: PracticeSession,
+                                expectedCurrent: SessionReviewRoad,
+                                canCommit: () -> Boolean,
+                            ): SessionReviewRoadWriteResult {
+                                activeWrites.incrementAndGet()
+                                try {
+                                    return repository.clear(expectedSource, expectedCurrent, canCommit)
+                                } finally {
+                                    activeWrites.decrementAndGet()
+                                }
+                            }
+                        }
+                    }
                 val models =
-                    mapOf<Class<out ViewModel>, ViewModel>(
+                    mutableMapOf<Class<out ViewModel>, ViewModel>(
                         HomeViewModel::class.java to HomeViewModel(vehicle, noNavigation(), ux, watchedPreparation, catalog),
                         SessionViewModel::class.java to session,
                         BackgroundRecordingViewModel::class.java to BackgroundRecordingViewModel(noRecording()),
@@ -520,6 +561,10 @@ class FinishSourceReviewBoundaryTest {
                         SessionMemoViewModel::class.java to SessionMemoViewModel(vehicle, ux, watched, watchedMemos),
                         SessionHistoryViewModel::class.java to history,
                     )
+                watchedReviewRoads?.let {
+                    models[SessionReviewRoadViewModel::class.java] = SessionReviewRoadViewModel(vehicle, ux, historySessions, it, catalog)
+                }
+                val roadModel = models[SessionReviewRoadViewModel::class.java] as? SessionReviewRoadViewModel
                 val factory =
                     object : ViewModelProvider.Factory {
                         override fun <T : ViewModel> create(modelClass: Class<T>): T = modelClass.cast(checkNotNull(models[modelClass]))
@@ -534,6 +579,21 @@ class FinishSourceReviewBoundaryTest {
                                 key(entryEpoch.value) {
                                     if (exact.value) {
                                         FinishedSessionReviewRoute(
+                                            reviewRoad =
+                                                if (roadModel == null) {
+                                                    null
+                                                } else {
+                                                    { source, allowed ->
+                                                        SessionReviewRoadRoute(
+                                                            source,
+                                                            allowed,
+                                                            roadMap = { snapshot, roads, selected, canPresent, changes ->
+                                                                SessionReviewRoadMap(snapshot, roads, selected, canPresent, changes)
+                                                            },
+                                                            viewModel = checkNotNull(roadModel),
+                                                        )
+                                                    }
+                                                },
                                             expectedSource = target.value,
                                             onClose = { exact.value = false },
                                             viewModel = history,

@@ -13,6 +13,7 @@ import io.github.hangillab.hangil.core.domain.PracticeSessionRepository
 import io.github.hangillab.hangil.core.domain.RecordingRunRepository
 import io.github.hangillab.hangil.core.domain.SessionDeletionRepository
 import io.github.hangillab.hangil.core.domain.SessionMemoRepository
+import io.github.hangillab.hangil.core.domain.SessionReviewRoadRepository
 import io.github.hangillab.hangil.core.domain.VehicleObservationRepository
 import java.io.Closeable
 import java.io.File
@@ -39,6 +40,7 @@ class OwnedPracticeTestStore private constructor(
     val locationRecordings: LocationRecordingRepository get() = RoomLocationRecordingRepository(database)
     val deletions: SessionDeletionRepository get() = RoomSessionDeletionRepository(database)
     val courseCompletions: CourseCompletionRepository get() = RoomCourseCompletionRepository(database)
+    val reviewRoads: SessionReviewRoadRepository get() = RoomSessionReviewRoadRepository(database, catalog)
 
     private var closed = false
 
@@ -161,6 +163,7 @@ class OwnedPracticeTestStore private constructor(
                     PreparationMigration4To5,
                     PreparationMigration5To6,
                     PreparationMigration6To7,
+                    PreparationMigration7To8,
                 ).build()
         }
     }

@@ -338,6 +338,7 @@ class RoomSessionMemoRepositoryTest {
                         PreparationMigration4To5,
                         PreparationMigration5To6,
                         PreparationMigration6To7,
+                        PreparationMigration7To8,
                     ).build()
             try {
                 val expected =

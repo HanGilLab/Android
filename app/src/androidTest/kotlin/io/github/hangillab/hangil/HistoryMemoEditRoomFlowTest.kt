@@ -287,7 +287,7 @@ class HistoryMemoEditRoomFlowTest {
             }
             attempt { f.ui?.dispose() }
             attempt { f.assertOtherFieldsPreserved() }
-            attempt { check(f.store.schemaVersion() == 6 && f.store.foreignKeyViolationCount() == 0) }
+            attempt { check(f.store.schemaVersion() == 8 && f.store.foreignKeyViolationCount() == 0) }
             attempt {
                 check(f.ui == null || f.ui!!.isStopped)
                 f.store.close()

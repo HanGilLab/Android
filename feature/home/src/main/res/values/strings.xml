@@ -261,4 +261,23 @@
     <string name="location_history_point_map">저장한 표본 지도</string>
     <string name="location_history_point_map_notice">지도를 펼치면 외부 지도 서비스에 저장한 표본 주변의 지도 요청이 전달돼요.</string>
     <string name="location_history_memo">이 연습 전체 메모</string>
+  <string name="review_road_title">내가 고른 복습 구간</string>
+  <string name="review_road_scope">내가 고른 공개지도 구간이에요. 실제 이동과 현재 통행은 확인하지 않았어요.</string>
+  <string name="review_road_source">내가 저장한 공개도로 구간</string>
+  <string name="review_road_loading">저장한 구간을 확인하고 있어요.</string>
+  <string name="review_road_empty">아직 저장한 복습 구간이 없어요.</string>
+  <string name="review_road_no_candidates">현재 코스에서 새로 고를 수 있는 공개도로 자료가 없어요.</string>
+  <string name="review_road_save">선택한 구간 저장</string>
+  <string name="review_road_cancel">선택 취소</string>
+  <string name="review_road_clear">저장한 구간 해제</string>
+  <string name="review_road_saved">선택한 구간을 저장했어요.</string>
+  <string name="review_road_cleared">저장한 구간을 해제했어요.</string>
+  <string name="review_road_busy">저장 내용을 확인하고 있어요.</string>
+  <string name="review_road_active">연습 중에는 구간을 바꿀 수 없어요.</string>
+  <string name="review_road_failed">구간을 확인하지 못했어요. 다시 읽어 주세요.</string>
+  <string name="review_road_unconfirmed">저장 결과를 확인하지 못했어요. 다시 읽어 확인해 주세요.</string>
+  <string name="review_road_retry">다시 읽기</string>
+  <string name="review_road_reopen">주차 후 복습 구간을 닫고 다시 펼쳐 주세요.</string>
+  <string name="history_delete_review_road_absent">저장한 복습 구간 없음</string>
+  <string name="history_delete_review_road_present">저장한 복습 구간: %1$s</string>
 </resources>

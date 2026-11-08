@@ -2561,6 +2561,7 @@ class MapInputLifecycleTest {
                                 when (val sourceKind = preview.source) {
                                     is MapPreview.Source.FixedOsm -> preview.points.size == 3 && sourceKind.preview.points.size == 3
                                     is MapPreview.Source.NavigationRequest -> preview.points.size == sourceKind.route.waypoints.size + 1
+                                    is MapPreview.Source.FixedRoads -> false
                                 }
                             valid = valid && ids == preview.points.map { it.id }.toSet() && pointCountMatches &&
                                 style?.layers?.filterIsInstance<LineLayer>()?.none { it.sourceId == SOURCE_ID } == true

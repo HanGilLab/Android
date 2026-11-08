@@ -13,8 +13,10 @@ import androidx.room.RoomDatabase
         CourseCompletionDeclarationEntity::class,
         LocationRecordingRunEntity::class,
         LocationRecordingEventEntity::class,
+        SessionReviewRoadEntity::class,
+        SessionReviewRoadNodeEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = true,
 )
 internal abstract class PreparationDatabase : RoomDatabase() {
@@ -31,4 +33,6 @@ internal abstract class PreparationDatabase : RoomDatabase() {
     abstract fun courseCompletionDeclarationDao(): CourseCompletionDeclarationDao
 
     abstract fun locationRecordingDao(): LocationRecordingDao
+
+    abstract fun sessionReviewRoadDao(): SessionReviewRoadDao
 }

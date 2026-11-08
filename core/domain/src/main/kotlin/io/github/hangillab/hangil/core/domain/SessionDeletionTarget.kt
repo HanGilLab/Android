@@ -8,4 +8,5 @@ data class SessionDeletionTarget(
     val recordingRuns: List<VehicleRecordingRun> = emptyList(),
     val completionDeclaration: CourseCompletionDeclaration? = null,
     val locationRecording: LocationRecordingSnapshot = LocationRecordingSnapshot(emptyList(), emptyList()),
+    val reviewRoad: SessionReviewRoad? = null,
 )

@@ -35,17 +35,17 @@ class LocationRecordingMigrationTest {
         check(!context.getDatabasePath(name).exists())
         var primary: Throwable? = null
         try {
-            val before = createSix(name)
+            val before = createLegacy(name)
             Room
                 .databaseBuilder(
                     context,
                     PreparationDatabase::class.java,
                     name,
-                ).addMigrations(PreparationMigration6To7)
+                ).addMigrations(PreparationMigration6To7, PreparationMigration7To8)
                 .build()
                 .useDatabase { db ->
                     val sqlite = db.openHelper.writableDatabase
-                    assertEquals(7, sqlite.version)
+                    assertEquals(8, sqlite.version)
                     assertTrue("Original schema6 rows/types/order/sequence must remain exact", before == snapshot(sqlite))
                     for (table in listOf("location_recording_run", "location_recording_event")) {
                         sqlite.query("SELECT COUNT(*) FROM $table").use {
@@ -67,13 +67,47 @@ class LocationRecordingMigrationTest {
         }
     }
 
-    private fun createSix(name: String): Map<String, List<List<Any?>>> {
+    @Test fun `schema seven migration preserves every original table and starts with absent review roads`() {
+        val context = RuntimeEnvironment.getApplication()
+        val name = "review-road-migration-${UUID.randomUUID()}.db"
+        check(!context.getDatabasePath(name).exists())
+        try {
+            val before = createLegacy(name, 7)
+            Room
+                .databaseBuilder(context, PreparationDatabase::class.java, name)
+                .addMigrations(PreparationMigration7To8)
+                .build()
+                .useDatabase { db ->
+                    val sqlite = db.openHelper.writableDatabase
+                    assertEquals(8, sqlite.version)
+                    assertTrue("Original rows, types, order and sequence must remain exact", before == snapshot(sqlite, tables(7)))
+                    for (table in listOf("session_review_road", "session_review_road_node")) {
+                        sqlite.query("SELECT COUNT(*) FROM $table").use {
+                            check(it.moveToFirst())
+                            assertEquals(0L, it.getLong(0))
+                        }
+                    }
+                    sqlite.query("PRAGMA foreign_key_check").use { assertEquals(0, it.count) }
+                }
+        } finally {
+            if (context.getDatabasePath(name).exists()) check(context.deleteDatabase(name))
+        }
+    }
+
+    private fun tables(version: Int) =
+        if (version >= 7) oldTables + listOf("location_recording_run", "location_recording_event") else oldTables
+
+    private fun createLegacy(
+        name: String,
+        version: Int = 6,
+    ): Map<String, List<List<Any?>>> {
         val schema =
-            checkNotNull(javaClass.classLoader?.getResourceAsStream("io.github.hangillab.hangil.core.database.PreparationDatabase/6.json"))
-                .bufferedReader()
+            checkNotNull(
+                javaClass.classLoader?.getResourceAsStream("io.github.hangillab.hangil.core.database.PreparationDatabase/$version.json"),
+            ).bufferedReader()
                 .use { JSONObject(it.readText()).getJSONObject("database") }
         val callback =
-            object : SupportSQLiteOpenHelper.Callback(6) {
+            object : SupportSQLiteOpenHelper.Callback(version) {
                 override fun onCreate(db: SupportSQLiteDatabase) {
                     val entities = schema.getJSONArray("entities")
                     for (index in 0 until entities.length()) {
@@ -111,6 +145,21 @@ class LocationRecordingMigrationTest {
                     )
                     db.execSQL("UPDATE sqlite_sequence SET seq = 80 WHERE name = 'practice_session'")
                     db.execSQL("UPDATE sqlite_sequence SET seq = 900 WHERE name = 'vehicle_observation'")
+                    if (version >= 7) {
+                        db.execSQL(
+                            "INSERT INTO location_recording_run (runId,sessionId,processId,goalId,courseId,courseVersion," +
+                                "briefingVersion,taskId,goalTitle,courseTitle,taskTitle,courseReviewStatus,sourceStartedAtEpochMillis," +
+                                "startedAtEpochMillis,startedAtElapsedRealtimeMillis,endedAtEpochMillis,endedAtElapsedRealtimeMillis," +
+                                "status,stopReason,openSlot) VALUES ('location-fixture','fixture','process-fixture','commute'," +
+                                "'neighborhood',1,1,'sequence','Goal','Course','Task','DEMO',1000,1100,10,1900,20,'STOPPED','USER_STOP',NULL)",
+                        )
+                        db.execSQL(
+                            "INSERT INTO location_recording_event (sessionId,runId,ordinal,observedAtEpochMillis," +
+                                "receivedAtElapsedRealtimeMillis,kind) VALUES ('fixture','location-fixture',1,1500,15,'EMPTY')",
+                        )
+                        db.execSQL("UPDATE sqlite_sequence SET seq = 70 WHERE name = 'location_recording_run'")
+                        db.execSQL("UPDATE sqlite_sequence SET seq = 80 WHERE name = 'location_recording_event'")
+                    }
                 }
 
                 override fun onUpgrade(
@@ -126,7 +175,7 @@ class LocationRecordingMigrationTest {
                 ).name(name)
                 .callback(callback)
                 .build()
-        return FrameworkSQLiteOpenHelperFactory().create(configuration).use { snapshot(it.writableDatabase) }
+        return FrameworkSQLiteOpenHelperFactory().create(configuration).use { snapshot(it.writableDatabase, tables(version)) }
     }
 
     private inline fun <T> PreparationDatabase.useDatabase(block: (PreparationDatabase) -> T): T {
@@ -145,8 +194,11 @@ class LocationRecordingMigrationTest {
         }
     }
 
-    private fun snapshot(db: SupportSQLiteDatabase): Map<String, List<List<Any?>>> =
-        oldTables.associateWith { table ->
+    private fun snapshot(
+        db: SupportSQLiteDatabase,
+        tables: List<String> = oldTables,
+    ): Map<String, List<List<Any?>>> =
+        tables.associateWith { table ->
             db.query("SELECT * FROM $table ORDER BY rowid").use { cursor ->
                 buildList {
                     while (cursor.moveToNext()) {

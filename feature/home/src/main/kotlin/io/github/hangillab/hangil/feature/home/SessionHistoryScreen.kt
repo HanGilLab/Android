@@ -57,6 +57,7 @@ fun SessionHistoryRoute(
     viewModel: SessionHistoryViewModel = hiltViewModel(),
     onOpenLocations: (PracticeSession) -> Unit = {},
     onPrepareNext: ((PracticeSession) -> Unit)? = null,
+    reviewRoad: (@Composable (PracticeSession, () -> Boolean) -> Unit)? = null,
 ) {
     SessionHistoryEntryContent(
         entry = SessionHistoryEntry.Explore,
@@ -64,6 +65,7 @@ fun SessionHistoryRoute(
         viewModel = viewModel,
         onOpenLocations = onOpenLocations,
         onPrepareNext = onPrepareNext,
+        reviewRoad = reviewRoad,
     )
 }
 
@@ -74,6 +76,7 @@ internal fun SessionHistoryEntryContent(
     viewModel: SessionHistoryViewModel,
     onOpenLocations: (PracticeSession) -> Unit,
     onPrepareNext: ((PracticeSession) -> Unit)? = null,
+    reviewRoad: (@Composable (PracticeSession, () -> Boolean) -> Unit)? = null,
 ) {
     val exact = entry is SessionHistoryEntry.FinishedReview
     val requiredState = if (exact) Lifecycle.State.RESUMED else Lifecycle.State.STARTED
@@ -276,6 +279,29 @@ internal fun SessionHistoryEntryContent(
                                     }
                                 }
                             },
+                            reviewRoad = {
+                                if (reviewRoad != null) {
+                                    key(current.session, current.generation, clickOwner.first) {
+                                        val canKeepOpen =
+                                            remember(current.session, current.generation, clickOwner.first, lifecycle) {
+                                                {
+                                                    clickOwner.first.get() && lifecycle.currentState.isAtLeast(requiredState) &&
+                                                        viewModel.canRevealSummary(current.session.sessionId, current.generation) &&
+                                                        viewModel.deletionState.value !is SessionDeletionUiState.Preparing &&
+                                                        viewModel.deletionState.value !is SessionDeletionUiState.Confirming &&
+                                                        viewModel.deletionState.value !is SessionDeletionUiState.Deleting
+                                                }
+                                            }
+                                        ParkedPanel {
+                                            ParkedDisclosure(
+                                                stringResource(R.string.review_road_title),
+                                                canKeepOpen,
+                                                Modifier.testTag("history_review_road"),
+                                            ) { reviewRoad(current.session, canKeepOpen) }
+                                        }
+                                    }
+                                }
+                            },
                             recordingRuns = {
                                 key(current.session, current.generation, clickOwner.first) {
                                     val canKeepOpen =
@@ -417,6 +443,7 @@ private fun HistoryRecord(
     memo: @Composable () -> Unit,
     recordingRuns: @Composable () -> Unit,
     courseCompletion: @Composable () -> Unit,
+    reviewRoad: @Composable () -> Unit,
     locations: @Composable () -> Unit,
     nextPractice: @Composable () -> Unit,
     onDelete: () -> Unit,
@@ -477,6 +504,7 @@ private fun HistoryRecord(
         }
         observations()
         memo()
+        reviewRoad()
         HistoryCourseSummary(state, canRevealSummary)
         ParkedPanel {
             Text(
@@ -667,6 +695,7 @@ private fun HistoryDeletionContent(
 
 @Composable
 private fun HistoryDeletionTarget(target: SessionDeletionTarget) {
+    val reviewRoad = target.reviewRoad
     val locationSampleCount = target.locationRecording.events.count { it.reading is LocationUpdateReading.Sample }
     val locationStateCount = target.locationRecording.events.size - locationSampleCount
     Text(
@@ -680,6 +709,15 @@ private fun HistoryDeletionTarget(target: SessionDeletionTarget) {
             },
         ),
         Modifier.testTag("history_delete_completion_status"),
+        style = MaterialTheme.typography.bodyLarge,
+    )
+    Text(
+        if (reviewRoad == null) {
+            stringResource(R.string.history_delete_review_road_absent)
+        } else {
+            stringResource(R.string.history_delete_review_road_present, reviewRoad.road.title)
+        },
+        Modifier.fillMaxWidth().testTag("history_delete_review_road"),
         style = MaterialTheme.typography.bodyLarge,
     )
     Text(
