@@ -6,6 +6,7 @@ import android.view.ViewGroup
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
 import androidx.lifecycle.Lifecycle
@@ -390,7 +391,14 @@ class FinishSourceReviewRoomFlowTest {
             )
             awaitReviewRoad(road)
             ui.touch("history_delete")
-            ui.waitTag("history_delete_confirm")
+            compose.waitUntil(TIMEOUT) { ui.nodes("history_delete_confirm").size == 1 }
+            check(compose.activity.lifecycle.currentState == Lifecycle.State.RESUMED)
+            val focusedDialog = checkNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.rootInActiveWindow)
+            try {
+                check(focusedDialog.packageName?.toString() == InstrumentationRegistry.getInstrumentation().targetContext.packageName)
+            } finally {
+                focusedDialog.recycle()
+            }
             check(
                 ui.text("history_delete_review_road") ==
                     compose.activity.getString(
@@ -399,7 +407,8 @@ class FinishSourceReviewRoomFlowTest {
                     ),
             )
             compose.onNodeWithTag("history_delete_review_road", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
-            ui.touch("history_delete_cancel")
+            compose.onNodeWithTag("history_delete_cancel", useUnmergedTree = true).performScrollTo().performClick()
+            compose.waitUntil(TIMEOUT) { ui.nodes("history_delete_dialog").isEmpty() && compose.activity.hasWindowFocus() }
             ui.ready(ended)
             check(
                 runBlocking {
