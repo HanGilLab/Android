@@ -91,7 +91,11 @@ class CourseViewModel
 
         /** Rechecks the displayed draft directly, before a delayed combined UI update. */
         internal fun canRevealDetails(expected: CourseUiState): Boolean {
-            if (!preparationRead.value.allowsEditing || !livePermission() || !expected.allowsInteraction) return false
+            if (expected.readGeneration != readGeneration || !preparationRead.value.allowsEditing || !livePermission() ||
+                !expected.allowsInteraction
+            ) {
+                return false
+            }
             val current = draft.value
             if (current.step != expected.step || current.goalId != expected.goal?.id ||
                 current.courseId != expected.course?.id || current.taskId != expected.taskId || current.plannedRoad != expected.plannedRoad
@@ -105,12 +109,20 @@ class CourseViewModel
                 catalog.courses.find { it.id == current.courseId && current.goalId in it.goalIds } == course
         }
 
-        fun selectGoal(id: String) {
+        fun selectGoal(
+            id: String,
+            expectedReadGeneration: Long? = null,
+        ) {
+            if (expectedReadGeneration != null && expectedReadGeneration != readGeneration) return
             if (!canEdit() || draft.value.step != PreparationStep.GOAL || catalog.goals.none { it.id == id }) return
             if (draft.value.goalId != id) update(PreparationDraft(goalId = id))
         }
 
-        fun selectCourse(id: String) {
+        fun selectCourse(
+            id: String,
+            expectedReadGeneration: Long? = null,
+        ) {
+            if (expectedReadGeneration != null && expectedReadGeneration != readGeneration) return
             if (!canEdit() || draft.value.step != PreparationStep.COURSE) return
             val current = draft.value
             val course = catalog.courses.find { it.id == id && current.goalId in it.goalIds } ?: return
@@ -136,7 +148,11 @@ class CourseViewModel
             )
         }
 
-        fun selectTask(id: String) {
+        fun selectTask(
+            id: String,
+            expectedReadGeneration: Long? = null,
+        ) {
+            if (expectedReadGeneration != null && expectedReadGeneration != readGeneration) return
             if (!canEdit() || draft.value.step != PreparationStep.BRIEFING) return
             val course = catalog.courses.find { it.id == draft.value.courseId } ?: return
             if (course.tasks.any { it.id == id }) update(draft.value.copy(taskId = id))
@@ -152,7 +168,9 @@ class CourseViewModel
             }
         }
 
-        fun back(): Boolean {
+        fun back(expectedReadGeneration: Long? = null): Boolean {
+            // A retired Back is consumed; it must not close the replacement preparation.
+            if (expectedReadGeneration != null && expectedReadGeneration != readGeneration) return true
             if (!canEdit()) {
                 leave()
                 return false

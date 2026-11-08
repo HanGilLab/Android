@@ -861,6 +861,7 @@ class CourseViewModelTest {
 
     @Test fun stalePreparationCanBeExplicitlyReloadedAfterARejectedSaveWithoutReusingTheFailedDraftOrOldAction() =
         runTest {
+            catalog.courses = catalog.courses + catalog.courses.single().copy(id = "other")
             val original = PracticeSelection("a", "c", 2, 3, "t", plan())
             repository.selection.value = original
             val state = SavedStateHandle()
@@ -901,13 +902,31 @@ class CourseViewModelTest {
             assertEquals(replacement.plannedRoad, model.uiState.value.plannedRoad)
             val fresh = model.uiState.value
             model.next(displayed.readGeneration)
+            model.selectGoal("a", displayed.readGeneration)
+            assertTrue("A stale Back is consumed without closing fresh preparation", model.back(displayed.readGeneration))
             runCurrent()
             assertEquals(fresh, model.uiState.value)
             assertEquals(replacement, repository.selection.value)
             assertEquals(writesAfterFailure + 1, repository.calls)
             model.next(fresh.readGeneration)
             runCurrent()
-            assertEquals(PreparationStep.COURSE, model.uiState.value.step)
+            val courseStep = model.uiState.value
+            assertEquals(PreparationStep.COURSE, courseStep.step)
+            model.selectCourse("other", displayed.readGeneration)
+            assertTrue(model.back(displayed.readGeneration))
+            runCurrent()
+            assertEquals(courseStep, model.uiState.value)
+            model.next(fresh.readGeneration)
+            runCurrent()
+            val briefing = model.uiState.value
+            assertEquals(PreparationStep.BRIEFING, briefing.step)
+            model.selectTask("u", displayed.readGeneration)
+            assertTrue(model.back(displayed.readGeneration))
+            runCurrent()
+            assertEquals(briefing, model.uiState.value)
+            model.selectTask("u", fresh.readGeneration)
+            runCurrent()
+            assertEquals("u", model.uiState.value.taskId)
             assertEquals(replacement, repository.selection.value)
             assertEquals(replacement.savedFields(), state.get<Any?>("preparationBaselineFields"))
         }

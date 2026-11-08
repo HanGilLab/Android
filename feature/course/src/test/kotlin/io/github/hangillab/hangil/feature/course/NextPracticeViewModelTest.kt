@@ -1700,6 +1700,56 @@ class NextPracticeViewModelTest {
             assertNull(f.next.expectedReviews.single())
         }
 
+    @Test fun restoredTargetIntentBlocksSavingUntilFreshUseOrExplicitUnlinkAndKeepsTheUnlinkChoice() =
+        runTest {
+            val selected = Fixture()
+            val review = targetReview()
+            selected.reviews.value.value = review
+            watch(selected)
+            val task = choose(selected)
+            assertTrue(selected.model.useReviewRoad("source", task.generation))
+            assertEquals(true, selected.handle.get<Any?>("nextPracticeTargetChoicePending"))
+
+            val restored = Fixture(state = copyState(selected.handle))
+            restored.reviews.value.value = review
+            watch(restored)
+            var state = ready(restored)
+            assertEquals("next", state.taskId)
+            assertNull(state.targetReview)
+            assertTrue(state.targetChoiceRequired)
+            assertFalse(state.canSave)
+            assertFalse(restored.model.save("source", state.generation))
+            assertEquals(0, restored.next.calls)
+            assertTrue(restored.model.useReviewRoad("source", state.generation))
+            state = ready(restored)
+            assertEquals(review, state.targetReview)
+            assertTrue(state.canSave)
+            assertTrue(restored.model.save("source", state.generation))
+            runCurrent()
+            assertEquals(PlannedPracticeRoad.from(review), restored.next.stored?.plannedRoad)
+
+            val waitingForChoice = Fixture(state = copyState(restored.handle))
+            waitingForChoice.reviews.value.value = review
+            watch(waitingForChoice)
+            state = ready(waitingForChoice)
+            assertTrue(state.targetChoiceRequired)
+            assertTrue(waitingForChoice.model.unlinkReviewRoad("source", state.generation))
+            assertEquals(false, waitingForChoice.handle.get<Any?>("nextPracticeTargetChoicePending"))
+            val explicitlyUnlinked = Fixture(state = copyState(waitingForChoice.handle))
+            explicitlyUnlinked.reviews.value.value = review
+            watch(explicitlyUnlinked)
+            state = ready(explicitlyUnlinked)
+            assertEquals("next", state.taskId)
+            assertNull(state.targetReview)
+            assertFalse(state.targetChoiceRequired)
+            assertTrue(state.canSave)
+            assertEquals(0, explicitlyUnlinked.next.calls)
+            assertTrue(explicitlyUnlinked.model.save("source", state.generation))
+            runCurrent()
+            assertNull(explicitlyUnlinked.next.stored?.plannedRoad)
+            assertNull(explicitlyUnlinked.next.expectedReviews.single())
+        }
+
     private fun targetReview(): SessionReviewRoad =
         SessionReviewRoad(
             source(),

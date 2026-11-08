@@ -65,14 +65,14 @@ fun CourseRoute(
     LaunchedEffect(viewModel, lifecycle) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { viewModel.saved.collect { close() } }
     }
-    val back = { if (!viewModel.back()) close() }
-    BackHandler(onBack = back)
     val displayed = state
+    val back = { if (!viewModel.back(displayed.readGeneration)) close() }
+    BackHandler(onBack = back)
     CourseScreen(
         displayed,
-        viewModel::selectGoal,
-        viewModel::selectCourse,
-        viewModel::selectTask,
+        { viewModel.selectGoal(it, displayed.readGeneration) },
+        { viewModel.selectCourse(it, displayed.readGeneration) },
+        { viewModel.selectTask(it, displayed.readGeneration) },
         { viewModel.next(displayed.readGeneration) },
         back,
         onRetryPreparationRead = { viewModel.retryPreparationRead(displayed.readGeneration) },
@@ -146,13 +146,15 @@ internal fun CourseScreen(
                         PreparationChoices(state.goals.size, Modifier.testTag("goal_choices")) { index, modifier ->
                             val goal = state.goals[index]
                             val selected = state.goal?.id == goal.id
+                            val chooseGoal = { onGoal(goal.id) }
                             ParkedChoice(
                                 goal.title,
                                 goal.description,
                                 selected,
-                                { onGoal(goal.id) },
-                                modifier.testTag("goal_${goal.id}"),
+                                chooseGoal,
+                                modifier.testTag("goal_${goal.id}").frozenPreparationClick(chooseGoal, !state.saving),
                                 showDescription = selected,
+                                enabled = !state.saving,
                             )
                         }
                     }
@@ -161,9 +163,16 @@ internal fun CourseScreen(
                         PreparationChoices(state.courses.size, Modifier.testTag("course_choices")) { index, modifier ->
                             val course = state.courses[index]
                             val selected = state.course?.id == course.id
-                            ParkedChoice(course.title, course.summary, selected, {
-                                onCourse(course.id)
-                            }, modifier.testTag("course_${course.id}"), showDescription = selected)
+                            val chooseCourse = { onCourse(course.id) }
+                            ParkedChoice(
+                                course.title,
+                                course.summary,
+                                selected,
+                                chooseCourse,
+                                modifier.testTag("course_${course.id}").frozenPreparationClick(chooseCourse, !state.saving),
+                                showDescription = selected,
+                                enabled = !state.saving,
+                            )
                         }
                         DemoDetails(canExpandDetails)
                     }
@@ -173,13 +182,15 @@ internal fun CourseScreen(
                             PreparationChoices(course.tasks.size, Modifier.testTag("briefing_tasks")) { index, modifier ->
                                 val task = course.tasks[index]
                                 val selected = state.taskId == task.id
+                                val chooseTask = { onTask(task.id) }
                                 ParkedChoice(
                                     task.title,
                                     task.description,
                                     selected,
-                                    { onTask(task.id) },
-                                    modifier.testTag("task_${task.id}"),
+                                    chooseTask,
+                                    modifier.testTag("task_${task.id}").frozenPreparationClick(chooseTask, !state.saving),
                                     showDescription = selected,
+                                    enabled = !state.saving,
                                 )
                             }
                             Column(Modifier.fillMaxWidth().testTag("briefing_summary")) {
@@ -300,7 +311,12 @@ private fun PreparationHeader(
                     style = MaterialTheme.typography.titleLarge,
                 )
             }
-            ParkedButton(onClick = onBack, enabled = !state.saving, prominent = false) {
+            ParkedButton(
+                onClick = onBack,
+                enabled = !state.saving,
+                prominent = false,
+                modifier = Modifier.frozenPreparationClick(onBack, !state.saving),
+            ) {
                 Text(stringResource(R.string.course_back), style = MaterialTheme.typography.titleMedium)
             }
         }
@@ -372,3 +388,16 @@ private fun DemoDetails(canExpandDetails: () -> Boolean) {
         )
     }
 }
+
+private fun Modifier.frozenPreparationClick(
+    action: () -> Unit,
+    enabled: Boolean,
+): Modifier =
+    semantics {
+        if (enabled) {
+            onClick {
+                action()
+                true
+            }
+        }
+    }

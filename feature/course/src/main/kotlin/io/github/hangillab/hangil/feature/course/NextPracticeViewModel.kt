@@ -82,7 +82,7 @@ class NextPracticeViewModel
         private var taskId: String? = null
         private var reviewRoad: NextPracticeUiState.ReviewRoad = NextPracticeUiState.ReviewRoad.Loading
         private var targetReview: SessionReviewRoad? = null
-        private var targetChoiceRequired = false
+        private var targetChoiceRequired = pendingTargetChoice()
         private var activeAction: Action? = null
         private var completion: Completion? = null
 
@@ -125,7 +125,7 @@ class NextPracticeViewModel
                                 pinned = null
                                 taskId = null
                                 targetReview = null
-                                targetChoiceRequired = false
+                                targetChoiceRequired = pendingTargetChoice()
                                 expired = null
                             }
                             received = null
@@ -196,6 +196,7 @@ class NextPracticeViewModel
                 invalidateActionLocked()
                 targetReview = available.review
                 targetChoiceRequired = false
+                savedState["nextPracticeTargetChoicePending"] = true
                 published.value =
                     current.copy(
                         targetReview = targetReview,
@@ -216,6 +217,7 @@ class NextPracticeViewModel
                 invalidateActionLocked()
                 targetReview = null
                 targetChoiceRequired = false
+                savedState["nextPracticeTargetChoicePending"] = false
                 published.value =
                     current.copy(targetReview = null, targetChoiceRequired = false, generation = ++this.generation, saveFailed = false)
                 true
@@ -507,6 +509,10 @@ class NextPracticeViewModel
                     synchronized(lock) { if (reader === owner && owner.query === query) owner.query = null }
                 }
             }
+
+        /** SavedState remembers unfinished intent only, never restores an unvalidated road payload. */
+        private fun pendingTargetChoice(): Boolean =
+            savedState.contains("nextPracticeTargetChoicePending") && savedState.get<Any?>("nextPracticeTargetChoicePending") != false
 
         private fun resetReviewLocked() {
             if (targetReview != null) targetChoiceRequired = true

@@ -15,6 +15,7 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextContains
@@ -196,6 +197,7 @@ class HistoryNextPracticeFlowTest {
                 ): SessionReviewRoadWriteResult = throw AssertionError("A reference road must never be cleared by this UI")
             }
         val models = Models()
+        val nextModels = mutableListOf<Models>()
         val nextOwner = FinishSourceReviewBoundaryTest.Owner(models.viewModelStore)
         val referenceGates = mutableListOf<() -> Boolean>()
         val vehicleState = MutableStateFlow(VehicleState(ConnectionState.CONNECTED, VehicleReading.Available(GearPosition.PARK)))
@@ -266,8 +268,16 @@ class HistoryNextPracticeFlowTest {
                                 viewModel = history,
                                 onPrepareNext = { source ->
                                     val token = checkNotNull(memory.open(source))
+                                    val state =
+                                        SavedStateHandle(
+                                            mapOf(
+                                                "historyNextToken" to token,
+                                                "nextPracticeSourceId" to source.sessionId,
+                                            ),
+                                        )
+                                    val entryModels = Models().also { nextModels += it }
                                     val model =
-                                        models.keep(
+                                        entryModels.keep(
                                             token,
                                             NextPracticeViewModel(
                                                 vehicle,
@@ -275,13 +285,11 @@ class HistoryNextPracticeFlowTest {
                                                 trackedSessions,
                                                 store.catalog,
                                                 store.nextPractice,
-                                                SavedStateHandle(
-                                                    mapOf("historyNextToken" to token, "nextPracticeSourceId" to source.sessionId),
-                                                ),
+                                                state,
                                                 targetRepository,
                                             ),
                                         )
-                                    opened.value = Opened(token, source, model)
+                                    opened.value = Opened(token, source, model, state, entryModels)
                                 },
                             )
                         } else {
@@ -435,6 +443,47 @@ class HistoryNextPracticeFlowTest {
             waitTag("next_practice_target_road")
             click("next_task_${targetTask.id}")
             waitTag("next_practice_target_road")
+            val beforeRecreationSave = clickAction("next_practice_save")
+            val priorEntry = checkNotNull(opened.value)
+            instrument.runOnMainSync {
+                assertEquals(true, priorEntry.savedState.get<Boolean>("nextPracticeTargetChoicePending"))
+                val copied =
+                    priorEntry.savedState.keys().associateWith { stateKey ->
+                        when (val value = priorEntry.savedState.get<Any?>(stateKey)) {
+                            is ArrayList<*> -> ArrayList(value)
+                            else -> value
+                        }
+                    }
+                val restoredState = SavedStateHandle(copied)
+                val restoredModels = Models().also { nextModels += it }
+                val restored =
+                    restoredModels.keep(
+                        priorEntry.token,
+                        NextPracticeViewModel(
+                            vehicle,
+                            restrictions,
+                            trackedSessions,
+                            store.catalog,
+                            store.nextPractice,
+                            restoredState,
+                            targetRepository,
+                        ),
+                    )
+                opened.value = Opened(priorEntry.token, priorEntry.source, restored, restoredState, restoredModels)
+                priorEntry.models.viewModelStore.clear()
+            }
+            runBlocking { withTimeout(20000) { priorEntry.models.awaitStopped() } }
+            waitTag("next_practice_target_road_changed")
+            compose.onNodeWithTag("next_task_${targetTask.id}").performScrollTo().assertIsSelected()
+            assertMissing("next_practice_target_road")
+            compose.onNodeWithTag("next_practice_save").performScrollTo().assertIsNotEnabled()
+            assertTextFits("next_practice_target_road_changed")
+            invoke(beforeRecreationSave)
+            assertEquals(originalPreparation, runBlocking { store.preparation.observeSelection().first() })
+            click("next_practice_target_road_use")
+            waitTag("next_practice_target_road_unlink")
+            compose.onNodeWithTag("next_practice_save").performScrollTo().assertIsEnabled()
+            // Controlled ViewModel/SavedState recreation, not an OS process kill.
             val staleSave = clickAction("next_practice_save")
             click("next_practice_close")
             waitTag("history_prepare_next")
@@ -529,11 +578,13 @@ class HistoryNextPracticeFlowTest {
                 compose.activity.setContent {}
                 nextOwner.move(Lifecycle.State.DESTROYED)
                 models.viewModelStore.clear()
+                nextModels.forEach { it.viewModelStore.clear() }
             }
             compose.waitForIdle()
             runBlocking {
                 withTimeout(20000) {
                     models.awaitStopped()
+                    nextModels.forEach { it.awaitStopped() }
                     trackedSessions.awaitStopped()
                     referenceJobs.toList().forEach { it.join() }
                     check(referenceReaders.get() == 0)
@@ -647,6 +698,7 @@ class HistoryNextPracticeFlowTest {
                     compose.activity.setContent {}
                     if (nextOwner.lifecycle.currentState != Lifecycle.State.INITIALIZED) nextOwner.move(Lifecycle.State.DESTROYED)
                     models.viewModelStore.clear()
+                    nextModels.forEach { it.viewModelStore.clear() }
                 }
             }
             cleanup { compose.waitForIdle() }
@@ -655,6 +707,7 @@ class HistoryNextPracticeFlowTest {
                 runBlocking {
                     withTimeout(20000) {
                         models.awaitStopped()
+                        nextModels.forEach { it.awaitStopped() }
                         trackedSessions.awaitStopped()
                         referenceJobs.toList().forEach { it.join() }
                         check(referenceReaders.get() == 0 && referenceJobs.all { it.isCompleted })
@@ -1026,5 +1079,7 @@ class HistoryNextPracticeFlowTest {
         val token: String,
         val source: PracticeSession,
         val model: NextPracticeViewModel,
+        val savedState: SavedStateHandle,
+        val models: Models,
     )
 }
