@@ -699,8 +699,13 @@ class SessionReviewRoadViewModelTest {
             }
             assertTrue(f.vm.setSample(old, candidate))
             runCurrent()
+            val busy = trace.ready().token
+            assertTrue(trace.ready().busy)
+            assertTrue(busy != old)
+            assertTrue(f.vm.canRead(busy))
             f.host = false
-            assertFalse(f.vm.canRead(old))
+            // The displayed busy receipt observes the withdrawal; an already stale receipt cannot revoke its successor.
+            assertFalse(f.vm.canRead(busy))
             f.host = true
             release.complete(Unit)
             runCurrent()
