@@ -41,11 +41,11 @@ class LocationRecordingMigrationTest {
                     context,
                     PreparationDatabase::class.java,
                     name,
-                ).addMigrations(PreparationMigration6To7, PreparationMigration7To8)
+                ).addMigrations(PreparationMigration6To7, PreparationMigration7To8, PreparationMigration8To9)
                 .build()
                 .useDatabase { db ->
                     val sqlite = db.openHelper.writableDatabase
-                    assertEquals(8, sqlite.version)
+                    assertEquals(9, sqlite.version)
                     assertTrue("Original schema6 rows/types/order/sequence must remain exact", before == snapshot(sqlite))
                     for (table in listOf("location_recording_run", "location_recording_event")) {
                         sqlite.query("SELECT COUNT(*) FROM $table").use {
@@ -75,11 +75,11 @@ class LocationRecordingMigrationTest {
             val before = createLegacy(name, 7)
             Room
                 .databaseBuilder(context, PreparationDatabase::class.java, name)
-                .addMigrations(PreparationMigration7To8)
+                .addMigrations(PreparationMigration7To8, PreparationMigration8To9)
                 .build()
                 .useDatabase { db ->
                     val sqlite = db.openHelper.writableDatabase
-                    assertEquals(8, sqlite.version)
+                    assertEquals(9, sqlite.version)
                     assertTrue("Original rows, types, order and sequence must remain exact", before == snapshot(sqlite, tables(7)))
                     for (table in listOf("session_review_road", "session_review_road_node")) {
                         sqlite.query("SELECT COUNT(*) FROM $table").use {
@@ -94,8 +94,37 @@ class LocationRecordingMigrationTest {
         }
     }
 
-    private fun tables(version: Int) =
-        if (version >= 7) oldTables + listOf("location_recording_run", "location_recording_event") else oldTables
+    @Test fun `schema eight migration adds only an empty text memo and preserves road provenance and versions`() {
+        val context = RuntimeEnvironment.getApplication()
+        val name = "review-road-memo-migration-${UUID.randomUUID()}.db"
+        check(!context.getDatabasePath(name).exists())
+        try {
+            val before = createLegacy(name, 8)
+            Room
+                .databaseBuilder(context, PreparationDatabase::class.java, name)
+                .addMigrations(PreparationMigration8To9)
+                .build()
+                .useDatabase { db ->
+                    val sqlite = db.openHelper.writableDatabase
+                    assertEquals(9, sqlite.version)
+                    val after = snapshot(sqlite, tables(8), excludeMemo = true)
+                    assertTrue("Original rows, types, order and sequence must remain exact", before == after)
+                    sqlite.query("SELECT memoText, typeof(memoText) FROM session_review_road").use {
+                        check(it.moveToFirst())
+                        assertEquals("", it.getString(0))
+                        assertEquals("text", it.getString(1))
+                    }
+                    sqlite.query("PRAGMA foreign_key_check").use { assertEquals(0, it.count) }
+                }
+        } finally {
+            if (context.getDatabasePath(name).exists()) check(context.deleteDatabase(name))
+        }
+    }
+
+    private fun tables(version: Int): List<String> {
+        val tables = if (version >= 7) oldTables + listOf("location_recording_run", "location_recording_event") else oldTables
+        return if (version >= 8) tables + listOf("session_review_road", "session_review_road_node") else tables
+    }
 
     private fun createLegacy(
         name: String,
@@ -151,7 +180,8 @@ class LocationRecordingMigrationTest {
                                 "briefingVersion,taskId,goalTitle,courseTitle,taskTitle,courseReviewStatus,sourceStartedAtEpochMillis," +
                                 "startedAtEpochMillis,startedAtElapsedRealtimeMillis,endedAtEpochMillis,endedAtElapsedRealtimeMillis," +
                                 "status,stopReason,openSlot) VALUES ('location-fixture','fixture','process-fixture','commute'," +
-                                "'neighborhood',1,1,'sequence','Goal','Course','Task','DEMO',1000,1100,10,1900,20,'STOPPED','USER_STOP',NULL)",
+                                "'neighborhood',1,1,'sequence','Goal','Course','Task','DEMO'," +
+                                "1000,1100,10,1900,20,'STOPPED','USER_STOP',NULL)",
                         )
                         db.execSQL(
                             "INSERT INTO location_recording_event (sessionId,runId,ordinal,observedAtEpochMillis," +
@@ -159,6 +189,16 @@ class LocationRecordingMigrationTest {
                         )
                         db.execSQL("UPDATE sqlite_sequence SET seq = 70 WHERE name = 'location_recording_run'")
                         db.execSQL("UPDATE sqlite_sequence SET seq = 80 WHERE name = 'location_recording_event'")
+                    }
+                    if (version >= 8) {
+                        db.execSQL(
+                            "INSERT INTO session_review_road VALUES('fixture','commute','neighborhood',1,1,'sequence'," +
+                                "'Goal','Course','Task','DEMO',1000,2000,'00000000-0000-0000-0000-000000000002'," +
+                                "'USER_SELECTION','road-fixture','Road','residential',10,1,100,3)",
+                        )
+                        db.execSQL("INSERT INTO session_review_road_node VALUES('fixture',0,1,1,37.0,127.0)")
+                        db.execSQL("INSERT INTO session_review_road_node VALUES('fixture',1,2,2,37.1,127.1)")
+                        db.execSQL("INSERT INTO session_review_road_node VALUES('fixture',2,1,1,37.0,127.0)")
                     }
                 }
 
@@ -197,25 +237,29 @@ class LocationRecordingMigrationTest {
     private fun snapshot(
         db: SupportSQLiteDatabase,
         tables: List<String> = oldTables,
+        excludeMemo: Boolean = false,
     ): Map<String, List<List<Any?>>> =
         tables.associateWith { table ->
             db.query("SELECT * FROM $table ORDER BY rowid").use { cursor ->
                 buildList {
                     while (cursor.moveToNext()) {
                         add(
-                            (0 until cursor.columnCount).flatMap { column ->
-                                val type = cursor.getType(column)
-                                listOf(
-                                    type,
-                                    when (type) {
-                                        Cursor.FIELD_TYPE_NULL -> null
-                                        Cursor.FIELD_TYPE_INTEGER -> cursor.getLong(column)
-                                        Cursor.FIELD_TYPE_FLOAT -> cursor.getDouble(column)
-                                        Cursor.FIELD_TYPE_STRING -> cursor.getString(column)
-                                        else -> error("Unexpected fixture blob")
-                                    },
-                                )
-                            },
+                            (0 until cursor.columnCount)
+                                .filterNot { column ->
+                                    excludeMemo && table == "session_review_road" && cursor.getColumnName(column) == "memoText"
+                                }.flatMap { column ->
+                                    val type = cursor.getType(column)
+                                    listOf(
+                                        type,
+                                        when (type) {
+                                            Cursor.FIELD_TYPE_NULL -> null
+                                            Cursor.FIELD_TYPE_INTEGER -> cursor.getLong(column)
+                                            Cursor.FIELD_TYPE_FLOAT -> cursor.getDouble(column)
+                                            Cursor.FIELD_TYPE_STRING -> cursor.getString(column)
+                                            else -> error("Unexpected fixture blob")
+                                        },
+                                    )
+                                },
                         )
                     }
                 }

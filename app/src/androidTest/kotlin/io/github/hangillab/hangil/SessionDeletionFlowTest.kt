@@ -456,7 +456,7 @@ class SessionDeletionFlowTest {
             applyCatalogResourceConfigurationIfRequested()
             verifyConfiguration()
             if (catalogResourceApplied.get()) emitDeletionPhase("RESOURCES_APPLIED")
-            assertTrue("새 격리 저장소는 원래 데이터가 없는 스키마8여야 합니다", store.schemaVersion() == 8)
+            assertTrue("새 격리 저장소는 원래 데이터가 없는 스키마9여야 합니다", store.schemaVersion() == 9)
             assertTrue("새 격리 저장소의 FK 위반은 없어야 합니다", store.foreignKeyViolationCount() == 0)
             val seed = runBlocking { seed(store, latestMemo, syntheticLocations) }
             fixture = Fixture(store, seed)
@@ -807,7 +807,7 @@ class SessionDeletionFlowTest {
                 )
                 assertTrue("선택한 메모만 실제 cascade로 없어져야 합니다", store.memos.observe(targetId).first() == null)
             }
-            assertTrue("스키마 버전과 FK 무결성을 보존해야 합니다", store.schemaVersion() == 8 && store.foreignKeyViolationCount() == 0)
+            assertTrue("스키마 버전과 FK 무결성을 보존해야 합니다", store.schemaVersion() == 9 && store.foreignKeyViolationCount() == 0)
         }
 
         fun failureState(): JSONObject =

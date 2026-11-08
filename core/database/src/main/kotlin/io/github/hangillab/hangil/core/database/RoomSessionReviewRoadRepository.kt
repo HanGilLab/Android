@@ -5,6 +5,7 @@ import io.github.hangillab.hangil.core.domain.CourseRoadSnapshot
 import io.github.hangillab.hangil.core.domain.NextPracticeSeed
 import io.github.hangillab.hangil.core.domain.PracticeCatalog
 import io.github.hangillab.hangil.core.domain.PracticeSession
+import io.github.hangillab.hangil.core.domain.SessionMemoPolicy
 import io.github.hangillab.hangil.core.domain.SessionReviewRoad
 import io.github.hangillab.hangil.core.domain.SessionReviewRoadRepository
 import io.github.hangillab.hangil.core.domain.SessionReviewRoadWriteResult
@@ -26,6 +27,8 @@ internal class RoomSessionReviewRoadRepository
             expectedSource: PracticeSession,
             road: CourseRoadSnapshot,
             expectedCurrent: SessionReviewRoad?,
+            memoText: String,
+            discardMemo: Boolean,
             canCommit: () -> Boolean,
         ): SessionReviewRoadWriteResult {
             var pinned: NextPracticeSeed? = null
@@ -34,7 +37,24 @@ internal class RoomSessionReviewRoadRepository
                     throw WriteRejected(SessionReviewRoadWriteResult.UnavailableRoad)
                 }
             }) { actual, current ->
-                val candidate = SessionReviewRoad(actual, road, nextVersion(current?.version))
+                if (memoText.isNotEmpty() && !SessionMemoPolicy.isValidText(memoText)) {
+                    return@mutate SessionReviewRoadWriteResult.InvalidMemo
+                }
+                val candidate = SessionReviewRoad(actual, road, nextVersion(current?.version), memoText)
+                if (current != null && current.road == candidate.road) {
+                    if (current.memoText == memoText) {
+                        return@mutate SessionReviewRoadWriteResult.Saved(current)
+                    }
+                    val updated = database.sessionReviewRoadDao().updateMemo(actual.sessionId, current.version, candidate.version, memoText)
+                    check(updated == 1)
+                    return@mutate SessionReviewRoadWriteResult.Saved(candidate)
+                }
+                if (current != null) {
+                    if (current.memoText.isNotEmpty() && !discardMemo) {
+                        return@mutate SessionReviewRoadWriteResult.MemoPresent
+                    }
+                    if (memoText.isNotEmpty()) return@mutate SessionReviewRoadWriteResult.InvalidMemo
+                }
                 val seed = NextPracticeSeed.resolve(catalog, actual)
                 val catalogRoad =
                     seed
@@ -46,9 +66,8 @@ internal class RoomSessionReviewRoadRepository
                     SessionReviewRoadWriteResult.UnavailableRoad
                 } else {
                     pinned = seed
-                    val saved = current?.takeIf { it.road == candidate.road } ?: candidate
-                    if (saved !== current) write(saved, current)
-                    SessionReviewRoadWriteResult.Saved(saved)
+                    write(candidate, current)
+                    SessionReviewRoadWriteResult.Saved(candidate)
                 }
             }
         }
@@ -56,11 +75,14 @@ internal class RoomSessionReviewRoadRepository
         override suspend fun clear(
             expectedSource: PracticeSession,
             expectedCurrent: SessionReviewRoad,
+            discardMemo: Boolean,
             canCommit: () -> Boolean,
         ): SessionReviewRoadWriteResult =
             mutate(expectedSource, expectedCurrent, canCommit) { actual, current ->
                 if (current == null) {
                     SessionReviewRoadWriteResult.Conflict
+                } else if (current.memoText.isNotEmpty() && !discardMemo) {
+                    SessionReviewRoadWriteResult.MemoPresent
                 } else {
                     check(database.sessionReviewRoadDao().delete(actual.sessionId, current.version) == 1)
                     SessionReviewRoadWriteResult.Cleared
@@ -143,6 +165,7 @@ internal class RoomSessionReviewRoadRepository
                         entity.osmWayVersion,
                         entity.capturedAtEpochMillis,
                         entity.nodeCount,
+                        entity.memoText,
                     )
                 check(updated == 1)
                 check(dao.deleteNodes(entity.sessionId) == current.road.nodes.size)

@@ -17,5 +17,9 @@ sealed interface SessionReviewRoadWriteResult {
 
     data object UnavailableRoad : SessionReviewRoadWriteResult
 
+    data object InvalidMemo : SessionReviewRoadWriteResult
+
+    data object MemoPresent : SessionReviewRoadWriteResult
+
     data object Blocked : SessionReviewRoadWriteResult
 }

@@ -8,6 +8,7 @@ import io.github.hangillab.hangil.core.domain.NextPracticeSeed
 import io.github.hangillab.hangil.core.domain.PracticeCatalog
 import io.github.hangillab.hangil.core.domain.PracticeSession
 import io.github.hangillab.hangil.core.domain.PracticeSessionRepository
+import io.github.hangillab.hangil.core.domain.SessionMemoPolicy
 import io.github.hangillab.hangil.core.domain.SessionReviewRoad
 import io.github.hangillab.hangil.core.domain.SessionReviewRoadRepository
 import io.github.hangillab.hangil.core.domain.SessionReviewRoadWriteResult
@@ -48,6 +49,7 @@ class SessionReviewRoadViewModel
         private val lock = Any()
         private var serial = 0L
         private var revision = 0L
+        private var actionSerial = 0L
         private var current: Reader? = null
         private val signals = MutableStateFlow(0L)
         val inputChanges: Flow<Unit> =
@@ -93,7 +95,9 @@ class SessionReviewRoadViewModel
         ): Boolean =
             synchronized(lock) {
                 val owner = owner(token) ?: return@synchronized false
-                if (!editable(owner)) return@synchronized false
+                if (!editable(owner) || owner.edit != null || owner.confirmation != null || owner.retainedMemo != null) {
+                    return@synchronized false
+                }
                 val road = owner.candidates.singleOrNull { it.id == roadId } ?: return@synchronized false
                 owner.draft = road
                 owner.feedback = null
@@ -104,7 +108,11 @@ class SessionReviewRoadViewModel
         fun cancel(token: RoadState.Token): Boolean =
             synchronized(lock) {
                 val owner = owner(token) ?: return@synchronized false
-                if (!owner.received || owner.action != null) return@synchronized false
+                if (!owner.received || owner.action != null || owner.edit != null || owner.confirmation != null ||
+                    owner.retainedMemo != null
+                ) {
+                    return@synchronized false
+                }
                 owner.draft = owner.stored?.road
                 owner.feedback = null
                 publish(owner)
@@ -114,6 +122,133 @@ class SessionReviewRoadViewModel
         fun save(token: RoadState.Token): Boolean = write(token, clear = false)
 
         fun clear(token: RoadState.Token): Boolean = write(token, clear = true)
+
+        fun beginMemo(token: RoadState.Token): Boolean =
+            synchronized(lock) {
+                val owner = owner(token) ?: return@synchronized false
+                val stored = owner.stored ?: return@synchronized false
+                if (!editable(owner) || owner.edit != null || owner.confirmation != null || owner.retainedMemo != null ||
+                    owner.draft != stored.road
+                ) {
+                    return@synchronized false
+                }
+                owner.edit = RoadState.Edit(++actionSerial, stored.memoText, stored)
+                owner.feedback = null
+                publish(owner)
+                true
+            }
+
+        fun resumeMemo(token: RoadState.Token): Boolean =
+            synchronized(lock) {
+                val owner = owner(token) ?: return@synchronized false
+                val retained = owner.retainedMemo ?: return@synchronized false
+                val stored = owner.stored ?: return@synchronized false
+                if (!editable(owner) || owner.edit != null || owner.confirmation != null || stored.road != retained.expectedCurrent.road) {
+                    return@synchronized false
+                }
+                // This explicit new intent accepts the freshly read full current value, never an old Save.
+                owner.edit = RoadState.Edit(++actionSerial, retained.text, stored)
+                owner.retainedMemo = null
+                owner.draft = stored.road
+                owner.feedback = null
+                publish(owner)
+                true
+            }
+
+        fun discardMemoDraft(token: RoadState.Token): Boolean =
+            synchronized(lock) {
+                val owner = owner(token) ?: return@synchronized false
+                if (!editable(owner) || owner.edit != null || owner.confirmation != null || owner.retainedMemo == null) {
+                    return@synchronized false
+                }
+                owner.retainedMemo = null
+                publish(owner)
+                true
+            }
+
+        fun editMemo(
+            token: RoadState.Token,
+            editNonce: Long,
+            text: String,
+        ): Boolean =
+            synchronized(lock) {
+                val owner = owner(token) ?: return@synchronized false
+                val edit = owner.edit ?: return@synchronized false
+                if (!editable(owner) || edit.nonce != editNonce || edit.expectedCurrent != owner.stored) return@synchronized false
+                owner.edit = edit.copy(text = text)
+                // Keep the editor key stable, but retire saved callbacks for the previously displayed text.
+                publish(owner)
+                true
+            }
+
+        fun cancelMemo(
+            token: RoadState.Token,
+            editNonce: Long,
+        ): Boolean =
+            synchronized(lock) {
+                val owner = owner(token) ?: return@synchronized false
+                val edit = owner.edit ?: return@synchronized false
+                if (!editable(owner) || edit.nonce != editNonce || edit.expectedCurrent != owner.stored) return@synchronized false
+                owner.edit = null
+                owner.draft = owner.stored?.road
+                publish(owner)
+                true
+            }
+
+        fun saveMemo(
+            token: RoadState.Token,
+            editNonce: Long,
+        ): Boolean {
+            val job =
+                synchronized(lock) {
+                    val owner = owner(token) ?: return@synchronized null
+                    val edit = owner.edit ?: return@synchronized null
+                    if (!editable(owner) || edit.nonce != editNonce || edit.expectedCurrent != owner.stored ||
+                        (edit.text.isNotEmpty() && !SessionMemoPolicy.isValidText(edit.text))
+                    ) {
+                        return@synchronized null
+                    }
+                    schedule(owner, edit.expectedCurrent.road, edit.text, discardMemo = false, memoEdit = true)
+                } ?: return false
+            job.start()
+            return true
+        }
+
+        fun cancelDiscard(
+            token: RoadState.Token,
+            confirmationNonce: Long,
+        ): Boolean =
+            synchronized(lock) {
+                val owner = owner(token) ?: return@synchronized false
+                val pending = owner.confirmation ?: return@synchronized false
+                if (!editable(owner) || pending.nonce != confirmationNonce || owner.stored != pending.expectedCurrent) {
+                    return@synchronized false
+                }
+                owner.confirmation = null
+                publish(owner)
+                true
+            }
+
+        fun confirmDiscard(
+            token: RoadState.Token,
+            confirmationNonce: Long,
+        ): Boolean {
+            val job =
+                synchronized(lock) {
+                    val owner = owner(token) ?: return@synchronized null
+                    val pending = owner.confirmation ?: return@synchronized null
+                    if (!editable(owner) || owner.edit != null || pending.nonce != confirmationNonce ||
+                        owner.stored != pending.expectedCurrent || pending.expectedCurrent.memoText.isEmpty()
+                    ) {
+                        return@synchronized null
+                    }
+                    if (pending.target != null && owner.candidates.none { it == pending.target }) return@synchronized null
+                    owner.confirmation = null
+                    schedule(owner, pending.target, "", discardMemo = true, memoEdit = false)
+                } ?: return false
+            job.start()
+            return true
+        }
 
         fun retry(token: RoadState.Token): Boolean =
             synchronized(lock) {
@@ -170,8 +305,8 @@ class SessionReviewRoadViewModel
                             owner.hasActive = active
                             signals.value += 1
                             if (!context(owner)) return@synchronized
-                            if (active && owner.action != null) {
-                                failed(owner, true)
+                            if (active && (owner.action != null || owner.edit != null || owner.confirmation != null)) {
+                                failed(owner, owner.action != null)
                             } else if (first) {
                                 owner.candidates =
                                     NextPracticeSeed
@@ -219,14 +354,21 @@ class SessionReviewRoadViewModel
                             return@synchronized
                         }
                         val changed = !owner.received || owner.stored != stored
+                        if (owner.received && changed && owner.action == null &&
+                            (owner.edit != null || owner.confirmation != null)
+                        ) {
+                            failed(owner, false)
+                            return@synchronized
+                        }
                         owner.received = true
                         owner.stored = stored
+                        reconcileMemoDraft(owner)
                         if (changed && owner.action == null) owner.draft = stored?.road
                         if (outcome != null) {
                             owner.feedback = outcome.feedback
                             owner.outcome = null
                         }
-                        publish(owner)
+                        publish(owner, keepToken = owner.edit != null && !changed)
                     }
                 }
                 synchronized(lock) {
@@ -242,6 +384,18 @@ class SessionReviewRoadViewModel
             }
         }
 
+        private fun reconcileMemoDraft(owner: Reader) {
+            val retained = owner.retainedMemo ?: return
+            val stored = owner.stored
+            if (stored != null && stored.road == retained.expectedCurrent.road && stored.memoText == retained.text) {
+                // A fresh read confirmed the exact submitted text; it is now the saved value.
+                owner.retainedMemo = null
+            } else if (stored == retained.expectedCurrent && !owner.hasActive) {
+                owner.edit = retained.copy(nonce = ++actionSerial)
+                owner.retainedMemo = null
+            }
+        }
+
         private fun valid(
             owner: Reader,
             stored: SessionReviewRoad,
@@ -251,23 +405,44 @@ class SessionReviewRoadViewModel
             token: RoadState.Token,
             clear: Boolean,
         ): Boolean {
+            var accepted = false
             val job =
                 synchronized(lock) {
                     val owner = owner(token) ?: return@synchronized null
-                    if (!editable(owner)) return@synchronized null
+                    if (!editable(owner) || owner.edit != null || owner.confirmation != null || owner.retainedMemo != null) {
+                        return@synchronized null
+                    }
                     val expected = owner.stored
                     if (clear && expected == null) return@synchronized null
-                    val road = if (clear) null else owner.draft ?: return@synchronized null
-                    if (road != null && owner.candidates.none { it == road }) return@synchronized null
-                    val action = Action(expected, road)
-                    owner.action = action
-                    val work = owner.scope.launch(start = CoroutineStart.LAZY) { write(owner, action) }
-                    action.job = work
-                    publish(owner)
-                    work
-                } ?: return false
-            job.start()
-            return true
+                    val road = if (clear) null else (owner.draft ?: return@synchronized null)
+                    if (road != null && road != expected?.road && owner.candidates.none { it == road }) return@synchronized null
+                    accepted = true
+                    if (expected != null && expected.memoText.isNotEmpty() && road != expected.road) {
+                        owner.confirmation = RoadState.Confirmation(++actionSerial, road, expected)
+                        publish(owner)
+                        null
+                    } else {
+                        val memo = if (road == expected?.road) expected?.memoText.orEmpty() else ""
+                        schedule(owner, road, memo, discardMemo = false, memoEdit = false)
+                    }
+                }
+            job?.start()
+            return accepted
+        }
+
+        private fun schedule(
+            owner: Reader,
+            road: CourseRoadSnapshot?,
+            memoText: String,
+            discardMemo: Boolean,
+            memoEdit: Boolean,
+        ): Job {
+            val action = Action(owner.stored, road, memoText, discardMemo, memoEdit)
+            owner.action = action
+            val work = owner.scope.launch(start = CoroutineStart.LAZY) { write(owner, action) }
+            action.job = work
+            publish(owner)
+            return work
         }
 
         private fun commit(
@@ -289,9 +464,11 @@ class SessionReviewRoadViewModel
                 if (!commit(owner, action, job)) return
                 val result =
                     if (action.road == null) {
-                        reviews.clear(owner.source, checkNotNull(action.expected)) { commit(owner, action, job) }
+                        reviews.clear(owner.source, checkNotNull(action.expected), action.discardMemo) { commit(owner, action, job) }
                     } else {
-                        reviews.save(owner.source, action.road, action.expected) { commit(owner, action, job) }
+                        reviews.save(owner.source, action.road, action.expected, action.memoText, action.discardMemo) {
+                            commit(owner, action, job)
+                        }
                     }
                 currentCoroutineContext().ensureActive()
                 synchronized(lock) {
@@ -299,10 +476,19 @@ class SessionReviewRoadViewModel
                     owner.action = null
                     when (result) {
                         is SessionReviewRoadWriteResult.Saved -> {
-                            if (action.road == null || !valid(owner, result.review) || result.review.road != action.road) {
+                            if (action.road == null || !valid(owner, result.review) || result.review.road != action.road ||
+                                result.review.memoText != action.memoText
+                            ) {
                                 failed(owner, true)
                             } else {
-                                owner.outcome = Outcome(result.review, RoadState.Feedback.SAVED)
+                                owner.edit = null
+                                val feedback =
+                                    if (action.memoEdit) {
+                                        if (action.memoText.isEmpty()) RoadState.Feedback.MEMO_CLEARED else RoadState.Feedback.MEMO_SAVED
+                                    } else {
+                                        RoadState.Feedback.SAVED
+                                    }
+                                owner.outcome = Outcome(result.review, feedback)
                                 reload(owner)
                             }
                         }
@@ -341,6 +527,9 @@ class SessionReviewRoadViewModel
             unconfirmed: Boolean,
         ) {
             val action = owner.action
+            owner.retainedMemo = owner.edit ?: owner.retainedMemo
+            owner.edit = null
+            owner.confirmation = null
             owner.action = null
             action?.job?.cancel()
             owner.received = false
@@ -348,7 +537,7 @@ class SessionReviewRoadViewModel
             owner.queryNonce += 1
             owner.readJob?.cancel()
             owner.readJob = null
-            owner.published.value = RoadState.Failed(owner.source, next(owner), unconfirmed)
+            owner.published.value = RoadState.Failed(owner.source, next(owner), unconfirmed, owner.retainedMemo?.text)
             signals.value += 1
         }
 
@@ -361,18 +550,24 @@ class SessionReviewRoadViewModel
             owner.requests.value += 1
         }
 
-        private fun publish(owner: Reader) {
+        private fun publish(
+            owner: Reader,
+            keepToken: Boolean = false,
+        ) {
             if (!context(owner)) return
             owner.published.value =
                 RoadState.Ready(
                     owner.source,
-                    next(owner),
+                    if (keepToken) owner.published.value.token else next(owner),
                     owner.stored,
                     owner.candidates,
                     owner.draft,
                     owner.action != null,
                     !owner.hasActive && owner.action == null,
                     owner.feedback,
+                    owner.edit,
+                    owner.confirmation,
+                    owner.retainedMemo,
                 )
             signals.value += 1
         }
@@ -388,6 +583,9 @@ class SessionReviewRoadViewModel
         ) {
             if (owner.revoked) return
             owner.revoked = true
+            owner.retainedMemo = null
+            owner.edit = null
+            owner.confirmation = null
             owner.action?.job?.cancel()
             owner.action = null
             owner.readJob?.cancel()
@@ -422,6 +620,9 @@ class SessionReviewRoadViewModel
             var candidates = emptyList<CourseRoadSnapshot>()
             var stored: SessionReviewRoad? = null
             var draft: CourseRoadSnapshot? = null
+            var edit: RoadState.Edit? = null
+            var confirmation: RoadState.Confirmation? = null
+            var retainedMemo: RoadState.Edit? = null
             var received = false
             var action: Action? = null
             var feedback: RoadState.Feedback? = null
@@ -431,6 +632,9 @@ class SessionReviewRoadViewModel
         private class Action(
             val expected: SessionReviewRoad?,
             val road: CourseRoadSnapshot?,
+            val memoText: String,
+            val discardMemo: Boolean,
+            val memoEdit: Boolean,
         ) {
             var job: Job? = null
         }

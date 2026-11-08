@@ -49,6 +49,9 @@ internal fun HistorySessionMemoEditor(
     onEdit: (String) -> Unit,
     onSave: () -> Unit,
     onCancel: () -> Unit,
+    context: String? = null,
+    tagPrefix: String = "history_memo",
+    allowEmpty: Boolean = false,
 ) {
     val keyboard = LocalSoftwareKeyboardController.current
     val focus = LocalFocusManager.current
@@ -76,8 +79,8 @@ internal fun HistorySessionMemoEditor(
     }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.lg)) {
         Text(
-            stringResource(R.string.history_memo_edit_context, source.courseTitle, source.taskTitle),
-            Modifier.fillMaxWidth().testTag("history_memo_edit_context"),
+            context ?: stringResource(R.string.history_memo_edit_context, source.courseTitle, source.taskTitle),
+            Modifier.fillMaxWidth().testTag("${tagPrefix}_edit_context"),
             style = MaterialTheme.typography.bodyLarge,
         )
         OutlinedTextField(
@@ -89,7 +92,7 @@ internal fun HistorySessionMemoEditor(
                     .bringIntoViewRequester(intoView)
                     .onFocusChanged { focused = it.hasFocus }
                     .onSizeChanged { height = it.height }
-                    .testTag("history_memo_textfield"),
+                    .testTag("${tagPrefix}_textfield"),
             enabled = !saving,
             textStyle = MaterialTheme.typography.bodyLarge,
             label = { Text(stringResource(R.string.memo_field_label), style = MaterialTheme.typography.bodyLarge) },
@@ -99,7 +102,7 @@ internal fun HistorySessionMemoEditor(
             supportingText = {
                 Text(
                     stringResource(R.string.memo_count, SessionMemoPolicy.countCodePoints(draft), SessionMemoPolicy.MAX_CODE_POINTS),
-                    Modifier.testTag("history_memo_count"),
+                    Modifier.testTag("${tagPrefix}_count"),
                     style = MaterialTheme.typography.labelLarge,
                 )
             },
@@ -113,15 +116,15 @@ internal fun HistorySessionMemoEditor(
         if (saving) {
             Text(
                 stringResource(R.string.memo_writing),
-                Modifier.testTag("history_memo_writing"),
+                Modifier.testTag("${tagPrefix}_writing"),
                 style = MaterialTheme.typography.bodyLarge,
             )
         }
-        val canSave = !saving && SessionMemoPolicy.isValidText(draft)
+        val canSave = !saving && ((allowEmpty && draft.isEmpty()) || SessionMemoPolicy.isValidText(draft))
         ParkedButton(
             onClick = onSave,
             enabled = canSave,
-            modifier = Modifier.fillMaxWidth().testTag("history_memo_save").frozenObservationClick(onSave, canSave),
+            modifier = Modifier.fillMaxWidth().testTag("${tagPrefix}_save").frozenObservationClick(onSave, canSave),
         ) {
             Text(
                 stringResource(R.string.memo_save),
@@ -137,7 +140,7 @@ internal fun HistorySessionMemoEditor(
                 Modifier
                     .fillMaxWidth()
                     .heightIn(min = HanGilDimensions.secondaryActionMinHeight)
-                    .testTag("history_memo_cancel_edit")
+                    .testTag("${tagPrefix}_cancel_edit")
                     .frozenObservationClick(onCancel, !saving),
         ) {
             Text(

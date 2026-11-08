@@ -16,8 +16,10 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.withContext
 import org.maplibre.android.MapLibre
 import org.maplibre.android.RenderingEngine
 import org.maplibre.android.WellKnownTileServer
@@ -84,7 +86,11 @@ internal fun DemoMap(
     if (view == null) return
     LaunchedEffect(view, owner) {
         owner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            inputChanges.collect { view.recheckInput() }
+            inputChanges.collect {
+                withContext(Dispatchers.Main.immediate) {
+                    if (active.get() && owner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) view.recheckInput()
+                }
+            }
         }
     }
     DisposableEffect(view, owner) {

@@ -283,4 +283,22 @@
   <string name="review_road_reference_source">이전 연습에서 직접 고른 도로, 통행 미확인</string>
   <string name="review_road_reference_empty">이전 연습에 저장한 참고 구간이 없어요.</string>
   <string name="review_road_reference_scope">이번 준비에는 코스와 과제만 저장돼요.</string>
+  <string name="review_road_memo_title">이 구간에 쓴 메모</string>
+  <string name="review_road_memo_empty">이 구간에 저장한 메모가 없어요.</string>
+  <string name="review_road_memo_create">구간 메모 쓰기</string>
+  <string name="review_road_memo_edit">구간 메모 수정</string>
+  <string name="review_road_memo_context">%1$s 구간의 메모</string>
+  <string name="review_road_memo_saved">구간 메모를 저장했어요.</string>
+  <string name="review_road_memo_cleared">구간 메모를 지웠어요. 구간은 그대로예요.</string>
+  <string name="review_road_memo_unsaved">입력한 구간 메모예요. 저장 여부는 다시 읽어 확인해 주세요.</string>
+  <string name="review_road_memo_retained">%1$s 구간에 입력했던 초안이에요. 지금 저장된 메모와 따로 보관했어요.</string>
+  <string name="review_road_memo_resume">초안 이어 쓰기</string>
+  <string name="review_road_memo_discard_draft">초안 취소</string>
+  <string name="review_road_memo_discard_title">구간 메모도 함께 지울까요?</string>
+  <string name="review_road_memo_clear_warning">이 구간을 해제하면 구간 메모도 함께 지워져요.</string>
+  <string name="review_road_memo_replace_warning">다른 구간으로 바꾸면 기존 구간 메모는 지워져요. 새 구간에 옮기지 않아요.</string>
+  <string name="review_road_memo_clear_confirm">구간과 메모 해제</string>
+  <string name="review_road_memo_replace_confirm">메모 지우고 구간 변경</string>
+  <string name="review_road_memo_keep">그대로 유지</string>
+  <string name="history_delete_review_road_memo_present">저장한 복습 구간: %1$s (구간 메모 포함)</string>
 </resources>
