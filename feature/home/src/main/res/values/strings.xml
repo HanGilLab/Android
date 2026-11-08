@@ -258,8 +258,8 @@
     <string name="history_memo_write_unconfirmed">저장 결과를 확인하지 못했어요. 메모를 다시 읽어 주세요.</string>
     <string name="history_memo_reloaded">저장된 메모를 다시 읽었어요.</string>
     <string name="history_memo_entered_text">입력한 내용이에요. 저장 여부는 다시 읽어 확인해 주세요.</string>
-    <string name="location_history_point_map">저장한 표본 지도</string>
-    <string name="location_history_point_map_notice">지도를 펼치면 외부 지도 서비스에 저장한 표본과 선택한 도로 주변의 지도 요청이 전달돼요.</string>
+    <string name="location_history_point_map">이 기록의 위치 표본 지도</string>
+    <string name="location_history_point_map_notice">지도를 펼치면 이 수집 기록의 모든 표본과 선택 도로 주변의 지도 요청이 외부 지도 서비스에 전달돼요.</string>
     <string name="location_history_memo">이 연습 전체 메모</string>
   <string name="review_road_title">내가 고른 복습 구간</string>
   <string name="review_road_scope">내가 고른 공개지도 구간이에요. 실제 이동과 현재 통행은 확인하지 않았어요.</string>
@@ -285,7 +285,7 @@
   <string name="review_road_reference_scope">도로를 목표로 쓸지는 다음 과제 화면에서 직접 선택해요. 메모와 표본 연결은 복사하지 않아요.</string>
   <string name="review_road_comparison_scope">저장 표본과 복습 도로</string>
   <string name="review_road_comparison_source">이 연습에서 직접 고른 도로, 통행 미확인</string>
-  <string name="review_road_comparison_empty">이 연습에 저장한 복습 도로가 없어 표본만 보여줘요.</string>
+  <string name="review_road_comparison_empty">이 연습에 저장한 복습 도로가 없어요.</string>
   <string name="review_road_memo_title">이 구간에 쓴 메모</string>
   <string name="review_road_memo_empty">이 구간에 저장한 메모가 없어요.</string>
   <string name="review_road_memo_create">구간 메모 쓰기</string>

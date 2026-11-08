@@ -190,10 +190,9 @@ fun SessionReviewRoadRoute(
                 }
                 if (readOnly) {
                     val saved = displayed.stored
-                    if (comparing && saved != null && sampleCandidate != null &&
-                        sampleCandidate.event.sessionId == expectedSource.sessionId
-                    ) {
-                        ReviewSampleControls(displayed, sampleCandidate, viewModel, onOpenLinkedSample)
+                    if (comparing && saved != null) {
+                        val candidate = sampleCandidate?.takeIf { it.event.sessionId == expectedSource.sessionId }
+                        ReviewSampleControls(displayed, candidate, viewModel, onOpenLinkedSample)
                     }
                     if (comparisonMap != null) {
                         key(displayed.token) {
@@ -522,7 +521,7 @@ fun SessionReviewRoadRoute(
 @Composable
 private fun ReviewSampleControls(
     state: RoadState.Ready,
-    candidate: SessionReviewSample,
+    candidate: SessionReviewSample?,
     viewModel: SessionReviewRoadViewModel,
     onOpenLinkedSample: ((SessionReviewSample) -> Boolean)?,
 ) {
@@ -531,7 +530,7 @@ private fun ReviewSampleControls(
     val status =
         when {
             anchor == null -> R.string.review_road_sample_absent to "review_road_sample_absent"
-            anchor == candidate -> R.string.review_road_sample_current to "review_road_sample_current"
+            candidate != null && anchor == candidate -> R.string.review_road_sample_current to "review_road_sample_current"
             else -> R.string.review_road_sample_other to "review_road_sample_other"
         }
     Text(stringResource(status.first), Modifier.fillMaxWidth().testTag(status.second), style = MaterialTheme.typography.titleLarge)
@@ -594,7 +593,7 @@ private fun ReviewSampleControls(
     } else if (!state.canWrite) {
         Text(stringResource(R.string.review_road_sample_active), Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodyLarge)
     }
-    if (anchor != candidate) {
+    if (candidate != null && anchor != candidate) {
         val link = {
             viewModel.setSample(state.token, candidate)
             Unit

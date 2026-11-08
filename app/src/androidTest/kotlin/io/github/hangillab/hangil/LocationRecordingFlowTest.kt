@@ -162,6 +162,7 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.abs
 import io.github.hangillab.hangil.feature.home.R as HomeR
+import io.github.hangillab.hangil.feature.map.R as MapR
 import org.maplibre.geojson.Point as GeoJsonPoint
 
 /**
@@ -170,7 +171,7 @@ import org.maplibre.geojson.Point as GeoJsonPoint
  * this is not actual OS Main STOP, SDK callback receipt, a permission grant or an FGS test.
  * Every ViewModel is explicitly preseeded: this fixture never uses the production Hilt graph/DB.
  * Raw detail assertions and optional visuals use controlled inputs without Pleos SDK, permission or provider mutation.
- * The opt-in stored-point check uses actual MapLibre rendering and external tiles for public landmark fixtures.
+ * The opt-in stored-run check uses actual MapLibre rendering and external tiles for public landmark fixtures.
  * An explicit resource scope changes this instrumented process before composition and restores shared resources.
  * It does not prove OS setting transitions or the real SDK Main in dark mode.
  */
@@ -512,14 +513,13 @@ class LocationRecordingFlowTest {
             f.awaitRecording()
             // Public landmark fixtures enter through the controlled update gateway, not a device location.
             val cityHall = LocationUpdateSample(37.5666904, 126.9784222, -2.0, 421f, -5f, -42, f.elapsed.incrementAndGet())
-            val gwanghwamun =
+            // Equal coordinates still represent two separate stored callbacks with distinct IDs and ordinals.
+            val samePlaceLater =
                 cityHall.copy(
-                    latitude = 37.5759283,
-                    longitude = 126.9756030,
                     receivedAtElapsedRealtimeMillis = f.elapsed.incrementAndGet(),
                 )
             f.emit(LocationUpdateReading.Sample(cityHall))
-            f.emit(LocationUpdateReading.Sample(gwanghwamun))
+            f.emit(LocationUpdateReading.Sample(samePlaceLater))
             f.emit(LocationUpdateReading.Empty(f.elapsed.incrementAndGet()))
             f.awaitEvents(source, 3)
             click("location_recording_stop")
@@ -571,9 +571,14 @@ class LocationRecordingFlowTest {
                     storedRun,
                     storedBefore.events.single {
                         (it.reading as? LocationUpdateReading.Sample)?.sample ==
-                            gwanghwamun
+                            samePlaceLater
                     },
                 )
+
+            fun awaitRunMap(
+                selected: LocationRecordingEvent?,
+                road: CourseRoadSnapshot? = null,
+            ): MapView = awaitStoredMap(storedRun, storedBefore.events, selected, road)
 
             fun storedRoad(): SessionReviewRoad =
                 runBlocking {
@@ -591,13 +596,19 @@ class LocationRecordingFlowTest {
             waitTag("location_history_content")
             assertEquals(ended, f.selectedHistory)
             assertText("location_history_event_state", HomeR.string.location_history_callback_empty)
-            assertTrue(nodes("location_history_point_map").isEmpty())
+            waitTag("location_history_point_map")
             assertNoStoredMap()
+            assertEquals("A collapsed run map must not start a road query", 0, f.reviewReadAttempts.get())
+            click("location_history_point_map")
+            val emptySelectedMap = awaitRunMap(storedBefore.events.last(), firstSaved.review.road)
+            assertTrue("A callback without a coordinate cannot offer a sample association", nodes("review_road_sample_link").isEmpty())
+            visual("stored-run-map-with-empty-selected-callback", "stored_location_map")
+            val readsAfterEmptyMap = f.reviewReadAttempts.get()
 
             click("location_history_event_previous")
             waitTag("location_history_point_map_notice")
             assertText("location_history_point_map_notice", HomeR.string.location_history_point_map_notice)
-            assertNoStoredMap()
+            assertNoStoredMap(emptySelectedMap)
             click("location_history_event_previous")
             assertText("location_history_source", HomeR.string.location_history_source)
             assertText("location_history_source_warning", HomeR.string.location_history_uncertain)
@@ -606,10 +617,10 @@ class LocationRecordingFlowTest {
             assertTrue(hasTextNode(instrument.targetContext.getString(HomeR.string.location_history_sdk_time, "-42")))
             assertTrue(hasTextNode(instrument.targetContext.getString(HomeR.string.location_history_confidence, "-5.0")))
             assertNoStoredMap()
-            assertEquals("A collapsed point map must not start a road query", 0, f.reviewReadAttempts.get())
+            assertEquals("Changing a collapsed run selection must not start a road query", readsAfterEmptyMap, f.reviewReadAttempts.get())
             val staleOpen = clickAction("location_history_point_map")
             click("location_history_point_map")
-            val originalRoadMap = awaitStoredMap(cityHall, firstSaved.review.road)
+            val originalRoadMap = awaitRunMap(firstSample.event, firstSaved.review.road)
             assertText("review_road_comparison_scope", HomeR.string.review_road_comparison_scope)
             assertText("review_road_source", HomeR.string.review_road_comparison_source)
             assertTrue(hasTextNode(roadMemo))
@@ -628,7 +639,7 @@ class LocationRecordingFlowTest {
             assertEquals(1, f.sampleWriteAttempts.get())
             click("review_road_retry")
             waitTag("review_road_sample_absent")
-            awaitStoredMap(cityHall, firstSaved.review.road)
+            awaitRunMap(firstSample.event, firstSaved.review.road)
             assertEquals("A retry only reads; it must not replay the failed write", 1, f.sampleWriteAttempts.get())
 
             f.sampleWriteFailure.set(2)
@@ -642,7 +653,7 @@ class LocationRecordingFlowTest {
             assertEquals(2, f.sampleWriteAttempts.get())
             click("review_road_retry")
             waitTag("review_road_sample_current")
-            awaitStoredMap(cityHall, committedWithoutReply.road)
+            awaitRunMap(firstSample.event, committedWithoutReply.road)
             assertEquals("Reading a committed result must not write it a second time", 2, f.sampleWriteAttempts.get())
             visual("explicit-current-sample-association", "review_road_sample_current", "stored_location_map")
 
@@ -657,18 +668,18 @@ class LocationRecordingFlowTest {
                 } as SessionReviewRoadWriteResult.Saved
             assertEquals(firstSample, memoChanged.review.sampleAnchor)
             waitTag("review_road_sample_current")
-            awaitStoredMap(cityHall, memoChanged.review.road)
+            awaitRunMap(firstSample.event, memoChanged.review.road)
             click("location_history_event_next")
             assertNoStoredMap()
             click("location_history_point_map")
             waitTag("review_road_sample_other")
-            awaitStoredMap(gwanghwamun, memoChanged.review.road)
+            awaitRunMap(secondSample.event, memoChanged.review.road)
             val anotherActive = f.startOwned()
             compose.waitUntil(20_000) {
                 nodes("review_road_sample_link").singleOrNull()?.config?.getOrNull(SemanticsProperties.Disabled) != null
             }
             compose.onNodeWithTag("review_road_sample_open", useUnmergedTree = true).assertIsEnabled()
-            val mapBeforeJump = awaitStoredMap(gwanghwamun, memoChanged.review.road)
+            val mapBeforeJump = awaitRunMap(secondSample.event, memoChanged.review.road)
             val jumpSessions =
                 runBlocking {
                     f.store.sessions
@@ -710,16 +721,16 @@ class LocationRecordingFlowTest {
             assertNoStoredMap()
             click("location_history_point_map")
             waitTag("review_road_sample_current")
-            awaitStoredMap(cityHall, memoChanged.review.road)
+            awaitRunMap(firstSample.event, memoChanged.review.road)
             click("location_history_event_next")
             assertNoStoredMap()
             click("location_history_point_map")
             waitTag("review_road_sample_other")
-            val returnedMap = awaitStoredMap(gwanghwamun, memoChanged.review.road)
+            val returnedMap = awaitRunMap(secondSample.event, memoChanged.review.road)
             invoke(oldJump)
             assertTrue(
                 "An old jump must not borrow a later visit to the original event",
-                awaitStoredMap(gwanghwamun, memoChanged.review.road) === returnedMap,
+                awaitRunMap(secondSample.event, memoChanged.review.road) === returnedMap,
             )
             assertEquals(jumpWrites, f.sampleWriteAttempts.get())
             val anotherFinish =
@@ -755,7 +766,7 @@ class LocationRecordingFlowTest {
             assertEquals(firstSample, storedRoad().sampleAnchor)
             click("review_road_sample_link")
             waitTag("review_road_sample_current")
-            awaitStoredMap(gwanghwamun, memoChanged.review.road)
+            awaitRunMap(secondSample.event, memoChanged.review.road)
             assertEquals(secondSample, storedRoad().sampleAnchor)
             assertEquals(memoChanged.review.memoText, storedRoad().memoText)
             click("location_history_back")
@@ -764,7 +775,7 @@ class LocationRecordingFlowTest {
             click("location_history_event_previous")
             click("location_history_point_map")
             waitTag("review_road_sample_current")
-            awaitStoredMap(gwanghwamun, memoChanged.review.road)
+            awaitRunMap(secondSample.event, memoChanged.review.road)
             click("review_road_sample_clear")
             waitTag("review_road_sample_absent")
             assertNull(storedRoad().sampleAnchor)
@@ -845,7 +856,7 @@ class LocationRecordingFlowTest {
             click("location_history_event_previous")
             click("location_history_point_map")
             waitTag("review_road_sample_absent")
-            val replacementMap = awaitStoredMap(cityHall, replaced.road)
+            val replacementMap = awaitRunMap(firstSample.event, replaced.road)
             val writesBeforeOldRoad = f.sampleWriteAttempts.get()
             invoke(staleFirstLink)
             assertEquals(writesBeforeOldRoad, f.sampleWriteAttempts.get())
@@ -872,7 +883,7 @@ class LocationRecordingFlowTest {
             assertNoStoredMap()
             assertEquals("Recovery waits for explicit retry", failedReadAttempts, f.reviewReadAttempts.get())
             click("review_road_retry")
-            val recoveredMap = awaitStoredMap(cityHall, replaced.road)
+            val recoveredMap = awaitRunMap(firstSample.event, replaced.road)
             assertTrue(f.reviewReadAttempts.get() > failedReadAttempts && recoveredMap !== replacementMap)
             assertEquals(
                 replaced,
@@ -889,8 +900,8 @@ class LocationRecordingFlowTest {
             )
             waitTag("review_road_empty")
             assertText("review_road_empty", HomeR.string.review_road_comparison_empty)
-            val firstMap = awaitStoredMap(cityHall)
-            assertTrue("Actual absence retains only the selected sample", firstMap !== recoveredMap)
+            val firstMap = awaitRunMap(firstSample.event)
+            assertTrue("Actual road absence preserves all original run points", firstMap !== recoveredMap)
             instrument.runOnMainSync { assertFalse(recoveredMap.isAttachedToWindow) }
             assertTrue(nodes("review_road_stored_title").isEmpty() && nodes("review_road_memo_text").isEmpty())
             visual("stored-city-hall-point-map", "location_history_point_map_notice", "stored_location_map")
@@ -907,7 +918,7 @@ class LocationRecordingFlowTest {
             )
             waitTag("location_history_memo_source")
             assertTrue(nodes("history_memo_edit").isEmpty() && nodes("history_memo_create").isEmpty())
-            assertTrue("Reading a whole-session memo keeps the selected sample's native map", awaitStoredMap(cityHall) === firstMap)
+            assertTrue("Reading a whole-session memo keeps the selected run's native map", awaitRunMap(firstSample.event) === firstMap)
             visual("stored-point-session-memo", "location_history_memo_content")
 
             click("location_history_event_next")
@@ -924,8 +935,11 @@ class LocationRecordingFlowTest {
             assertNoStoredMap()
             click("location_history_event_next")
             assertText("location_history_event_state", HomeR.string.location_history_callback_empty)
-            assertTrue(nodes("location_history_point_map").isEmpty())
+            waitTag("location_history_point_map")
             assertNoStoredMap(firstMap)
+            click("location_history_point_map")
+            val emptyOnlyMap = awaitRunMap(storedBefore.events.last())
+            assertTrue(nodes("review_road_sample_link").isEmpty())
             waitTag("location_history_memo_text")
             assertTrue(
                 nodes("location_history_memo_text")
@@ -936,9 +950,9 @@ class LocationRecordingFlowTest {
             )
 
             click("location_history_event_previous")
-            assertNoStoredMap()
+            assertNoStoredMap(emptyOnlyMap)
             click("location_history_point_map")
-            val beforeDriving = awaitStoredMap(gwanghwamun)
+            val beforeDriving = awaitRunMap(secondSample.event)
             assertTrue("Each selected stored event owns a fresh native map", beforeDriving !== firstMap)
             val retiredForDriving = clickAction("location_history_point_map")
             f.drive(true)
@@ -961,7 +975,7 @@ class LocationRecordingFlowTest {
             assertNoStoredMap()
 
             click("location_history_point_map")
-            val beforeStop = awaitStoredMap(gwanghwamun)
+            val beforeStop = awaitRunMap(secondSample.event)
             assertTrue(nodes("location_history_memo_content").isEmpty())
             invoke(retiredMemoOpen)
             assertTrue(nodes("location_history_memo_content").isEmpty())
@@ -1022,7 +1036,7 @@ class LocationRecordingFlowTest {
             assertEquals(0, f.gateway.active.get())
             assertFalse(f.gateway.permission.get())
             f.assertNoPlatformActions()
-            phase("CONTROLLED_EXPLICIT_STORED_SAMPLE_ASSOCIATION_FAILURE_REREAD_DISCARD_NATIVE_ACCESS_AND_PRESERVATION")
+            phase("CONTROLLED_RUN_POINT_MAP_EMPTY_SELECTION_EXACT_HIGHLIGHT_ASSOCIATION_JUMP_AND_PRESERVATION")
         }
     }
 
@@ -1062,10 +1076,34 @@ class LocationRecordingFlowTest {
 
     /** Every native source, projection and rendered-feature query remains on its live UI-thread View. */
     private fun awaitStoredMap(
-        expected: LocationUpdateSample,
+        expectedRun: LocationRecordingRun,
+        expectedEvents: List<LocationRecordingEvent>,
+        selectedEvent: LocationRecordingEvent?,
         expectedRoad: CourseRoadSnapshot? = null,
     ): MapView =
         runBlocking {
+            val expectedPoints = expectedEvents.filter { it.reading is LocationUpdateReading.Sample }.associateBy { it.id.toString() }
+            check(
+                expectedPoints.isNotEmpty() &&
+                    expectedEvents.all { it.runId == expectedRun.runId && it.sessionId == expectedRun.source.sessionId },
+            )
+            val selectedPoint = selectedEvent?.takeIf { it.reading is LocationUpdateReading.Sample }
+            waitTag("stored_location_map_counts")
+            val countText =
+                instrument.targetContext.getString(
+                    MapR.string.stored_map_counts,
+                    expectedPoints.size,
+                    expectedEvents.size - expectedPoints.size,
+                )
+            assertTrue(nodes("stored_location_map_counts").single().config[SemanticsProperties.Text].any { it.text == countText })
+            waitTag("stored_location_map_selected")
+            val selectionText =
+                if (selectedPoint == null) {
+                    instrument.targetContext.getString(MapR.string.stored_map_selected_without_coordinates)
+                } else {
+                    instrument.targetContext.getString(MapR.string.stored_map_selected_sample, selectedPoint.ordinal)
+                }
+            assertTrue(nodes("stored_location_map_selected").single().config[SemanticsProperties.Text].any { it.text == selectionText })
             waitTag("stored_location_map_view")
             compose.onNodeWithTag("stored_location_map_view", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
             waitTag("stored_location_map_ready")
@@ -1100,59 +1138,82 @@ class LocationRecordingFlowTest {
                                             val style = map.style
                                             val source = style?.getSource(STORED_POINT_SOURCE) as? GeoJsonSource
                                             val circle = style?.getLayerAs<CircleLayer>(STORED_POINT_LAYER)
-                                            // Runtime Style JSON omits dynamic GeoJSON data on the pinned renderer.
-                                            // StoredLocationPointTest checks exact one-point serialization; JNI exposes tile-converted copies.
-                                            val location = LatLng(expected.latitude, expected.longitude)
-                                            val screen = map.projection.toScreenLocation(location)
-                                            val screenInside =
-                                                screen.x > 0 && screen.y > 0 && screen.x < view.width && screen.y < view.height
-                                            observation.put("screenInside", screenInside)
-                                            val storedFeatures = source?.querySourceFeatures(null).orEmpty()
-                                            var sourceTypesMatch = true
-                                            var sourcePropertiesMatch = true
-                                            var sourcePlacementsMatch = true
-                                            for (feature in storedFeatures) {
-                                                val point = feature.geometry() as? GeoJsonPoint
-                                                sourcePropertiesMatch =
-                                                    sourcePropertiesMatch &&
-                                                    feature.getStringProperty("source") == LocationUpdateSource.SDK_UPDATE.name
-                                                if (point == null) {
-                                                    sourceTypesMatch = false
-                                                    sourcePlacementsMatch = false
-                                                } else {
-                                                    val position =
-                                                        map.projection.toScreenLocation(
-                                                            LatLng(point.latitude(), point.longitude()),
-                                                        )
-                                                    // Native source geometry may be tile-quantized; placement is checked in physical pixels.
-                                                    sourcePlacementsMatch =
-                                                        sourcePlacementsMatch && abs(position.x - screen.x) <= 1f &&
-                                                        abs(position.y - screen.y) <= 1f
-                                                }
+                                            val selectedLayer = style?.getLayerAs<CircleLayer>(STORED_POINT_SELECTION)
+                                            val viewport = android.graphics.RectF(0f, 0f, view.width.toFloat(), view.height.toFloat())
+
+                                            // The renderer exposes tile-converted copies. Pure map tests check exact GeoJSON serialization;
+                                            // Native queries preserve event identity at duplicate coordinates, within one physical pixel.
+                                            fun matchesStoredPoint(feature: org.maplibre.geojson.Feature): Boolean {
+                                                val expected = expectedPoints[feature.getStringProperty("event_id")] ?: return false
+                                                val sample = (expected.reading as LocationUpdateReading.Sample).sample
+                                                val point = feature.geometry() as? GeoJsonPoint ?: return false
+                                                val expectedScreen =
+                                                    map.projection.toScreenLocation(
+                                                        LatLng(sample.latitude, sample.longitude),
+                                                    )
+                                                val actualScreen =
+                                                    map.projection.toScreenLocation(
+                                                        LatLng(point.latitude(), point.longitude()),
+                                                    )
+                                                return feature.getStringProperty("source") == LocationUpdateSource.SDK_UPDATE.name &&
+                                                    feature.getStringProperty("run_id") == expectedRun.runId &&
+                                                    feature.getNumberProperty("ordinal")?.toInt() == expected.ordinal &&
+                                                    abs(actualScreen.x - expectedScreen.x) <= 1f &&
+                                                    abs(actualScreen.y - expectedScreen.y) <= 1f
                                             }
-                                            observation.put("sourceQueryCount", storedFeatures.size)
-                                            observation.put("sourceQueryTypeMatches", sourceTypesMatch)
-                                            observation.put("sourceQuerySourceMatches", sourcePropertiesMatch)
-                                            observation.put("sourceQueryPlacementMatches", sourcePlacementsMatch)
-                                            val rendered = map.queryRenderedFeatures(screen, STORED_POINT_LAYER)
-                                            val renderedSourceMatches =
-                                                rendered.singleOrNull()?.getStringProperty("source") == LocationUpdateSource.SDK_UPDATE.name
-                                            val renderedPoint = rendered.singleOrNull()?.geometry() as? GeoJsonPoint
-                                            val renderedTypeMatches = renderedPoint != null
-                                            val renderedPlacementMatches =
-                                                if (renderedPoint == null) {
-                                                    false
-                                                } else {
-                                                    val position =
-                                                        map.projection.toScreenLocation(
-                                                            LatLng(renderedPoint.latitude(), renderedPoint.longitude()),
-                                                        )
-                                                    abs(position.x - screen.x) <= 1f && abs(position.y - screen.y) <= 1f
+                                            val allPointsInside =
+                                                expectedPoints.values.all { event ->
+                                                    val sample = (event.reading as LocationUpdateReading.Sample).sample
+                                                    val point = map.projection.toScreenLocation(LatLng(sample.latitude, sample.longitude))
+                                                    point.x > 0 && point.y > 0 && point.x < view.width && point.y < view.height
                                                 }
-                                            observation.put("renderedCount", rendered.size)
-                                            observation.put("renderedSourceMatches", renderedSourceMatches)
-                                            observation.put("renderedTypeMatches", renderedTypeMatches)
-                                            observation.put("renderedPlacementMatches", renderedPlacementMatches)
+                                            val storedFeatures = source?.querySourceFeatures(null).orEmpty()
+                                            val sourceEventIds = storedFeatures.map { it.getStringProperty("event_id") }.toSet()
+                                            val sourceMatches =
+                                                sourceEventIds == expectedPoints.keys && storedFeatures.all(::matchesStoredPoint)
+                                            val rendered = map.queryRenderedFeatures(viewport, STORED_POINT_LAYER)
+                                            val renderedEventIds = rendered.map { it.getStringProperty("event_id") }.toSet()
+                                            val renderedMatches =
+                                                renderedEventIds == expectedPoints.keys && rendered.all(::matchesStoredPoint)
+                                            val selectedFilter =
+                                                if (selectedPoint == null) {
+                                                    Expression.literal(false)
+                                                } else {
+                                                    Expression.eq(
+                                                        Expression.get("event_id"),
+                                                        Expression.literal(selectedPoint.id.toString()),
+                                                    )
+                                                }
+                                            val selectedRendered = map.queryRenderedFeatures(viewport, STORED_POINT_SELECTION)
+                                            val selectedFeaturesMatch =
+                                                if (selectedPoint == null) {
+                                                    selectedRendered.isEmpty()
+                                                } else {
+                                                    selectedRendered.size == 1 &&
+                                                        selectedRendered.single().getStringProperty(
+                                                            "event_id",
+                                                        ) == selectedPoint.id.toString() &&
+                                                        matchesStoredPoint(selectedRendered.single())
+                                                }
+                                            val selectionMatches =
+                                                selectedLayer != null && selectedLayer.sourceId == STORED_POINT_SOURCE &&
+                                                    selectedLayer.visibility.value != "none" &&
+                                                    selectedLayer.filter?.toArray()?.contentDeepEquals(selectedFilter.toArray()) == true &&
+                                                    selectedFeaturesMatch
+                                            val noSdkLine =
+                                                style?.layers?.filterIsInstance<LineLayer>()?.none { it.sourceId == STORED_POINT_SOURCE } ==
+                                                    true
+                                            observation.put("expectedPointCount", expectedPoints.size)
+                                            observation.put("sourceQueryCount", storedFeatures.size)
+                                            observation.put("sourceUniqueEventCount", sourceEventIds.size)
+                                            observation.put("renderedPointCount", rendered.size)
+                                            observation.put("renderedUniqueEventCount", renderedEventIds.size)
+                                            observation.put("selectedRenderedCount", selectedRendered.size)
+                                            observation.put("allPointsInside", allPointsInside)
+                                            observation.put("sourceMatches", sourceMatches)
+                                            observation.put("renderedMatches", renderedMatches)
+                                            observation.put("selectionMatches", selectionMatches)
+                                            observation.put("noSdkLine", noSdkLine)
                                             val roadSource = style?.getSourceAs<GeoJsonSource>("hangil-course-preview-roads")
                                             val roadLayer = style?.getLayerAs<LineLayer>("hangil-course-preview-road-selection")
                                             val roadFeatures = roadSource?.querySourceFeatures(null).orEmpty()
@@ -1212,15 +1273,11 @@ class LocationRecordingFlowTest {
                                                     "LAYER_PRESENT" to (circle != null),
                                                     "LAYER_SOURCE_MATCHES" to (circle != null && circle.sourceId == STORED_POINT_SOURCE),
                                                     "LAYER_VISIBLE" to (circle != null && circle.visibility.value != "none"),
-                                                    "SCREEN_INSIDE" to screenInside,
-                                                    "SOURCE_QUERY_NONEMPTY" to storedFeatures.isNotEmpty(),
-                                                    "SOURCE_QUERY_TYPES_MATCH" to sourceTypesMatch,
-                                                    "SOURCE_QUERY_SOURCES_MATCH" to sourcePropertiesMatch,
-                                                    "SOURCE_QUERY_PLACEMENTS_MATCH" to sourcePlacementsMatch,
-                                                    "ONE_RENDERED_FEATURE" to (rendered.size == 1),
-                                                    "RENDERED_SOURCE_MATCHES" to renderedSourceMatches,
-                                                    "RENDERED_TYPE_MATCHES" to renderedTypeMatches,
-                                                    "RENDERED_PLACEMENT_MATCHES" to renderedPlacementMatches,
+                                                    "ALL_ORIGINAL_POINTS_INSIDE" to allPointsInside,
+                                                    "SOURCE_ALL_EVENT_IDENTITIES_AND_RAW_PLACEMENTS_MATCH" to sourceMatches,
+                                                    "RENDERED_ALL_EVENT_IDENTITIES_AND_RAW_PLACEMENTS_MATCH" to renderedMatches,
+                                                    "EXACT_SELECTED_EVENT_OR_NO_SELECTION" to selectionMatches,
+                                                    "SDK_SOURCE_HAS_NO_LINE_LAYER" to noSdkLine,
                                                 )
                                             val failed = checks.entries.firstOrNull { !it.value }
                                             observation.put("checks", JSONObject(checks))
@@ -2316,23 +2373,31 @@ class LocationRecordingFlowTest {
                 @Composable (
                     PracticeSession,
                     LocationRecordingRun,
-                    LocationRecordingEvent,
+                    List<LocationRecordingEvent>,
+                    LocationRecordingEvent?,
                     () -> Boolean,
                     (SessionReviewSample) -> Boolean,
                 ) -> Unit
             )? =
                 if (mapEnabled) {
-                    { source, run, event, canRead, openLinked ->
-                        val sample = (event.reading as LocationUpdateReading.Sample).sample
+                    { source, run, events, selectedEvent, canRead, openLinked ->
+                        val candidate =
+                            selectedEvent?.takeIf { it.reading is LocationUpdateReading.Sample }?.let {
+                                SessionReviewSample
+                                    .from(
+                                        run,
+                                        it,
+                                    )
+                            }
                         SessionReviewRoadRoute(
                             source,
                             canRead,
                             viewModel = reviewRoadModel,
                             readOnly = true,
                             comparisonMap = { saved, allowed, changes ->
-                                StoredLocationMap(sample, allowed, reviewRoad = saved, inputChanges = changes)
+                                StoredLocationMap(run, events, selectedEvent, allowed, reviewRoad = saved, inputChanges = changes)
                             },
-                            sampleCandidate = SessionReviewSample.from(run, event),
+                            sampleCandidate = candidate,
                             onOpenLinkedSample = openLinked,
                         )
                     }
@@ -2845,6 +2910,7 @@ class LocationRecordingFlowTest {
     private companion object {
         const val STORED_POINT_SOURCE = "hangil-stored-location-point"
         const val STORED_POINT_LAYER = "hangil-stored-location-circle"
+        const val STORED_POINT_SELECTION = "hangil-stored-location-selection"
 
         fun selection() = PracticeSelection("commute", "neighborhood", 1, 1, "sequence")
 
