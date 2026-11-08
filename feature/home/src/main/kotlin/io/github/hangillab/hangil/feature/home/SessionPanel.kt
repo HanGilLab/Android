@@ -218,6 +218,14 @@ internal fun SessionPanel(
                         style = MaterialTheme.typography.titleLarge,
                     )
                     Text(active.courseTitle, Modifier.testTag("session_course"), style = MaterialTheme.typography.headlineSmall)
+                    active.selection.plannedRoad?.let { plan ->
+                        Text(
+                            stringResource(R.string.planned_road_summary, plan.road.title),
+                            Modifier.testTag("session_planned_road"),
+                            style = MaterialTheme.typography.titleLarge,
+                        )
+                        Text(stringResource(R.string.planned_road_scope), style = MaterialTheme.typography.bodyLarge)
+                    }
                     if (active.courseReviewStatus == CourseReviewStatus.DEMO) ParkedBadge(stringResource(R.string.demo_course))
                     VehicleRecordingStatus(recordingState, onRetryRecording, allowRecordingRetry)
                     val finishClick = { onFinish(active.sessionId) }
@@ -371,6 +379,14 @@ private fun LatestSessionPanel(
         ParkedPanel(Modifier.testTag("home_recent_session")) {
             Text(stringResource(R.string.session_latest), style = MaterialTheme.typography.titleLarge)
             Text(latest.courseTitle, Modifier.testTag("session_latest_course"), style = MaterialTheme.typography.headlineSmall)
+            latest.selection.plannedRoad?.let { plan ->
+                Text(
+                    stringResource(R.string.planned_road_summary, plan.road.title),
+                    Modifier.testTag("session_latest_planned_road"),
+                    style = MaterialTheme.typography.titleLarge,
+                )
+                Text(stringResource(R.string.planned_road_scope), style = MaterialTheme.typography.bodyLarge)
+            }
             if (latest.courseReviewStatus == CourseReviewStatus.DEMO) ParkedBadge(stringResource(R.string.demo_course))
             latest.endedAtEpochMillis?.let {
                 Text(stringResource(R.string.session_finished_at, displayTime(it)), Modifier.testTag("session_latest_finished"))

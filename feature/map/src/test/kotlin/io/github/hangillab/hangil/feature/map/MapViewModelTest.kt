@@ -10,6 +10,7 @@ import io.github.hangillab.hangil.core.domain.DrivingRestrictions
 import io.github.hangillab.hangil.core.domain.DrivingRestrictionsProvider
 import io.github.hangillab.hangil.core.domain.GearPosition
 import io.github.hangillab.hangil.core.domain.ParkingState
+import io.github.hangillab.hangil.core.domain.PlannedPracticeRoad
 import io.github.hangillab.hangil.core.domain.PracticeCatalog
 import io.github.hangillab.hangil.core.domain.PracticeCourse
 import io.github.hangillab.hangil.core.domain.PracticeGoal
@@ -884,6 +885,35 @@ class MapViewModelTest {
             inputObserver.cancelAndJoin()
         }
 
+    @Test fun plannedRoadMetadataRemainsBoundToTheExactSavedPreparationAndRetiresThePreviousRenderer() =
+        runTest {
+            val f = Fixture()
+            val road =
+                CourseRoadSnapshot(
+                    "planned",
+                    "목표 도로",
+                    "residential",
+                    99,
+                    1,
+                    1000,
+                    listOf(CourseRoadSnapshot.Node(1, 1, 37.0, 127.0), CourseRoadSnapshot.Node(2, 1, 37.001, 127.001)),
+                )
+            val planned = PlannedPracticeRoad("ended", "review-v1", road)
+            f.repository.values.value = selection("a").copy(plannedRoad = planned)
+            subscribe(f)
+            assertEquals(planned, ready(f).prepared.plannedRoad)
+            val attempt = f.model.uiState.value.attempt
+            val token = checkNotNull(f.model.onMapLoading(attempt))
+            f.model.onMapRendered(attempt, token)
+            runCurrent()
+            assertTrue(f.model.canInteractWithMap(attempt, token))
+            f.repository.values.value = selection("a").copy(plannedRoad = PlannedPracticeRoad("ended", "review-v2", road))
+            runCurrent()
+            assertFalse(f.model.canInteractWithMap(attempt, token))
+            assertEquals("review-v2", ready(f).prepared.plannedRoad?.reviewVersion)
+            assertEquals(0, f.repository.writes)
+        }
+
     private fun TestScope.subscribe(fixture: Fixture): Job {
         val job = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { fixture.model.uiState.collect {} }
         runCurrent()
@@ -942,6 +972,12 @@ class MapViewModelTest {
                 }
             }
         }
+
+        override suspend fun replaceSelection(
+            expectedCurrent: PracticeSelection?,
+            selection: PracticeSelection,
+            canCommit: () -> Boolean,
+        ): Boolean = error("Map cannot edit preparation")
 
         override suspend fun saveSelection(
             selection: PracticeSelection,

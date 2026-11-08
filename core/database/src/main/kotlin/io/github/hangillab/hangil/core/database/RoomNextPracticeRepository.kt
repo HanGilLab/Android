@@ -4,8 +4,10 @@ import androidx.room.withTransaction
 import io.github.hangillab.hangil.core.domain.NextPracticeRepository
 import io.github.hangillab.hangil.core.domain.NextPracticeSaveResult
 import io.github.hangillab.hangil.core.domain.NextPracticeSeed
+import io.github.hangillab.hangil.core.domain.PlannedPracticeRoad
 import io.github.hangillab.hangil.core.domain.PracticeCatalog
 import io.github.hangillab.hangil.core.domain.PracticeSelection
+import io.github.hangillab.hangil.core.domain.SessionReviewRoad
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import javax.inject.Inject
@@ -19,24 +21,27 @@ internal class RoomNextPracticeRepository
         override suspend fun saveSelection(
             seed: NextPracticeSeed,
             selection: PracticeSelection,
+            expectedReview: SessionReviewRoad?,
             canCommit: () -> Boolean,
-        ): NextPracticeSaveResult = save(seed, selection, canCommit, latestOnly = true)
+        ): NextPracticeSaveResult = save(seed, selection, expectedReview, canCommit, latestOnly = true)
 
         override suspend fun saveHistorySelection(
             seed: NextPracticeSeed,
             selection: PracticeSelection,
+            expectedReview: SessionReviewRoad?,
             canCommit: () -> Boolean,
-        ): NextPracticeSaveResult = save(seed, selection, canCommit, latestOnly = false)
+        ): NextPracticeSaveResult = save(seed, selection, expectedReview, canCommit, latestOnly = false)
 
         private suspend fun save(
             seed: NextPracticeSeed,
             selection: PracticeSelection,
+            expectedReview: SessionReviewRoad?,
             canCommit: () -> Boolean,
             latestOnly: Boolean,
         ): NextPracticeSaveResult =
             try {
                 database.withTransaction {
-                    validate(seed, selection, canCommit, latestOnly)
+                    validate(seed, selection, expectedReview, canCommit, latestOnly)
                     database.preparationDao().upsert(
                         PreparationEntity(
                             goalId = selection.goalId,
@@ -44,9 +49,13 @@ internal class RoomNextPracticeRepository
                             courseVersion = selection.courseVersion,
                             briefingVersion = selection.briefingVersion,
                             taskId = selection.taskId,
+                            plannedRoadJson = PlannedPracticeRoadJson.encode(selection.plannedRoad),
                         ),
                     )
-                    validate(seed, selection, canCommit, latestOnly)
+                    validate(seed, selection, expectedReview, canCommit, latestOnly)
+                    if (database.preparationDao().currentChecked()?.selection() != selection) {
+                        throw WriteRejected(NextPracticeSaveResult.SourceChanged)
+                    }
                     NextPracticeSaveResult.Saved
                 }
             } catch (rejected: WriteRejected) {
@@ -56,6 +65,7 @@ internal class RoomNextPracticeRepository
         private suspend fun validate(
             seed: NextPracticeSeed,
             selection: PracticeSelection,
+            expectedReview: SessionReviewRoad?,
             canCommit: () -> Boolean,
             latestOnly: Boolean,
         ) {
@@ -75,6 +85,16 @@ internal class RoomNextPracticeRepository
                     it.session()
                 }
             if (source != seed.source) throw WriteRejected(NextPracticeSaveResult.SourceChanged)
+            if (selection.plannedRoad != null) {
+                if (expectedReview == null || expectedReview.source != seed.source ||
+                    selection.plannedRoad != PlannedPracticeRoad.from(expectedReview) ||
+                    SessionReviewRoadRow.review(database.sessionReviewRoadDao().find(seed.source.sessionId)) != expectedReview
+                ) {
+                    throw WriteRejected(NextPracticeSaveResult.SourceChanged)
+                }
+            } else if (expectedReview != null) {
+                throw WriteRejected(NextPracticeSaveResult.SourceChanged)
+            }
             val fresh = NextPracticeSeed.resolve(catalog, seed.source)
             if (fresh == null || fresh != seed || !matchesTarget(fresh, selection)) {
                 throw WriteRejected(NextPracticeSaveResult.Unavailable)

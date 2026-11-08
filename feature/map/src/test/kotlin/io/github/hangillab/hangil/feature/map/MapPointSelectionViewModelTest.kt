@@ -704,6 +704,12 @@ class MapPointSelectionViewModelTest {
             }
         }
 
+        override suspend fun replaceSelection(
+            expectedCurrent: PracticeSelection?,
+            selection: PracticeSelection,
+            canCommit: () -> Boolean,
+        ): Boolean = error("Map cannot edit preparation")
+
         override suspend fun saveSelection(
             selection: PracticeSelection,
             canCommit: () -> Boolean,

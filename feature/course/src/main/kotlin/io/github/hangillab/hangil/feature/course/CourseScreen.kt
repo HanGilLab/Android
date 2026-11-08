@@ -26,6 +26,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -65,16 +67,17 @@ fun CourseRoute(
     }
     val back = { if (!viewModel.back()) close() }
     BackHandler(onBack = back)
+    val displayed = state
     CourseScreen(
-        state,
+        displayed,
         viewModel::selectGoal,
         viewModel::selectCourse,
         viewModel::selectTask,
-        viewModel::next,
+        { viewModel.next(displayed.readGeneration) },
         back,
-        onRetryPreparationRead = viewModel::retryPreparationRead,
+        onRetryPreparationRead = { viewModel.retryPreparationRead(displayed.readGeneration) },
     ) {
-        viewModel.canRevealDetails(state)
+        viewModel.canRevealDetails(displayed)
     }
 }
 
@@ -103,7 +106,13 @@ internal fun CourseScreen(
                     Text(stringResource(R.string.preparation_read_failed), style = MaterialTheme.typography.titleLarge)
                     ParkedButton(
                         onClick = onRetryPreparationRead,
-                        modifier = Modifier.fillMaxWidth().testTag("preparation_read_retry"),
+                        modifier =
+                            Modifier.fillMaxWidth().testTag("preparation_read_retry").semantics {
+                                onClick {
+                                    onRetryPreparationRead()
+                                    true
+                                }
+                            },
                     ) {
                         Text(stringResource(R.string.preparation_read_retry), style = MaterialTheme.typography.titleLarge)
                     }
@@ -115,6 +124,21 @@ internal fun CourseScreen(
                         Modifier.testTag("preparation_read_outdated"),
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                state.plannedRoad?.let { plan ->
+                    Text(
+                        stringResource(R.string.preparation_planned_road_title, plan.road.title),
+                        Modifier.testTag("preparation_planned_road"),
+                        style = MaterialTheme.typography.titleLarge,
+                    )
+                    Text(stringResource(R.string.preparation_planned_road_scope), style = MaterialTheme.typography.bodyLarge)
+                }
+                if (state.plannedRoadCleared) {
+                    Text(
+                        stringResource(R.string.preparation_planned_road_cleared),
+                        Modifier.testTag("preparation_planned_road_cleared"),
+                        style = MaterialTheme.typography.bodyLarge,
                     )
                 }
                 when (state.step) {
@@ -205,13 +229,38 @@ internal fun CourseScreen(
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodyLarge,
                     )
+                    ParkedButton(
+                        onClick = onRetryPreparationRead,
+                        prominent = false,
+                        modifier =
+                            Modifier.fillMaxWidth().testTag("preparation_reload_saved").semantics {
+                                onClick {
+                                    onRetryPreparationRead()
+                                    true
+                                }
+                            },
+                    ) {
+                        Text(stringResource(R.string.preparation_reload_saved), style = MaterialTheme.typography.titleLarge)
+                    }
                 }
                 Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
                     ParkedButton(
                         onClick = onNext,
                         enabled = state.canContinue,
                         modifier =
-                            Modifier.widthIn(max = HanGilDimensions.parkedActionMaxWidth).fillMaxWidth().testTag("preparation_next"),
+                            Modifier
+                                .widthIn(
+                                    max = HanGilDimensions.parkedActionMaxWidth,
+                                ).fillMaxWidth()
+                                .testTag("preparation_next")
+                                .semantics {
+                                    if (state.canContinue) {
+                                        onClick {
+                                            onNext()
+                                            true
+                                        }
+                                    }
+                                },
                     ) {
                         Text(
                             stringResource(

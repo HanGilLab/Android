@@ -41,11 +41,11 @@ class LocationRecordingMigrationTest {
                     context,
                     PreparationDatabase::class.java,
                     name,
-                ).addMigrations(PreparationMigration6To7, PreparationMigration7To8, PreparationMigration8To9)
+                ).addMigrations(PreparationMigration6To7, PreparationMigration7To8, PreparationMigration8To9, PreparationMigration9To10)
                 .build()
                 .useDatabase { db ->
                     val sqlite = db.openHelper.writableDatabase
-                    assertEquals(9, sqlite.version)
+                    assertEquals(10, sqlite.version)
                     assertTrue("Original schema6 rows/types/order/sequence must remain exact", before == snapshot(sqlite))
                     for (table in listOf("location_recording_run", "location_recording_event")) {
                         sqlite.query("SELECT COUNT(*) FROM $table").use {
@@ -75,11 +75,11 @@ class LocationRecordingMigrationTest {
             val before = createLegacy(name, 7)
             Room
                 .databaseBuilder(context, PreparationDatabase::class.java, name)
-                .addMigrations(PreparationMigration7To8, PreparationMigration8To9)
+                .addMigrations(PreparationMigration7To8, PreparationMigration8To9, PreparationMigration9To10)
                 .build()
                 .useDatabase { db ->
                     val sqlite = db.openHelper.writableDatabase
-                    assertEquals(9, sqlite.version)
+                    assertEquals(10, sqlite.version)
                     assertTrue("Original rows, types, order and sequence must remain exact", before == snapshot(sqlite, tables(7)))
                     for (table in listOf("session_review_road", "session_review_road_node")) {
                         sqlite.query("SELECT COUNT(*) FROM $table").use {
@@ -102,17 +102,52 @@ class LocationRecordingMigrationTest {
             val before = createLegacy(name, 8)
             Room
                 .databaseBuilder(context, PreparationDatabase::class.java, name)
-                .addMigrations(PreparationMigration8To9)
+                .addMigrations(PreparationMigration8To9, PreparationMigration9To10)
                 .build()
                 .useDatabase { db ->
                     val sqlite = db.openHelper.writableDatabase
-                    assertEquals(9, sqlite.version)
+                    assertEquals(10, sqlite.version)
                     val after = snapshot(sqlite, tables(8), excludeMemo = true)
                     assertTrue("Original rows, types, order and sequence must remain exact", before == after)
                     sqlite.query("SELECT memoText, typeof(memoText) FROM session_review_road").use {
                         check(it.moveToFirst())
                         assertEquals("", it.getString(0))
                         assertEquals("text", it.getString(1))
+                    }
+                    sqlite.query("PRAGMA foreign_key_check").use { assertEquals(0, it.count) }
+                }
+        } finally {
+            if (context.getDatabasePath(name).exists()) check(context.deleteDatabase(name))
+        }
+    }
+
+    @Test fun `schema nine migration preserves original data and adds only absent targets to all five source snapshots`() {
+        val context = RuntimeEnvironment.getApplication()
+        val name = "planned-road-migration-${UUID.randomUUID()}.db"
+        check(!context.getDatabasePath(name).exists())
+        try {
+            val before = createLegacy(name, 9)
+            Room
+                .databaseBuilder(context, PreparationDatabase::class.java, name)
+                .addMigrations(PreparationMigration9To10)
+                .build()
+                .useDatabase { db ->
+                    val sqlite = db.openHelper.writableDatabase
+                    assertEquals(10, sqlite.version)
+                    assertEquals(before, snapshot(sqlite, tables(9)))
+                    for (table in listOf(
+                        "preparation",
+                        "practice_session",
+                        "location_recording_run",
+                        "course_completion_declaration",
+                        "session_review_road",
+                    )) {
+                        sqlite.query("SELECT plannedRoadJson, typeof(plannedRoadJson) FROM `$table`").use { rows ->
+                            while (rows.moveToNext()) {
+                                assertTrue(rows.isNull(0))
+                                assertEquals("null", rows.getString(1))
+                            }
+                        }
                     }
                     sqlite.query("PRAGMA foreign_key_check").use { assertEquals(0, it.count) }
                 }
@@ -192,7 +227,10 @@ class LocationRecordingMigrationTest {
                     }
                     if (version >= 8) {
                         db.execSQL(
-                            "INSERT INTO session_review_road VALUES('fixture','commute','neighborhood',1,1,'sequence'," +
+                            "INSERT INTO session_review_road (sessionId,goalId,courseId,courseVersion,briefingVersion,taskId," +
+                                "goalTitle,courseTitle,taskTitle,courseReviewStatus,startedAtEpochMillis,endedAtEpochMillis," +
+                                "version,origin,roadId,roadTitle,highway,osmWayId,osmWayVersion,capturedAtEpochMillis,nodeCount) " +
+                                "VALUES('fixture','commute','neighborhood',1,1,'sequence'," +
                                 "'Goal','Course','Task','DEMO',1000,2000,'00000000-0000-0000-0000-000000000002'," +
                                 "'USER_SELECTION','road-fixture','Road','residential',10,1,100,3)",
                         )
@@ -246,7 +284,8 @@ class LocationRecordingMigrationTest {
                         add(
                             (0 until cursor.columnCount)
                                 .filterNot { column ->
-                                    excludeMemo && table == "session_review_road" && cursor.getColumnName(column) == "memoText"
+                                    cursor.getColumnName(column) == "plannedRoadJson" ||
+                                        (excludeMemo && table == "session_review_road" && cursor.getColumnName(column) == "memoText")
                                 }.flatMap { column ->
                                     val type = cursor.getType(column)
                                     listOf(

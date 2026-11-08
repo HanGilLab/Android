@@ -1,5 +1,6 @@
 package io.github.hangillab.hangil.core.database
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import io.github.hangillab.hangil.core.domain.PracticeSelection
@@ -12,6 +13,8 @@ internal data class PreparationEntity(
     val courseVersion: Int,
     val briefingVersion: Int,
     val taskId: String,
+    @ColumnInfo(defaultValue = "NULL") val plannedRoadJson: String? = null,
 ) {
-    fun selection() = PracticeSelection(goalId, courseId, courseVersion, briefingVersion, taskId)
+    fun selection() =
+        PracticeSelection(goalId, courseId, courseVersion, briefingVersion, taskId, PlannedPracticeRoadJson.decode(plannedRoadJson))
 }

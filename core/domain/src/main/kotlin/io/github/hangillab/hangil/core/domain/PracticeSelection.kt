@@ -6,4 +6,5 @@ data class PracticeSelection(
     val courseVersion: Int,
     val briefingVersion: Int,
     val taskId: String,
+    val plannedRoad: PlannedPracticeRoad? = null,
 )

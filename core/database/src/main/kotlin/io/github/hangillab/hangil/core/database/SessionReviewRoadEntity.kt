@@ -43,11 +43,12 @@ internal data class SessionReviewRoadEntity(
     val capturedAtEpochMillis: Long,
     val nodeCount: Int,
     @ColumnInfo(defaultValue = "''") val memoText: String = "",
+    @ColumnInfo(defaultValue = "NULL") val plannedRoadJson: String? = null,
 ) {
     fun source() =
         PracticeSession(
             sessionId,
-            PracticeSelection(goalId, courseId, courseVersion, briefingVersion, taskId),
+            PracticeSelection(goalId, courseId, courseVersion, briefingVersion, taskId, PlannedPracticeRoadJson.decode(plannedRoadJson)),
             goalTitle,
             courseTitle,
             taskTitle,
@@ -84,6 +85,7 @@ internal data class SessionReviewRoadEntity(
                 road.capturedAtEpochMillis,
                 road.nodes.size,
                 review.memoText,
+                PlannedPracticeRoadJson.encode(selection.plannedRoad),
             )
         }
     }

@@ -2720,6 +2720,15 @@ class MapInputLifecycleTest {
             writes.incrementAndGet()
             error("Synthetic map input must never write preparation")
         }
+
+        override suspend fun replaceSelection(
+            expectedCurrent: PracticeSelection?,
+            selection: PracticeSelection,
+            canCommit: () -> Boolean,
+        ): Boolean {
+            writes.incrementAndGet()
+            error("Synthetic map input must never replace preparation")
+        }
     }
 
     private data class CameraSnapshot(

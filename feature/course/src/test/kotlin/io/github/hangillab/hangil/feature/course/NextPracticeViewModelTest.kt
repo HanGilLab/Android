@@ -13,6 +13,7 @@ import io.github.hangillab.hangil.core.domain.NextPracticeRepository
 import io.github.hangillab.hangil.core.domain.NextPracticeSaveResult
 import io.github.hangillab.hangil.core.domain.NextPracticeSeed
 import io.github.hangillab.hangil.core.domain.ParkingState
+import io.github.hangillab.hangil.core.domain.PlannedPracticeRoad
 import io.github.hangillab.hangil.core.domain.PracticeCatalog
 import io.github.hangillab.hangil.core.domain.PracticeCourse
 import io.github.hangillab.hangil.core.domain.PracticeGoal
@@ -22,6 +23,9 @@ import io.github.hangillab.hangil.core.domain.PracticeSessionRepository
 import io.github.hangillab.hangil.core.domain.PracticeTask
 import io.github.hangillab.hangil.core.domain.PreparedPractice
 import io.github.hangillab.hangil.core.domain.SessionFinishResult
+import io.github.hangillab.hangil.core.domain.SessionReviewRoad
+import io.github.hangillab.hangil.core.domain.SessionReviewRoadRepository
+import io.github.hangillab.hangil.core.domain.SessionReviewRoadWriteResult
 import io.github.hangillab.hangil.core.domain.SessionStartResult
 import io.github.hangillab.hangil.core.domain.SessionTaskCount
 import io.github.hangillab.hangil.core.domain.UxRestrictionState
@@ -42,6 +46,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
@@ -1612,6 +1617,105 @@ class NextPracticeViewModelTest {
         return values
     }
 
+    @Test fun targetRoadIsExplicitSurvivesTaskChangeAndPassesTheWholeReviewToTheWriterWithoutCopyingMemo() =
+        runTest {
+            val f = Fixture()
+            val review = targetReview()
+            f.reviews.value.value = review
+            watch(f)
+            val initial = choose(f)
+            assertNull(initial.targetReview)
+            assertTrue(f.model.useReviewRoad("source", initial.generation))
+            var current = ready(f)
+            assertEquals(review, current.targetReview)
+            assertTrue(f.model.selectTask("old", "source", current.generation))
+            current = ready(f)
+            assertEquals(review, current.targetReview)
+            assertTrue(f.model.save("source", current.generation))
+            runCurrent()
+            assertEquals(review, f.next.expectedReviews.single())
+            assertEquals(PlannedPracticeRoad.from(review), f.next.stored?.plannedRoad)
+            assertEquals(review, f.reviews.value.value)
+        }
+
+    @Test fun changedReviewCancelsAPendingWriteAndNeedsFreshChoiceOrExplicitUnlink() =
+        runTest {
+            val f = Fixture()
+            val old = targetReview()
+            f.reviews.value.value = old
+            watch(f)
+            var state = choose(f)
+            assertTrue(f.model.useReviewRoad("source", state.generation))
+            state = ready(f)
+            val release = CompletableDeferred<Unit>()
+            f.next.waitFor(release, ignoreCancellation = true)
+            assertTrue(f.model.save("source", state.generation))
+            runCurrent()
+            val replacement = SessionReviewRoad(old.source, old.road, "new-version", "changed original memo")
+            f.reviews.value.value = replacement
+            runCurrent()
+            val changed = ready(f)
+            assertNull(changed.targetReview)
+            assertTrue(changed.targetChoiceRequired)
+            assertFalse(changed.canSave)
+            assertFalse(f.model.useReviewRoad("source", state.generation))
+            release.complete(Unit)
+            runCurrent()
+            assertNull(f.next.stored)
+            assertTrue(f.model.useReviewRoad("source", changed.generation))
+            val selected = ready(f)
+            assertTrue(selected.canSave)
+            assertTrue(f.model.save("source", selected.generation))
+            runCurrent()
+            assertEquals(PlannedPracticeRoad.from(replacement), f.next.stored?.plannedRoad)
+        }
+
+    @Test fun targetReadFailureRemainsDistinctAndExplicitRetryNeverAutomaticallyReselectsTheOldTarget() =
+        runTest {
+            val f = Fixture()
+            f.reviews.value.value = targetReview()
+            watch(f)
+            val chosen = choose(f)
+            assertTrue(f.model.useReviewRoad("source", chosen.generation))
+            f.reviews.failed.value = true
+            runCurrent()
+            var state = ready(f)
+            assertEquals(NextPracticeUiState.ReviewRoad.Failed, state.reviewRoad)
+            assertTrue(state.targetChoiceRequired)
+            assertFalse(state.canSave)
+            f.reviews.failed.value = false
+            runCurrent()
+            assertEquals(NextPracticeUiState.ReviewRoad.Failed, ready(f).reviewRoad)
+            assertTrue(f.model.retryReviewRoad("source", state.generation))
+            state = ready(f)
+            assertTrue(state.reviewRoad is NextPracticeUiState.ReviewRoad.Available)
+            assertNull(state.targetReview)
+            assertTrue(state.targetChoiceRequired)
+            assertTrue(f.model.unlinkReviewRoad("source", state.generation))
+            state = ready(f)
+            assertTrue(state.canSave)
+            assertTrue(f.model.save("source", state.generation))
+            runCurrent()
+            assertNull(f.next.stored?.plannedRoad)
+            assertNull(f.next.expectedReviews.single())
+        }
+
+    private fun targetReview(): SessionReviewRoad =
+        SessionReviewRoad(
+            source(),
+            CourseRoadSnapshot(
+                "road",
+                "선택 도로",
+                "residential",
+                99,
+                1,
+                1000,
+                listOf(CourseRoadSnapshot.Node(1, 1, 37.0, 127.0), CourseRoadSnapshot.Node(2, 1, 37.001, 127.001)),
+            ),
+            "review-v1",
+            "source memo",
+        )
+
     private fun copyState(state: SavedStateHandle): SavedStateHandle {
         val values = state.keys().associateWith { state.get<Any?>(it) }
         return SavedStateHandle(values)
@@ -1635,8 +1739,9 @@ class NextPracticeViewModelTest {
         val sessions = FakeSessions()
         val catalog = FakeCatalog()
         val next = FakeNextRepository()
+        val reviews = FakeReviews()
         val handle = state ?: SavedStateHandle(mapOf("nextPracticeSourceId" to sourceArgument))
-        val model = NextPracticeViewModel(vehicle, restrictions, sessions, catalog, next, handle)
+        val model = NextPracticeViewModel(vehicle, restrictions, sessions, catalog, next, handle, reviews)
     }
 
     private class FakeCatalog : PracticeCatalog {
@@ -1704,8 +1809,35 @@ class NextPracticeViewModelTest {
         }
     }
 
+    private class FakeReviews : SessionReviewRoadRepository {
+        val value = MutableStateFlow<SessionReviewRoad?>(null)
+        val failed = MutableStateFlow(false)
+        var query: () -> Flow<SessionReviewRoad?> = {
+            combine(failed, value) { bad, row -> if (bad) throw IOException("review read failed") else row }
+        }
+
+        override fun observe(sessionId: String): Flow<SessionReviewRoad?> = flow { emitAll(query()) }
+
+        override suspend fun save(
+            expectedSource: PracticeSession,
+            road: CourseRoadSnapshot,
+            expectedCurrent: SessionReviewRoad?,
+            memoText: String,
+            discardMemo: Boolean,
+            canCommit: () -> Boolean,
+        ): SessionReviewRoadWriteResult = error("Next preparation cannot write a review")
+
+        override suspend fun clear(
+            expectedSource: PracticeSession,
+            expectedCurrent: SessionReviewRoad,
+            discardMemo: Boolean,
+            canCommit: () -> Boolean,
+        ): SessionReviewRoadWriteResult = error("Next preparation cannot clear a review")
+    }
+
     private class FakeNextRepository : NextPracticeRepository {
         val seeds = mutableListOf<NextPracticeSeed>()
+        val expectedReviews = mutableListOf<SessionReviewRoad?>()
         val guards = mutableListOf<() -> Boolean>()
         var calls = 0
         var latestCalls = 0
@@ -1741,8 +1873,10 @@ class NextPracticeViewModelTest {
         override suspend fun saveSelection(
             seed: NextPracticeSeed,
             selection: PracticeSelection,
+            expectedReview: SessionReviewRoad?,
             canCommit: () -> Boolean,
         ): NextPracticeSaveResult {
+            expectedReviews += expectedReview
             latestCalls++
             return record(seed, selection, canCommit)
         }
@@ -1750,8 +1884,10 @@ class NextPracticeViewModelTest {
         override suspend fun saveHistorySelection(
             seed: NextPracticeSeed,
             selection: PracticeSelection,
+            expectedReview: SessionReviewRoad?,
             canCommit: () -> Boolean,
         ): NextPracticeSaveResult {
+            expectedReviews += expectedReview
             historyCalls++
             return record(seed, selection, canCommit)
         }

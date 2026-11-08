@@ -17,7 +17,7 @@ data class SessionUiState(
             if (!allowsInteraction) return HomeJourneyStep.LOCKED
             val selection =
                 ready?.let {
-                    PracticeSelection(it.goal.id, it.course.id, it.course.version, it.course.briefingVersion, it.task.id)
+                    PracticeSelection(it.goal.id, it.course.id, it.course.version, it.course.briefingVersion, it.task.id, it.plannedRoad)
                 }
             return when (records) {
                 SessionLoadState.Loading -> HomeJourneyStep.LOADING

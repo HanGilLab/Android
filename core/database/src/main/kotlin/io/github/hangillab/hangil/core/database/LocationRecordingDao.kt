@@ -11,6 +11,7 @@ private const val RUN_SELECT =
         "typeof(courseId) = 'text' AND typeof(courseVersion) = 'integer' AND typeof(briefingVersion) = " +
         "'integer' AND typeof(taskId) = 'text' AND typeof(goalTitle) = 'text' AND typeof(courseTitle) = " +
         "'text' AND typeof(taskTitle) = 'text' AND typeof(courseReviewStatus) = 'text' AND " +
+        "(plannedRoadJson IS NULL OR typeof(plannedRoadJson) = 'text') AND " +
         "typeof(sourceStartedAtEpochMillis) = 'integer' AND typeof(startedAtEpochMillis) = 'integer' AND " +
         "typeof(startedAtElapsedRealtimeMillis) = 'integer' AND (endedAtEpochMillis IS NULL OR " +
         "typeof(endedAtEpochMillis) = 'integer') AND (endedAtElapsedRealtimeMillis IS NULL OR " +

@@ -1262,6 +1262,12 @@ class FinishSourceReviewBoundaryTest {
                     selection: PracticeSelection,
                     canCommit: () -> Boolean,
                 ): Boolean = throw AssertionError("Unexpected preparation write")
+
+                override suspend fun replaceSelection(
+                    expectedCurrent: PracticeSelection?,
+                    selection: PracticeSelection,
+                    canCommit: () -> Boolean,
+                ): Boolean = throw AssertionError("Unexpected preparation replacement")
             }
 
         internal fun noHistoryWriter(): HistorySessionMemoWriter =

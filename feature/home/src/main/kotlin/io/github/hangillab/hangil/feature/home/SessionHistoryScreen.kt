@@ -504,6 +504,14 @@ private fun HistoryRecord(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(session.taskTitle, Modifier.testTag("history_task"), style = MaterialTheme.typography.titleLarge)
+            session.selection.plannedRoad?.let { plan ->
+                Text(
+                    stringResource(R.string.planned_road_summary, plan.road.title),
+                    Modifier.testTag("history_planned_road"),
+                    style = MaterialTheme.typography.titleLarge,
+                )
+                Text(stringResource(R.string.planned_road_scope), style = MaterialTheme.typography.bodyLarge)
+            }
         }
         observations()
         memo()

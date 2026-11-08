@@ -20,6 +20,18 @@ internal class TestPracticeRepository : PracticeRepository {
             emitAll(read())
         }
 
+    override suspend fun replaceSelection(
+        expectedCurrent: PracticeSelection?,
+        selection: PracticeSelection,
+        canCommit: () -> Boolean,
+    ): Boolean {
+        calls++
+        beforeWrite()
+        if (!canCommit() || this.selection.value != expectedCurrent) return false
+        this.selection.value = selection
+        return true
+    }
+
     override suspend fun saveSelection(
         selection: PracticeSelection,
         canCommit: () -> Boolean,

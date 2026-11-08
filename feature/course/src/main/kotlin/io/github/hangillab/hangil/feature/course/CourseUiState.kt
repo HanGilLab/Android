@@ -1,5 +1,6 @@
 package io.github.hangillab.hangil.feature.course
 
+import io.github.hangillab.hangil.core.domain.PlannedPracticeRoad
 import io.github.hangillab.hangil.core.domain.PracticeCourse
 import io.github.hangillab.hangil.core.domain.PracticeGoal
 
@@ -14,6 +15,9 @@ internal data class CourseUiState(
     val saving: Boolean = false,
     val saveFailed: Boolean = false,
     val preparationRead: PreparationReadState = PreparationReadState.LOADING,
+    val plannedRoad: PlannedPracticeRoad? = null,
+    val plannedRoadCleared: Boolean = false,
+    val readGeneration: Long = 0,
 ) {
     val canContinue: Boolean get() =
         allowsInteraction && preparationRead.allowsEditing && !saving &&

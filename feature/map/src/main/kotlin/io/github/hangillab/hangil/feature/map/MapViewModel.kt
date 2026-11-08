@@ -322,6 +322,7 @@ class MapViewModel
                     prepared.course.version,
                     prepared.course.briefingVersion,
                     prepared.task.id,
+                    prepared.plannedRoad,
                 )
             if (previous != selection) publishPreparation(owner, MapPreparationState.Loading, epoch)
         }
@@ -389,6 +390,7 @@ class MapViewModel
                             practice.course.version,
                             practice.course.briefingVersion,
                             practice.task.id,
+                            practice.plannedRoad,
                         )
                     if (actual != selection || practice.goal.id !in practice.course.goalIds || practice.task !in practice.course.tasks) {
                         throw InvalidPreparation()

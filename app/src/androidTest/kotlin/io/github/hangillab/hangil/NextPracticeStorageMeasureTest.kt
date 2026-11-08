@@ -617,7 +617,7 @@ class NextPracticeStorageMeasureTest {
     ): Pair<Any, Long> {
         val started = System.nanoTime()
         try {
-            val result = repository.saveSelection(seed, target, liveGuard)
+            val result = repository.saveSelection(seed, target, canCommit = liveGuard)
             val elapsed = System.nanoTime() - started
             return result to elapsed
         } catch (failure: Throwable) {
