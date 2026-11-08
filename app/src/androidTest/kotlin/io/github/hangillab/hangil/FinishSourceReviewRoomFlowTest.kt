@@ -439,6 +439,7 @@ class FinishSourceReviewRoomFlowTest {
             awaitReviewRoad(road)
             check(ui.text("review_road_memo_text") == revisedMemo)
             ui.touch("review_road_candidate_0")
+            ui.touch("review_road_save")
             awaitRoadMemoDialog(ui)
             dismissRoadMemoDialog(ui, confirm = false)
             check(
