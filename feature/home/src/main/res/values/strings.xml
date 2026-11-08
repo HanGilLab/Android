@@ -280,7 +280,7 @@
   <string name="review_road_reopen">주차 후 복습 구간을 닫고 다시 펼쳐 주세요.</string>
   <string name="history_delete_review_road_absent">저장한 복습 구간 없음</string>
   <string name="history_delete_review_road_present">저장한 복습 구간: %1$s</string>
-  <string name="review_road_reference_source">이전 연습에서 내가 고른 참고 구간</string>
+  <string name="review_road_reference_source">이전 연습에서 직접 고른 도로, 통행 미확인</string>
   <string name="review_road_reference_empty">이전 연습에 저장한 참고 구간이 없어요.</string>
-  <string name="review_road_reference_scope">이전 연습의 참고 구간이에요. 이번 준비에는 코스와 과제만 저장돼요.</string>
+  <string name="review_road_reference_scope">이번 준비에는 코스와 과제만 저장돼요.</string>
 </resources>

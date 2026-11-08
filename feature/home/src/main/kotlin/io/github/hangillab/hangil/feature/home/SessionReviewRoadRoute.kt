@@ -78,17 +78,10 @@ fun SessionReviewRoadRoute(
             return@Column
         }
         Text(
-            stringResource(R.string.review_road_scope),
-            Modifier.fillMaxWidth().testTag("review_road_scope"),
+            stringResource(if (readOnly) R.string.review_road_reference_scope else R.string.review_road_scope),
+            Modifier.fillMaxWidth().testTag(if (readOnly) "review_road_reference_scope" else "review_road_scope"),
             style = MaterialTheme.typography.bodyLarge,
         )
-        if (readOnly) {
-            Text(
-                stringResource(R.string.review_road_reference_scope),
-                Modifier.fillMaxWidth().testTag("review_road_reference_scope"),
-                style = MaterialTheme.typography.bodyLarge,
-            )
-        }
         when (displayed) {
             is RoadState.Loading ->
                 Text(
