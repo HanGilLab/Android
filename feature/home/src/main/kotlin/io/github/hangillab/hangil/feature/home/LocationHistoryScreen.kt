@@ -46,7 +46,7 @@ fun LocationHistoryRoute(
     expectedSource: PracticeSession,
     onClose: () -> Unit,
     viewModel: LocationHistoryViewModel = hiltViewModel(),
-    storedPointMap: (@Composable (LocationUpdateSample, () -> Boolean) -> Unit)? = null,
+    storedPointMap: (@Composable (PracticeSession, LocationUpdateSample, () -> Boolean) -> Unit)? = null,
 ) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     var hostOwner by remember(lifecycle, expectedSource, viewModel) { mutableStateOf(AtomicBoolean(false)) }
@@ -104,7 +104,7 @@ internal fun LocationHistoryScreen(
     state: LocationHistoryUiState,
     onClose: () -> Unit,
     viewModel: LocationHistoryViewModel,
-    storedPointMap: (@Composable (LocationUpdateSample, () -> Boolean) -> Unit)? = null,
+    storedPointMap: (@Composable (PracticeSession, LocationUpdateSample, () -> Boolean) -> Unit)? = null,
 ) {
     ParkedPage {
         TextButton(
@@ -174,7 +174,7 @@ private fun LocationHistoryNotice(
 private fun LocationHistoryReady(
     state: LocationHistoryUiState.Ready,
     viewModel: LocationHistoryViewModel,
-    storedPointMap: (@Composable (LocationUpdateSample, () -> Boolean) -> Unit)?,
+    storedPointMap: (@Composable (PracticeSession, LocationUpdateSample, () -> Boolean) -> Unit)?,
 ) {
     val run = state.run
     val event = state.event
@@ -399,7 +399,7 @@ private fun LocationHistoryReady(
                         { viewModel.canRead(state.token) },
                         Modifier.testTag("location_history_point_map"),
                     ) {
-                        storedPointMap(sample) { viewModel.canRead(state.token) }
+                        storedPointMap(state.source, sample) { viewModel.canRead(state.token) }
                     }
                 }
             } else {
