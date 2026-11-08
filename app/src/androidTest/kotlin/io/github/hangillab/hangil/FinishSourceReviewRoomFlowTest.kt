@@ -390,6 +390,7 @@ class FinishSourceReviewRoomFlowTest {
                 } == saved,
             )
             awaitReviewRoad(road)
+            val beforeDialogClear = ui.action("review_road_clear")
             ui.touch("history_delete")
             compose.waitUntil(TIMEOUT) { ui.nodes("history_delete_confirm").size == 1 }
             check(compose.activity.lifecycle.currentState == Lifecycle.State.RESUMED)
@@ -407,9 +408,11 @@ class FinishSourceReviewRoomFlowTest {
                     ),
             )
             compose.onNodeWithTag("history_delete_review_road", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
-            compose.onNodeWithTag("history_delete_cancel", useUnmergedTree = true).performScrollTo().performClick()
+            compose.onNodeWithTag("history_delete_cancel", useUnmergedTree = true).assertIsDisplayed().performClick()
             compose.waitUntil(TIMEOUT) { ui.nodes("history_delete_dialog").isEmpty() && compose.activity.hasWindowFocus() }
             ui.ready(ended)
+            check(ui.nodes("review_road_content").isEmpty())
+            ui.invoke(beforeDialogClear)
             check(
                 runBlocking {
                     f.store.reviewRoads
@@ -419,6 +422,7 @@ class FinishSourceReviewRoomFlowTest {
             )
             ui.touch("history_review_road")
             ui.waitTag("review_road_stored_title")
+            awaitReviewRoad(road)
             val staleClear = ui.action("review_road_clear")
             compose.runOnIdle { ui.live.publish(FinishSourceReviewBoundaryTest.driving()) }
             ui.waitTag("history_locked")

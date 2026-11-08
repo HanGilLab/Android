@@ -81,6 +81,9 @@ internal fun SessionHistoryEntryContent(
     val exact = entry is SessionHistoryEntry.FinishedReview
     val requiredState = if (exact) Lifecycle.State.RESUMED else Lifecycle.State.STARTED
     val deletion by viewModel.deletionState.collectAsStateWithLifecycle()
+    val reviewRoadBlocked =
+        deletion is SessionDeletionUiState.Preparing ||
+            deletion is SessionDeletionUiState.Confirming || deletion is SessionDeletionUiState.Deleting
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     var startedOwner by remember(viewModel, lifecycle, entry) { mutableStateOf(AtomicBoolean(false) to AtomicLong(0)) }
     DisposableEffect(viewModel, lifecycle, entry) {
@@ -281,7 +284,7 @@ internal fun SessionHistoryEntryContent(
                             },
                             reviewRoad = {
                                 if (reviewRoad != null) {
-                                    key(current.session, current.generation, clickOwner.first) {
+                                    key(current.session, current.generation, clickOwner.first, reviewRoadBlocked) {
                                         val canKeepOpen =
                                             remember(current.session, current.generation, clickOwner.first, lifecycle) {
                                                 {
