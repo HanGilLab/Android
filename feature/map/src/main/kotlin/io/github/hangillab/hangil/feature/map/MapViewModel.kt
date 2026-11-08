@@ -405,6 +405,7 @@ class MapViewModel
                             when (val source = preview.source) {
                                 is MapPreview.Source.FixedOsm -> practice.course.copy(mapPreview = source.preview)
                                 is MapPreview.Source.NavigationRequest -> practice.course.copy(navigationRoute = source.route)
+                                is MapPreview.Source.FixedRoads -> throw InvalidPreparation()
                             }
                         MapPreparationState.Ready(practice.copy(course = course.copy(roadSnapshots = preview.roads)), preview)
                     }

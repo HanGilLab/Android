@@ -1,0 +1,21 @@
+package io.github.hangillab.hangil.core.domain
+
+sealed interface SessionReviewRoadWriteResult {
+    data class Saved(
+        val review: SessionReviewRoad,
+    ) : SessionReviewRoadWriteResult
+
+    data object Cleared : SessionReviewRoadWriteResult
+
+    data object MissingSession : SessionReviewRoadWriteResult
+
+    data object SourceChanged : SessionReviewRoadWriteResult
+
+    data object SessionActive : SessionReviewRoadWriteResult
+
+    data object Conflict : SessionReviewRoadWriteResult
+
+    data object UnavailableRoad : SessionReviewRoadWriteResult
+
+    data object Blocked : SessionReviewRoadWriteResult
+}

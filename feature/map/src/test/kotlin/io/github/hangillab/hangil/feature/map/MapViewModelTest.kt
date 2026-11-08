@@ -4,6 +4,7 @@ import io.github.hangillab.hangil.core.domain.ConnectionState
 import io.github.hangillab.hangil.core.domain.CourseMapPreview
 import io.github.hangillab.hangil.core.domain.CoursePreviewPoint
 import io.github.hangillab.hangil.core.domain.CoursePreviewSource
+import io.github.hangillab.hangil.core.domain.CourseReviewStatus
 import io.github.hangillab.hangil.core.domain.CourseRoadSnapshot
 import io.github.hangillab.hangil.core.domain.DrivingRestrictions
 import io.github.hangillab.hangil.core.domain.DrivingRestrictionsProvider
@@ -15,6 +16,7 @@ import io.github.hangillab.hangil.core.domain.PracticeGoal
 import io.github.hangillab.hangil.core.domain.PracticeNavigationRoute
 import io.github.hangillab.hangil.core.domain.PracticeRepository
 import io.github.hangillab.hangil.core.domain.PracticeSelection
+import io.github.hangillab.hangil.core.domain.PracticeSession
 import io.github.hangillab.hangil.core.domain.PracticeTask
 import io.github.hangillab.hangil.core.domain.Preparation
 import io.github.hangillab.hangil.core.domain.PreparedPractice
@@ -229,6 +231,84 @@ class MapViewModelTest {
                     .first()
                     .latitude,
                 0.0,
+            )
+            assertEquals(0, fixture.repository.writes)
+        }
+
+    @Test fun `finished road preview freezes the full source and geometry without inventing points`() {
+        val nodes =
+            mutableListOf(
+                CourseRoadSnapshot.Node(10, 1, 37.0, 127.0),
+                CourseRoadSnapshot.Node(11, 2, 37.1, 127.1),
+            )
+        val roads = mutableListOf(CourseRoadSnapshot("road", "Fixture road", "residential", 99, 1, 1000, nodes))
+        val source = finishedSource()
+        val preview = MapPreview.from(source, roads)
+        assertTrue(preview.points.isEmpty())
+        assertEquals(source, (preview.source as MapPreview.Source.FixedRoads).session)
+        assertEquals("OSM_WAY_NODES", preview.roads.single().sourceCode)
+        nodes[0] = nodes[0].copy(osmNodeVersion = 3)
+        roads.clear()
+        assertEquals(
+            1,
+            preview.roads
+                .single()
+                .nodes
+                .first()
+                .osmNodeVersion,
+        )
+        assertTrue(
+            runCatching { (preview.roads as MutableList<CourseRoadSnapshot>).clear() }.exceptionOrNull() is UnsupportedOperationException,
+        )
+        assertTrue(
+            runCatching {
+                (preview.roads.single().nodes as MutableList<CourseRoadSnapshot.Node>).clear()
+            }.exceptionOrNull() is UnsupportedOperationException,
+        )
+        assertNotEquals(preview, MapPreview.from(source.copy(endedAtEpochMillis = 2001), preview.roads))
+        assertTrue(runCatching { MapPreview.from(source, emptyList()) }.exceptionOrNull() is IllegalArgumentException)
+        assertTrue(
+            runCatching {
+                MapPreview.from(source.copy(endedAtEpochMillis = null), preview.roads)
+            }.exceptionOrNull() is IllegalArgumentException,
+        )
+    }
+
+    @Test fun `current preparation refuses a historical road source while retaining its own selection`() =
+        runTest {
+            val fixture = Fixture()
+            val road =
+                CourseRoadSnapshot(
+                    "road",
+                    "Fixture road",
+                    "residential",
+                    99,
+                    1,
+                    1000,
+                    listOf(CourseRoadSnapshot.Node(10, 1, 37.0, 127.0), CourseRoadSnapshot.Node(11, 2, 37.1, 127.1)),
+                )
+            fixture.catalog.courses = listOf(course("a").copy(roadSnapshots = listOf(road)))
+            subscribe(fixture)
+            val prepared = ready(fixture)
+            val attempt = fixture.model.uiState.value.attempt
+            val token = checkNotNull(fixture.model.onMapLoading(attempt))
+            fixture.model.onMapRendered(attempt, token)
+            runCurrent()
+            val historical = MapPreview.from(finishedSource(), prepared.preview.roads)
+            val wrongOwner = prepared.preview.copy(source = historical.source)
+            assertNull(fixture.model.selectRoad(attempt, token, wrongOwner, road.id) { true })
+            assertNull(fixture.model.uiState.value.selection)
+            val nonce = checkNotNull(fixture.model.selectRoad(attempt, token, prepared.preview, road.id) { true })
+            fixture.model.onSelectionRendered(attempt, token, nonce)
+            runCurrent()
+            assertEquals(
+                road.id,
+                fixture.model.uiState.value.selection
+                    ?.roadId,
+            )
+            assertTrue(
+                fixture.model.uiState.value.selection
+                    ?.rendered == true,
             )
             assertEquals(0, fixture.repository.writes)
         }
@@ -880,6 +960,18 @@ class MapViewModelTest {
         fun goal() = PracticeGoal("goal", "Fixture goal", "Fixture summary")
 
         fun selection(id: String) = PracticeSelection("goal", id, 1, 1, "task-$id")
+
+        fun finishedSource() =
+            PracticeSession(
+                "finished",
+                selection("a"),
+                "Fixture goal",
+                "Fixture course",
+                "Fixture task",
+                CourseReviewStatus.DEMO,
+                1000,
+                2000,
+            )
 
         fun course(
             id: String,

@@ -43,6 +43,8 @@ import io.github.hangillab.hangil.feature.home.LocationRecordingStatusRow
 import io.github.hangillab.hangil.feature.home.LocationRecordingViewModel
 import io.github.hangillab.hangil.feature.home.SessionHistoryRoute
 import io.github.hangillab.hangil.feature.home.SessionRecordingViewModel
+import io.github.hangillab.hangil.feature.home.SessionReviewRoadRoute
+import io.github.hangillab.hangil.feature.map.SessionReviewRoadMap
 import io.github.hangillab.hangil.feature.map.StoredLocationMap
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -103,6 +105,11 @@ class MainActivity : ComponentActivity() {
                         }
                         composable("history") { historyEntry ->
                             SessionHistoryRoute(
+                                reviewRoad = { source, allowed ->
+                                    SessionReviewRoadRoute(source, allowed, roadMap = { snapshot, roads, selected, canPresent, changes ->
+                                        SessionReviewRoadMap(snapshot, roads, selected, canPresent, changes)
+                                    })
+                                },
                                 onClose = { navigation.popBackStack() },
                                 onOpenLocations = { expected ->
                                     locationHistorySource = expected
@@ -129,6 +136,11 @@ class MainActivity : ComponentActivity() {
                             val token = reviewEntry.arguments?.getString("finishedReviewToken")
                             val expected = finishedReviewEntry?.takeIf { it.token == token }?.source
                             FinishedSessionReviewRoute(
+                                reviewRoad = { source, allowed ->
+                                    SessionReviewRoadRoute(source, allowed, roadMap = { snapshot, roads, selected, canPresent, changes ->
+                                        SessionReviewRoadMap(snapshot, roads, selected, canPresent, changes)
+                                    })
+                                },
                                 expectedSource = expected,
                                 onPrepareNext = openNext@{ source ->
                                     if (navigation.currentBackStackEntry !== reviewEntry ||

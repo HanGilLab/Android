@@ -50,6 +50,7 @@ internal fun DemoMap(
     onSelectionApplied: (Int, Long, Long) -> Unit,
     onNativeSelect: (String, () -> Boolean) -> Unit,
     modifier: Modifier = Modifier,
+    canRender: () -> Boolean = { true },
 ) {
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
@@ -72,6 +73,7 @@ internal fun DemoMap(
                     active.get() && owner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) &&
                         canInteract(attempt, token)
                 },
+                canRender = canRender,
                 onRendered = { onRendered(attempt, token) },
                 onFailed = { onFailed(attempt, token) },
             )
@@ -148,6 +150,7 @@ private fun createMap(
     pointText: Int,
     pointBorder: Int,
     canInteract: () -> Boolean,
+    canRender: () -> Boolean,
     onRendered: () -> Unit,
     onFailed: () -> Unit,
 ): Result<ParkedMapView> {
@@ -164,7 +167,7 @@ private fun createMap(
                 .attributionEnabled(true)
                 .localIdeographFontFamilyEnabled(true)
                 .localIdeographFontFamily("sans-serif")
-        val mapView = ParkedMapView(context, options, canInteract)
+        val mapView = ParkedMapView(context, options, canInteract, canRender)
         view = mapView
         mapView.addOnDidFailLoadingMapListener { fail() }
         mapView.addOnRenderErrorListener { fail() }

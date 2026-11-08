@@ -1,15 +1,22 @@
 package io.github.hangillab.hangil
 
+import android.content.res.Configuration
+import android.graphics.Bitmap
+import android.view.ViewGroup
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
+import androidx.lifecycle.Lifecycle
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.hangillab.hangil.core.database.OwnedPracticeTestStore
 import io.github.hangillab.hangil.core.domain.CourseCompletionDeclaration
+import io.github.hangillab.hangil.core.domain.CourseRoadSnapshot
 import io.github.hangillab.hangil.core.domain.DrivingRestrictions
+import io.github.hangillab.hangil.core.domain.NextPracticeSeed
 import io.github.hangillab.hangil.core.domain.ParkingState
 import io.github.hangillab.hangil.core.domain.PracticeSelection
 import io.github.hangillab.hangil.core.domain.PracticeSession
@@ -23,6 +30,9 @@ import io.github.hangillab.hangil.core.domain.SessionFinishResult
 import io.github.hangillab.hangil.core.domain.SessionMemo
 import io.github.hangillab.hangil.core.domain.SessionMemoRepository
 import io.github.hangillab.hangil.core.domain.SessionMemoWriteResult
+import io.github.hangillab.hangil.core.domain.SessionReviewRoad
+import io.github.hangillab.hangil.core.domain.SessionReviewRoadRepository
+import io.github.hangillab.hangil.core.domain.SessionReviewRoadWriteResult
 import io.github.hangillab.hangil.core.domain.SessionStartResult
 import io.github.hangillab.hangil.core.domain.SessionVehicleObservation
 import io.github.hangillab.hangil.core.domain.UxRestrictionState
@@ -32,6 +42,7 @@ import io.github.hangillab.hangil.core.domain.VehicleRecordingRun
 import io.github.hangillab.hangil.feature.home.SessionFinishReceipt
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
@@ -42,11 +53,21 @@ import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.maplibre.android.maps.MapView
+import org.maplibre.android.style.expressions.Expression
+import org.maplibre.android.style.layers.LineLayer
+import org.maplibre.android.style.sources.GeoJsonSource
+import org.maplibre.geojson.LineString
+import java.io.File
+import java.io.IOException
+import java.util.UUID
 import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.math.roundToInt
 import io.github.hangillab.hangil.feature.home.R as HomeR
 
-/** Real production routes and strict Room repository in a UUID-owned schema6 store; no SDK or user database. */
+/** Real production routes and strict Room repository in a UUID-owned schema8 store; no SDK or user database. */
 @RunWith(AndroidJUnit4::class)
 class FinishSourceReviewRoomFlowTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentCatalogActivity>()
@@ -276,6 +297,325 @@ class FinishSourceReviewRoomFlowTest {
         }
     }
 
+    @Test fun userSelectedRoadSurvivesUnconfirmedSaveReopenAndExplicitClear() {
+        assumeManual()
+        val args = InstrumentationRegistry.getArguments()
+        val scale = checkNotNull(args.getString("expectedFontScale")?.toFloatOrNull())
+        val dark = checkNotNull(args.getString("expectedDark")?.toBooleanStrictOrNull())
+        val config = compose.activity.resources.configuration
+        check(kotlin.math.abs(config.fontScale - scale) < 0.001f)
+        check((config.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES) == dark)
+        fixture { f ->
+            val ended =
+                runBlocking {
+                    val result = f.store.sessions.finish(f.active, TIME + 90_000) { true }
+                    check(result is SessionFinishResult.Finished)
+                    result.session
+                }
+            val newer = f.addNewerEnded()
+            val before = f.snapshot()
+            val actual = f.store.reviewRoads
+            val writes = AtomicInteger()
+            val loseReply = AtomicBoolean(true)
+            val interruptedReply =
+                object : SessionReviewRoadRepository by actual {
+                    override suspend fun save(
+                        expectedSource: PracticeSession,
+                        road: CourseRoadSnapshot,
+                        expectedCurrent: SessionReviewRoad?,
+                        canCommit: () -> Boolean,
+                    ): SessionReviewRoadWriteResult {
+                        writes.incrementAndGet()
+                        val result = actual.save(expectedSource, road, expectedCurrent, canCommit)
+                        if (result is SessionReviewRoadWriteResult.Saved && loseReply.getAndSet(false)) {
+                            throw IOException("Controlled loss of a committed write reply")
+                        }
+                        return result
+                    }
+                }
+            var ui = f.mount(f.store.sessions, interruptedReply)
+            ui.openExact(ended)
+            ui.ready(ended)
+            check(ui.nodes("review_road_content").isEmpty())
+            ui.touch("history_review_road")
+            ui.waitTag("review_road_empty")
+            val course = checkNotNull(NextPracticeSeed.resolve(f.store.catalog, ended)).practice.course
+            val road = course.roadSnapshots[1]
+            check(runBlocking { actual.observe(ended.sessionId).first() } == null)
+            val oldCandidate = ui.action("review_road_candidate_0")
+            ui.touch("review_road_candidate_1")
+            ui.invoke(oldCandidate)
+            val oldSave = ui.action("review_road_save")
+            ui.invoke(oldSave, oldSave)
+            ui.waitTag("review_road_failed")
+            check(ui.nodes("review_road_save").isEmpty())
+            val saved = checkNotNull(runBlocking { actual.observe(ended.sessionId).first() })
+            check(saved.source == ended && saved.road == road && saved.origin == "USER_SELECTION")
+            check(writes.get() == 1 && f.snapshot() == before)
+            check(runBlocking { actual.observe(newer.sessionId).first() } == null)
+            ui.touch("review_road_retry")
+            ui.waitTag("review_road_stored_title")
+            check(ui.text("review_road_stored_title") == road.title && writes.get() == 1)
+            awaitReviewRoad(road)
+            val directory =
+                File(
+                    InstrumentationRegistry.getInstrumentation().targetContext.cacheDir,
+                    "screenshots/session-review-road-" + UUID.randomUUID(),
+                )
+            check(directory.mkdirs())
+            captureReviewRoad(ui, directory, "saved-road-map.png", "session_review_road_map_view")
+            captureReviewRoad(ui, directory, "saved-road-title.png", "review_road_stored_title")
+            captureReviewRoad(ui, directory, "selection-source.png", "review_road_source")
+            val oldClear = ui.action("review_road_clear")
+            ui.dispose()
+            runBlocking { f.store.reopen() }
+            check(
+                runBlocking {
+                    f.store.reviewRoads
+                        .observe(ended.sessionId)
+                        .first()
+                } == saved,
+            )
+            ui = f.mount(f.store.sessions, f.store.reviewRoads)
+            ui.openExact(ended)
+            ui.ready(ended)
+            ui.touch("history_review_road")
+            ui.waitTag("review_road_stored_title")
+            ui.invoke(oldSave, oldClear)
+            check(
+                runBlocking {
+                    f.store.reviewRoads
+                        .observe(ended.sessionId)
+                        .first()
+                } == saved,
+            )
+            awaitReviewRoad(road)
+            val beforeDialogClear = ui.action("review_road_clear")
+            ui.touch("history_delete")
+            compose.waitUntil(TIMEOUT) { ui.nodes("history_delete_confirm").size == 1 }
+            check(compose.activity.lifecycle.currentState == Lifecycle.State.RESUMED)
+            val focusedDialog = checkNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.rootInActiveWindow)
+            try {
+                check(focusedDialog.packageName?.toString() == InstrumentationRegistry.getInstrumentation().targetContext.packageName)
+            } finally {
+                focusedDialog.recycle()
+            }
+            check(
+                ui.text("history_delete_review_road") ==
+                    compose.activity.getString(
+                        HomeR.string.history_delete_review_road_present,
+                        road.title,
+                    ),
+            )
+            compose.onNodeWithTag("history_delete_review_road", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
+            compose.onNodeWithTag("history_delete_cancel", useUnmergedTree = true).assertIsDisplayed().performClick()
+            compose.waitUntil(TIMEOUT) { ui.nodes("history_delete_dialog").isEmpty() && compose.activity.hasWindowFocus() }
+            ui.ready(ended)
+            check(ui.nodes("review_road_content").isEmpty())
+            ui.invoke(beforeDialogClear)
+            check(
+                runBlocking {
+                    f.store.reviewRoads
+                        .observe(ended.sessionId)
+                        .first()
+                } == saved,
+            )
+            ui.touch("history_review_road")
+            ui.waitTag("review_road_stored_title")
+            awaitReviewRoad(road)
+            val staleClear = ui.action("review_road_clear")
+            compose.runOnIdle { ui.live.publish(FinishSourceReviewBoundaryTest.driving()) }
+            ui.waitTag("history_locked")
+            ui.invoke(staleClear)
+            check(
+                runBlocking {
+                    f.store.reviewRoads
+                        .observe(ended.sessionId)
+                        .first()
+                } == saved,
+            )
+            compose.runOnIdle { ui.live.publish(FinishSourceReviewBoundaryTest.parked()) }
+            ui.ready(ended)
+            ui.touch("history_review_road")
+            ui.waitTag("review_road_stored_title")
+            ui.invoke(staleClear)
+            check(
+                runBlocking {
+                    f.store.reviewRoads
+                        .observe(ended.sessionId)
+                        .first()
+                } == saved,
+            )
+            val stoppedClear = ui.action("review_road_clear")
+            ui.move(Lifecycle.State.CREATED)
+            ui.invoke(stoppedClear)
+            check(
+                runBlocking {
+                    f.store.reviewRoads
+                        .observe(ended.sessionId)
+                        .first()
+                } == saved,
+            )
+            ui.move(Lifecycle.State.RESUMED)
+            ui.ready(ended)
+            ui.touch("history_review_road")
+            ui.waitTag("review_road_stored_title")
+            ui.invoke(stoppedClear)
+            check(
+                runBlocking {
+                    f.store.reviewRoads
+                        .observe(ended.sessionId)
+                        .first()
+                } == saved,
+            )
+            ui.touch("review_road_clear")
+            ui.waitTag("review_road_empty")
+            check(
+                runBlocking {
+                    f.store.reviewRoads
+                        .observe(ended.sessionId)
+                        .first()
+                } == null,
+            )
+            ui.openExact(newer)
+            ui.ready(newer)
+            ui.invoke(oldSave, staleClear, stoppedClear)
+            check(
+                runBlocking {
+                    f.store.reviewRoads
+                        .observe(ended.sessionId)
+                        .first()
+                } == null,
+            )
+            check(
+                runBlocking {
+                    f.store.reviewRoads
+                        .observe(newer.sessionId)
+                        .first()
+                } == null,
+            )
+            check(f.snapshot() == before && writes.get() == 1)
+        }
+    }
+
+    private fun awaitReviewRoad(road: CourseRoadSnapshot) =
+        runBlocking {
+            compose.onNodeWithTag("session_review_road_map_view", useUnmergedTree = true).performScrollTo()
+            withTimeout(90_000) {
+                while (true) {
+                    val result = CompletableDeferred<Boolean>()
+                    InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                        fun views(view: android.view.View): List<MapView> =
+                            (if (view is MapView) listOf(view) else emptyList()) +
+                                (if (view is ViewGroup) (0 until view.childCount).flatMap { views(view.getChildAt(it)) } else emptyList())
+                        val view = views(compose.activity.window.decorView).singleOrNull { it.isAttachedToWindow }
+                        if (view == null) {
+                            result.complete(false)
+                        } else {
+                            view.getMapAsync { map ->
+                                try {
+                                    val style = map.style
+                                    val source = style?.getSourceAs<GeoJsonSource>("hangil-course-preview-roads")
+                                    val selected = style?.getLayerAs<LineLayer>("hangil-course-preview-road-selection")
+                                    val features = source?.querySourceFeatures(null).orEmpty()
+                                    val expected = Expression.eq(Expression.get("road_id"), Expression.literal(road.id))
+                                    val points = style?.getSourceAs<GeoJsonSource>("hangil-course-preview-points")
+                                    val original =
+                                        road.nodes.map { node ->
+                                            val location =
+                                                org.maplibre.android.geometry
+                                                    .LatLng(node.latitude, node.longitude)
+                                            map.projection.toScreenLocation(location)
+                                        }
+                                    val paths =
+                                        features.mapNotNull { feature ->
+                                            (feature.geometry() as? LineString)?.coordinates()?.map { point ->
+                                                val location =
+                                                    org.maplibre.android.geometry
+                                                        .LatLng(point.latitude(), point.longitude())
+                                                map.projection.toScreenLocation(location)
+                                            }
+                                        }
+                                    val placement =
+                                        paths.isNotEmpty() &&
+                                            paths.all { path ->
+                                                path.size >= 2 && path.all { onReviewPath(it, original) }
+                                            } && original.all { point -> paths.any { onReviewPath(point, it) } }
+                                    result.complete(
+                                        view.isAttachedToWindow && style?.isFullyLoaded == true && features.isNotEmpty() && placement &&
+                                            features.all {
+                                                it.geometry() is LineString && it.getStringProperty("road_source") == "OSM_WAY_NODES" &&
+                                                    it.getStringProperty("road_id") == road.id &&
+                                                    it.getStringProperty("osm_way_id") == road.osmWayId.toString() &&
+                                                    it.getNumberProperty("osm_way_version").toInt() == road.osmWayVersion
+                                            } &&
+                                            selected?.filter?.toArray()?.contentDeepEquals(expected.toArray()) == true &&
+                                            points?.querySourceFeatures(null)?.isEmpty() == true &&
+                                            map
+                                                .queryRenderedFeatures(
+                                                    android.graphics.RectF(0f, 0f, view.width.toFloat(), view.height.toFloat()),
+                                                    "hangil-course-preview-road-selection",
+                                                ).isNotEmpty(),
+                                    )
+                                } catch (_: Exception) {
+                                    result.complete(false)
+                                }
+                            }
+                        }
+                    }
+                    if (result.await()) break
+                    delay(50)
+                }
+            }
+        }
+
+    private fun onReviewPath(
+        point: android.graphics.PointF,
+        path: List<android.graphics.PointF>,
+    ): Boolean =
+        path.zipWithNext().any { (start, end) ->
+            val dx = end.x - start.x
+            val dy = end.y - start.y
+            val length = dx * dx + dy * dy
+            val dot = (point.x - start.x) * dx + (point.y - start.y) * dy
+            val fraction = if (length == 0f) 0f else (dot / length).coerceIn(0f, 1f)
+            val x = point.x - (start.x + fraction * dx)
+            val y = point.y - (start.y + fraction * dy)
+            x * x + y * y <= 1f
+        }
+
+    private fun captureReviewRoad(
+        ui: FinishSourceReviewBoundaryTest.Driver,
+        directory: File,
+        name: String,
+        tag: String,
+    ) {
+        compose.onNodeWithTag(tag, useUnmergedTree = true).performScrollTo()
+        compose.waitForIdle()
+        ui.requireHost()
+        check(compose.activity.display?.displayId == android.view.Display.DEFAULT_DISPLAY)
+        val node = ui.nodes(tag).single()
+        val origin = node.positionOnScreen - node.positionInWindow
+        val bounds = node.boundsInWindow
+        val left = (bounds.left + origin.x).roundToInt()
+        val top = (bounds.top + origin.y).roundToInt()
+        val width = bounds.width.roundToInt()
+        val height = bounds.height.roundToInt()
+        val bitmap = checkNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot())
+        try {
+            check(left >= 0 && top >= 0 && width > 0 && height > 0)
+            check(left + width <= bitmap.width && top + height <= bitmap.height)
+            val crop = Bitmap.createBitmap(bitmap, left, top, width, height)
+            try {
+                File(directory, name).outputStream().use { check(crop.compress(Bitmap.CompressFormat.PNG, 100, it)) }
+            } finally {
+                if (crop !== bitmap) crop.recycle()
+            }
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
     private fun fixture(body: (Fixture) -> Unit) {
         val f = Fixture(OwnedPracticeTestStore.create(InstrumentationRegistry.getInstrumentation().targetContext))
         var primary: Throwable? = null
@@ -284,6 +624,11 @@ class FinishSourceReviewRoomFlowTest {
             body(f)
         } catch (failure: Throwable) {
             primary = failure
+            try {
+                f.ui?.captureFailure(failure)
+            } catch (_: Throwable) {
+                failure.addSuppressed(IllegalStateException("Private UI diagnostic unavailable"))
+            }
             throw failure
         } finally {
             var cleanupFailure: Throwable? = null
@@ -303,7 +648,7 @@ class FinishSourceReviewRoomFlowTest {
                 }
             }
             attempt { f.ui?.dispose() }
-            attempt { check(f.store.schemaVersion() == 7 && f.store.foreignKeyViolationCount() == 0) }
+            attempt { check(f.store.schemaVersion() == 8 && f.store.foreignKeyViolationCount() == 0) }
             attempt {
                 check(f.ui == null || f.ui!!.isStopped)
                 f.store.close()
@@ -322,7 +667,7 @@ class FinishSourceReviewRoomFlowTest {
         fun seed() =
             runBlocking {
                 check(
-                    store.schemaVersion() == 7 &&
+                    store.schemaVersion() == 8 &&
                         store.sessions
                             .observeSessions()
                             .first()
@@ -360,7 +705,10 @@ class FinishSourceReviewRoomFlowTest {
                 result.session
             }
 
-        fun mount(sessions: PracticeSessionRepository): FinishSourceReviewBoundaryTest.Driver {
+        fun mount(
+            sessions: PracticeSessionRepository,
+            reviews: SessionReviewRoadRepository? = null,
+        ): FinishSourceReviewBoundaryTest.Driver {
             ui?.dispose()
             val memos =
                 object : SessionMemoRepository by store.memos {
@@ -404,6 +752,7 @@ class FinishSourceReviewRoomFlowTest {
                     store.courseCompletions,
                     store.deletions,
                     store.historyMemoWriter,
+                    reviews,
                 ).also {
                     ui = it
                     it.mount()

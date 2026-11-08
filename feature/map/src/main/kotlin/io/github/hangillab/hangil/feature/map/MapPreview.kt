@@ -4,6 +4,7 @@ import io.github.hangillab.hangil.core.domain.CourseMapPreview
 import io.github.hangillab.hangil.core.domain.CourseRoadSnapshot
 import io.github.hangillab.hangil.core.domain.PracticeCourse
 import io.github.hangillab.hangil.core.domain.PracticeNavigationRoute
+import io.github.hangillab.hangil.core.domain.PracticeSession
 import java.util.Collections
 
 /** Display-only points and fixed road shapes, never an observed or reviewed driving route. */
@@ -21,6 +22,7 @@ data class MapPreview internal constructor(
             when (source) {
                 is Source.FixedOsm -> "FIXED_OSM"
                 is Source.NavigationRequest -> "NAVIGATION_REQUEST"
+                is Source.FixedRoads -> "SESSION_PUBLIC_ROADS"
             }
 
     @ConsistentCopyVisibility
@@ -47,9 +49,32 @@ data class MapPreview internal constructor(
             val briefingVersion: Int,
             val route: PracticeNavigationRoute,
         ) : Source
+
+        @ConsistentCopyVisibility
+        data class FixedRoads internal constructor(
+            val session: PracticeSession,
+        ) : Source
     }
 
     companion object {
+        internal fun from(
+            source: PracticeSession,
+            roads: List<CourseRoadSnapshot>,
+        ): MapPreview {
+            require(!source.isActive) { "A review road map requires a finished session" }
+            require(roads.isNotEmpty()) { "A review road map requires public road snapshots" }
+            val snapshots = frozen(roads.map { it.copy(nodes = frozen(it.nodes)) })
+            require(snapshots.map { it.id }.distinct().size == snapshots.size) { "Duplicate road preview ID" }
+            return MapPreview(
+                id = "session-public-roads",
+                version = 1,
+                title = source.courseTitle,
+                points = emptyList(),
+                source = Source.FixedRoads(source),
+                roads = snapshots,
+            )
+        }
+
         internal fun from(course: PracticeCourse): MapPreview? {
             val roads = frozen(course.roadSnapshots.map { it.copy(nodes = frozen(it.nodes)) })
             require(roads.map { it.id }.distinct().size == roads.size) { "Duplicate road preview ID" }

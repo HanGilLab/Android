@@ -14,6 +14,7 @@ import io.github.hangillab.hangil.core.domain.PracticeSessionRepository
 import io.github.hangillab.hangil.core.domain.RecordingRunRepository
 import io.github.hangillab.hangil.core.domain.SessionDeletionRepository
 import io.github.hangillab.hangil.core.domain.SessionMemoRepository
+import io.github.hangillab.hangil.core.domain.SessionReviewRoadRepository
 import io.github.hangillab.hangil.core.domain.VehicleObservationRepository
 import javax.inject.Singleton
 
@@ -52,4 +53,7 @@ internal abstract class PracticeBindings {
 
     @Binds @Singleton
     abstract fun sessionDeletionRepository(implementation: RoomSessionDeletionRepository): SessionDeletionRepository
+
+    @Binds @Singleton
+    abstract fun sessionReviewRoadRepository(implementation: RoomSessionReviewRoadRepository): SessionReviewRoadRepository
 }
