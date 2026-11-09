@@ -4,12 +4,15 @@ plugins {
     id("hangil.android.hilt")
 }
 
+val controlledMainUi = providers.gradleProperty("controlledMainUi").orNull == "true"
+if (controlledMainUi) layout.buildDirectory.set(layout.projectDirectory.dir("build/controlled-main-ui"))
+
 android {
     namespace = "io.github.hangillab.hangil"
     defaultConfig {
         applicationId = "io.github.hangillab.hangil"
         testInstrumentationRunner =
-            if (providers.gradleProperty("controlledMainUi").orNull == "true") {
+            if (controlledMainUi) {
                 "io.github.hangillab.hangil.HiltUiTestRunner"
             } else {
                 "androidx.test.runner.AndroidJUnitRunner"
@@ -36,7 +39,7 @@ android {
     }
 
     buildTypes {
-        debug { applicationIdSuffix = ".debug" }
+        debug { applicationIdSuffix = if (controlledMainUi) ".controlledmainui" else ".debug" }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
