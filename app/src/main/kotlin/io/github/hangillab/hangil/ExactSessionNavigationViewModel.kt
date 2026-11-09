@@ -6,8 +6,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.util.UUID
 
-/** Navigation memory survives configuration changes, never process recreation. */
-class FinishedReviewNavigationViewModel : ViewModel() {
+/** Keeps an exact finished source in memory across configuration changes. */
+class ExactSessionNavigationViewModel : ViewModel() {
     private val current = MutableStateFlow<Entry?>(null)
     val entry = current.asStateFlow()
 
@@ -18,6 +18,8 @@ class FinishedReviewNavigationViewModel : ViewModel() {
         return next.token
     }
 
+    fun source(token: String?): PracticeSession? = current.value?.source(token)
+
     fun clear(token: String?) {
         val expected = current.value ?: return
         if (expected.token == token) current.compareAndSet(expected, null)
@@ -26,5 +28,11 @@ class FinishedReviewNavigationViewModel : ViewModel() {
     data class Entry(
         val token: String,
         val source: PracticeSession,
-    )
+    ) {
+        fun source(token: String?): PracticeSession? = source.takeIf { this.token == token }
+    }
+
+    companion object {
+        const val LOCATION_HISTORY_KEY = "location-history"
+    }
 }

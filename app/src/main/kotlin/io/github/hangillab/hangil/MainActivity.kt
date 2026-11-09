@@ -4,6 +4,7 @@ import android.content.pm.ApplicationInfo
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -13,15 +14,17 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -57,7 +60,10 @@ class MainActivity : ComponentActivity() {
     private val locationControls: LocationRecordingViewModel by viewModels()
 
     @Inject lateinit var locationRecording: LocationRecordingController
-    private val finishedReviews: FinishedReviewNavigationViewModel by viewModels()
+    private val finishedReviews: ExactSessionNavigationViewModel by viewModels()
+    private val locationHistory by lazy {
+        ViewModelProvider(this)[ExactSessionNavigationViewModel.LOCATION_HISTORY_KEY, ExactSessionNavigationViewModel::class.java]
+    }
     private val historyNextPractice: HistoryNextPracticeNavigationViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -74,10 +80,28 @@ class MainActivity : ComponentActivity() {
             HanGilTheme {
                 val recordingState by recording.state.collectAsStateWithLifecycle()
                 val finishedReviewEntry by finishedReviews.entry.collectAsStateWithLifecycle()
+                val locationHistoryEntry by locationHistory.entry.collectAsStateWithLifecycle()
                 val historyNextEntry by historyNextPractice.entry.collectAsStateWithLifecycle()
                 val locationState by locationRecording.state.collectAsStateWithLifecycle()
-                var locationHistorySource by remember { mutableStateOf<PracticeSession?>(null) }
                 val navigation = rememberNavController()
+
+                fun openLocationHistory(source: PracticeSession) {
+                    val token = locationHistory.open(source) ?: return
+                    navigation.navigate("location-history/$token") { launchSingleTop = true }
+                }
+
+                fun closeLocationHistory(
+                    entry: NavBackStackEntry,
+                    token: String? = null,
+                ) {
+                    if (navigation.currentBackStackEntry === entry &&
+                        lifecycle.currentState == Lifecycle.State.RESUMED &&
+                        entry.lifecycle.currentState == Lifecycle.State.RESUMED
+                    ) {
+                        locationHistory.clear(token)
+                        navigation.popBackStack()
+                    }
+                }
                 Column(Modifier.fillMaxSize()) {
                     LocationRecordingStatusRow(locationState) { locationRecording.stop(it) }
                     NavHost(navigation, startDestination = "home", modifier = Modifier.weight(1f)) {
@@ -113,9 +137,14 @@ class MainActivity : ComponentActivity() {
                                     })
                                 },
                                 onClose = { navigation.popBackStack() },
-                                onOpenLocations = { expected ->
-                                    locationHistorySource = expected
-                                    navigation.navigate("location-history") { launchSingleTop = true }
+                                onOpenLocations = openLocations@{ source ->
+                                    if (navigation.currentBackStackEntry !== historyEntry ||
+                                        lifecycle.currentState != Lifecycle.State.RESUMED ||
+                                        historyEntry.lifecycle.currentState != Lifecycle.State.RESUMED
+                                    ) {
+                                        return@openLocations
+                                    }
+                                    openLocationHistory(source)
                                 },
                                 onPrepareNext = openNext@{ source ->
                                     if (navigation.currentBackStackEntry !== historyEntry ||
@@ -136,7 +165,7 @@ class MainActivity : ComponentActivity() {
                             arguments = listOf(navArgument("finishedReviewToken") { type = NavType.StringType }),
                         ) { reviewEntry ->
                             val token = reviewEntry.arguments?.getString("finishedReviewToken")
-                            val expected = finishedReviewEntry?.takeIf { it.token == token }?.source
+                            val expected = finishedReviewEntry?.source(token)
                             FinishedSessionReviewRoute(
                                 reviewRoad = { source, allowed ->
                                     SessionReviewRoadRoute(source, allowed, roadMap = { snapshot, roads, selected, canPresent, changes ->
@@ -149,9 +178,7 @@ class MainActivity : ComponentActivity() {
                                         lifecycle.currentState != Lifecycle.State.RESUMED ||
                                         reviewEntry.lifecycle.currentState != Lifecycle.State.RESUMED ||
                                         expected != source ||
-                                        finishedReviews.entry.value
-                                            ?.takeIf { it.token == token }
-                                            ?.source != source
+                                        finishedReviews.source(token) != source
                                     ) {
                                         return@openNext
                                     }
@@ -165,14 +192,11 @@ class MainActivity : ComponentActivity() {
                                         !lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) ||
                                         !reviewEntry.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) ||
                                         expected != source ||
-                                        finishedReviews.entry.value
-                                            ?.takeIf { it.token == token }
-                                            ?.source != source
+                                        finishedReviews.source(token) != source
                                     ) {
                                         return@openLocations
                                     }
-                                    locationHistorySource = source
-                                    navigation.navigate("location-history") { launchSingleTop = true }
+                                    openLocationHistory(source)
                                 },
                                 onClose = {
                                     if (navigation.currentBackStackEntry === reviewEntry &&
@@ -196,19 +220,26 @@ class MainActivity : ComponentActivity() {
                                 viewModel = locationControls,
                             )
                         }
-                        composable("location-history") {
-                            val expected = locationHistorySource
+                        // The prior route can still be restored without an in-memory source.
+                        composable("location-history") { legacyEntry ->
+                            val close = { closeLocationHistory(legacyEntry) }
+                            BackHandler(onBack = close)
+                            LocationHistoryReopen(onClose = close)
+                        }
+                        composable(
+                            "location-history/{locationHistoryToken}",
+                            arguments = listOf(navArgument("locationHistoryToken") { type = NavType.StringType }),
+                        ) { locationEntry ->
+                            val token = locationEntry.arguments?.getString("locationHistoryToken")
+                            val expected = locationHistoryEntry?.source(token)
+                            val close = { closeLocationHistory(locationEntry, token) }
+                            BackHandler(onBack = close)
                             if (expected == null) {
-                                ParkedPage {
-                                    Text(getString(R.string.location_history_reopen))
-                                    TextButton(
-                                        onClick = { navigation.popBackStack() },
-                                    ) { Text(getString(R.string.location_history_missing_back)) }
-                                }
+                                LocationHistoryReopen(onClose = close)
                             } else {
                                 LocationHistoryRoute(
                                     expectedSource = expected,
-                                    onClose = { navigation.popBackStack() },
+                                    onClose = close,
                                     storedPointMap = { source, run, events, selectedEvent, canRead, openLinkedSample ->
                                         val candidate =
                                             selectedEvent?.takeIf { it.reading is LocationUpdateReading.Sample }?.let {
@@ -334,5 +365,13 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun LocationHistoryReopen(onClose: () -> Unit) {
+    ParkedPage {
+        Text(stringResource(R.string.location_history_reopen))
+        TextButton(onClick = onClose) { Text(stringResource(R.string.location_history_missing_back)) }
     }
 }
