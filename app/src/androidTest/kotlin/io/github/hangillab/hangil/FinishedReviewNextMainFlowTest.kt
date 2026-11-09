@@ -88,6 +88,10 @@ class FinishedReviewNextMainFlowTest {
             object : Statement() {
                 override fun evaluate() {
                     assumeTrue(InstrumentationRegistry.getArguments().getString("manualFinishedReviewNextControlled") == "true")
+                    check(instrument.targetContext.packageName == "io.github.hangillab.hangil.controlledmainui") {
+                        "Use the isolated -PcontrolledMainUi=true build"
+                    }
+                    check(Build.VERSION.SDK_INT in 33..34) { "Use the isolated API 33 or 34 host" }
                     check(instrument.targetContext.applicationContext is HiltTestApplication) { "Use the opt-in Hilt UI runner" }
                     hilt = HiltAndroidRule(this@FinishedReviewNextMainFlowTest)
                     hilt.apply(compose.apply(base, description), description).evaluate()
@@ -144,22 +148,26 @@ class FinishedReviewNextMainFlowTest {
         val scale = checkNotNull(args.getString("expectedFontScale")).toFloat()
         val dark = checkNotNull(args.getString("expectedDark")).toBooleanStrict()
         check(scale == 1f || scale == 1.3f)
-        check(Build.VERSION.SDK_INT == 33) { "This is the isolated SDK-free API33 host scenario" }
         val configuration = instrument.targetContext.resources.configuration
         check(abs(configuration.fontScale - scale) < 0.01f)
         check((configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES) == dark)
         check(!instrument.targetContext.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
         hilt.inject()
-        val original = rows()
-        check(original.none { it.isActive }) { "Never finish or replace a pre-existing active session" }
+        check(rows().isEmpty() && selection() == null) { "Start with a fresh isolated database" }
         val course = catalog.courses.first { it.tasks.size >= 2 && it.goalIds.isNotEmpty() }
         val goal = catalog.goals.first { it.id in course.goalIds }
         val firstTask = course.tasks.first()
         val nextTask = course.tasks.first { it.id != firstTask.id }
         val initialSelection = PracticeSelection(goal.id, course.id, course.version, course.briefingVersion, firstTask.id)
         val nextSelection = initialSelection.copy(taskId = nextTask.id)
-        val captures = File(instrument.targetContext.cacheDir, "screenshots/finished-review-next-main-${UUID.randomUUID()}")
-        check(captures.mkdirs())
+        val captures =
+            if (args.getString("captureFinishedReviewNextControlled") == "true") {
+                File(instrument.targetContext.cacheDir, "screenshots/finished-review-next-main-${UUID.randomUUID()}").apply {
+                    check(mkdirs())
+                }
+            } else {
+                null
+            }
         var scenario: ActivityScenario<MainActivity>? = null
         var primary: Throwable? = null
         try {
@@ -178,10 +186,7 @@ class FinishedReviewNextMainFlowTest {
             waitTag("session_start")
             check(selection() == initialSelection)
             click("session_start")
-            val started =
-                awaitRows { rows ->
-                    rows.any { it.isActive && it.sessionId !in original.map { old -> old.sessionId } }
-                }.single { it.isActive }
+            val started = awaitRows { rows -> rows.any { it.isActive } }.single { it.isActive }
             check(started.selection == initialSelection)
             click("session_finish")
             val ended =
@@ -238,14 +243,13 @@ class FinishedReviewNextMainFlowTest {
             waitTag("saved_task")
             compose.onNodeWithTag("saved_task", useUnmergedTree = true).assertTextContains(nextTask.title)
             waitTag("session_start")
-            val after = rows()
-            check(after.none { it.isActive } && after.single { it.sessionId == ended.sessionId } == ended)
-            check(
-                after.filterNot { it.sessionId == ended.sessionId } == original,
-            ) { "Existing sessions must remain identical and in order" }
-            check(after.size == original.size + 1) { "Saving next preparation must not start another session" }
+            check(rows() == listOf(ended)) { "Saving next preparation must not change sessions" }
             capture(captures, "home-next-ready")
-            requireHost()
+            click("session_recent_review")
+            assertExact(ended)
+            click("history_close")
+            waitTag("session_start")
+            check(selection() == nextSelection && rows() == listOf(ended))
             check(sdkCalls.get() == 0)
         } catch (failure: Throwable) {
             primary = failure
@@ -349,9 +353,10 @@ class FinishedReviewNextMainFlowTest {
     private fun selection(): PracticeSelection? = runBlocking { withTimeout(20_000) { preparation.observeSelection().first() } }
 
     private fun capture(
-        directory: File,
+        directory: File?,
         name: String,
     ) {
+        if (directory == null) return
         requireHost()
         compose.onRoot(useUnmergedTree = true).captureToImage().asAndroidBitmap().let { bitmap ->
             File(directory, "$name.png").outputStream().use { check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) }
