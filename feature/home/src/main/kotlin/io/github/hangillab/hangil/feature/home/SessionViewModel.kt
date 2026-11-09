@@ -73,6 +73,8 @@ class SessionViewModel
         val finishActions: StateFlow<SessionFinishAction?> = actions.asStateFlow()
         private val receipts = MutableStateFlow<SessionFinishReceipt?>(null)
         val finishReceipt: StateFlow<SessionFinishReceipt?> = receipts.asStateFlow()
+        private val recentReviews = MutableStateFlow<RecentSessionReviewAction?>(null)
+        internal val recentReviewActions = recentReviews.asStateFlow()
         private var finishSerial = 0L
         private var finishEpoch = 0L
         private var finishHostResumed = false
@@ -299,6 +301,7 @@ class SessionViewModel
                     if (current.singleOrNull { it.isActive } != action.source || !mutation.tryLock()) return@synchronized null
                     actions.value = null
                     receipts.value = null
+                    recentReviews.value = null
                     acknowledgedFinish = null
                     PendingFinish(action, recordsOwner, readerJob, canKeepOpen).also {
                         acceptedFinish = it
@@ -410,6 +413,16 @@ class SessionViewModel
                 receipt.source
             }
 
+        internal fun canOpenRecentReview(
+            action: RecentSessionReviewAction,
+            canKeepOpen: () -> Boolean,
+        ): Boolean =
+            synchronized(disclosureLock) {
+                recentReviews.value === action && receipts.value == null && !mutation.isLocked &&
+                    operation.value != SessionOperationState.Saving && finishAccessLocked(canKeepOpen) &&
+                    recentReviews.value === action && currentRecordsLocked()?.firstOrNull { !it.isActive } == action.source
+            }
+
         private fun canCommitFinish(pending: PendingFinish): Boolean =
             synchronized(disclosureLock) {
                 ownsFinishLocked(pending) && finishAccessLocked(pending.canKeepOpen) && ownsFinishLocked(pending) &&
@@ -476,12 +489,15 @@ class SessionViewModel
             } else {
                 receipts.value = null
             }
+            val latest = if (receipts.value == null && !mutation.isLocked) records.firstOrNull { !it.isActive } else null
+            if (recentReviews.value?.source != latest) recentReviews.value = latest?.let(::RecentSessionReviewAction)
         }
 
         private fun retireFinishLocked(clearAcknowledgement: Boolean = false) {
             finishEpoch++
             actions.value = null
             receipts.value = null
+            recentReviews.value = null
             acceptedFinish?.revoked = true
             if (clearAcknowledgement) acknowledgedFinish = null
         }

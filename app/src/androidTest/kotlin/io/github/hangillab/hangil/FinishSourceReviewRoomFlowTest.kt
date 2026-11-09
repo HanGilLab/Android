@@ -70,7 +70,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.roundToInt
 import io.github.hangillab.hangil.feature.home.R as HomeR
 
-/** Real production routes and strict Room repository in a UUID-owned schema9 store; no SDK or user database. */
+/** Real production routes and strict Room repository in a UUID-owned Room store; no SDK or user database. */
 @RunWith(AndroidJUnit4::class)
 class FinishSourceReviewRoomFlowTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentCatalogActivity>()
@@ -127,6 +127,71 @@ class FinishSourceReviewRoomFlowTest {
             check(f.memoQueries.none { it == newer.sessionId })
             check(f.snapshot() == beforeReview) { "Reviewing an exact source changed owned data" }
             check(proxy.strictCalls.get() == 1 && proxy.legacyCalls.get() == 0)
+        }
+    }
+
+    @Test fun recentExactReviewReopensAfterFinishAndRejectsStaleHomeActions() {
+        assumeManual()
+        val args = InstrumentationRegistry.getArguments()
+        val fontScale = checkNotNull(args.getString("expectedFontScale")).toFloat()
+        val dark = checkNotNull(args.getString("expectedDark")).toBooleanStrict()
+        val configuration = compose.activity.resources.configuration
+        check(kotlin.math.abs(configuration.fontScale - fontScale) < 0.01f)
+        check((configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES) == dark)
+
+        fixture { f ->
+            val original = f.snapshot()
+            val ui = f.mount(f.store.sessions)
+            ui.touch("session_finish")
+            ui.waitReceipt()
+            check(ui.nodes("session_recent_review").isEmpty())
+            val ended = checkNotNull(ui.session.finishReceipt.value).source
+            f.assertOnlyEnded(original, ended)
+            val afterFinish = f.snapshot()
+            ui.touch("session_finish_review")
+            ui.ready(ended)
+            ui.touch("history_close")
+            ui.waitTag("session_recent_review")
+            check(ui.nodes("session_finish_review").isEmpty())
+            ui.touch("session_recent_review")
+            ui.ready(ended)
+            check(ui.navigation == listOf(ended, ended))
+            check(f.snapshot() == afterFinish)
+
+            ui.touch("history_close")
+            ui.waitTag("session_recent_review")
+            val beforeRestriction = ui.action("session_recent_review")
+            val allowed = ui.restrictions.value
+            compose.runOnIdle { ui.restrictions.value = allowed.copy(uxRestrictionState = UxRestrictionState.RESTRICTED) }
+            ui.waitTag("home_locked_title")
+            ui.invoke(beforeRestriction)
+            compose.runOnIdle { ui.restrictions.value = allowed }
+            ui.waitTag("session_recent_review")
+            ui.invoke(beforeRestriction)
+            check(ui.navigation == listOf(ended, ended))
+
+            val beforeNewer = ui.action("session_recent_review")
+            val newer = f.addNewerEnded()
+            compose.waitUntil(TIMEOUT) { ui.session.uiState.value.latestFinished == newer }
+            ui.waitTag("session_recent_review")
+            ui.invoke(beforeNewer)
+            check(ui.navigation == listOf(ended, ended))
+            val afterNewer = f.snapshot()
+            ui.touch("session_recent_review")
+            ui.ready(newer)
+            check(ui.navigation == listOf(ended, ended, newer))
+            check(f.snapshot() == afterNewer)
+
+            ui.dispose()
+            check(ui.isStopped)
+            f.store.reopen()
+            val reopened = f.mount(f.store.sessions)
+            reopened.waitTag("session_recent_review")
+            check(reopened.nodes("session_finish_review").isEmpty())
+            reopened.touch("session_recent_review")
+            reopened.ready(newer)
+            check(reopened.navigation == listOf(newer))
+            check(f.snapshot() == afterNewer)
         }
     }
 
@@ -801,7 +866,7 @@ class FinishSourceReviewRoomFlowTest {
                 }
             }
             attempt { f.ui?.dispose() }
-            attempt { check(f.store.schemaVersion() == 9 && f.store.foreignKeyViolationCount() == 0) }
+            attempt { check(f.store.schemaVersion() == SCHEMA_VERSION && f.store.foreignKeyViolationCount() == 0) }
             attempt {
                 check(f.ui == null || f.ui!!.isStopped)
                 f.store.close()
@@ -820,7 +885,7 @@ class FinishSourceReviewRoomFlowTest {
         fun seed() =
             runBlocking {
                 check(
-                    store.schemaVersion() == 9 &&
+                    store.schemaVersion() == SCHEMA_VERSION &&
                         store.sessions
                             .observeSessions()
                             .first()
@@ -1002,6 +1067,7 @@ class FinishSourceReviewRoomFlowTest {
     private fun <T> await(value: CompletableDeferred<T>): T = runBlocking { withTimeout(TIMEOUT) { value.await() } }
 
     private companion object {
+        const val SCHEMA_VERSION = 11
         const val TIME = FinishSourceReviewBoundaryTest.TIME
         const val TIMEOUT = FinishSourceReviewBoundaryTest.TIMEOUT
 

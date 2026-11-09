@@ -51,6 +51,7 @@ internal fun SessionRoute(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val finishAction by viewModel.finishActions.collectAsStateWithLifecycle()
     val receipt by viewModel.finishReceipt.collectAsStateWithLifecycle()
+    val recentReview by viewModel.recentReviewActions.collectAsStateWithLifecycle()
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     var resumeOwner by remember(viewModel, lifecycle) { mutableStateOf(AtomicBoolean(false)) }
     DisposableEffect(viewModel, lifecycle) {
@@ -86,6 +87,7 @@ internal fun SessionRoute(
         }
     val displayedAction = finishAction
     val displayedReceipt = receipt
+    val displayedRecentReview = recentReview
     val backgroundViewModel: BackgroundRecordingViewModel = hiltViewModel()
     val displayed = state
     val background by backgroundViewModel.state.collectAsStateWithLifecycle()
@@ -113,20 +115,17 @@ internal fun SessionRoute(
                 if (onFinishedReview != null && displayedReceipt != null && canKeepOpen() &&
                     viewModel.canReviewFinished(displayedReceipt)
                 ) {
-                    val reviewClick = {
+                    OpenReviewButton("session_finish_review") {
                         viewModel.consumeFinishedReview(displayedReceipt, canKeepOpen)?.let(onFinishedReview)
-                        Unit
                     }
-                    ParkedButton(
-                        onClick = reviewClick,
-                        modifier = Modifier.fillMaxWidth().testTag("session_finish_review").frozenObservationClick(reviewClick),
-                    ) {
-                        Text(
-                            stringResource(R.string.finish_review_open),
-                            Modifier.fillMaxWidth(),
-                            textAlign = TextAlign.Center,
-                            style = MaterialTheme.typography.titleLarge,
-                        )
+                }
+            },
+            recentReviewContent = { latest ->
+                if (onFinishedReview != null && displayedRecentReview != null && displayedRecentReview.source == latest &&
+                    canKeepOpen() && viewModel.canOpenRecentReview(displayedRecentReview, canKeepOpen)
+                ) {
+                    OpenReviewButton("session_recent_review") {
+                        if (viewModel.canOpenRecentReview(displayedRecentReview, canKeepOpen)) onFinishedReview(latest)
                     }
                 }
             },
@@ -137,6 +136,21 @@ internal fun SessionRoute(
                     backgroundViewModel,
                 )
             },
+        )
+    }
+}
+
+@Composable
+private fun OpenReviewButton(
+    tag: String,
+    onClick: () -> Unit,
+) {
+    ParkedButton(onClick, modifier = Modifier.fillMaxWidth().testTag(tag).frozenObservationClick(onClick)) {
+        Text(
+            stringResource(R.string.finish_review_open),
+            Modifier.fillMaxWidth(),
+            textAlign = TextAlign.Center,
+            style = MaterialTheme.typography.titleLarge,
         )
     }
 }
@@ -157,6 +171,7 @@ internal fun SessionPanel(
     allowRecordingRetry: Boolean = true,
     backgroundContent: @Composable () -> Unit = {},
     finishedReviewContent: @Composable () -> Unit = {},
+    recentReviewContent: @Composable (PracticeSession) -> Unit = {},
 ) {
     if (!state.allowsInteraction) return
     val outdated = (state.preparation as? PreparationLoadState.Loaded)?.preparation == Preparation.Outdated
@@ -337,7 +352,7 @@ internal fun SessionPanel(
         }
     }
     backgroundContent()
-    LatestSessionPanel(state, onPrepareNext, canExpandRecent)
+    LatestSessionPanel(state, onPrepareNext, canExpandRecent, recentReviewContent)
 }
 
 @Composable
@@ -372,6 +387,7 @@ private fun LatestSessionPanel(
     state: SessionUiState,
     onPrepareNext: (String) -> Unit,
     canExpandRecent: (PracticeSession) -> Boolean,
+    reviewContent: @Composable (PracticeSession) -> Unit,
 ) {
     val records = state.records as? SessionLoadState.Loaded ?: return
     val latest = state.latestFinished
@@ -391,6 +407,7 @@ private fun LatestSessionPanel(
             latest.endedAtEpochMillis?.let {
                 Text(stringResource(R.string.session_finished_at, displayTime(it)), Modifier.testTag("session_latest_finished"))
             }
+            reviewContent(latest)
             key(latest) {
                 ParkedDisclosure(
                     stringResource(R.string.session_details),
