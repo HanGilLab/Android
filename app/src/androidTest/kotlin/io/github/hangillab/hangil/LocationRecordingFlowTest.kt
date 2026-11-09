@@ -839,6 +839,7 @@ class LocationRecordingFlowTest {
             val historyOpensBeforeDetails = f.historyOpens.get()
             val detailsAction = clickAction("review_road_sample_details")
             assertTrue(nodes("review_road_sample_details_content").isEmpty())
+            visual("inline-linked-sample-closed", "review_road_sample_details")
             click("review_road_sample_details")
             waitTag("review_road_sample_details_content")
             val detailsText =
