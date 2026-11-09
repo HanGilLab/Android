@@ -157,9 +157,9 @@ class FinishedReviewNextMainFlowTest {
         val course = catalog.courses.first { it.tasks.size >= 2 && it.goalIds.isNotEmpty() }
         val goal = catalog.goals.first { it.id in course.goalIds }
         val firstTask = course.tasks.first()
-        val nextTask = course.tasks.first { it.id != firstTask.id }
+        val editedTask = course.tasks.first { it.id != firstTask.id }
         val initialSelection = PracticeSelection(goal.id, course.id, course.version, course.briefingVersion, firstTask.id)
-        val nextSelection = initialSelection.copy(taskId = nextTask.id)
+        val editedSelection = initialSelection.copy(taskId = editedTask.id)
         val captures =
             if (args.getString("captureFinishedReviewNextControlled") == "true") {
                 File(instrument.targetContext.cacheDir, "screenshots/finished-review-next-main-${UUID.randomUUID()}").apply {
@@ -188,6 +188,16 @@ class FinishedReviewNextMainFlowTest {
             click("session_start")
             val started = awaitRows { rows -> rows.any { it.isActive } }.single { it.isActive }
             check(started.selection == initialSelection)
+            click("home_prepare")
+            click("preparation_next")
+            click("preparation_next")
+            click("task_${editedTask.id}")
+            click("preparation_next")
+            waitTag("session_active_task")
+            waitTag("saved_task")
+            compose.onNodeWithTag("session_active_task", useUnmergedTree = true).assertTextContains(firstTask.title)
+            compose.onNodeWithTag("saved_task", useUnmergedTree = true).assertTextContains(editedTask.title)
+            check(selection() == editedSelection && rows() == listOf(started))
             click("session_finish")
             val ended =
                 awaitRows { rows -> rows.singleOrNull { it.sessionId == started.sessionId }?.isActive == false }.single {
@@ -195,6 +205,7 @@ class FinishedReviewNextMainFlowTest {
                         started.sessionId
                 }
             check(ended == started.copy(endedAtEpochMillis = checkNotNull(ended.endedAtEpochMillis)))
+            check(selection() == editedSelection)
             waitTag("session_finish_review")
             check(nodes("history_ready").isEmpty()) { "Finishing must not navigate automatically" }
             click("session_finish_review")
@@ -228,20 +239,20 @@ class FinishedReviewNextMainFlowTest {
             click("next_task_${firstTask.id}")
             click("next_practice_close")
             assertExact(ended)
-            check(nextMemory.entry.value == null && selection() == initialSelection)
+            check(nextMemory.entry.value == null && selection() == editedSelection)
             invoke(currentNext)
             check(nextMemory.entry.value == null && nodes("next_practice_ready").isEmpty())
             capture(captures, "cancelled-same-review")
             click("history_prepare_next")
             waitTag("next_practice_choose_first")
-            click("next_task_${nextTask.id}")
-            capture(captures, "next-different-task")
+            click("next_task_${firstTask.id}")
+            capture(captures, "next-choice-before-save")
             click("next_practice_save")
             assertExact(ended)
-            check(selection() == nextSelection)
+            check(selection() == initialSelection)
             click("history_close")
             waitTag("saved_task")
-            compose.onNodeWithTag("saved_task", useUnmergedTree = true).assertTextContains(nextTask.title)
+            compose.onNodeWithTag("saved_task", useUnmergedTree = true).assertTextContains(firstTask.title)
             waitTag("session_start")
             check(rows() == listOf(ended)) { "Saving next preparation must not change sessions" }
             capture(captures, "home-next-ready")
@@ -249,7 +260,7 @@ class FinishedReviewNextMainFlowTest {
             assertExact(ended)
             click("history_close")
             waitTag("session_start")
-            check(selection() == nextSelection && rows() == listOf(ended))
+            check(selection() == initialSelection && rows() == listOf(ended))
             check(sdkCalls.get() == 0)
         } catch (failure: Throwable) {
             primary = failure

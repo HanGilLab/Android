@@ -215,7 +215,7 @@ internal fun HomeScreen(
                                     )
                                     ParkedBadge(stringResource(R.string.demo_course))
                                     Text(
-                                        stringResource(R.string.today_one),
+                                        stringResource(R.string.prepared_task_label),
                                         style = MaterialTheme.typography.labelLarge,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
