@@ -437,7 +437,7 @@ private fun PreparedMap(
             }
         }
     }
-    Text(stringResource(R.string.map_sources), style = MaterialTheme.typography.bodyMedium)
+    MapCredits(dark, MaterialTheme.typography.bodyMedium)
 }
 
 @Composable

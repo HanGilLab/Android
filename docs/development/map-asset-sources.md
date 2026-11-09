@@ -38,10 +38,10 @@
 
 ## 앱 표시와 출품 자료의 남은 점검
 
-현재 코드에는 OpenFreeMap/OpenMapTiles/OpenStreetMap 출처 문구와 Native attribution 활성화가 있다. 이번에는 실제 기기 화면이나 attribution 메뉴를 다시 실행하지 않았으므로 두 테마의 최종 표시와 링크 접근을 새로 통과한 것으로 기록하지 않는다.
+코스 지도, 복습 도로 지도와 위치 표본 지도는 OpenFreeMap, OpenMapTiles, OpenStreetMap 데이터 출처와 Native attribution을 제공한다. 다크 스타일에는 그 아래 제작자와 CartoDB Basemaps 원본, 디자인 라이선스 URI를 표시한다. 공식 원본 고지는 위 스타일별 라이선스에서 확인할 수 있다.
 
 - [ ] 두 테마의 실제 지도에서 OpenMapTiles/OpenStreetMap 귀속과 Native attribution 접근을 확인한다.
-- [ ] Dark 고지가 요구하는 접근 가능한 디자인 출처가 실제 지도에서 이어지는지 확인한다. 저장소 문서에 링크를 추가한 사실만으로 앱 표시를 충족했다고 하지 않는다.
+- [ ] 최종 배포 화면에서 다크 스타일의 디자인 고지와 라이선스 주소를 읽을 수 있는지 확인한다.
 - [ ] 최종 캡처/영상에도 지도 데이터와 스타일의 필요한 귀속을 유지한다. 공식 [출처 안내](https://openfreemap.org/)의 인쇄물/영상 안내를 별도로 적용한다.
 - [ ] 글꼴/glyph/스타일/sprite를 앱에 포함하거나 오프라인 배포하는 변경이 생기면 원 copyright, 고지와 조건 원문을 다시 확인한다. 현재 조사만으로 그런 배포를 승인하지 않는다.
 - [ ] 실제 glyph 바이너리의 원본 버전/빌드와 전체 sprite 픽셀의 제작 대응은 미확인으로 유지한다.

@@ -26,9 +26,12 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.lifecycle.Lifecycle
@@ -91,6 +94,7 @@ import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import io.github.hangillab.hangil.feature.map.R as MapR
 import org.maplibre.android.R as MapSdkR
 
 /**
@@ -877,6 +881,32 @@ class MapInputLifecycleTest {
 
     @Test fun actualCompassAndAttributionChildTouchesNeverBecomePointChoices() =
         withMap { fixture, initial ->
+            val args = InstrumentationRegistry.getArguments()
+            val configuration = compose.activity.resources.configuration
+            val dark = configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
+            args.getString("expectedFontScale")?.let {
+                assertTrue("실제 글꼴이 선언과 같아야 합니다", abs(configuration.fontScale - it.toFloat()) < 0.001f)
+            }
+            args.getString("expectedDark")?.let {
+                assertEquals("실제 테마가 선언과 같아야 합니다", it.toBooleanStrict(), dark)
+            }
+            compose
+                .onNodeWithText(compose.activity.getString(MapR.string.map_sources), useUnmergedTree = true)
+                .performScrollTo()
+                .assertIsDisplayed()
+            if (dark) {
+                compose
+                    .onNodeWithTag("map_dark_design_credit", useUnmergedTree = true)
+                    .performScrollTo()
+                    .assertIsDisplayed()
+                    .assertTextContains("MapTiler", substring = true)
+                    .assertTextContains("CartoDB Basemaps", substring = true)
+                    .assertTextContains("https://creativecommons.org/licenses/by/4.0/", substring = true)
+                    .assertTextContains("https://creativecommons.org/licenses/by/3.0/", substring = true)
+            } else {
+                assertTrue("라이트 지도에는 다크 디자인 출처를 표시하지 않습니다", nodes("map_dark_design_credit").isEmpty())
+            }
+            compose.onNodeWithTag("map_view", useUnmergedTree = true).performScrollTo()
             restoreCamera(initial.view, initial.camera.copy(bearing = 35.0))
             awaitStableCamera(initial.view)
             delay(700)

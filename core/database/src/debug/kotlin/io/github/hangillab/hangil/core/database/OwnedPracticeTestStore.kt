@@ -121,7 +121,10 @@ class OwnedPracticeTestStore private constructor(
     companion object {
         fun create(context: Context): OwnedPracticeTestStore {
             val application = context.applicationContext
-            check(application.packageName == "io.github.hangillab.hangil.debug") { "전용 debug 앱에서만 격리 저장소를 만듭니다" }
+            check(
+                application.packageName == "io.github.hangillab.hangil.debug" ||
+                    application.packageName == "io.github.hangillab.hangil.controlledmainui",
+            ) { "전용 debug 앱에서만 격리 저장소를 만듭니다" }
             check(application.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) { "debug 빌드가 필요합니다" }
             val reservation = Reservation.create(application)
             var database: PreparationDatabase? = null

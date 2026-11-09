@@ -25,6 +25,7 @@ import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -111,6 +112,7 @@ import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.roundToInt
 import io.github.hangillab.hangil.feature.home.R as HomeR
+import io.github.hangillab.hangil.feature.map.R as MapR
 
 /** Explicit opt-in: real Compose and nonce-owned Room, entirely controlled vehicle inputs, no SDK clients. */
 @RunWith(AndroidJUnit4::class)
@@ -378,6 +380,21 @@ class HistoryNextPracticeFlowTest {
             assertReferenceRoad(savedRoad)
             var firstRoadMap = awaitReferenceMap(savedRoad.road)
             captureReferenceMap()
+            for (source in listOf(MapR.string.map_sources, MapR.string.map_road_attribution)) {
+                compose
+                    .onNodeWithText(compose.activity.getString(source), useUnmergedTree = true)
+                    .performScrollTo()
+                    .assertIsDisplayed()
+            }
+            if (expectedDark) {
+                compose
+                    .onNodeWithTag("map_dark_design_credit", useUnmergedTree = true)
+                    .performScrollTo()
+                    .assertIsDisplayed()
+                    .assertTextContains("CartoDB Basemaps", substring = true)
+            } else {
+                assertMissing("map_dark_design_credit")
+            }
             assertEquals(reviewRoadsBefore, reviewRoadSnapshot(store, sessionsBefore))
             // Only this synthetic owner's lifecycle changes; the actual Activity stays resumed.
             val preStopGate = referenceGates.last()
