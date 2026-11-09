@@ -1,5 +1,6 @@
 package io.github.hangillab.hangil
 
+import android.content.res.Configuration
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -16,6 +17,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import io.github.hangillab.hangil.core.database.OwnedPracticeTestStore
 import io.github.hangillab.hangil.core.designsystem.HanGilTheme
 import io.github.hangillab.hangil.core.domain.ConnectionState
 import io.github.hangillab.hangil.core.domain.DrivingRestrictions
@@ -24,6 +26,9 @@ import io.github.hangillab.hangil.core.domain.GearPosition
 import io.github.hangillab.hangil.core.domain.NavigationGateway
 import io.github.hangillab.hangil.core.domain.NavigationScreenResult
 import io.github.hangillab.hangil.core.domain.ParkingState
+import io.github.hangillab.hangil.core.domain.PracticeCourse
+import io.github.hangillab.hangil.core.domain.PracticeNavigationRoute
+import io.github.hangillab.hangil.core.domain.PracticeSelection
 import io.github.hangillab.hangil.core.domain.UxRestrictionState
 import io.github.hangillab.hangil.core.domain.VehicleGateway
 import io.github.hangillab.hangil.core.domain.VehicleReading
@@ -33,6 +38,8 @@ import io.github.hangillab.hangil.feature.home.NavigationScreenViewModel
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -40,7 +47,9 @@ import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
+import io.github.hangillab.hangil.feature.home.R as HomeR
 
 /** Real Compose/lifecycle and synthetic vehicle/SDK timing. Never calls the real Navi service. */
 @RunWith(AndroidJUnit4::class)
@@ -108,6 +117,118 @@ class NavigationScreenBoundaryTest {
             assertTrue(nodes("navigation_screen_connecting").isEmpty())
             assertTrue(nodes("navigation_screen_result").isEmpty())
         }
+
+    @Test fun activeCourseOwnsGuidanceUntilFinishEvenAfterPreparationChanges() {
+        val args = InstrumentationRegistry.getArguments()
+        assumeTrue(args.getString("manualNavigationScreenBoundary") == "true")
+        val fontScale = checkNotNull(args.getString("expectedFontScale")).toFloat()
+        val dark = checkNotNull(args.getString("expectedDark")).toBooleanStrict()
+        val configuration = compose.activity.resources.configuration
+        assertEquals(fontScale, configuration.fontScale, 0.01f)
+        assertEquals(dark, configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES)
+
+        val store = OwnedPracticeTestStore.create(InstrumentationRegistry.getInstrumentation().targetContext)
+        val gateway = CourseGateway()
+        val preparation = store.preparation
+        val sessions = store.sessions
+        var driver: FinishSourceReviewBoundaryTest.Driver? = null
+        var primary: Throwable? = null
+        try {
+            val courseA = store.catalog.courses.first { it.navigationRoute != null }
+            val routeA = checkNotNull(courseA.navigationRoute)
+            val courseB = store.catalog.courses.first { it.navigationRoute == null && it.goalIds.isNotEmpty() }
+
+            fun selection(course: PracticeCourse) =
+                PracticeSelection(
+                    store.catalog.goals
+                        .first { it.id in course.goalIds }
+                        .id,
+                    course.id,
+                    course.version,
+                    course.briefingVersion,
+                    course.tasks.first().id,
+                )
+
+            val selectionA = selection(courseA)
+            val selectionB = selection(courseB)
+            check(runBlocking { preparation.saveSelection(selectionA) { true } })
+            val home =
+                FinishSourceReviewBoundaryTest.Driver(
+                    compose,
+                    store.catalog,
+                    preparation,
+                    sessions,
+                    store.memos,
+                    store.observations,
+                    store.recordingRuns,
+                    store.courseCompletions,
+                    store.deletions,
+                    store.historyMemoWriter,
+                    navigationGateway = gateway,
+                )
+            driver = home
+            home.mount()
+            home.waitTag("session_start")
+            home.touch("session_start")
+            home.waitTag("session_active")
+            val started = runBlocking { sessions.observeSessions().first().single() }
+            assertTrue(started.isActive)
+            assertEquals(selectionA, started.selection)
+            check(runBlocking { preparation.replaceSelection(selectionA, selectionB) { true } })
+            compose.waitUntil(20_000) { home.nodes("saved_course").size == 1 && home.text("saved_course") == courseB.title }
+            val startRoute = "navigation_course_route_start"
+            val destination = "navigation_course_route_destination"
+            home.waitTag(destination)
+            assertEquals(
+                compose.activity.getString(HomeR.string.navigation_route_destination, routeA.destination.name),
+                home.text(destination),
+            )
+
+            val beforeRestriction = home.action(startRoute)
+            val unrestricted = home.restrictions.value
+            compose.runOnIdle { home.restrictions.value = unrestricted.copy(uxRestrictionState = UxRestrictionState.RESTRICTED) }
+            home.waitTag("home_locked_title")
+            home.invoke(beforeRestriction)
+            assertTrue(gateway.requests.isEmpty())
+            compose.runOnIdle { home.restrictions.value = unrestricted }
+            home.waitTag(startRoute)
+            home.invoke(beforeRestriction)
+            assertTrue(gateway.requests.isEmpty())
+
+            val fromActive = home.action(startRoute)
+            home.touch(startRoute)
+            compose.waitUntil(20_000) { gateway.requests.size == 1 }
+            val request = gateway.requests.single()
+            assertEquals(routeA, request.route)
+            assertTrue(request.canDispatch())
+
+            home.waitTag("session_finish")
+            home.touch("session_finish")
+            home.waitReceipt()
+            val ended = runBlocking { sessions.observeSessions().first().single() }
+            assertEquals(started, ended.copy(endedAtEpochMillis = null))
+            assertFalse(ended.isActive)
+            assertFalse(request.canDispatch())
+            gateway.result.complete(NavigationScreenResult.GUIDANCE_STARTED)
+            compose.waitUntil(20_000) { home.nodes("navigation_screen_connecting").isEmpty() }
+            home.waitTag("navigation_screen_open")
+            assertTrue(home.nodes("navigation_course_route_panel").isEmpty())
+            assertTrue(home.nodes("navigation_screen_result").isEmpty())
+            home.invoke(fromActive)
+            assertEquals(1, gateway.requests.size)
+        } catch (failure: Throwable) {
+            primary = failure
+            throw failure
+        } finally {
+            try {
+                driver?.dispose()
+                if (driver?.isStopped != false) store.close()
+            } catch (cleanup: Throwable) {
+                val original = primary
+                if (original == null) throw cleanup else original.addSuppressed(cleanup)
+            }
+        }
+    }
 
     private fun fixture(block: (Fixture) -> Unit) {
         assumeTrue(InstrumentationRegistry.getArguments().getString("manualNavigationScreenBoundary") == "true")
@@ -181,6 +302,28 @@ class NavigationScreenBoundaryTest {
         val gateway = Gateway()
         val visible = mutableStateOf(true)
         lateinit var model: NavigationScreenViewModel
+    }
+
+    private class CourseGateway : NavigationGateway {
+        override val connection = MutableStateFlow(ConnectionState.DISCONNECTED)
+        val requests = CopyOnWriteArrayList<Request>()
+        val result = CompletableDeferred<NavigationScreenResult>()
+
+        override suspend fun requestForeground(canDispatch: () -> Boolean): NavigationScreenResult =
+            throw AssertionError("Unexpected screen-only request")
+
+        override suspend fun requestRoute(
+            route: PracticeNavigationRoute,
+            canDispatch: () -> Boolean,
+        ): NavigationScreenResult {
+            requests += Request(route, canDispatch)
+            return result.await()
+        }
+
+        data class Request(
+            val route: PracticeNavigationRoute,
+            val canDispatch: () -> Boolean,
+        )
     }
 
     private class Gateway : NavigationGateway {
