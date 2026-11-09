@@ -26,6 +26,7 @@
   <string name="map_retry">다시 불러오기</string>
   <string name="map_close">닫기</string>
   <string name="map_sources">지도: OpenFreeMap, © OpenMapTiles, © OpenStreetMap 기여자</string>
+  <string name="map_dark_design_credit">Dark 지도 디자인 © 2024 MapTiler.com 및 OpenMapTiles 기여자 (CC BY 4.0)\nhttps://creativecommons.org/licenses/by/4.0/\nCartoDB Basemaps에서 파생. © 2015 CartoDB Inc., Stamen과 Paul Norman 제작 (CC BY 3.0)\nhttps://creativecommons.org/licenses/by/3.0/</string>
   <string name="map_preparation_loading">준비한 코스를 읽고 있어요.</string>
   <string name="map_preparation_empty">먼저 연습을 준비해 주세요.</string>
   <string name="map_preparation_outdated">준비 내용이 바뀌었어요. 홈에서 다시 준비해 주세요.</string>

@@ -282,10 +282,10 @@ fun StoredLocationMap(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Text(
-                    stringResource(R.string.map_sources),
-                    Modifier.fillMaxWidth(),
+                MapCredits(
+                    dark,
                     style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.fillMaxWidth(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 LaunchedEffect(load, load.value) {

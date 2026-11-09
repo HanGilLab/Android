@@ -26,10 +26,12 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.text.TextLayoutResult
@@ -506,7 +508,8 @@ class LocationRecordingFlowTest {
         }
 
     @Test fun storedPointMapOpensOnlyForTheSelectedSampleAndNeverReopensAfterSelectionOrAccessChanges() {
-        assumeTrue(InstrumentationRegistry.getArguments().getString("manualStoredLocationMap") == "true")
+        val args = InstrumentationRegistry.getArguments()
+        assumeTrue(args.getString("manualStoredLocationMap") == "true")
         fixture(mapEnabled = true) { f ->
             click("session_start")
             val source = f.active()
@@ -631,6 +634,25 @@ class LocationRecordingFlowTest {
             assertTrue(nodes("review_road_save").isEmpty() && nodes("review_road_clear").isEmpty())
             assertTrue(nodes("review_road_memo_edit").isEmpty() && nodes("review_road_memo_create").isEmpty())
             visual("stored-point-and-user-selected-road", "location_history_point_map_notice", "stored_location_map")
+            for (source in listOf(MapR.string.map_sources, MapR.string.map_road_attribution)) {
+                compose
+                    .onNodeWithText(compose.activity.getString(source), useUnmergedTree = true)
+                    .performScrollTo()
+                    .assertIsDisplayed()
+            }
+            val configuration = compose.activity.resources.configuration
+            val dark = configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
+            args.getString("expectedDark")?.let { assertEquals(it.toBooleanStrict(), dark) }
+            args.getString("expectedFontScale")?.let { assertEquals(it.toFloat(), configuration.fontScale, 0.01f) }
+            if (dark) {
+                compose
+                    .onNodeWithTag("map_dark_design_credit", useUnmergedTree = true)
+                    .performScrollTo()
+                    .assertIsDisplayed()
+                    .assertTextContains("CartoDB Basemaps", substring = true)
+            } else {
+                assertTrue(nodes("map_dark_design_credit").isEmpty())
+            }
 
             waitTag("review_road_sample_absent")
             val staleFirstLink = clickAction("review_road_sample_link")
