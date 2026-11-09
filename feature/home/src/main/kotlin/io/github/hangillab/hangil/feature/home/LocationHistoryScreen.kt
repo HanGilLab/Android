@@ -42,9 +42,6 @@ import io.github.hangillab.hangil.core.domain.LocationRecordingStopReason
 import io.github.hangillab.hangil.core.domain.LocationUpdateReading
 import io.github.hangillab.hangil.core.domain.PracticeSession
 import io.github.hangillab.hangil.core.domain.SessionReviewSample
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 import java.util.concurrent.atomic.AtomicBoolean
 
 @Composable
@@ -453,41 +450,7 @@ private fun LocationHistoryReady(
                     viewModel.canRead(state.token)
                 }, Modifier.testTag("location_history_raw_details")) {
                     Column(Modifier.testTag("location_history_raw_content"), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.lg)) {
-                        Text(
-                            stringResource(R.string.location_history_raw_warning),
-                            modifier = Modifier.fillMaxWidth(),
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                        Text(
-                            stringResource(R.string.location_history_latitude, sample.latitude.toString()),
-                            modifier = Modifier.fillMaxWidth(),
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                        Text(
-                            stringResource(R.string.location_history_longitude, sample.longitude.toString()),
-                            modifier = Modifier.fillMaxWidth(),
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                        Text(
-                            stringResource(R.string.location_history_altitude, sample.altitudeRaw.toString()),
-                            modifier = Modifier.fillMaxWidth(),
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                        Text(
-                            stringResource(R.string.location_history_heading, sample.headingRaw.toString()),
-                            modifier = Modifier.fillMaxWidth(),
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                        Text(
-                            stringResource(R.string.location_history_confidence, sample.confidenceRaw.toString()),
-                            modifier = Modifier.fillMaxWidth(),
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                        Text(
-                            stringResource(R.string.location_history_sdk_time, sample.sdkTimestampMillis.toString()),
-                            modifier = Modifier.fillMaxWidth(),
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
+                        LocationSampleRawFields(sample)
                     }
                 }
             } else {
@@ -527,14 +490,6 @@ private fun LocationHistoryReady(
             }
         }
     }
-}
-
-@Composable
-private fun locationHistoryTime(epochMillis: Long): String {
-    val fallback = stringResource(R.string.location_history_time_unknown)
-    return runCatching {
-        Instant.ofEpochMilli(epochMillis).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("yyyy.MM.dd HH:mm:ss"))
-    }.getOrDefault(fallback)
 }
 
 private fun Modifier.frozenLocationHistoryClick(action: () -> Unit): Modifier =
