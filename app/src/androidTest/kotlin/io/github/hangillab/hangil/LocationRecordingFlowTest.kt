@@ -151,6 +151,9 @@ import org.maplibre.geojson.LineString
 import java.io.File
 import java.io.IOException
 import java.time.Clock
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.IdentityHashMap
 import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
@@ -516,6 +519,7 @@ class LocationRecordingFlowTest {
             // Equal coordinates still represent two separate stored callbacks with distinct IDs and ordinals.
             val samePlaceLater =
                 cityHall.copy(
+                    headingRaw = -17f,
                     receivedAtElapsedRealtimeMillis = f.elapsed.incrementAndGet(),
                 )
             f.emit(LocationUpdateReading.Sample(cityHall))
@@ -825,11 +829,67 @@ class LocationRecordingFlowTest {
             assertEquals(writesBeforeStop, f.sampleWriteAttempts.get())
             assertEquals(secondSample, storedRoad().sampleAnchor)
 
-            // Reuse the actual review editor for loss confirmation; no direct replacement bypass.
+            // Read the saved anchor inside the editor that also owns road replacement.
             click("location_history_back")
             click("history_review_road")
             waitTag("review_road_sample_present")
             val beforeReplace = storedRoad()
+            val readsBeforeDetails = f.reviewReadAttempts.get()
+            val writesBeforeDetails = f.sampleWriteAttempts.get()
+            val historyOpensBeforeDetails = f.historyOpens.get()
+            val detailsAction = clickAction("review_road_sample_details")
+            assertTrue(nodes("review_road_sample_details_content").isEmpty())
+            visual("inline-linked-sample-closed", "review_road_sample_details")
+            click("review_road_sample_details")
+            waitTag("review_road_sample_details_content")
+            val detailsText =
+                descendants(nodes("review_road_sample_details_content").single()).flatMap { node ->
+                    node.config
+                        .getOrNull(SemanticsProperties.Text)
+                        .orEmpty()
+                        .map { it.text }
+                }
+            val resources = instrument.targetContext.resources
+            val linked = secondSample.sample
+            val recordTime =
+                Instant.ofEpochMilli(secondSample.event.observedAtEpochMillis).atZone(ZoneId.systemDefault()).format(
+                    DateTimeFormatter.ofPattern("yyyy.MM.dd HH:mm:ss"),
+                )
+            val expectedDetails =
+                listOf(
+                    resources.getString(HomeR.string.review_road_sample_observation, secondSample.event.ordinal),
+                    resources.getString(HomeR.string.location_history_record_time, recordTime),
+                    resources.getString(HomeR.string.location_history_raw_warning),
+                    resources.getString(HomeR.string.location_history_latitude, linked.latitude.toString()),
+                    resources.getString(HomeR.string.location_history_longitude, linked.longitude.toString()),
+                    resources.getString(HomeR.string.location_history_altitude, linked.altitudeRaw.toString()),
+                    resources.getString(HomeR.string.location_history_heading, linked.headingRaw.toString()),
+                    resources.getString(HomeR.string.location_history_confidence, linked.confidenceRaw.toString()),
+                    resources.getString(HomeR.string.location_history_sdk_time, linked.sdkTimestampMillis.toString()),
+                )
+            assertTrue("The road card must show the exact linked callback's original values", detailsText.containsAll(expectedDetails))
+            assertFalse(detailsText.contains(resources.getString(HomeR.string.location_history_heading, cityHall.headingRaw.toString())))
+            assertNoStoredMap()
+            visual("inline-linked-sample", "review_road_sample_details", "review_road_sample_observation")
+            assertEquals("An inline reveal uses the already read anchor", readsBeforeDetails, f.reviewReadAttempts.get())
+            assertEquals(writesBeforeDetails, f.sampleWriteAttempts.get())
+            assertEquals(historyOpensBeforeDetails, f.historyOpens.get())
+            assertEquals(streamsBefore, f.gateway.streams.size)
+            assertEquals(beforeReplace, storedRoad())
+
+            f.drive(true)
+            waitTag("history_locked")
+            invoke(detailsAction)
+            assertTrue(nodes("review_road_sample_details_content").isEmpty())
+            f.drive(false)
+            waitTag("history_ready")
+            click("history_review_road")
+            waitTag("review_road_sample_present")
+            invoke(detailsAction)
+            assertTrue("An old reveal must not reopen after a parking lock", nodes("review_road_sample_details_content").isEmpty())
+            val beforeReplaceDetails = clickAction("review_road_sample_details")
+            click("review_road_sample_details")
+            waitTag("review_road_sample_details_content")
             click("review_road_candidate_1")
             openRoadDiscardDialog()
             val cancelledReplacement = roadDiscardConfirmAction()
@@ -850,6 +910,19 @@ class LocationRecordingFlowTest {
             val replaced = storedRoad()
             assertEquals(roads[1], replaced.road)
             assertNull(replaced.sampleAnchor)
+            compose.waitUntil(20_000) {
+                val title = nodes("review_road_stored_title").singleOrNull()
+                title
+                    ?.config
+                    ?.getOrNull(SemanticsProperties.Text)
+                    .orEmpty()
+                    .any { it.text == replaced.road.title } &&
+                    nodes("review_road_sample_present").isEmpty()
+            }
+            invoke(beforeReplaceDetails)
+            assertTrue("A replaced road must not reveal the old anchor", nodes("review_road_sample_details_content").isEmpty())
+            assertTrue(nodes("review_road_sample_details").isEmpty())
+            assertNoStoredMap()
             click("history_location_recording")
             waitTag("location_history_content")
             click("location_history_event_previous")

@@ -25,6 +25,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.hangillab.hangil.core.designsystem.HanGilSpacing
 import io.github.hangillab.hangil.core.designsystem.ParkedButton
 import io.github.hangillab.hangil.core.designsystem.ParkedChoice
+import io.github.hangillab.hangil.core.designsystem.ParkedDisclosure
 import io.github.hangillab.hangil.core.domain.CourseRoadSnapshot
 import io.github.hangillab.hangil.core.domain.PracticeSession
 import io.github.hangillab.hangil.core.domain.SessionReviewRoad
@@ -181,12 +182,42 @@ fun SessionReviewRoadRoute(
                         style = MaterialTheme.typography.bodyLarge,
                     )
                 }
-                if (!comparing && displayed.stored?.sampleAnchor != null) {
+                val anchor = displayed.stored?.sampleAnchor
+                if (!comparing && anchor != null) {
                     Text(
                         stringResource(R.string.review_road_sample_present),
                         Modifier.fillMaxWidth().testTag("review_road_sample_present"),
                         style = MaterialTheme.typography.bodyLarge,
                     )
+                    if (!readOnly && !displayed.busy && displayed.edit == null && displayed.confirmation == null) {
+                        key(displayed.token, anchor) {
+                            ParkedDisclosure(
+                                title = stringResource(R.string.review_road_sample_details),
+                                canExpand = { allowed() && viewModel.canRead(displayed.token) },
+                                modifier = Modifier.testTag("review_road_sample_details"),
+                            ) {
+                                Column(
+                                    Modifier.fillMaxWidth().testTag("review_road_sample_details_content"),
+                                    verticalArrangement = Arrangement.spacedBy(HanGilSpacing.lg),
+                                ) {
+                                    Text(
+                                        stringResource(R.string.review_road_sample_observation, anchor.event.ordinal),
+                                        Modifier.fillMaxWidth().testTag("review_road_sample_observation"),
+                                        style = MaterialTheme.typography.titleLarge,
+                                    )
+                                    Text(
+                                        stringResource(
+                                            R.string.location_history_record_time,
+                                            locationHistoryTime(anchor.event.observedAtEpochMillis),
+                                        ),
+                                        Modifier.fillMaxWidth().testTag("review_road_sample_observed_time"),
+                                        style = MaterialTheme.typography.bodyLarge,
+                                    )
+                                    LocationSampleRawFields(anchor.sample)
+                                }
+                            }
+                        }
+                    }
                 }
                 if (readOnly) {
                     val saved = displayed.stored

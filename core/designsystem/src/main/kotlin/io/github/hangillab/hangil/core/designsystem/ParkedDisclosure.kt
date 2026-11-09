@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -22,6 +23,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.style.TextAlign
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -112,7 +114,12 @@ fun ParkedDisclosure(
         ) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(HanGilSpacing.md)) {
                 Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
-                Text(action, style = MaterialTheme.typography.titleMedium)
+                Text(
+                    action,
+                    Modifier.width(HanGilDimensions.actionMinWidth),
+                    textAlign = TextAlign.End,
+                    style = MaterialTheme.typography.titleMedium,
+                )
             }
         }
         // Recheck immediately at content composition as well as at the original click.
