@@ -9,6 +9,7 @@ import io.github.hangillab.hangil.core.domain.ParkingState
 import io.github.hangillab.hangil.core.domain.PracticeCatalog
 import io.github.hangillab.hangil.core.domain.PracticeCourse
 import io.github.hangillab.hangil.core.domain.PracticeGoal
+import io.github.hangillab.hangil.core.domain.PracticeNavigationRoute
 import io.github.hangillab.hangil.core.domain.PracticeRepository
 import io.github.hangillab.hangil.core.domain.PracticeSelection
 import io.github.hangillab.hangil.core.domain.PracticeSession
@@ -383,6 +384,50 @@ class SessionViewModelTest {
             runCurrent()
             assertFeedback(model, SessionFeedback.STARTED)
             assertEquals(created, model.uiState.value.active)
+        }
+
+    @Test fun `guidance retires committed sources before delayed record emissions`() =
+        runTest {
+            val waypoint = PracticeNavigationRoute.Point("경유지", 37.0, 127.0, "fixture-stop", "0", "검증용 경유지")
+            val route = PracticeNavigationRoute(waypoint.copy(name = "목적지", poiId = "fixture-destination"), listOf(waypoint))
+            val routedCatalog =
+                object : PracticeCatalog {
+                    override val goals = listOf(goal)
+                    override val courses = listOf(course.copy(navigationRoute = route))
+                }
+            val active = session().copy(startedAtEpochMillis = 2_000L)
+            val ended = active.copy(endedAtEpochMillis = 2_000L)
+            startAction = { _, _, _ -> SessionStartResult.Started(active) }
+            finishAction = { _, _, _ -> SessionFinishResult.Finished(ended) }
+            val model = model(practiceCatalog = routedCatalog)
+            observe(model)
+
+            val prepared = checkNotNull(model.courseGuidance.value)
+            assertTrue(model.canUseCourseGuidance(prepared))
+            model.start()
+            runCurrent()
+            assertFeedback(model, SessionFeedback.STARTED)
+            assertNull(model.courseGuidance.value)
+            assertFalse(model.canUseCourseGuidance(prepared))
+
+            records.value = listOf(active)
+            runCurrent()
+            val running = checkNotNull(model.courseGuidance.value)
+            assertEquals(active, running.active)
+            assertTrue(model.canUseCourseGuidance(running))
+            assertTrue(model.finish(checkNotNull(model.finishActions.value)) { true })
+            runCurrent()
+            assertFeedback(model, SessionFeedback.FINISHED)
+            assertNull(model.courseGuidance.value)
+            assertFalse(model.canUseCourseGuidance(running))
+
+            records.value = listOf(ended)
+            runCurrent()
+            val nextPreparation = checkNotNull(model.courseGuidance.value)
+            assertNull(nextPreparation.active)
+            assertFalse(model.canUseCourseGuidance(prepared))
+            assertFalse(model.canUseCourseGuidance(running))
+            assertTrue(model.canUseCourseGuidance(nextPreparation))
         }
 
     @Test fun `invalid negative clock is passed unchanged and reported instead of normalized`() =
@@ -832,15 +877,17 @@ class SessionViewModelTest {
             assertEquals(0, finishCalls)
         }
 
-    private fun model(time: Long = 2_000L) =
-        SessionViewModel(
-            vehicle,
-            restrictions,
-            preparationRepository,
-            catalog,
-            repository,
-            Clock.fixed(Instant.ofEpochMilli(time), ZoneOffset.UTC),
-        )
+    private fun model(
+        time: Long = 2_000L,
+        practiceCatalog: PracticeCatalog = catalog,
+    ) = SessionViewModel(
+        vehicle,
+        restrictions,
+        preparationRepository,
+        practiceCatalog,
+        repository,
+        Clock.fixed(Instant.ofEpochMilli(time), ZoneOffset.UTC),
+    )
 
     private fun TestScope.observe(model: SessionViewModel): Job {
         val observation = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { model.uiState.collect {} }

@@ -5,9 +5,12 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.github.hangillab.hangil.core.domain.DrivingRestrictionsProvider
 import io.github.hangillab.hangil.core.domain.PracticeCatalog
+import io.github.hangillab.hangil.core.domain.PracticeNavigationRoute
 import io.github.hangillab.hangil.core.domain.PracticeRepository
 import io.github.hangillab.hangil.core.domain.PracticeSession
 import io.github.hangillab.hangil.core.domain.PracticeSessionRepository
+import io.github.hangillab.hangil.core.domain.Preparation
+import io.github.hangillab.hangil.core.domain.PreparedPractice
 import io.github.hangillab.hangil.core.domain.SessionFinishResult
 import io.github.hangillab.hangil.core.domain.SessionStartResult
 import io.github.hangillab.hangil.core.domain.VehicleGateway
@@ -45,7 +48,7 @@ class SessionViewModel
         private val vehicle: VehicleGateway,
         private val restrictions: DrivingRestrictionsProvider,
         preparationRepository: PracticeRepository,
-        catalog: PracticeCatalog,
+        private val catalog: PracticeCatalog,
         private val sessions: PracticeSessionRepository,
         private val clock: Clock,
     ) : ViewModel() {
@@ -62,6 +65,10 @@ class SessionViewModel
         private var recordsOwner: Any? = null
         private var recordsJob: Job? = null
         private var receivedRecords: SessionLoadState = SessionLoadState.Loading
+        private var guidanceRevision = 0L
+        private var guidanceSessionAwaitingRead: PracticeSession? = null
+        private val guidance = MutableStateFlow<CourseGuidance?>(null)
+        internal val courseGuidance = guidance.asStateFlow()
         private val actions = MutableStateFlow<SessionFinishAction?>(null)
         val finishActions: StateFlow<SessionFinishAction?> = actions.asStateFlow()
         private val receipts = MutableStateFlow<SessionFinishReceipt?>(null)
@@ -82,6 +89,7 @@ class SessionViewModel
                             preparationOwner = owner
                             preparationJob = starting
                             receivedPreparation = PreparationLoadState.Loading
+                            publishCourseGuidanceLocked()
                         }
                         emit(PreparationLoadState.Loading)
                     }.onCompletion { cause ->
@@ -91,13 +99,17 @@ class SessionViewModel
                         emit(PreparationLoadState.Failed)
                     }.onEach { load ->
                         synchronized(disclosureLock) {
-                            if (preparationOwner === owner) receivedPreparation = load
+                            if (preparationOwner === owner) {
+                                receivedPreparation = load
+                                publishCourseGuidanceLocked()
+                            }
                         }
                     }.onCompletion {
                         synchronized(disclosureLock) {
                             if (preparationOwner === owner) {
                                 preparationOwner = null
                                 preparationJob = null
+                                publishCourseGuidanceLocked()
                             }
                         }
                     }
@@ -114,6 +126,7 @@ class SessionViewModel
                             recordsJob = starting
                             receivedRecords = SessionLoadState.Loading
                             retireFinishLocked(clearAcknowledgement = true)
+                            publishCourseGuidanceLocked()
                         }
                         emit(SessionLoadState.Loading)
                     }.onCompletion { cause ->
@@ -126,6 +139,7 @@ class SessionViewModel
                             if (recordsOwner === owner) {
                                 receivedRecords = load
                                 receiveFinishSourceLocked()
+                                publishCourseGuidanceLocked()
                             }
                         }
                     }.onCompletion {
@@ -134,6 +148,7 @@ class SessionViewModel
                                 recordsOwner = null
                                 recordsJob = null
                                 retireFinishLocked(clearAcknowledgement = true)
+                                publishCourseGuidanceLocked()
                             }
                         }
                     }
@@ -151,6 +166,7 @@ class SessionViewModel
                     readerJob = starting
                     receivedPreparation = PreparationLoadState.Loading
                     receivedRecords = SessionLoadState.Loading
+                    publishCourseGuidanceLocked()
                 }
             }.onCompletion {
                 val completing = currentCoroutineContext()[Job]
@@ -158,6 +174,7 @@ class SessionViewModel
                     if (readerJob === completing) {
                         readerJob = null
                         retireFinishLocked(clearAcknowledgement = true)
+                        publishCourseGuidanceLocked()
                     }
                 }
             }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(0, 0), SessionUiState())
@@ -191,6 +208,50 @@ class SessionViewModel
                     current?.firstOrNull { !it.isActive } == expected
             }
 
+        internal fun canUseCourseGuidance(expected: CourseGuidance): Boolean =
+            synchronized(disclosureLock) {
+                guidance.value === expected && readerJob?.isActive == true && recordsJob?.isActive == true &&
+                    (expected.active != null || preparationJob?.isActive == true) && !mutation.isLocked && canCommit()
+            }
+
+        private fun publishCourseGuidanceLocked() {
+            val records = currentRecordsLocked()
+            val active = records?.firstOrNull { it.isActive }
+            // A successful write can return before Room publishes the new active session.
+            val saved = guidanceSessionAwaitingRead
+            if (saved != null) {
+                val caughtUp =
+                    records != null &&
+                        if (saved.isActive) records.any { it.sessionId == saved.sessionId } else active?.sessionId != saved.sessionId
+                if (!caughtUp) {
+                    guidance.value = null
+                    return
+                }
+                guidanceSessionAwaitingRead = null
+            }
+            val source =
+                when {
+                    records == null -> null
+                    active != null -> catalog.resolve(active.selection)
+                    preparationJob?.isActive == true -> (receivedPreparation as? PreparationLoadState.Loaded)?.preparation
+                    else -> null
+                }
+            val prepared = (source as? Preparation.Ready)?.practice
+            val route = prepared?.course?.navigationRoute
+            val previous = guidance.value
+            if (prepared == null || route == null) {
+                guidance.value = null
+            } else if (previous?.active != active || previous?.prepared != prepared) {
+                guidance.value = CourseGuidance(active, prepared, route, ++guidanceRevision)
+            }
+        }
+
+        private fun awaitGuidanceSessionRead(saved: PracticeSession) =
+            synchronized(disclosureLock) {
+                guidanceSessionAwaitingRead = saved
+                publishCourseGuidanceLocked()
+            }
+
         fun canPrepareNext(expectedSessionId: String): Boolean {
             if (!canCommit() || mutation.isLocked || operation.value == SessionOperationState.Saving) return false
             val records = (uiState.value.records as? SessionLoadState.Loaded)?.sessions ?: return false
@@ -201,9 +262,15 @@ class SessionViewModel
             if (!canCommit() || !uiState.value.canStart) return
             val practice = uiState.value.ready ?: return
             mutate {
-                when (sessions.start(practice, clock.millis(), ::canCommit)) {
-                    is SessionStartResult.Started -> SessionFeedback.STARTED
-                    is SessionStartResult.AlreadyActive -> SessionFeedback.ALREADY_ACTIVE
+                when (val result = sessions.start(practice, clock.millis(), ::canCommit)) {
+                    is SessionStartResult.Started -> {
+                        awaitGuidanceSessionRead(result.session)
+                        SessionFeedback.STARTED
+                    }
+                    is SessionStartResult.AlreadyActive -> {
+                        awaitGuidanceSessionRead(result.session)
+                        SessionFeedback.ALREADY_ACTIVE
+                    }
                     SessionStartResult.PreparationChanged -> SessionFeedback.PREPARATION_CHANGED
                     SessionStartResult.Blocked -> SessionFeedback.BLOCKED
                     SessionStartResult.InvalidTime -> SessionFeedback.INVALID_TIME
@@ -227,7 +294,7 @@ class SessionViewModel
             val pending =
                 synchronized(disclosureLock) {
                     if (actions.value !== action || !finishAccessLocked(canKeepOpen)) return@synchronized null
-                    val current = currentFinishRecordsLocked() ?: return@synchronized null
+                    val current = currentRecordsLocked() ?: return@synchronized null
                     if (actions.value !== action) return@synchronized null
                     if (current.singleOrNull { it.isActive } != action.source || !mutation.tryLock()) return@synchronized null
                     actions.value = null
@@ -243,6 +310,13 @@ class SessionViewModel
                     try {
                         val requestedTime = clock.millis()
                         val result = sessions.finish(action.source, requestedTime) { canCommitFinish(pending) }
+                        val source =
+                            when (result) {
+                                is SessionFinishResult.Finished -> result.session
+                                is SessionFinishResult.AlreadyFinished -> result.session
+                                else -> null
+                            }
+                        source?.let(::awaitGuidanceSessionRead)
                         currentCoroutineContext().ensureActive()
                         synchronized(disclosureLock) {
                             // A confirmed no-write result belongs to the request even after presentation is revoked.
@@ -255,12 +329,6 @@ class SessionViewModel
                             ) {
                                 return@synchronized
                             }
-                            val source =
-                                when (result) {
-                                    is SessionFinishResult.Finished -> result.session
-                                    is SessionFinishResult.AlreadyFinished -> result.session
-                                    else -> null
-                                }
                             val endedAt = source?.endedAtEpochMillis
                             if (source != null && endedAt != null &&
                                 endedAt >= source.startedAtEpochMillis && source.startedAtEpochMillis > 0 &&
@@ -323,7 +391,7 @@ class SessionViewModel
             synchronized(disclosureLock) {
                 !mutation.isLocked && operation.value != SessionOperationState.Saving &&
                     receipts.value === receipt && finishAccessLocked { true } && receipts.value === receipt &&
-                    currentFinishRecordsLocked()?.singleOrNull { it.sessionId == receipt.source.sessionId } == receipt.source
+                    currentRecordsLocked()?.singleOrNull { it.sessionId == receipt.source.sessionId } == receipt.source
             }
 
         fun consumeFinishedReview(
@@ -333,7 +401,7 @@ class SessionViewModel
             synchronized(disclosureLock) {
                 if (mutation.isLocked || operation.value == SessionOperationState.Saving ||
                     receipts.value !== receipt || !finishAccessLocked(canKeepOpen) || receipts.value !== receipt ||
-                    currentFinishRecordsLocked()?.singleOrNull { it.sessionId == receipt.source.sessionId } != receipt.source
+                    currentRecordsLocked()?.singleOrNull { it.sessionId == receipt.source.sessionId } != receipt.source
                 ) {
                     return@synchronized null
                 }
@@ -345,7 +413,7 @@ class SessionViewModel
         private fun canCommitFinish(pending: PendingFinish): Boolean =
             synchronized(disclosureLock) {
                 ownsFinishLocked(pending) && finishAccessLocked(pending.canKeepOpen) && ownsFinishLocked(pending) &&
-                    currentFinishRecordsLocked()?.singleOrNull { it.isActive } == pending.action.source
+                    currentRecordsLocked()?.singleOrNull { it.isActive } == pending.action.source
             }
 
         private fun ownsFinishLocked(pending: PendingFinish): Boolean =
@@ -363,14 +431,14 @@ class SessionViewModel
             return allowed && finishHostResumed && readerJob?.isActive == true && recordsJob?.isActive == true
         }
 
-        private fun currentFinishRecordsLocked(): List<PracticeSession>? =
+        private fun currentRecordsLocked(): List<PracticeSession>? =
             (receivedRecords as? SessionLoadState.Loaded)?.sessions?.takeIf {
                 readerJob?.isActive == true && recordsJob?.isActive == true &&
                     it.map { row -> row.sessionId }.distinct().size == it.size && it.count { row -> row.isActive } <= 1
             }
 
         private fun receiveFinishSourceLocked() {
-            val records = currentFinishRecordsLocked()
+            val records = currentRecordsLocked()
             val pending = acceptedFinish
             if (records == null) {
                 retireFinishLocked(clearAcknowledgement = true)
@@ -393,7 +461,7 @@ class SessionViewModel
         private fun publishFinishPresentationLocked() {
             val before = finishEpoch
             if (!finishHostResumed || !canCommit() || before != finishEpoch || !finishHostResumed) return
-            val records = currentFinishRecordsLocked() ?: return
+            val records = currentRecordsLocked() ?: return
             val active = records.singleOrNull { it.isActive }
             if (acceptedFinish == null && !mutation.isLocked && active != null) {
                 if (actions.value?.source != active) actions.value = SessionFinishAction(active, ++finishSerial)
@@ -417,6 +485,13 @@ class SessionViewModel
             acceptedFinish?.revoked = true
             if (clearAcknowledgement) acknowledgedFinish = null
         }
+
+        internal data class CourseGuidance(
+            val active: PracticeSession?,
+            val prepared: PreparedPractice,
+            val route: PracticeNavigationRoute,
+            val revision: Long,
+        )
 
         private class PendingFinish(
             val action: SessionFinishAction,

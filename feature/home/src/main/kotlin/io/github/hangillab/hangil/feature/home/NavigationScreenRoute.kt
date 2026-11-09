@@ -23,15 +23,18 @@ import io.github.hangillab.hangil.core.designsystem.HanGilDimensions
 import io.github.hangillab.hangil.core.designsystem.ParkedButton
 import io.github.hangillab.hangil.core.designsystem.ParkedPanel
 import io.github.hangillab.hangil.core.domain.NavigationScreenResult
-import io.github.hangillab.hangil.core.domain.PreparedPractice
 import java.util.concurrent.atomic.AtomicBoolean
 
 @Composable
-fun NavigationScreenRoute(
+fun NavigationScreenRoute(viewModel: NavigationScreenViewModel = hiltViewModel()) {
+    NavigationScreenRoute(course = null, canUseCourse = { false }, viewModel = viewModel)
+}
+
+@Composable
+internal fun NavigationScreenRoute(
+    course: SessionViewModel.CourseGuidance?,
+    canUseCourse: (SessionViewModel.CourseGuidance) -> Boolean,
     viewModel: NavigationScreenViewModel = hiltViewModel(),
-    prepared: PreparedPractice? = null,
-    preparationRevision: Long = 0,
-    canUsePreparedRoute: (PreparedPractice, Long) -> Boolean = { _, _ -> false },
 ) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     var lease by remember(viewModel, lifecycle) { mutableStateOf(0L) }
@@ -104,10 +107,13 @@ fun NavigationScreenRoute(
             ) { Text(stringResource(R.string.navigation_screen_open), style = MaterialTheme.typography.titleLarge) }
         }
     }
-    val route = prepared?.course?.navigationRoute
-    if (prepared != null && route != null && canUsePreparedRoute(prepared, preparationRevision)) {
+    if (course != null) {
+        val route = course.route
         ParkedPanel(Modifier.testTag("navigation_course_route_panel")) {
-            Text(stringResource(R.string.navigation_route_title), style = MaterialTheme.typography.titleLarge)
+            Text(
+                stringResource(if (course.active == null) R.string.navigation_route_title else R.string.navigation_active_route_title),
+                style = MaterialTheme.typography.titleLarge,
+            )
             Text(
                 stringResource(R.string.navigation_route_destination, route.destination.name),
                 Modifier.testTag("navigation_course_route_destination"),
@@ -121,14 +127,12 @@ fun NavigationScreenRoute(
                 )
             }
             Text(stringResource(R.string.navigation_route_handoff), style = MaterialTheme.typography.bodyLarge)
-            if (displayed.routePreparationRevision == preparationRevision) {
+            if (displayed.routePreparationRevision == course.revision && canUseCourse(course)) {
                 displayed.result?.let { NavigationRequestResult(it, courseRoute = true) }
             }
-            key(displayed, preparationRevision) {
+            key(displayed, course.revision) {
                 val start: () -> Unit = {
-                    viewModel.startRoute(displayed, route, preparationRevision) {
-                        canUsePreparedRoute(prepared, preparationRevision)
-                    }
+                    viewModel.startRoute(displayed, route, course.revision) { canUseCourse(course) }
                 }
                 ParkedButton(
                     onClick = start,

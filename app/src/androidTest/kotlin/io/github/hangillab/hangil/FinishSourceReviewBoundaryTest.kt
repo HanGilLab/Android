@@ -402,6 +402,7 @@ class FinishSourceReviewBoundaryTest {
         private val deletions: SessionDeletionRepository,
         private val writer: HistorySessionMemoWriter,
         private val reviewRoads: SessionReviewRoadRepository? = null,
+        private val navigationGateway: NavigationGateway = noNavigation(),
     ) {
         val live = SilentVehicle(parked())
         val restrictions = MutableStateFlow(DrivingRestrictions(ParkingState.PARKED, UxRestrictionState.UNRESTRICTED))
@@ -452,6 +453,19 @@ class FinishSourceReviewBoundaryTest {
                 val watched =
                     object : PracticeSessionRepository by sessions {
                         override fun observeSessions(): Flow<List<PracticeSession>> = counted(sessions.observeSessions())
+
+                        override suspend fun start(
+                            practice: PreparedPractice,
+                            startedAtEpochMillis: Long,
+                            canCommit: () -> Boolean,
+                        ): SessionStartResult {
+                            activeWrites.incrementAndGet()
+                            try {
+                                return sessions.start(practice, startedAtEpochMillis, canCommit)
+                            } finally {
+                                activeWrites.decrementAndGet()
+                            }
+                        }
 
                         override suspend fun finish(
                             expectedSource: PracticeSession,
@@ -565,10 +579,10 @@ class FinishSourceReviewBoundaryTest {
                     }
                 val models =
                     mutableMapOf<Class<out ViewModel>, ViewModel>(
-                        HomeViewModel::class.java to HomeViewModel(vehicle, noNavigation(), ux, watchedPreparation, catalog),
+                        HomeViewModel::class.java to HomeViewModel(vehicle, navigationGateway, ux, watchedPreparation, catalog),
                         SessionViewModel::class.java to session,
                         BackgroundRecordingViewModel::class.java to BackgroundRecordingViewModel(noRecording()),
-                        NavigationScreenViewModel::class.java to NavigationScreenViewModel(vehicle, ux, noNavigation()),
+                        NavigationScreenViewModel::class.java to NavigationScreenViewModel(vehicle, ux, navigationGateway),
                         RecentVehicleObservationViewModel::class.java to
                             RecentVehicleObservationViewModel(vehicle, ux, watched, watchedObservations),
                         SessionMemoViewModel::class.java to SessionMemoViewModel(vehicle, ux, watched, watchedMemos),

@@ -107,22 +107,23 @@ private fun HomeRouteContent(
         showDiagnostics,
         viewModel::retryLoading,
         { if (viewModel.canViewMap()) onMapPreview() },
-        { viewModel.canExpandPreparation(it) },
+        { viewModel.canExpandPreparation(it, state.preparationRevision) },
         viewModel::canViewMap,
         {
+            val sessions: SessionViewModel = hiltViewModel()
+            val courseGuidance by sessions.courseGuidance.collectAsStateWithLifecycle()
             SessionRoute(
                 onPrepare = { if (viewModel.canPrepare()) onPrepare() },
                 onPrepareNext = onPrepareNext,
                 canPrepare = state.preparation is PreparationLoadState.Loaded,
                 recordingState = recordingState,
                 onRetryRecording = onRetryRecording,
+                viewModel = sessions,
                 onFinishedReview = onFinishedReview,
             )
-            val prepared = ((state.preparation as? PreparationLoadState.Loaded)?.preparation as? Preparation.Ready)?.practice
             NavigationScreenRoute(
-                prepared = prepared,
-                preparationRevision = state.preparationRevision,
-                canUsePreparedRoute = viewModel::canExpandPreparation,
+                course = courseGuidance,
+                canUseCourse = sessions::canUseCourseGuidance,
             )
             ParkedButton(
                 onClick = { if (viewModel.canViewHistory()) onHistory() },

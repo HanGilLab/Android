@@ -188,6 +188,7 @@
     <string name="navigation_screen_timeout">내비 연결 응답이 없어요. 화면을 확인한 뒤 다시 요청해 주세요.</string>
     <string name="navigation_screen_error">전환 요청을 확인하지 못했어요. 내비 화면을 확인해 주세요.</string>
     <string name="navigation_route_title">준비한 코스 길안내</string>
+    <string name="navigation_active_route_title">진행 중인 코스 길안내</string>
     <string name="navigation_route_destination">도착지 %1$s</string>
     <string name="navigation_route_waypoint">경유지 %1$d. %2$s</string>
     <string name="navigation_route_start">기본 내비에 길안내 요청</string>
