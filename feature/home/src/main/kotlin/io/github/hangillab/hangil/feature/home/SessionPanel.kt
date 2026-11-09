@@ -233,6 +233,12 @@ internal fun SessionPanel(
                         style = MaterialTheme.typography.titleLarge,
                     )
                     Text(active.courseTitle, Modifier.testTag("session_course"), style = MaterialTheme.typography.headlineSmall)
+                    Text(
+                        stringResource(R.string.session_active_task_label),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(active.taskTitle, Modifier.testTag("session_active_task"), style = MaterialTheme.typography.titleLarge)
                     active.selection.plannedRoad?.let { plan ->
                         Text(
                             stringResource(R.string.planned_road_summary, plan.road.title),
@@ -341,7 +347,7 @@ internal fun SessionPanel(
                 )
                 Text(stringResource(R.string.journey_scope), style = MaterialTheme.typography.bodyLarge)
                 state.active?.let { active ->
-                    Text(stringResource(R.string.session_goal_task, active.goalTitle, active.taskTitle))
+                    Text(stringResource(R.string.session_active_goal, active.goalTitle))
                     Text(
                         stringResource(R.string.session_started_at, displayTime(active.startedAtEpochMillis)),
                         Modifier.testTag("session_started_at"),
