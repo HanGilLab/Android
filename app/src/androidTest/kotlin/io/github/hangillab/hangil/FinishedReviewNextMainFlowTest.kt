@@ -222,6 +222,7 @@ class FinishedReviewNextMainFlowTest {
             check(nodes("history_ready").isEmpty()) { "Finishing must not navigate automatically" }
             click("session_finish_review")
             assertExact(ended)
+            compose.onNodeWithTag("history_prepare_next", useUnmergedTree = true).assertIsDisplayed()
             capture(captures, "exact-review")
             val oldNext = action("history_prepare_next")
             instrument.runOnMainSync {
