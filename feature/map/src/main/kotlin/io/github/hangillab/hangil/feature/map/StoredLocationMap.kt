@@ -204,6 +204,13 @@ fun StoredLocationMap(
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                if (!input.trace.features().isNullOrEmpty()) {
+                    Text(
+                        stringResource(R.string.stored_map_trace_scope),
+                        Modifier.fillMaxWidth().testTag("stored_location_map_trace_scope"),
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                }
                 val description =
                     if (reviewRoad == null) {
                         stringResource(R.string.stored_map_content_description, input.samples.size, selectedDescription)
@@ -433,6 +440,7 @@ private fun createStoredMap(
                                     RoadPreviewLayers.add(loaded, listOf(it.road), roadColor)
                                     RoadPreviewLayers.select(loaded, it.road.id)
                                 }
+                                StoredLocationTrace.add(loaded, input, pointFill)
                                 StoredLocationPoint.add(loaded, input, pointFill, pointBorder, fontScale)
                                 styled.set(true)
                                 val coordinates =
