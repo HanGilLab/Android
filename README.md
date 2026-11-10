@@ -424,4 +424,4 @@ override fun stopBackground(expectedRunId: String): Boolean =
 
 | 개발자 | 담당 |
 |---|---|
-| [오인성](https://github.com/ois0886) | 기획, 디자인, Kotlin과 Compose 기반 Android 개발 |
+| 한길졸업 개발 | 기획, 디자인, Kotlin과 Compose 기반 Android 개발 |
