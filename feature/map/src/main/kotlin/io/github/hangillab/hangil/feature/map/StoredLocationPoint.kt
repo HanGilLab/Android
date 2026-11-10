@@ -26,10 +26,19 @@ internal object StoredLocationPoint {
     fun canProject(input: StoredLocationMapInput): Boolean =
         input.samples.all { abs((it.reading as LocationUpdateReading.Sample).sample.latitude) <= MERCATOR_LATITUDE_LIMIT }
 
-    fun features(input: StoredLocationMapInput): FeatureCollection {
+    fun features(
+        input: StoredLocationMapInput,
+        selectedOnly: Boolean = false,
+    ): FeatureCollection {
         require(canProject(input)) { "A stored sample is outside the map projection" }
+        val samples =
+            if (selectedOnly) {
+                listOfNotNull(input.selectedEvent?.takeIf { it.reading is LocationUpdateReading.Sample })
+            } else {
+                input.samples
+            }
         return FeatureCollection.fromFeatures(
-            input.samples.map { event ->
+            samples.map { event ->
                 val sample = (event.reading as LocationUpdateReading.Sample).sample
                 Feature.fromGeometry(Point.fromLngLat(sample.longitude, sample.latitude)).apply {
                     addStringProperty("source", sample.source.name)
@@ -50,8 +59,9 @@ internal object StoredLocationPoint {
         fill: Int,
         border: Int,
         fontScale: Float,
+        selectedOnly: Boolean = false,
     ) {
-        style.addSource(GeoJsonSource(SOURCE, features(input)))
+        style.addSource(GeoJsonSource(SOURCE, features(input, selectedOnly)))
         style.addLayer(
             CircleLayer(LAYER, SOURCE).withProperties(
                 circleRadius(14f * fontScale),
