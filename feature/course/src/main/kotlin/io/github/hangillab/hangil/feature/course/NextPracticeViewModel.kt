@@ -254,7 +254,7 @@ class NextPracticeViewModel
                             taskId = task,
                             plannedRoad = current.targetReview?.let { PlannedPracticeRoad.from(it) },
                         )
-                    val action = Action(++actionSerial, owner, query, current.seed, selection, generation, current.targetReview)
+                    val action = Action(++actionSerial, owner, query, current.seed, selection, current.targetReview)
                     completion = null
                     val work = viewModelScope.launch(start = CoroutineStart.LAZY) { performSave(action) }
                     action.job = work
@@ -273,7 +273,7 @@ class NextPracticeViewModel
                     completion = null
                     return@synchronized false
                 }
-                val current = currentReady(done.seed.source.sessionId, done.generation) ?: return@synchronized false
+                val current = currentReady(done.seed.source.sessionId) ?: return@synchronized false
                 if (closed || done.token != token || done.action != actionSerial || reader !== done.owner ||
                     done.owner.query !== done.query || current.seed != done.seed || current.taskId != done.taskId || current.saving
                 ) {
@@ -367,7 +367,6 @@ class NextPracticeViewModel
                                         query = action.query,
                                         seed = action.seed,
                                         taskId = action.selection.taskId,
-                                        generation = action.generation,
                                     )
                                 completion = done
                                 done.token
@@ -399,7 +398,7 @@ class NextPracticeViewModel
                         activeAction = null
                         val current = published.value as? NextPracticeUiState.Ready
                         if (current != null && current.seed == action.seed &&
-                            current.generation == action.generation
+                            current.taskId == action.selection.taskId
                         ) {
                             published.value = current.copy(saving = false)
                         }
@@ -411,7 +410,7 @@ class NextPracticeViewModel
         private fun canCommit(action: Action): Boolean = synchronized(lock) { currentAction(action) }
 
         private fun currentAction(action: Action): Boolean {
-            val current = currentReady(action.seed.source.sessionId, action.generation) ?: return false
+            val current = currentReady(action.seed.source.sessionId) ?: return false
             return activeAction === action && action.id == actionSerial && action.job?.isActive == true &&
                 reader === action.owner && action.owner.query === action.query && current.seed == action.seed &&
                 pinned == action.seed && current.taskId == action.selection.taskId && current.saving &&
@@ -430,14 +429,14 @@ class NextPracticeViewModel
 
         private fun currentReady(
             expectedSourceId: String,
-            expectedGeneration: Long,
+            expectedGeneration: Long? = null,
         ): NextPracticeUiState.Ready? {
             val owner = reader ?: return null
             val query = owner.query ?: return null
             if (!currentQuery(owner, query) || owner.receiving || !permitted()) return null
             val current = published.value as? NextPracticeUiState.Ready ?: return null
             return current.takeIf {
-                it.seed.source.sessionId == expectedSourceId && it.generation == expectedGeneration &&
+                it.seed.source.sessionId == expectedSourceId && (expectedGeneration == null || it.generation == expectedGeneration) &&
                     received == it.seed
             }
         }
@@ -554,20 +553,22 @@ class NextPracticeViewModel
             if (!currentQuery(owner, query) || !permitted() || received != seed) return@synchronized
             val current = published.value as? NextPracticeUiState.Ready ?: return@synchronized
             if (current.seed != seed || reviewRoad == value) return@synchronized
-            if (targetReview != null && (value as? NextPracticeUiState.ReviewRoad.Available)?.review != targetReview) {
+            // Refresh the displayed controls while keeping saves that do not depend on this road.
+            val targetChanged = targetReview != null && (value as? NextPracticeUiState.ReviewRoad.Available)?.review != targetReview
+            if (targetChanged) {
                 targetReview = null
                 targetChoiceRequired = true
+                invalidateActionLocked()
             }
             reviewRoad = value
-            invalidateActionLocked()
             published.value =
                 current.copy(
                     reviewRoad = value,
                     targetReview = targetReview,
                     targetChoiceRequired = targetChoiceRequired,
                     generation = ++generation,
-                    saving = false,
-                    saveFailed = false,
+                    saving = current.saving && !targetChanged,
+                    saveFailed = current.saveFailed && !targetChanged,
                 )
         }
 
@@ -943,7 +944,6 @@ class NextPracticeViewModel
             val query: Query,
             val seed: NextPracticeSeed,
             val selection: PracticeSelection,
-            val generation: Long,
             val expectedReview: SessionReviewRoad?,
         ) {
             var job: Job? = null
@@ -956,7 +956,6 @@ class NextPracticeViewModel
             val query: Query,
             val seed: NextPracticeSeed,
             val taskId: String,
-            val generation: Long,
         )
 
         private sealed interface Access {
