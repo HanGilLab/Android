@@ -10,7 +10,7 @@ MAP-01의 첫 단계는 주차 상태에서 고정 시연 지역의 실제 온�
 - 온라인 지도 요청만 사용한다. 별도 영역 다운로드, 사전 수집, 오프라인 기능은 구현하지 않는다.
 - 온라인 서비스는 가용성과 정확성을 보장하지 않으므로 로딩, 실패, 재시도를 표시한다.
 - 고정 중심은 공개된 서울 시연 지역이며 사용자의 현재 위치나 검토된 연습 코스가 아니다.
-- MapLibre의 BSD 2-Clause 원문은 앱의 `assets/licenses/maplibre-native.txt`에 포함한다. 실제 style/glyph/sprite 출처와 자료별 조건, 제공 버전 및 표시의 미확정은 [지도 자료 출처](development/map-asset-sources.md)에 분리했다. 전체 에셋과 release 의존성 조건은 DES-08에서 계속 정리한다.
+- MapLibre Native Android 13.5.0과 번들 구성 요소의 합본 고지는 앱의 `assets/licenses/maplibre-native.txt`에 포함한다. 실제 style/glyph/sprite 출처와 자료별 조건, 제공 버전 및 표시의 미확정은 [지도 자료 출처](development/map-asset-sources.md)에 분리했다. 전체 에셋과 release 의존성 조건은 DES-08에서 계속 정리한다.
 
 ## 검증 경계
 
@@ -25,4 +25,4 @@ FusedLocation 호환성, 권한, 실제 입력 확인이 남아 있으므로 지
 - [MapView 수명주기](https://maplibre.org/maplibre-native/android/examples/getting-started/)
 - [OpenFreeMap 모바일 사용](https://openfreemap.org/quick_start/)
 - [OpenFreeMap 이용 조건](https://openfreemap.org/tos/)
-- [MapLibre 13.5.0 라이선스](https://github.com/maplibre/maplibre-native/blob/android-v13.5.0/LICENSE.md)
+- [MapLibre Native Android 13.5.0 합본 고지](https://github.com/maplibre/maplibre-native/blob/android-v13.5.0/platform/android/LICENSE.md)
