@@ -5,6 +5,7 @@ import io.github.hangillab.hangil.core.domain.LocationRecordingEvent
 import io.github.hangillab.hangil.core.domain.LocationRecordingRun
 import io.github.hangillab.hangil.core.domain.LocationRecordingRunStatus
 import io.github.hangillab.hangil.core.domain.LocationRecordingStopReason
+import io.github.hangillab.hangil.core.domain.LocationUpdateGateway
 import io.github.hangillab.hangil.core.domain.LocationUpdateReading
 import io.github.hangillab.hangil.core.domain.LocationUpdateSample
 import io.github.hangillab.hangil.core.domain.PracticeSelection
@@ -14,6 +15,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.maplibre.geojson.LineString
 import org.maplibre.geojson.Point
 
 class StoredLocationPointTest {
@@ -122,6 +124,32 @@ class StoredLocationPointTest {
         val noEvents = StoredLocationMapInput.capture(run, emptyList(), null)
         assertTrue(noEvents.samples.isEmpty())
         assertEquals(0, noEvents.nonSampleCount)
+    }
+
+    @Test fun `trace keeps receipt order without linking across missing stale or identical coordinates`() {
+        val timeout = LocationUpdateGateway.NO_UPDATE_TIMEOUT_MILLIS
+        val events =
+            listOf(
+                event(1, sample(37.50, 127.10, sdkTime = 500, receipt = 1)),
+                event(2, sample(37.51, 127.10, sdkTime = -42, receipt = 2)),
+                event(3, LocationUpdateReading.Empty(3)),
+                event(4, sample(37.52, 127.10, receipt = 4)),
+                event(5, sample(37.53, 127.10, receipt = 4 + timeout)),
+                event(6, sample(37.53, 127.10, receipt = 5 + timeout)),
+                event(7, sample(37.54, 127.10, receipt = 5 + timeout)),
+                event(8, sample(37.54, -127.10, receipt = 6 + timeout)),
+            )
+        val longRun = run.copy(endedAtElapsedRealtimeMillis = 10 + timeout)
+        val input = StoredLocationMapInput.capture(longRun, events, events[2])
+        val feature = checkNotNull(input.trace.features()).single()
+        assertEquals(1, feature.getNumberProperty("from_ordinal").toInt())
+        assertEquals(2, feature.getNumberProperty("to_ordinal").toInt())
+        assertEquals(
+            listOf(Point.fromLngLat(127.10, 37.50), Point.fromLngLat(127.10, 37.51)),
+            (feature.geometry() as LineString).coordinates(),
+        )
+        assertEquals(events, input.events)
+        assertEquals(7, input.samples.size)
     }
 
     private fun event(

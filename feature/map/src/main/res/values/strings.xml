@@ -63,12 +63,13 @@
   <string name="map_road_source_details">도로 자료 출처</string>
   <string name="map_road_copyright_uri">https://www.openstreetmap.org/copyright</string>
   <string name="map_road_license_uri">https://opendatacommons.org/licenses/odbl/1-0/</string>
-  <string name="stored_map_scope">이 실행에 저장한 SDK 표본들이에요. 점을 이어 이동 경로로 추정하지 않아요.</string>
+  <string name="stored_map_scope">점은 이 실행에 저장한 SDK 표본이에요. 실제로 지나간 길은 미확인이에요.</string>
+  <string name="stored_map_trace_scope">점선은 연속으로 받은 두 표본 사이의 직선이에요. 좌표가 없거나 수신이 끊긴 곳은 잇지 않아요.</string>
   <string name="stored_map_uncertain">현재 위치와 정확도, SDK 시각 기준과 신뢰도 단위는 미확인이에요.</string>
-  <string name="stored_map_content_description">한 실행에 저장한 SDK 표본 %1$d개. %2$s 점을 이은 이동 경로는 표시하지 않아요.</string>
+  <string name="stored_map_content_description">한 실행에 저장한 SDK 표본 %1$d개. %2$s 실제로 지나간 길은 미확인이에요.</string>
   <string name="stored_map_locked">주차와 화면 조작 허용을 확인한 뒤 저장 표본 지도를 다시 열어 주세요.</string>
   <string name="stored_map_unavailable">일부 표본이 지도의 지원 범위 밖이라 전체 지도를 표시할 수 없어요.</string>
-  <string name="stored_map_review_road_scope">점은 이 실행의 SDK 표본, 선은 직접 고른 공개 도로예요. 점을 이은 이동 경로나 도로 매칭 결과가 아니에요.</string>
+  <string name="stored_map_review_road_scope">점은 저장한 SDK 표본, 굵은 실선은 직접 고른 공개 도로예요. 실제 이동과 도로 매칭은 미확인이에요.</string>
   <string name="stored_map_review_road_content_description">한 실행의 SDK 표본 %1$d개와 직접 고른 공개 도로 %2$s. %3$s 실제 이동과 도로 매칭을 확인한 결과가 아니에요.</string>
   <string name="stored_map_road_unavailable">고른 도로가 지도의 위도 범위를 벗어나 함께 표시할 수 없어요. 표본 원본과 복습 도로를 따로 확인해 주세요.</string>
   <string name="session_review_road_map_scope">고정된 공개 도로 모양이에요. 실제 이동 경로나 위치 표본과 연결한 자료가 아니에요.</string>

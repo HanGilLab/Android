@@ -1135,6 +1135,72 @@ class LocationRecordingFlowTest {
         }
     }
 
+    @Test fun storedRunTraceStopsAtMissingAndTimedOutReadings() {
+        val args = InstrumentationRegistry.getArguments()
+        assumeTrue(args.getString("manualStoredLocationMap") == "true")
+        val config = compose.activity.resources.configuration
+        assertEquals(checkNotNull(args.getString("expectedFontScale")).toFloat(), config.fontScale, 0.01f)
+        assertEquals(
+            checkNotNull(args.getString("expectedDark")).toBooleanStrict(),
+            config.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES,
+        )
+        fixture(mapEnabled = true) { f ->
+            click("session_start")
+            val source = f.active()
+            f.awaitSource(source)
+            click("home_location_recording")
+            click("location_recording_start")
+            f.awaitRecording()
+            val first = LocationUpdateSample(37.56669, 126.97842, -2.0, 421f, -5f, -42, f.elapsed.incrementAndGet())
+            f.emit(LocationUpdateReading.Sample(first))
+            f.emit(
+                LocationUpdateReading.Sample(
+                    first.copy(longitude = 126.97916, receivedAtElapsedRealtimeMillis = f.elapsed.incrementAndGet()),
+                ),
+            )
+            f.emit(LocationUpdateReading.Empty(f.elapsed.incrementAndGet()))
+            f.emit(
+                LocationUpdateReading.Sample(
+                    first.copy(latitude = 37.56721, receivedAtElapsedRealtimeMillis = f.elapsed.incrementAndGet()),
+                ),
+            )
+            f.emit(
+                LocationUpdateReading.Sample(
+                    first.copy(
+                        latitude = 37.56738,
+                        receivedAtElapsedRealtimeMillis = f.elapsed.addAndGet(LocationUpdateGateway.NO_UPDATE_TIMEOUT_MILLIS),
+                    ),
+                ),
+            )
+            f.awaitEvents(source, 5)
+            click("location_recording_stop")
+            f.awaitTerminal(source, LocationRecordingStopReason.USER_STOP)
+            click("location_recording_back")
+            click("session_finish")
+            val ended = f.ended(source.sessionId)
+            val stored = f.snapshot(ended)
+            val beforeStreams = f.gateway.streams.size
+            val run = stored.runs.single()
+            click("home_history")
+            click("history_location_recording")
+            waitTag("location_history_content")
+            click("location_history_point_map")
+            val trace = stored.events[0] to stored.events[1]
+            val map = awaitStoredMap(run, stored.events, stored.events.last(), expectedTrace = trace)
+            assertText("stored_location_map_trace_scope", MapR.string.stored_map_trace_scope)
+            f.drive(true)
+            waitTag("location_history_locked")
+            assertNoStoredMap(map)
+            assertTrue(nodes("stored_location_map_trace_scope").isEmpty())
+            f.drive(false)
+            waitTag("location_history_locked")
+            assertNoStoredMap()
+            assertEquals(stored, f.snapshot(ended))
+            assertEquals(beforeStreams, f.gateway.streams.size)
+            f.assertNoPlatformActions()
+        }
+    }
+
     /** This assertion must precede any scroll helper after a linked-sample jump. */
     private fun assertLinkedEventVisible(
         ordinal: Int,
@@ -1175,6 +1241,7 @@ class LocationRecordingFlowTest {
         expectedEvents: List<LocationRecordingEvent>,
         selectedEvent: LocationRecordingEvent?,
         expectedRoad: CourseRoadSnapshot? = null,
+        expectedTrace: Pair<LocationRecordingEvent, LocationRecordingEvent>? = null,
     ): MapView =
         runBlocking {
             val expectedPoints = expectedEvents.filter { it.reading is LocationUpdateReading.Sample }.associateBy { it.id.toString() }
@@ -1359,6 +1426,8 @@ class LocationRecordingFlowTest {
                                                         } &&
                                                         original.all { point -> paths.any { onStoredRoadPath(point, it) } }
                                                 }
+                                            val traceMatches =
+                                                expectedTrace?.let { (from, to) -> matchesStoredTrace(map, from, to) } ?: true
                                             observation.put("roadSourceCount", roadFeatures.size)
                                             observation.put("roadMatches", roadMatches)
                                             val checks =
@@ -1373,6 +1442,7 @@ class LocationRecordingFlowTest {
                                                     "RENDERED_ALL_EVENT_IDENTITIES_AND_RAW_PLACEMENTS_MATCH" to renderedMatches,
                                                     "EXACT_SELECTED_EVENT_OR_NO_SELECTION" to selectionMatches,
                                                     "SDK_SOURCE_HAS_NO_LINE_LAYER" to noSdkLine,
+                                                    "TRACE_MATCHES_ONLY_EXPECTED_RECEIPT_PAIR" to traceMatches,
                                                 )
                                             val failed = checks.entries.firstOrNull { !it.value }
                                             observation.put("checks", JSONObject(checks))
@@ -1400,6 +1470,35 @@ class LocationRecordingFlowTest {
                 throw AssertionError("Stored point native map inspection timed out: " + lastObservation.get())
             }
         }
+
+    private fun matchesStoredTrace(
+        map: org.maplibre.android.maps.MapLibreMap,
+        from: LocationRecordingEvent,
+        to: LocationRecordingEvent,
+    ): Boolean {
+        val style = map.style ?: return false
+        val traceLayer = style.getLayerAs<LineLayer>("hangil-stored-location-trace-line") ?: return false
+        val traceSource = style.getSourceAs<GeoJsonSource>("hangil-stored-location-trace") ?: return false
+        if (traceLayer.sourceId != traceSource.id || traceLayer.visibility.value == "none") return false
+        val endpoints =
+            listOf(from, to).map { event ->
+                val sample = (event.reading as LocationUpdateReading.Sample).sample
+                map.projection.toScreenLocation(LatLng(sample.latitude, sample.longitude))
+            }
+        val paths =
+            traceSource.querySourceFeatures(null).map { feature ->
+                val geometry = feature.geometry() as? LineString ?: return false
+                if (feature.getNumberProperty("from_ordinal").toInt() != from.ordinal ||
+                    feature.getNumberProperty("to_ordinal").toInt() != to.ordinal
+                ) {
+                    return false
+                }
+                geometry.coordinates().map { point -> map.projection.toScreenLocation(LatLng(point.latitude(), point.longitude())) }
+            }
+        return paths.isNotEmpty() &&
+            paths.all { path -> path.size >= 2 && path.all { onStoredRoadPath(it, endpoints) } } &&
+            endpoints.all { point -> paths.any { onStoredRoadPath(point, it) } }
+    }
 
     private fun onStoredRoadPath(
         point: android.graphics.PointF,

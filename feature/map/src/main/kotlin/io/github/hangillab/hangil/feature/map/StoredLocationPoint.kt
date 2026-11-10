@@ -16,7 +16,7 @@ import org.maplibre.geojson.FeatureCollection
 import org.maplibre.geojson.Point
 import kotlin.math.abs
 
-/** Stored callbacks remain separate points; no SDK point is connected, snapped or interpolated. */
+/** Draws the original saved coordinates and the selection ring without snapping or interpolation. */
 internal object StoredLocationPoint {
     const val SOURCE = "hangil-stored-location-point"
     const val LAYER = "hangil-stored-location-circle"

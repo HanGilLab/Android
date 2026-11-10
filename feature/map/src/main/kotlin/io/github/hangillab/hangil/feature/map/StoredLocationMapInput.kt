@@ -13,6 +13,7 @@ internal class StoredLocationMapInput private constructor(
     val selectedEvent: LocationRecordingEvent?,
 ) {
     val samples: List<LocationRecordingEvent> = Collections.unmodifiableList(events.filter { it.reading is LocationUpdateReading.Sample })
+    val trace by lazy { StoredLocationTrace.features(this) }
     val nonSampleCount: Int get() = events.size - samples.size
     val selectedSampleId: String? get() = selectedEvent?.takeIf { it.reading is LocationUpdateReading.Sample }?.id?.toString()
 
