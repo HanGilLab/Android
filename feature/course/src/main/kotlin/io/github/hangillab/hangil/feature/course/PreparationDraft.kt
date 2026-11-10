@@ -11,6 +11,7 @@ internal data class PreparationDraft(
     val briefingVersion: Int? = null,
     val taskId: String? = null,
     val plannedRoad: PlannedPracticeRoad? = null,
+    val actionGeneration: Long = 0,
 ) {
     fun selection(): PracticeSelection? {
         return PracticeSelection(
