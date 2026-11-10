@@ -71,6 +71,8 @@
   <string name="stored_map_unavailable">일부 표본이 지도의 지원 범위 밖이라 전체 지도를 표시할 수 없어요.</string>
   <string name="stored_map_review_road_scope">점은 저장한 SDK 표본, 굵은 실선은 직접 고른 공개 도로예요. 실제 이동과 도로 매칭은 미확인이에요.</string>
   <string name="stored_map_review_road_content_description">한 실행의 SDK 표본 %1$d개와 직접 고른 공개 도로 %2$s. %3$s 실제 이동과 도로 매칭을 확인한 결과가 아니에요.</string>
+  <string name="stored_map_without_background">지도 배경을 불러오지 못해 저장된 자료만 표시해요.</string>
+  <string name="stored_map_retry_background">지도 배경 다시 불러오기</string>
   <string name="stored_map_road_unavailable">고른 도로가 지도의 위도 범위를 벗어나 함께 표시할 수 없어요. 표본 원본과 복습 도로를 따로 확인해 주세요.</string>
   <string name="stored_map_road_distance_meters">저장한 도로선까지 약 %1$d m</string>
   <string name="stored_map_road_distance_under_one">저장한 도로선까지 1 m 미만</string>

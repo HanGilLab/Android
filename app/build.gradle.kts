@@ -72,5 +72,6 @@ dependencies {
     androidTestImplementation(project(":core:domain"))
     androidTestImplementation(libs.coroutines.core)
     androidTestImplementation(libs.maplibre.android)
+    androidTestImplementation(libs.okhttp)
     androidTestImplementation(libs.pleos.naviHelper)
 }

@@ -142,21 +142,31 @@ fun StoredLocationMap(
     val preview = previewChoice
     val previewRoad = preview?.first
     val mapRoad = reviewRoad?.road ?: previewRoad
-    val mapPermitted: () -> Boolean = { permitted() && previewChoice == preview }
     val bringMapIntoView = remember(input, owner) { BringIntoViewRequester() }
+    var withoutBackground by remember(input, reviewRoad, preview, owner) { mutableStateOf(false) }
+    val fallback = withoutBackground
     var attempt by remember(input, reviewRoad, preview, owner) { mutableIntStateOf(0) }
     val capturedAttempt = attempt
-    val load = remember(input, reviewRoad, preview, owner, dark, fontScale, attempt) { mutableStateOf(MapLoadState.LOADING) }
+    val mapPermitted: () -> Boolean = {
+        permitted() && previewChoice == preview && withoutBackground == fallback && attempt == capturedAttempt
+    }
+    val load = remember(input, reviewRoad, preview, owner, dark, fontScale, fallback, attempt) { mutableStateOf(MapLoadState.LOADING) }
+    val onFailed: () -> Unit = {
+        if (mapPermitted()) {
+            if (preview == null && !fallback) {
+                withoutBackground = true
+            } else {
+                load.value = MapLoadState.FAILED
+            }
+        }
+    }
     val retry: () -> Unit = {
-        if (attempt == capturedAttempt && load.value == MapLoadState.FAILED && mapPermitted()) attempt++
+        if (mapPermitted() && load.value == MapLoadState.FAILED) attempt++
     }
     val pointFill = MaterialTheme.colorScheme.primary.toArgb()
     val pointBorder = MaterialTheme.colorScheme.surface.toArgb()
     val roadColor = MaterialTheme.colorScheme.tertiary.toArgb()
-    val previewBackground =
-        MaterialTheme.colorScheme.surface
-            .toArgb()
-            .takeIf { preview != null }
+    val localBackground = pointBorder.takeIf { preview != null || fallback }
     val sourceMatches = reviewRoad == null || input == null || reviewRoad.source.copy(endedAtEpochMillis = null) == input.run.source
     Column(modifier.fillMaxWidth().testTag("stored_location_map"), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.lg)) {
         if (inputChanged.value) {
@@ -273,6 +283,13 @@ fun StoredLocationMap(
                         style = MaterialTheme.typography.bodyLarge,
                     )
                 }
+                if (fallback && load.value == MapLoadState.READY) {
+                    Text(
+                        stringResource(R.string.stored_map_without_background),
+                        Modifier.fillMaxWidth().testTag("stored_location_map_without_background"),
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                }
                 val previewLegend = previewRoad?.let { stringResource(R.string.stored_map_course_road_preview_legend, it.title) }
                 if (previewLegend != null) {
                     Text(
@@ -324,12 +341,12 @@ fun StoredLocationMap(
                             }
                         }
                     } else {
-                        key(input, reviewRoad, preview, owner, dark, fontScale, attempt) {
+                        key(input, reviewRoad, preview, owner, dark, fontScale, fallback, attempt) {
                             NativeStoredLocationMap(
                                 input,
                                 mapRoad,
                                 preview?.second,
-                                previewBackground,
+                                localBackground,
                                 dark,
                                 fontScale,
                                 pointFill,
@@ -339,7 +356,7 @@ fun StoredLocationMap(
                                 inputChanges = inputChanges,
                                 canInteract = { mapPermitted() && load.value == MapLoadState.READY },
                                 onRendered = { if (mapPermitted() && load.value == MapLoadState.LOADING) load.value = MapLoadState.READY },
-                                onFailed = { if (mapPermitted()) load.value = MapLoadState.FAILED },
+                                onFailed = onFailed,
                                 contentDescription = description,
                                 modifier = Modifier.matchParentSize().testTag("stored_location_map_view"),
                             )
@@ -364,7 +381,21 @@ fun StoredLocationMap(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                if (preview == null) {
+                if (fallback && load.value == MapLoadState.READY) {
+                    ParkedButton(
+                        onClick = {
+                            if (mapPermitted() && load.value == MapLoadState.READY) {
+                                attempt++
+                                withoutBackground = false
+                            }
+                        },
+                        modifier = Modifier.testTag("stored_location_map_retry_background"),
+                        prominent = false,
+                    ) {
+                        Text(stringResource(R.string.stored_map_retry_background), style = MaterialTheme.typography.titleMedium)
+                    }
+                }
+                if (localBackground == null) {
                     MapCredits(
                         dark,
                         style = MaterialTheme.typography.bodyLarge,
@@ -378,7 +409,7 @@ fun StoredLocationMap(
                 LaunchedEffect(load, load.value) {
                     if (load.value == MapLoadState.LOADING) {
                         delay(20_000)
-                        if (mapPermitted() && load.value == MapLoadState.LOADING) load.value = MapLoadState.FAILED
+                        if (load.value == MapLoadState.LOADING) onFailed()
                     }
                 }
             }
@@ -465,7 +496,7 @@ private fun NativeStoredLocationMap(
     input: StoredLocationMapInput,
     road: CourseRoadSnapshot?,
     nearest: Point?,
-    previewBackground: Int?,
+    localBackground: Int?,
     dark: Boolean,
     fontScale: Float,
     pointFill: Int,
@@ -490,7 +521,7 @@ private fun NativeStoredLocationMap(
                 input,
                 road,
                 nearest,
-                previewBackground,
+                localBackground,
                 dark,
                 fontScale,
                 pointFill,
@@ -548,7 +579,7 @@ private fun createStoredMap(
     input: StoredLocationMapInput,
     road: CourseRoadSnapshot?,
     nearest: Point?,
-    previewBackground: Int?,
+    localBackground: Int?,
     dark: Boolean,
     fontScale: Float,
     pointFill: Int,
@@ -593,12 +624,12 @@ private fun createStoredMap(
                 try {
                     view.bindMap(map)
                     val style = Style.Builder()
-                    if (previewBackground != null) {
-                        val color = (previewBackground and 0xFFFFFF).toString(16).padStart(6, '0')
+                    if (localBackground != null) {
+                        val color = (localBackground and 0xFFFFFF).toString(16).padStart(6, '0')
                         style.fromJson(
                             """
                             {"version":8,"sources":{},"layers":[
-                              {"id":"preview-background","type":"background","paint":{"background-color":"#$color"}}
+                              {"id":"stored-map-background","type":"background","paint":{"background-color":"#$color"}}
                             ]}
                             """.trimIndent(),
                         )
@@ -612,7 +643,7 @@ private fun createStoredMap(
                                     RoadPreviewLayers.add(loaded, listOf(it), roadColor)
                                     RoadPreviewLayers.select(loaded, it.id)
                                 }
-                                val isPreview = previewBackground != null
+                                val isPreview = nearest != null
                                 if (!isPreview) StoredLocationTrace.add(loaded, input, pointFill)
                                 StoredLocationPoint.add(loaded, input, pointFill, pointBorder, fontScale, selectedOnly = isPreview)
                                 nearest?.let { StoredLocationRoadProjection.add(loaded, it, roadColor, pointBorder, fontScale) }
