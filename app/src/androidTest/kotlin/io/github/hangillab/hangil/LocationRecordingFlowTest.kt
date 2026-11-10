@@ -133,6 +133,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import okhttp3.OkHttpClient
+import okhttp3.Protocol
+import okhttp3.Response
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -145,6 +149,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.maps.MapView
+import org.maplibre.android.module.http.HttpRequestUtil
 import org.maplibre.android.style.expressions.Expression
 import org.maplibre.android.style.layers.CircleLayer
 import org.maplibre.android.style.layers.LineLayer
@@ -730,6 +735,125 @@ class LocationRecordingFlowTest {
             args.getString("expectedDark")?.let { assertEquals(it.toBooleanStrict(), dark) }
             args.getString("expectedFontScale")?.let { assertEquals(it.toFloat(), configuration.fontScale, 0.01f) }
             f.assertNoPlatformActions()
+        }
+    }
+
+    @Test fun storedReviewMapKeepsRoadAndSamplesWhenTheBasemapFails() {
+        val args = InstrumentationRegistry.getArguments()
+        assumeTrue(args.getString("manualStoredLocationOffline") == "true")
+        val requests = AtomicInteger()
+        val basemapAvailable = AtomicBoolean(false)
+        val client =
+            OkHttpClient
+                .Builder()
+                .addInterceptor { chain ->
+                    val request = chain.request()
+                    check(request.url.host == "tiles.openfreemap.org" && request.url.encodedPath.startsWith("/styles/"))
+                    requests.incrementAndGet()
+                    val available = basemapAvailable.get()
+                    val json = """{"version":8,"sources":{},"layers":[{"id":"test-remote-background","type":"background"}]}"""
+                    Response
+                        .Builder()
+                        .request(request)
+                        .protocol(Protocol.HTTP_1_1)
+                        .code(if (available) 200 else 404)
+                        .message(if (available) "OK" else "Not Found")
+                        .header("Cache-Control", "no-store")
+                        .body((if (available) json else "").toResponseBody())
+                        .build()
+                }.build()
+        HttpRequestUtil.setOkHttpClient(client)
+        try {
+            fixture(mapEnabled = true) { f ->
+                click("session_start")
+                val source = f.active()
+                f.awaitSource(source)
+                click("home_location_recording")
+                click("location_recording_start")
+                f.awaitRecording()
+                val first = LocationUpdateSample(37.566735, 126.9759, -2.0, 421f, -5f, -42, f.elapsed.incrementAndGet())
+                f.emit(LocationUpdateReading.Sample(first))
+                f.emit(
+                    LocationUpdateReading.Sample(
+                        first.copy(longitude = 126.9763, receivedAtElapsedRealtimeMillis = f.elapsed.incrementAndGet()),
+                    ),
+                )
+                f.emit(LocationUpdateReading.Empty(f.elapsed.incrementAndGet()))
+                f.awaitEvents(source, 3)
+                click("location_recording_stop")
+                f.awaitTerminal(source, LocationRecordingStopReason.USER_STOP)
+                click("location_recording_back")
+                click("session_finish")
+                val ended = f.ended(source.sessionId)
+                val recorded = f.snapshot(ended)
+                val run = recorded.runs.single()
+                val (before, selected) = recorded.events
+                val trace = before to selected
+                val expectedSample = SessionReviewSample.from(run, selected)
+                val expectedRoad = checkNotNull(NextPracticeSeed.resolve(f.store.catalog, ended)).practice.course.roadSnapshots[1]
+                f.gateway.permission.set(false)
+
+                fun openSample() {
+                    click("history_location_recording")
+                    click("location_history_event_previous")
+                    click("location_history_point_map")
+                }
+
+                fun storedRoad() =
+                    runBlocking {
+                        f.store.reviewRoads
+                            .observe(ended.sessionId)
+                            .first()
+                    }
+
+                fun awaitOffline(road: CourseRoadSnapshot? = null): MapView {
+                    waitTag("stored_location_map_without_background")
+                    assertText("stored_location_map_without_background", MapR.string.stored_map_without_background)
+                    assertTrue(nodes("stored_location_map_failed").isEmpty())
+                    return awaitStoredMap(run, recorded.events, selected, road, trace, expectedOffline = true)
+                }
+
+                click("home_history")
+                openSample()
+                val original = awaitOffline()
+                assertTrue("The requested basemap must return an error before fallback", requests.get() > 0)
+                assertNull(storedRoad())
+                click("stored_location_course_road_save_0")
+                waitTag("review_road_sample_current")
+                val linked = checkNotNull(storedRoad())
+                assertEquals(expectedRoad, linked.road)
+                assertEquals(expectedSample, linked.sampleAnchor)
+                val afterSave = awaitOffline(expectedRoad)
+                instrument.runOnMainSync { assertFalse(original.isAttachedToWindow) }
+                click("location_history_back")
+                assertNoStoredMap(afterSave)
+                openSample()
+                val reopened = awaitOffline(expectedRoad)
+                val staleRetry = clickAction("stored_location_map_retry_background")
+                val beforeRetry = requests.get()
+                basemapAvailable.set(true)
+                click("stored_location_map_retry_background")
+                compose.waitUntil(20_000) {
+                    requests.get() > beforeRetry && nodes("stored_location_map_without_background").isEmpty() &&
+                        nodes("stored_location_map_ready").size == 1
+                }
+                val restored = awaitStoredMap(run, recorded.events, selected, expectedRoad, trace)
+                instrument.runOnMainSync { assertFalse(reopened.isAttachedToWindow) }
+                f.drive(true)
+                waitTag("location_history_locked")
+                assertNoStoredMap(restored)
+                invoke(staleRetry)
+                assertNoStoredMap()
+                assertEquals(linked, storedRoad())
+                assertEquals(recorded, f.snapshot(ended))
+                val configuration = compose.activity.resources.configuration
+                val dark = configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
+                args.getString("expectedDark")?.let { assertEquals(it.toBooleanStrict(), dark) }
+                args.getString("expectedFontScale")?.let { assertEquals(it.toFloat(), configuration.fontScale, 0.01f) }
+                f.assertNoPlatformActions()
+            }
+        } finally {
+            HttpRequestUtil.setOkHttpClient(null)
         }
     }
 
@@ -1476,6 +1600,7 @@ class LocationRecordingFlowTest {
         expectedRoad: CourseRoadSnapshot? = null,
         expectedTrace: Pair<LocationRecordingEvent, LocationRecordingEvent>? = null,
         expectedPreview: Boolean = false,
+        expectedOffline: Boolean = false,
     ): MapView =
         runBlocking {
             val recordedPoints = expectedEvents.filter { it.reading is LocationUpdateReading.Sample }
@@ -1690,6 +1815,17 @@ class LocationRecordingFlowTest {
                                                         viewport,
                                                     ),
                                                 )
+                                            }
+                                            if (expectedOffline) {
+                                                checks["OFFLINE_STYLE_HAS_NO_REMOTE_RESOURCES"] =
+                                                    style != null && style.uri.isNullOrBlank() &&
+                                                    JSONObject(style.json).let { json ->
+                                                        !json.has("sprite") && !json.has("glyphs") &&
+                                                            json.getJSONObject("sources").length() == 0
+                                                    }
+                                                checks["OFFLINE_STYLE_HAS_ONLY_LOCAL_DATA_SOURCES"] =
+                                                    style?.sources?.all { it.id == "org.maplibre.annotations" || it is GeoJsonSource } ==
+                                                    true
                                             }
                                             val failed = checks.entries.firstOrNull { !it.value }
                                             observation.put("checks", JSONObject(checks))
