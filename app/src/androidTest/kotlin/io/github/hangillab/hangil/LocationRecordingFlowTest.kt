@@ -1682,13 +1682,14 @@ class LocationRecordingFlowTest {
                                                 checks["TRACE_MATCHES_ONLY_EXPECTED_RECEIPT_PAIR"] = matchesStoredTrace(map, from, to)
                                             }
                                             if (expectedPreview) {
-                                                checks["LOCAL_COURSE_ROAD_PREVIEW_AND_PROJECTED_POINT_MATCH"] =
-                                                    matchesCourseRoadPreview(
+                                                checks.putAll(
+                                                    courseRoadPreviewChecks(
                                                         map,
                                                         checkNotNull(expectedRoad),
                                                         checkNotNull(selectedPoint),
                                                         viewport,
-                                                    )
+                                                    ),
+                                                )
                                             }
                                             val failed = checks.entries.firstOrNull { !it.value }
                                             observation.put("checks", JSONObject(checks))
@@ -1717,33 +1718,27 @@ class LocationRecordingFlowTest {
             }
         }
 
-    private fun matchesCourseRoadPreview(
+    private fun courseRoadPreviewChecks(
         map: org.maplibre.android.maps.MapLibreMap,
         road: CourseRoadSnapshot,
         selectedEvent: LocationRecordingEvent,
         viewport: android.graphics.RectF,
-    ): Boolean {
-        val style = map.style ?: return false
+    ): Map<String, Boolean> {
+        val style = map.style ?: return mapOf("PREVIEW_STYLE_LOADED" to false)
         val previewSource = "hangil-course-road-nearest-source"
         val previewLayer = "hangil-course-road-nearest"
         val expectedSources = setOf(STORED_POINT_SOURCE, "hangil-course-preview-roads", previewSource)
+        val annotationSource = "org.maplibre.annotations"
         val json = JSONObject(style.json)
         val jsonSources = json.getJSONObject("sources")
-        if (json.has("sprite") || json.has("glyphs") || style.sources.map { it.id }.toSet() != expectedSources ||
-            style.sources.any { it !is GeoJsonSource } ||
-            jsonSources.keys().asSequence().any { id ->
-                val definition = jsonSources.getJSONObject(id)
-                id !in expectedSources || definition.has("tiles") || definition.has("url") || definition.opt("data") is String
-            }
-        ) {
-            return false
-        }
-        val source = style.getSourceAs<GeoJsonSource>(previewSource) ?: return false
-        val layer = style.getLayerAs<CircleLayer>(previewLayer) ?: return false
-        if (layer.sourceId != source.id || layer.visibility.value == "none") return false
+        val appSources = style.sources.filterNot { it.id == annotationSource }
+        val source = style.getSourceAs<GeoJsonSource>(previewSource)
+        val layer = style.getLayerAs<CircleLayer>(previewLayer)
         val stored = (selectedEvent.reading as LocationUpdateReading.Sample).sample
         val samplePoint = map.projection.toScreenLocation(LatLng(stored.latitude, stored.longitude))
         val roadPath = road.nodes.map { map.projection.toScreenLocation(LatLng(it.latitude, it.longitude)) }
+        val sourcePoints = source?.querySourceFeatures(null).orEmpty()
+        val rendered = if (layer != null) map.queryRenderedFeatures(viewport, previewLayer) else emptyList()
 
         fun matchesPoint(feature: org.maplibre.geojson.Feature): Boolean {
             val geometry = feature.geometry() as? GeoJsonPoint ?: return false
@@ -1752,9 +1747,16 @@ class LocationRecordingFlowTest {
             return viewport.contains(point.x, point.y) && distinctFromSample && onStoredRoadPath(point, roadPath)
         }
 
-        val points = source.querySourceFeatures(null)
-        val rendered = map.queryRenderedFeatures(viewport, previewLayer)
-        return points.isNotEmpty() && rendered.isNotEmpty() && points.all(::matchesPoint) && rendered.all(::matchesPoint)
+        return linkedMapOf(
+            "PREVIEW_NO_STYLE_RESOURCE_URLS" to (style.uri.isNullOrBlank() && !json.has("sprite") && !json.has("glyphs")),
+            "PREVIEW_NO_EXTERNAL_STYLE_SOURCES" to (jsonSources.length() == 0),
+            // MapLibre itself creates an internal annotation source after a style loads.
+            "PREVIEW_ONLY_EXPECTED_APP_SOURCES" to (appSources.map { it.id }.toSet() == expectedSources),
+            "PREVIEW_APP_SOURCES_ARE_GEOJSON" to appSources.all { it is GeoJsonSource },
+            "PREVIEW_PROJECTED_LAYER_VISIBLE" to (layer != null && layer.sourceId == source?.id && layer.visibility.value != "none"),
+            "PREVIEW_PROJECTED_SOURCE_POINT_MATCHES" to (sourcePoints.isNotEmpty() && sourcePoints.all(::matchesPoint)),
+            "PREVIEW_PROJECTED_RENDERED_POINT_MATCHES" to (rendered.isNotEmpty() && rendered.all(::matchesPoint)),
+        )
     }
 
     private fun matchesStoredTrace(
