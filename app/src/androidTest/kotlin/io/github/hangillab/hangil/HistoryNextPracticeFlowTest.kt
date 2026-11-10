@@ -50,6 +50,9 @@ import io.github.hangillab.hangil.core.domain.CourseRoadSnapshot
 import io.github.hangillab.hangil.core.domain.DrivingRestrictions
 import io.github.hangillab.hangil.core.domain.DrivingRestrictionsProvider
 import io.github.hangillab.hangil.core.domain.GearPosition
+import io.github.hangillab.hangil.core.domain.NextPracticeRepository
+import io.github.hangillab.hangil.core.domain.NextPracticeSaveResult
+import io.github.hangillab.hangil.core.domain.NextPracticeSeed
 import io.github.hangillab.hangil.core.domain.ParkingState
 import io.github.hangillab.hangil.core.domain.PlannedPracticeRoad
 import io.github.hangillab.hangil.core.domain.PracticeSelection
@@ -156,13 +159,37 @@ class HistoryNextPracticeFlowTest {
         val trackedSessions = TrackedSessions(store.sessions)
         val referenceEnabled = mutableStateOf(false)
         val targetReadFailure = MutableStateFlow(false)
+        val releaseFirstRoadRead = CompletableDeferred<Unit>()
+        val taskOnlyWriteStarted = CompletableDeferred<Unit>()
+        val releaseTaskOnlyWrite = CompletableDeferred<Unit>()
         val targetRepository =
             object : SessionReviewRoadRepository by store.reviewRoads {
                 override fun observe(sessionId: String): Flow<SessionReviewRoad?> =
-                    combine(store.reviewRoads.observe(sessionId), targetReadFailure) { road, failed ->
-                        check(!failed) { "Controlled target read failure" }
-                        road
+                    flow {
+                        releaseFirstRoadRead.await()
+                        emitAll(
+                            combine(store.reviewRoads.observe(sessionId), targetReadFailure) { road, failed ->
+                                check(!failed) { "Controlled target read failure" }
+                                road
+                            },
+                        )
                     }
+            }
+        val nextRepository =
+            object : NextPracticeRepository by store.nextPractice {
+                override suspend fun saveHistorySelection(
+                    seed: NextPracticeSeed,
+                    selection: PracticeSelection,
+                    expectedReview: SessionReviewRoad?,
+                    canCommit: () -> Boolean,
+                ): NextPracticeSaveResult {
+                    if (selection.plannedRoad == null && !releaseTaskOnlyWrite.isCompleted) {
+                        assertNull(expectedReview)
+                        taskOnlyWriteStarted.complete(Unit)
+                        releaseTaskOnlyWrite.await()
+                    }
+                    return store.nextPractice.saveHistorySelection(seed, selection, expectedReview, canCommit)
+                }
             }
         val referenceModels = mutableMapOf<String, SessionReviewRoadViewModel>()
         val referenceCreations = AtomicInteger()
@@ -296,7 +323,7 @@ class HistoryNextPracticeFlowTest {
                                                 restrictions,
                                                 trackedSessions,
                                                 store.catalog,
-                                                store.nextPractice,
+                                                nextRepository,
                                                 state,
                                                 targetRepository,
                                             ),
@@ -364,6 +391,26 @@ class HistoryNextPracticeFlowTest {
             click("history_older")
             invoke(staleNewest)
             assertNull(opened.value)
+            click("history_prepare_next")
+            waitTag("next_practice_ready")
+            assertEquals(older, opened.value?.source)
+            val taskOnlySelection = selection(targetTask.id)
+            waitTag("next_practice_target_road_loading")
+            click("next_task_${targetTask.id}")
+            click("next_practice_save")
+            runBlocking { withTimeout(20000) { taskOnlyWriteStarted.await() } }
+            releaseFirstRoadRead.complete(Unit)
+            waitTag("next_practice_target_road_use")
+            compose.onNodeWithTag("next_practice_save").performScrollTo().assertIsNotEnabled()
+            assertEquals(originalPreparation, runBlocking { store.preparation.observeSelection().first() })
+            releaseTaskOnlyWrite.complete(Unit)
+            waitTag("history_prepare_next")
+            assertNull(opened.value)
+            assertEquals(taskOnlySelection, runBlocking { store.preparation.observeSelection().first() })
+            assertEquals(sessionsBefore, runBlocking { store.sessions.observeSessions().first() })
+            assertEquals(reviewRoadsBefore, reviewRoadSnapshot(store, sessionsBefore))
+            assertEquals(sequencesBefore, store.sequenceSnapshot())
+            runBlocking { check(store.preparation.replaceSelection(taskOnlySelection, originalPreparation) { true }) }
             click("history_prepare_next")
             waitTag("next_practice_ready")
             assertEquals(older, opened.value?.source)

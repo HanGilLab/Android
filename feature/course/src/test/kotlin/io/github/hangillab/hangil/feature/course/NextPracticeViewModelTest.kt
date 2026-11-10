@@ -349,6 +349,70 @@ class NextPracticeViewModelTest {
             assertEquals("next", f.next.stored?.taskId)
         }
 
+    @Test fun optionalRoadArrivalKeepsPendingTaskOnlySave() =
+        runTest {
+            val f = Fixture()
+            val roads = MutableSharedFlow<SessionReviewRoad?>(replay = 1)
+            f.reviews.query = { roads }
+            watch(f)
+            val events = events(f)
+            val release = CompletableDeferred<Unit>()
+            f.next.waitFor(release, ignoreCancellation = true)
+            val state = choose(f)
+            assertEquals(NextPracticeUiState.ReviewRoad.Loading, state.reviewRoad)
+            assertTrue(f.model.save("source", state.generation))
+            runCurrent()
+            assertEquals(1, f.next.calls)
+            assertTrue(f.next.guards.single()())
+
+            val road = targetReview()
+            roads.emit(road)
+            val afterRead = ready(f)
+            val stillOwnsWrite = f.next.guards.single()()
+            release.complete(Unit)
+            runCurrent()
+
+            assertEquals(NextPracticeUiState.ReviewRoad.Available(road), afterRead.reviewRoad)
+            assertTrue(afterRead.saving)
+            assertTrue(stillOwnsWrite)
+            assertEquals(1, f.next.calls)
+            assertNull(f.next.expectedReviews.single())
+            assertEquals("next", f.next.stored?.taskId)
+            assertNull(f.next.stored?.plannedRoad)
+            assertEquals(1, events.size)
+        }
+
+    @Test fun optionalRoadReadFailureKeepsUnconsumedTaskOnlyCompletion() =
+        runTest {
+            val f = Fixture()
+            val release = CompletableDeferred<Unit>()
+            f.reviews.query = {
+                flow {
+                    release.await()
+                    throw IOException("review read failed")
+                }
+            }
+            watch(f)
+            val events = events(f)
+            val state = choose(f)
+            assertEquals(NextPracticeUiState.ReviewRoad.Loading, state.reviewRoad)
+            assertTrue(f.model.save("source", state.generation))
+            runCurrent()
+            val token = events.single()
+
+            release.complete(Unit)
+            val afterRead = ready(f)
+
+            assertEquals(NextPracticeUiState.ReviewRoad.Failed, afterRead.reviewRoad)
+            assertNotEquals(state.generation, afterRead.generation)
+            assertFalse(f.model.selectTask("old", "source", state.generation))
+            assertTrue(f.model.consumeSaved(token))
+            assertFalse(f.model.consumeSaved(token))
+            assertEquals(1, f.next.calls)
+            assertEquals("next", f.next.stored?.taskId)
+            assertEquals(1, events.size)
+        }
+
     @Test fun `blocked writes show failure and can be explicitly retried without any success event`() =
         runTest {
             val f = Fixture()
