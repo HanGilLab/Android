@@ -381,7 +381,7 @@ internal fun SessionHistoryEntryContent(
                                     ParkedButton(
                                         onClick = open,
                                         enabled = viewModel.canPrepareNext(current.session, current.generation),
-                                        prominent = false,
+                                        prominent = exact,
                                         modifier = Modifier.fillMaxWidth().testTag("history_prepare_next").frozenObservationClick(open),
                                     ) {
                                         Text(stringResource(R.string.history_prepare_next), style = MaterialTheme.typography.titleLarge)
@@ -455,18 +455,18 @@ private fun HistoryRecord(
     val session = state.session
     val finished = checkNotNull(session.endedAtEpochMillis)
     Column(Modifier.testTag("history_ready"), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.lg)) {
-        Text(
-            stringResource(R.string.history_position, state.index + 1, state.total),
-            Modifier.testTag("history_position"),
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.primary,
-        )
-        Text(
-            stringResource(R.string.history_scope),
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
         if (allowBrowsing) {
+            Text(
+                stringResource(R.string.history_position, state.index + 1, state.total),
+                Modifier.testTag("history_position"),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Text(
+                stringResource(R.string.history_scope),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(HanGilSpacing.lg)) {
                 ParkedButton(
                     onClick = onNewer,
@@ -513,6 +513,7 @@ private fun HistoryRecord(
                 Text(stringResource(R.string.planned_road_scope), style = MaterialTheme.typography.bodyLarge)
             }
         }
+        if (!allowBrowsing) nextPractice()
         observations()
         memo()
         reviewRoad()
@@ -532,7 +533,7 @@ private fun HistoryRecord(
         recordingRuns()
         courseCompletion()
         locations()
-        nextPractice()
+        if (allowBrowsing) nextPractice()
         ParkedButton(
             onClick = onDelete,
             prominent = false,
