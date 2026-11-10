@@ -50,7 +50,6 @@ class CourseViewModel
         private var saveJob: Job? = null
         private var readJob: Job? = null
         private var readOwner: Any? = null
-        private var readGeneration = 0L
 
         @Volatile private var visible = false
         private val savedEvents = Channel<Unit>(Channel.BUFFERED)
@@ -78,7 +77,7 @@ class CourseViewModel
                     preparationRead = read,
                     plannedRoad = current.plannedRoad,
                     plannedRoadCleared = originalPlannedRoad != null && current.plannedRoad == null,
-                    readGeneration = readGeneration,
+                    actionGeneration = current.actionGeneration,
                 )
             }.onStart {
                 visible = true
@@ -91,12 +90,12 @@ class CourseViewModel
 
         /** Rechecks the displayed draft directly, before a delayed combined UI update. */
         internal fun canRevealDetails(expected: CourseUiState): Boolean {
-            if (expected.readGeneration != readGeneration || !preparationRead.value.allowsEditing || !livePermission() ||
+            val current = draft.value
+            if (expected.actionGeneration != current.actionGeneration || !preparationRead.value.allowsEditing || !livePermission() ||
                 !expected.allowsInteraction
             ) {
                 return false
             }
-            val current = draft.value
             if (current.step != expected.step || current.goalId != expected.goal?.id ||
                 current.courseId != expected.course?.id || current.taskId != expected.taskId || current.plannedRoad != expected.plannedRoad
             ) {
@@ -111,18 +110,18 @@ class CourseViewModel
 
         fun selectGoal(
             id: String,
-            expectedReadGeneration: Long? = null,
+            expectedActionGeneration: Long? = null,
         ) {
-            if (expectedReadGeneration != null && expectedReadGeneration != readGeneration) return
+            if (expectedActionGeneration != null && expectedActionGeneration != draft.value.actionGeneration) return
             if (!canEdit() || draft.value.step != PreparationStep.GOAL || catalog.goals.none { it.id == id }) return
             if (draft.value.goalId != id) update(PreparationDraft(goalId = id))
         }
 
         fun selectCourse(
             id: String,
-            expectedReadGeneration: Long? = null,
+            expectedActionGeneration: Long? = null,
         ) {
-            if (expectedReadGeneration != null && expectedReadGeneration != readGeneration) return
+            if (expectedActionGeneration != null && expectedActionGeneration != draft.value.actionGeneration) return
             if (!canEdit() || draft.value.step != PreparationStep.COURSE) return
             val current = draft.value
             val course = catalog.courses.find { it.id == id && current.goalId in it.goalIds } ?: return
@@ -150,16 +149,17 @@ class CourseViewModel
 
         fun selectTask(
             id: String,
-            expectedReadGeneration: Long? = null,
+            expectedActionGeneration: Long? = null,
         ) {
-            if (expectedReadGeneration != null && expectedReadGeneration != readGeneration) return
+            if (expectedActionGeneration != null && expectedActionGeneration != draft.value.actionGeneration) return
             if (!canEdit() || draft.value.step != PreparationStep.BRIEFING) return
-            val course = catalog.courses.find { it.id == draft.value.courseId } ?: return
-            if (course.tasks.any { it.id == id }) update(draft.value.copy(taskId = id))
+            val current = draft.value
+            val course = catalog.courses.find { it.id == current.courseId } ?: return
+            if ((current.taskId != id || saveFailed.value) && course.tasks.any { it.id == id }) update(current.copy(taskId = id))
         }
 
-        fun next(expectedReadGeneration: Long? = null) {
-            if (expectedReadGeneration != null && expectedReadGeneration != readGeneration) return
+        fun next(expectedActionGeneration: Long? = null) {
+            if (expectedActionGeneration != null && expectedActionGeneration != draft.value.actionGeneration) return
             if (!canEdit()) return
             when (draft.value.step) {
                 PreparationStep.GOAL -> if (draft.value.goalId != null) update(draft.value.copy(step = PreparationStep.COURSE))
@@ -168,9 +168,9 @@ class CourseViewModel
             }
         }
 
-        fun back(expectedReadGeneration: Long? = null): Boolean {
+        fun back(expectedActionGeneration: Long? = null): Boolean {
             // A retired Back is consumed; it must not close the replacement preparation.
-            if (expectedReadGeneration != null && expectedReadGeneration != readGeneration) return true
+            if (expectedActionGeneration != null && expectedActionGeneration != draft.value.actionGeneration) return true
             if (!canEdit()) {
                 leave()
                 return false
@@ -194,8 +194,8 @@ class CourseViewModel
             saveJob?.cancel()
         }
 
-        fun retryPreparationRead(expectedReadGeneration: Long? = null) {
-            if (expectedReadGeneration != null && expectedReadGeneration != readGeneration) return
+        fun retryPreparationRead(expectedActionGeneration: Long? = null) {
+            if (expectedActionGeneration != null && expectedActionGeneration != draft.value.actionGeneration) return
             if (!livePermission() || saving.value) return
             if (saveFailed.value) {
                 // Only this explicit reload discards the failed draft and its old compare-and-set source.
@@ -214,7 +214,7 @@ class CourseViewModel
                     "initialPreparationOutdated",
                     "preparationBaselineFields",
                 ).forEach { savedState.remove<Any?>(it) }
-                draft.value = PreparationDraft()
+                publishDraft(PreparationDraft())
                 saveFailed.value = false
             } else if (preparationRead.value != PreparationReadState.FAILED) {
                 return
@@ -227,8 +227,8 @@ class CourseViewModel
             cancelPreparationRead()
             val owner = Any()
             readOwner = owner
-            readGeneration++
             preparationRead.value = PreparationReadState.LOADING
+            publishDraft(draft.value)
             val job =
                 viewModelScope.launch(start = CoroutineStart.LAZY) {
                     try {
@@ -306,13 +306,14 @@ class CourseViewModel
         }
 
         private fun save() {
-            val snapshot = draft.value
-            val selection = snapshot.selection() ?: return
+            val current = draft.value
+            val selection = current.selection() ?: return
             if (!expectedLoaded) return
             val expected = expectedCurrent
             if (catalog.resolve(selection) !is Preparation.Ready) return
             saving.value = true
             saveFailed.value = false
+            val snapshot = publishDraft(current)
             saveJob =
                 viewModelScope.launch {
                     try {
@@ -356,7 +357,7 @@ class CourseViewModel
             savedState["task"] = value.taskId
             savedState["initialPreparationOutdated"] = initialOutdated
             ownsDraft = true
-            draft.value = value
+            publishDraft(value)
             if (!initialOutdated &&
                 preparationRead.value == PreparationReadState.OUTDATED
             ) {
@@ -364,6 +365,10 @@ class CourseViewModel
             }
             saveFailed.value = false
         }
+
+        // Keep the stamp and its draft in one flow value so the UI cannot combine mismatched versions.
+        private fun publishDraft(value: PreparationDraft): PreparationDraft =
+            value.copy(actionGeneration = draft.value.actionGeneration + 1).also { draft.value = it }
 
         private fun restoreDraft(): PreparationDraft {
             val goal = catalog.goals.find { it.id == savedState.get<String>("goal") } ?: return PreparationDraft()

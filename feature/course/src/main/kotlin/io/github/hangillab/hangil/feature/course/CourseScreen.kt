@@ -66,16 +66,16 @@ fun CourseRoute(
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { viewModel.saved.collect { close() } }
     }
     val displayed = state
-    val back = { if (!viewModel.back(displayed.readGeneration)) close() }
+    val back = { if (!viewModel.back(displayed.actionGeneration)) close() }
     BackHandler(onBack = back)
     CourseScreen(
         displayed,
-        { viewModel.selectGoal(it, displayed.readGeneration) },
-        { viewModel.selectCourse(it, displayed.readGeneration) },
-        { viewModel.selectTask(it, displayed.readGeneration) },
-        { viewModel.next(displayed.readGeneration) },
+        { viewModel.selectGoal(it, displayed.actionGeneration) },
+        { viewModel.selectCourse(it, displayed.actionGeneration) },
+        { viewModel.selectTask(it, displayed.actionGeneration) },
+        { viewModel.next(displayed.actionGeneration) },
         back,
-        onRetryPreparationRead = { viewModel.retryPreparationRead(displayed.readGeneration) },
+        onRetryPreparationRead = { viewModel.retryPreparationRead(displayed.actionGeneration) },
     ) {
         viewModel.canRevealDetails(displayed)
     }

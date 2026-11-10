@@ -407,6 +407,48 @@ class CourseViewModelTest {
             assertEquals(stored, repository.selection.value)
         }
 
+    @Test fun hydratedEditRejectsReplayedNextAndSameStepReturnBeforeFreshSave() =
+        runTest {
+            val stored = PracticeSelection("b", "c", 2, 3, "u")
+            repository.selection.value = stored
+            val model = model()
+            observe(model)
+            val initialGoal = model.uiState.value
+            assertEquals(PreparationStep.GOAL, initialGoal.step)
+            assertEquals(stored.taskId, initialGoal.taskId)
+            val oldNext = { model.next(initialGoal.actionGeneration) }
+
+            repeat(3) { oldNext() }
+            runCurrent()
+            assertEquals(0, repository.calls)
+            assertEquals(PreparationStep.COURSE, model.uiState.value.step)
+
+            assertTrue(model.back(model.uiState.value.actionGeneration))
+            runCurrent()
+            assertEquals(PreparationStep.GOAL, model.uiState.value.step)
+            oldNext()
+            runCurrent()
+            assertEquals(PreparationStep.GOAL, model.uiState.value.step)
+
+            model.next(model.uiState.value.actionGeneration)
+            runCurrent()
+            model.next(model.uiState.value.actionGeneration)
+            runCurrent()
+            assertEquals(PreparationStep.BRIEFING, model.uiState.value.step)
+            model.selectTask("t", model.uiState.value.actionGeneration)
+            runCurrent()
+            assertEquals(0, repository.calls)
+            assertEquals(stored, repository.selection.value)
+
+            val saveGeneration = model.uiState.value.actionGeneration
+            model.next(saveGeneration)
+            runCurrent()
+            model.next(saveGeneration)
+            runCurrent()
+            assertEquals(1, repository.calls)
+            assertEquals(stored.copy(taskId = "t"), repository.selection.value)
+        }
+
     @Test fun `the stored selection is read once and later emissions cannot overwrite an owned edit`() =
         runTest {
             val stored = PracticeSelection("b", "c", 2, 3, "u")
@@ -879,13 +921,16 @@ class CourseViewModelTest {
                     plannedRoad = PlannedPracticeRoad("different-source", "new-version", plan().road),
                 )
             repository.selection.value = replacement
-            model.next(displayed.readGeneration)
+            model.next(displayed.actionGeneration)
             runCurrent()
             assertTrue(model.uiState.value.saveFailed)
             assertEquals("u", model.uiState.value.taskId)
             assertEquals(original.plannedRoad, model.uiState.value.plannedRoad)
             val writesAfterFailure = repository.calls
-            model.next(displayed.readGeneration)
+            model.next(displayed.actionGeneration)
+            runCurrent()
+            assertEquals(writesAfterFailure, repository.calls)
+            model.next(model.uiState.value.actionGeneration)
             runCurrent()
             assertTrue(model.uiState.value.saveFailed)
             assertEquals(replacement, repository.selection.value)
@@ -901,30 +946,30 @@ class CourseViewModelTest {
             assertEquals("t", model.uiState.value.taskId)
             assertEquals(replacement.plannedRoad, model.uiState.value.plannedRoad)
             val fresh = model.uiState.value
-            model.next(displayed.readGeneration)
-            model.selectGoal("a", displayed.readGeneration)
-            assertTrue("A stale Back is consumed without closing fresh preparation", model.back(displayed.readGeneration))
+            model.next(displayed.actionGeneration)
+            model.selectGoal("a", displayed.actionGeneration)
+            assertTrue("A stale Back is consumed without closing fresh preparation", model.back(displayed.actionGeneration))
             runCurrent()
             assertEquals(fresh, model.uiState.value)
             assertEquals(replacement, repository.selection.value)
             assertEquals(writesAfterFailure + 1, repository.calls)
-            model.next(fresh.readGeneration)
+            model.next(fresh.actionGeneration)
             runCurrent()
             val courseStep = model.uiState.value
             assertEquals(PreparationStep.COURSE, courseStep.step)
-            model.selectCourse("other", displayed.readGeneration)
-            assertTrue(model.back(displayed.readGeneration))
+            model.selectCourse("other", displayed.actionGeneration)
+            assertTrue(model.back(displayed.actionGeneration))
             runCurrent()
             assertEquals(courseStep, model.uiState.value)
-            model.next(fresh.readGeneration)
+            model.next(courseStep.actionGeneration)
             runCurrent()
             val briefing = model.uiState.value
             assertEquals(PreparationStep.BRIEFING, briefing.step)
-            model.selectTask("u", displayed.readGeneration)
-            assertTrue(model.back(displayed.readGeneration))
+            model.selectTask("u", displayed.actionGeneration)
+            assertTrue(model.back(displayed.actionGeneration))
             runCurrent()
             assertEquals(briefing, model.uiState.value)
-            model.selectTask("u", fresh.readGeneration)
+            model.selectTask("u", briefing.actionGeneration)
             runCurrent()
             assertEquals("u", model.uiState.value.taskId)
             assertEquals(replacement, repository.selection.value)

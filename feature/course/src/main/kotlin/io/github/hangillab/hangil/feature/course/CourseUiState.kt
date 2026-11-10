@@ -17,7 +17,7 @@ internal data class CourseUiState(
     val preparationRead: PreparationReadState = PreparationReadState.LOADING,
     val plannedRoad: PlannedPracticeRoad? = null,
     val plannedRoadCleared: Boolean = false,
-    val readGeneration: Long = 0,
+    val actionGeneration: Long = 0,
 ) {
     val canContinue: Boolean get() =
         allowsInteraction && preparationRead.allowsEditing && !saving &&
