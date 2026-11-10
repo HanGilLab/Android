@@ -27,6 +27,7 @@ sealed interface SessionHistoryUiState {
         val total: Int,
         val generation: Long,
         val summary: SessionCourseSummary,
+        val hasActiveSession: Boolean,
     ) : SessionHistoryUiState {
         val canOlder: Boolean get() = index + 1 < total
         val canNewer: Boolean get() = index > 0

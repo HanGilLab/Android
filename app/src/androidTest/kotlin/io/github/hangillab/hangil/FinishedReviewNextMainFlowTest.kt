@@ -31,6 +31,8 @@ import dagger.hilt.android.testing.HiltAndroidTest
 import dagger.hilt.android.testing.HiltTestApplication
 import dagger.hilt.android.testing.UninstallModules
 import io.github.hangillab.hangil.core.domain.ConnectionState
+import io.github.hangillab.hangil.core.domain.CourseCompletionOrigin
+import io.github.hangillab.hangil.core.domain.CourseCompletionRepository
 import io.github.hangillab.hangil.core.domain.DrivingRestrictions
 import io.github.hangillab.hangil.core.domain.DrivingRestrictionsProvider
 import io.github.hangillab.hangil.core.domain.GearPosition
@@ -143,6 +145,8 @@ class FinishedReviewNextMainFlowTest {
     @Inject lateinit var preparation: PracticeRepository
 
     @Inject lateinit var sessions: PracticeSessionRepository
+
+    @Inject lateinit var completions: CourseCompletionRepository
 
     @Test fun actualMainFinishReviewNextCancelChooseAndSaveWithControlledInputs() {
         val args = InstrumentationRegistry.getArguments()
@@ -271,9 +275,36 @@ class FinishedReviewNextMainFlowTest {
             capture(captures, "home-next-ready")
             click("session_recent_review")
             assertExact(ended)
+            click("history_course_completion")
+            waitTag("history_course_completion_absent")
+            openCompletionConfirmation()
+            compose.onNodeWithTag("history_course_completion_cancel", useUnmergedTree = true).assertIsDisplayed().performClick()
+            waitTag("history_course_completion_absent")
+            check(runBlocking { withTimeout(20_000) { completions.observe(ended.sessionId).first() } } == null)
+            openCompletionConfirmation()
+            compose.onNodeWithTag("history_course_completion_confirm", useUnmergedTree = true).assertIsDisplayed().performClick()
+            waitTag("history_course_completion_ready")
+            val declaration =
+                checkNotNull(runBlocking { withTimeout(20_000) { completions.observe(ended.sessionId).first() } })
+            check(declaration.source == ended && declaration.origin == CourseCompletionOrigin.USER_DECLARATION)
             click("history_close")
             waitTag("session_start")
             check(selection() == initialSelection && rows() == listOf(ended))
+
+            click("session_start")
+            val second = awaitRows { rows -> rows.any { it.isActive } }.single { it.isActive }
+            click("session_recent_review")
+            assertExact(ended)
+            waitTag("history_prepare_next_active")
+            compose.onNodeWithTag("history_prepare_next_active", useUnmergedTree = true).assertIsDisplayed()
+            compose.onNodeWithTag("history_prepare_next", useUnmergedTree = true).assertIsNotEnabled()
+            click("history_close")
+            click("session_finish")
+            val secondEnded = awaitRows { rows -> rows.none { it.isActive } }.single { it.sessionId == second.sessionId }
+            click("session_finish_review")
+            assertExact(secondEnded)
+            check(nodes("history_prepare_next_active").isEmpty())
+            compose.onNodeWithTag("history_prepare_next", useUnmergedTree = true).assertIsEnabled()
             check(sdkCalls.get() == 0)
         } catch (failure: Throwable) {
             primary = failure
@@ -286,6 +317,17 @@ class FinishedReviewNextMainFlowTest {
                 if (primary == null) throw cleanup else primary.addSuppressed(cleanup)
             }
         }
+    }
+
+    private fun openCompletionConfirmation() {
+        waitTag("history_course_completion_request")
+        compose
+            .onNodeWithTag("history_course_completion_request", useUnmergedTree = true)
+            .performScrollTo()
+            .assertIsEnabled()
+            .performClick()
+        compose.waitUntil(20_000) { nodes("history_course_completion_dialog").size == 1 }
+        compose.onNodeWithTag("history_course_completion_dialog", useUnmergedTree = true).assertIsDisplayed()
     }
 
     private fun unexpectedSdk(): Nothing {

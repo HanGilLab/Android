@@ -998,7 +998,14 @@ class SessionHistoryViewModel
                     else -> {
                         val session = records[index]
                         val summary = SessionCourseSummary.from(session, records) ?: throw InvalidSessions()
-                        SessionHistoryUiState.Ready(session, index, records.size, nextGeneration, summary)
+                        SessionHistoryUiState.Ready(
+                            session,
+                            index,
+                            records.size,
+                            nextGeneration,
+                            summary,
+                            hasActiveSession = receivedHasActiveSession == true,
+                        )
                     }
                 }
         }
