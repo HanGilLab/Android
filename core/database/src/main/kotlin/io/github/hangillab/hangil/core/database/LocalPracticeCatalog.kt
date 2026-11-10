@@ -37,8 +37,9 @@ class LocalPracticeCatalog
                     mapPreview =
                         CourseMapPreview(
                             id = "seoul-city-hall-landmarks",
-                            version = 1,
+                            version = 2,
                             title = "서울 시청 주변",
+                            practiceRoadId = "osm-way-184443139-v13",
                             points =
                                 listOf(
                                     CoursePreviewPoint("seoul-city-hall", "서울특별시청", 37.5666904, 126.9784222, 198561926L, 28),
@@ -59,12 +60,14 @@ class LocalPracticeCatalog
                             PracticeTask("scene", "낯선 장면 하나 떠올리기", "이동 중 낯설게 느껴질 장면 하나를 미리 떠올려 보세요."),
                             PracticeTask("review", "다시 살펴볼 구간 정하기", "이동 후 차분히 돌아보고 싶은 구간 하나를 정해 보세요."),
                         ),
+                    roadSnapshots = listOf(LocalRoadSnapshots.gwanghwamun),
                     goalIds = setOf("commute", "shopping"),
                     mapPreview =
                         CourseMapPreview(
                             id = "gwanghwamun-landmarks",
-                            version = 1,
+                            version = 2,
                             title = "광화문 주변",
+                            practiceRoadId = LocalRoadSnapshots.gwanghwamun.id,
                             points =
                                 listOf(
                                     CoursePreviewPoint("gwanghwamun", "광화문", 37.5759283, 126.9768176, 170199440L, 22),

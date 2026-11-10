@@ -349,7 +349,11 @@ class MapInputBoundaryTest {
                                     circles.sourceId == SOURCE_ID && numbers.sourceId == SOURCE_ID
                             val layersVisible = circles?.visibility?.value != "none" && numbers?.visibility?.value != "none"
                             var valid = styleReady && source != null && layerIdsMatch && layersVisible
-                            val features = source?.querySourceFeatures(null).orEmpty()
+                            val features =
+                                source?.querySourceFeatures(null).orEmpty().filter {
+                                    it.getStringProperty("point_role") ==
+                                        "LANDMARK"
+                                }
                             val ids = features.map { it.getStringProperty("point_id") }.toSet()
                             valid = valid && ids == preview.points.map { it.id }.toSet() && preview.points.size == 3
                             for (feature in features) {

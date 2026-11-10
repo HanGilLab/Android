@@ -80,7 +80,8 @@ class LocalPracticeCatalogTest {
         val previews = LocalPracticeCatalog().courses.mapNotNull { it.mapPreview }
         assertEquals(listOf("seoul-city-hall-landmarks", "gwanghwamun-landmarks"), previews.map { it.id })
         assertEquals(listOf("서울 시청 주변", "광화문 주변"), previews.map { it.title })
-        assertEquals(listOf(1, 1), previews.map { it.version })
+        assertEquals(listOf(2, 2), previews.map { it.version })
+        assertEquals(listOf("osm-way-184443139-v13", "osm-way-66662159-v10"), previews.map { it.practiceRoadId })
         assertEquals(listOf(3, 3), previews.map { it.points.size })
         assertTrue(previews.all { it.source == CoursePreviewSource.FIXED_OSM_BOUNDING_BOX_CENTERS })
         assertEquals(

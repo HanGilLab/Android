@@ -34,7 +34,7 @@ data class MapPreview internal constructor(
         val role: Role = Role.LANDMARK,
     )
 
-    enum class Role { LANDMARK, WAYPOINT, DESTINATION }
+    enum class Role { LANDMARK, WAYPOINT, DESTINATION, SEGMENT_START, SEGMENT_END }
 
     sealed interface Source {
         @ConsistentCopyVisibility
@@ -78,7 +78,19 @@ data class MapPreview internal constructor(
         internal fun from(course: PracticeCourse): MapPreview? {
             val roads = frozen(course.roadSnapshots.map { it.copy(nodes = frozen(it.nodes)) })
             require(roads.map { it.id }.distinct().size == roads.size) { "Duplicate road preview ID" }
-            course.mapPreview?.let { return from(it).copy(roads = roads) }
+            course.mapPreview?.let { preview ->
+                val landmarks = from(preview)
+                val practiceRoad = roads.singleOrNull { it.id == preview.practiceRoadId }
+                val endpoints =
+                    practiceRoad
+                        ?.let { road ->
+                            listOf(
+                                road.endpoint("start", road.nodes.first(), Role.SEGMENT_START),
+                                road.endpoint("end", road.nodes.last(), Role.SEGMENT_END),
+                            )
+                        }.orEmpty()
+                return landmarks.copy(points = frozen(landmarks.points + endpoints), roads = roads)
+            }
             val route = course.navigationRoute ?: return null
             val snapshot = route.copy(waypoints = frozen(route.waypoints))
             return MapPreview(
@@ -105,6 +117,12 @@ data class MapPreview internal constructor(
                 source = Source.FixedOsm(snapshot),
             )
         }
+
+        private fun CourseRoadSnapshot.endpoint(
+            suffix: String,
+            node: CourseRoadSnapshot.Node,
+            role: Role,
+        ) = Point("practice:$id:$suffix", title, node.latitude, node.longitude, role)
 
         private fun PracticeNavigationRoute.Point.displayPoint(role: Role): Point =
             Point(

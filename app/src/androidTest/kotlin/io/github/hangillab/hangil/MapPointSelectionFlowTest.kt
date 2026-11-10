@@ -277,7 +277,8 @@ class MapPointSelectionFlowTest {
         assertText("map_demo_badge", text(MapR.string.map_demo_badge))
         assertText("map_point_selection_instruction", text(MapR.string.map_point_selection_instruction))
         for ((index, point) in preview.points.withIndex()) assertChoice(index, point.title, selected = false)
-        assertTrue("네 번째 선택을 만들어서는 안 됩니다", nodes("map_point_3").isEmpty())
+        val visiblePointCount = preview.points.size + if (preview.practiceRoadId == null) 0 else 2
+        assertTrue("실제 지도 지점 밖의 선택을 만들면 안 됩니다", nodes("map_point_$visiblePointCount").isEmpty())
         assertNoSelectionDetails()
         bringIntoView("map_view")
         return awaitNative(preview, null, purpose = "initial_unselected_owner")
@@ -490,7 +491,11 @@ class MapPointSelectionFlowTest {
                                                 circleVisible && numberVisible && selectionVisible && filterMatches
                                         diagnostic.put("predicateAfterLayers", valid)
                                         publish("layer_filter_predicate_complete")
-                                        val features = source?.querySourceFeatures(null).orEmpty()
+                                        val features =
+                                            source?.querySourceFeatures(null).orEmpty().filter {
+                                                it.getStringProperty("point_role") ==
+                                                    "LANDMARK"
+                                            }
                                         val foundIds = features.map { it.getStringProperty("point_id") }.toSet()
                                         val expectedIds = preview.points.map { it.id }.toSet()
                                         val idsMatch = foundIds == expectedIds

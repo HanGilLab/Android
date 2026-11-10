@@ -1,16 +1,18 @@
 package io.github.hangillab.hangil.core.domain
 
-/** Current catalog illustration only; the points are not a session's observed or navigable route. */
+/** Landmarks and an optional public road in study order, without live routing or travel evidence. */
 data class CourseMapPreview(
     val id: String,
     val version: Int,
     val title: String,
     val points: List<CoursePreviewPoint>,
+    val practiceRoadId: String? = null,
 ) {
     init {
         require(id.isNotBlank()) { "Invalid course preview ID" }
         require(version > 0) { "Invalid course preview version" }
         require(title.isNotBlank()) { "Invalid course preview title" }
+        require(practiceRoadId == null || practiceRoadId.isNotBlank()) { "Invalid practice road ID" }
         require(points.size >= 2) { "Course preview needs at least two points" }
         require(points.map { it.id }.distinct().size == points.size) { "Duplicate course preview point ID" }
         val coordinates =

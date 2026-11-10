@@ -400,7 +400,8 @@ class MapOpeningMeasureTest {
         assertText("map_preview_title", preview.title)
         assertText("map_demo_badge", text(MapR.string.map_demo_badge))
         preview.points.forEachIndexed { index, point -> assertText("map_point_$index", "${index + 1}. ${point.title}") }
-        assertTrue("세 지점 밖의 placeholder를 만들면 안 됩니다", nodes("map_point_3").isEmpty())
+        val visiblePointCount = preview.points.size + if (preview.practiceRoadId == null) 0 else 2
+        assertTrue("실제 지도 지점 밖의 선택을 만들면 안 됩니다", nodes("map_point_$visiblePointCount").isEmpty())
         for (tag in listOf(
             "map_error",
             "map_retry",
@@ -463,7 +464,11 @@ class MapOpeningMeasureTest {
                                     circles.sourceId == SOURCE_ID && numbers.sourceId == SOURCE_ID
                             val layersVisible = circles?.visibility?.value != "none" && numbers?.visibility?.value != "none"
                             var valid = styleReady && source != null && layerIdsMatch && layersVisible
-                            val features = source?.querySourceFeatures(null).orEmpty()
+                            val features =
+                                source?.querySourceFeatures(null).orEmpty().filter {
+                                    it.getStringProperty("point_role") ==
+                                        "LANDMARK"
+                                }
                             val ids = features.map { it.getStringProperty("point_id") }.toSet()
                             valid = valid && ids == preview.points.map { it.id }.toSet() && preview.points.size == 3
                             for (feature in features) {

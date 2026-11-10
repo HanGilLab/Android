@@ -78,6 +78,8 @@
 
 생활권 코스의 도로선은 장소 대표점을 잇는 선이 아니다. [고정 도로 자료](../../core/database/src/main/kotlin/io/github/hangillab/hangil/core/database/LocalRoadSnapshots.kt)의 way 184443139 버전13과 431903253 버전5를 [버전별 API](https://wiki.openstreetmap.org/wiki/API_v0.6#Version:_GET_/api/0.6/[node|way|relation]/#id/#version)로 읽고, 참조한 노드13개의 버전과 좌표를 개별 버전 응답으로 대조했다. way의 노드 순서를 그대로 보존하며 각 노드 버전도 자료에 포함한다. 이는 way 변경 시각의 역사적 도로 상태나 현재 통행 조건을 확인했다는 뜻은 아니다.
 
+준비 지도에는 생활권의 세종대로20길과 교차로 코스의 새문안로5길을 각각 연습 예시 구간으로 표시한다. 각 공개 도로의 첫 노드와 마지막 노드가 지도에서 구간 시작과 끝이 된다. 이 지점은 도로선의 범위를 나타내며 정차나 주차 지점으로 사용하지 않는다. 새문안로5길은 [OSM way 66662159 버전 10](https://api.openstreetmap.org/api/0.6/way/66662159/10.json)의 일방통행 노드 순서를 따른다. [서울시 본청 진입 안내](https://www.seoul.go.kr/seoul/map.do)와 [세종문화회관 차량 접근 안내](https://www.sejongpac.or.kr/portal/main/contents.do?menuNo=200390)의 주변 진행 방향을 대조했다. 실제 길안내와 당일 통제는 별도로 확인한다.
+
 [도로 모델](../../core/domain/src/main/kotlin/io/github/hangillab/hangil/core/domain/CourseRoadSnapshot.kt)은 도로 식별자, way 버전, 수집 시각과 ordered node 스냅샷을 보존한다. 지도에는 별도 GeoJSON LineString과 LineLayer로 표시하고, 목록에서 선택한 선만 강조한다. 점과 도로는 한 선택의 서로 다른 target이며 준비 지도에서의 선택은 현재 지도에만 유지된다. 종료 연습의 복습 화면에서는 별도의 사용자 선택 원형을 저장한다. 실제 SDK 표본의 도로 매칭은 연결하지 않았다.
 
 도로 자료는 © OpenStreetMap 기여자의 [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/) 자료다. [배포 고지](../../core/database/src/main/resources/META-INF/OSM_ROAD_DATA_NOTICE.txt)와 지도 화면에 출처를 유지한다. 배경 지도와 앱 코드의 라이선스가 이 도로 자료의 조건을 대신하지 않는다. 노드 버전 URL로 좌표를 다시 대조할 수 있으며 실제 주행 경로나 검토된 연습 코스로 해석하지 않는다.

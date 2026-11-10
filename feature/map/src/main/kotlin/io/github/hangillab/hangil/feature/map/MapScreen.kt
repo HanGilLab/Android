@@ -172,12 +172,15 @@ private fun PreparedMap(
 ) {
     val preview = preparation.preview
     val isNavigationRequest = preview.source is MapPreview.Source.NavigationRequest
+    val hasPracticeRoad = preview.points.any { it.role == MapPreview.Role.SEGMENT_START }
     val pointTitles =
         preview.points.mapIndexed { index, point ->
             when (point.role) {
                 MapPreview.Role.LANDMARK -> "${index + 1}. ${point.title}"
                 MapPreview.Role.WAYPOINT -> stringResource(R.string.map_point_waypoint, index + 1, point.title)
                 MapPreview.Role.DESTINATION -> stringResource(R.string.map_point_destination, index + 1, point.title)
+                MapPreview.Role.SEGMENT_START -> stringResource(R.string.map_point_segment_start, index + 1, point.title)
+                MapPreview.Role.SEGMENT_END -> stringResource(R.string.map_point_segment_end, index + 1, point.title)
             }
         }
     val roadTitles = preview.roads.mapIndexed { index, road -> stringResource(R.string.map_road_title, index + 1, road.title) }
@@ -189,7 +192,15 @@ private fun PreparedMap(
                 pointTitles.joinToString(", "),
             )
         } else {
-            stringResource(R.string.map_content_description, preparation.prepared.course.title)
+            if (hasPracticeRoad) {
+                stringResource(
+                    R.string.map_practice_road_content_description,
+                    preparation.prepared.course.title,
+                    pointTitles.takeLast(2).joinToString(", "),
+                )
+            } else {
+                stringResource(R.string.map_content_description, preparation.prepared.course.title)
+            }
         }
     val contentDescription =
         if (preview.roads.isEmpty()) {
@@ -225,8 +236,20 @@ private fun PreparedMap(
             PracticeBadge(stringResource(if (isNavigationRequest) R.string.map_navigation_request_badge else R.string.map_demo_badge))
         }
         Text(
-            stringResource(if (isNavigationRequest) R.string.map_navigation_request_scope else R.string.map_demo_region),
-            Modifier.testTag(if (isNavigationRequest) "map_navigation_request_scope" else "map_demo_region"),
+            stringResource(
+                when {
+                    isNavigationRequest -> R.string.map_navigation_request_scope
+                    hasPracticeRoad -> R.string.map_practice_road_scope
+                    else -> R.string.map_demo_region
+                },
+            ),
+            Modifier.testTag(
+                when {
+                    isNavigationRequest -> "map_navigation_request_scope"
+                    hasPracticeRoad -> "map_practice_road_scope"
+                    else -> "map_demo_region"
+                },
+            ),
             style = if (isNavigationRequest) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -348,29 +371,30 @@ private fun PreparedMap(
     }
     if (selection?.rendered == true) {
         preview.points.withIndex().singleOrNull { it.value.id == selection.pointId }?.let { (index, point) ->
+            val isPracticeEndpoint = point.role == MapPreview.Role.SEGMENT_START || point.role == MapPreview.Role.SEGMENT_END
             PracticePanel(Modifier.testTag("map_selected_point")) {
                 Text(
                     stringResource(
-                        if (isNavigationRequest) {
-                            R.string.map_navigation_request_selected_point
-                        } else {
-                            R.string.map_selected_point
+                        when {
+                            isNavigationRequest -> R.string.map_navigation_request_selected_point
+                            isPracticeEndpoint -> R.string.map_selected_practice_endpoint
+                            else -> R.string.map_selected_point
                         },
                     ),
                     Modifier.testTag(if (isNavigationRequest) "map_navigation_request_selected_point" else "map_selected_point_label"),
                     style = MaterialTheme.typography.labelLarge,
                 )
                 Text(
-                    if (isNavigationRequest) pointTitles[index] else point.title,
+                    if (isNavigationRequest || isPracticeEndpoint) pointTitles[index] else point.title,
                     Modifier.testTag("map_selected_point_title"),
                     style = MaterialTheme.typography.titleLarge,
                 )
                 Text(
                     stringResource(
-                        if (isNavigationRequest) {
-                            R.string.map_navigation_request_selected_point_scope
-                        } else {
-                            R.string.map_selected_point_scope
+                        when {
+                            isNavigationRequest -> R.string.map_navigation_request_selected_point_scope
+                            isPracticeEndpoint -> R.string.map_practice_road_scope
+                            else -> R.string.map_selected_point_scope
                         },
                     ),
                     Modifier.testTag(
