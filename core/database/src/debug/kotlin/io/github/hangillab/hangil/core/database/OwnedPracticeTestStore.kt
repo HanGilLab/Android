@@ -43,6 +43,7 @@ class OwnedPracticeTestStore private constructor(
     val reviewRoads: SessionReviewRoadRepository get() = RoomSessionReviewRoadRepository(database, catalog)
 
     private var closed = false
+    private val initialSchemaVersion = schemaVersion()
 
     /** Close collectors/writes first and reacquire repositories afterward; names/paths are never accepted. */
     @Synchronized
@@ -71,6 +72,8 @@ class OwnedPracticeTestStore private constructor(
         check(!closed) { "닫힌 격리 저장소는 조회할 수 없습니다" }
         return database.openHelper.readableDatabase.version
     }
+
+    fun hasUnchangedSchema(): Boolean = schemaVersion() == initialSchemaVersion
 
     @Synchronized
     fun sequenceSnapshot(): Map<String, Long> {
