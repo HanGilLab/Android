@@ -17,6 +17,8 @@
   <string name="location_recording_permission_request">위치 권한 요청</string>
   <string name="location_recording_permission_refresh">권한 다시 확인</string>
   <string name="location_recording_start">이 연습의 위치 기록 켜기</string>
+  <string name="location_recording_restart">이 연습의 위치 기록 다시 켜기</string>
+  <string name="location_recording_stopped_on_return">한길 화면을 벗어나 위치 기록이 멈췄어요.</string>
   <string name="location_recording_stop">위치 기록 끄기</string>
   <string name="location_recording_starting">위치 기록을 준비하고 있어요.</string>
   <string name="location_recording_on">위치 표본 기록이 켜져 있어요.</string>

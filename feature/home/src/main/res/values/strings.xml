@@ -181,6 +181,7 @@
     <string name="history_memo_empty">이 연습에 저장한 메모가 없어요.</string>
     <string name="navigation_screen_title">기본 내비</string>
     <string name="navigation_screen_scope">화면만 열어요. 내비 중 기록을 켜지 않으면 화면을 벗어날 때 차량 기록이 멈춰요.</string>
+    <string name="navigation_location_recording_stop">한길 화면이 닫히면 위치 표본 기록이 멈춰요.</string>
     <string name="navigation_screen_open">기본 내비 열기</string>
     <string name="navigation_screen_connecting">내비에 연결하고 있어요.</string>
     <string name="navigation_screen_requested">화면 전환을 요청했어요. 내비 화면을 확인해 주세요.</string>

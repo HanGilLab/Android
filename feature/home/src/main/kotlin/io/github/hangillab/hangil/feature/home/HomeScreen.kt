@@ -20,6 +20,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.hangillab.hangil.core.designsystem.HanGilBrand
 import io.github.hangillab.hangil.core.designsystem.HanGilDimensions
@@ -30,10 +31,12 @@ import io.github.hangillab.hangil.core.designsystem.ParkedDisclosure
 import io.github.hangillab.hangil.core.designsystem.ParkedLockedNotice
 import io.github.hangillab.hangil.core.designsystem.ParkedPage
 import io.github.hangillab.hangil.core.designsystem.ParkedPanel
+import io.github.hangillab.hangil.core.domain.LocationRecordingState
 import io.github.hangillab.hangil.core.domain.PracticeSession
 import io.github.hangillab.hangil.core.domain.Preparation
 import io.github.hangillab.hangil.core.domain.PreparedPractice
 import io.github.hangillab.hangil.core.domain.VehicleRecordingState
+import kotlinx.coroutines.flow.StateFlow
 
 @Composable
 fun HomeRoute(
@@ -46,6 +49,7 @@ fun HomeRoute(
     onRetryRecording: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
     onLocationRecording: () -> Unit = {},
+    locationRecording: StateFlow<LocationRecordingState>? = null,
 ) {
     HomeRouteContent(
         onPrepare,
@@ -58,6 +62,7 @@ fun HomeRoute(
         onRetryRecording,
         viewModel,
         onLocationRecording,
+        locationRecording,
     )
 }
 
@@ -73,6 +78,7 @@ fun HomeRoute(
     onRetryRecording: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
     onLocationRecording: () -> Unit = {},
+    locationRecording: StateFlow<LocationRecordingState>? = null,
 ) {
     HomeRouteContent(
         onPrepare,
@@ -85,6 +91,7 @@ fun HomeRoute(
         onRetryRecording,
         viewModel,
         onLocationRecording,
+        locationRecording,
     )
 }
 
@@ -100,6 +107,7 @@ private fun HomeRouteContent(
     onRetryRecording: () -> Unit,
     viewModel: HomeViewModel,
     onLocationRecording: () -> Unit,
+    locationRecording: StateFlow<LocationRecordingState>?,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val displayed = state
@@ -114,6 +122,12 @@ private fun HomeRouteContent(
         {
             val sessions: SessionViewModel = hiltViewModel()
             val courseGuidance by sessions.courseGuidance.collectAsStateWithLifecycle()
+            val session by sessions.uiState.collectAsStateWithLifecycle()
+            val location = locationRecording?.collectAsStateWithLifecycle(minActiveState = Lifecycle.State.RESUMED)?.value
+            val stopped =
+                location?.stoppedByHostFor(session.active)?.takeIf {
+                    sessions.canExpandGuide(HomeJourneyStep.ACTIVE, it.run.source)
+                }
             SessionRoute(
                 onPrepare = { if (viewModel.canPrepare()) onPrepare() },
                 onPrepareNext = onPrepareNext,
@@ -135,6 +149,13 @@ private fun HomeRouteContent(
                 modifier = Modifier.fillMaxWidth().heightIn(min = HanGilDimensions.secondaryActionMinHeight).testTag("home_history"),
             ) {
                 Text(stringResource(R.string.history_open), style = MaterialTheme.typography.titleLarge)
+            }
+            if (stopped != null) {
+                Text(
+                    stringResource(R.string.location_recording_stopped_on_return),
+                    Modifier.fillMaxWidth().testTag("home_location_recording_host_stopped"),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
             }
             ParkedButton(
                 onClick = { if (viewModel.canViewHistory()) onLocationRecording() },

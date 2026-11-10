@@ -126,7 +126,15 @@ class MainActivity : ComponentActivity() {
                                 showDiagnostics = showDiagnostics,
                                 recordingState = recordingState,
                                 onRetryRecording = { recording.retry() },
-                                onLocationRecording = { navigation.navigate("location-recording") { launchSingleTop = true } },
+                                onLocationRecording = {
+                                    if (navigation.currentBackStackEntry === homeEntry &&
+                                        lifecycle.currentState == Lifecycle.State.RESUMED &&
+                                        homeEntry.lifecycle.currentState == Lifecycle.State.RESUMED
+                                    ) {
+                                        navigation.navigate("location-recording") { launchSingleTop = true }
+                                    }
+                                },
+                                locationRecording = locationRecording.state,
                             )
                         }
                         composable("history") { historyEntry ->

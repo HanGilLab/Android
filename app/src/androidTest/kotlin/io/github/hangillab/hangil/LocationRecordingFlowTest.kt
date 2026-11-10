@@ -266,6 +266,14 @@ class LocationRecordingFlowTest {
 
     @Test fun pauseStopAndSourceReplacementRetireOldActionsWithoutAutomaticRestart() =
         fixture { f ->
+            val args = InstrumentationRegistry.getArguments()
+            val configuration = compose.activity.resources.configuration
+            val dark = configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
+            args.getString("expectedDark")?.let { assertEquals(it.toBooleanStrict(), dark) }
+            args.getString("expectedFontScale")?.let { assertEquals(it.toFloat(), configuration.fontScale, 0.01f) }
+
+            val homeStoppedTag = "home_location_recording_host_stopped"
+            val detailStoppedTag = "location_recording_host_stopped"
             click("session_start")
             val firstSource = f.active()
             f.awaitSource(firstSource)
@@ -283,14 +291,37 @@ class LocationRecordingFlowTest {
             val firstStream = f.gateway.streams.single()
             f.emit(f.sample(12.5))
             f.awaitEvents(firstSource, 1)
+            click("location_recording_back")
+            assertText("navigation_screen_location_recording_stop", HomeR.string.navigation_location_recording_stop)
+            assertTrue(nodes(homeStoppedTag).isEmpty())
+            assertEquals(firstRun, (f.controller.state.value as LocationRecordingState.Recording).run)
             f.move(Lifecycle.State.CREATED)
             f.awaitTerminal(firstSource, LocationRecordingStopReason.HOST_STOPPED)
             assertEquals(0, f.gateway.active.get())
             f.move(Lifecycle.State.RESUMED)
             f.awaitSource(firstSource)
+            assertText(homeStoppedTag, HomeR.string.location_recording_stopped_on_return)
+            assertEquals(listOf(firstStream), f.gateway.streams.toList())
+            assertEquals(0, f.gateway.active.get())
+            f.drive(true)
+            waitTag("home_locked_title")
+            assertTrue(nodes(homeStoppedTag).isEmpty())
+            assertTrue(nodes("home_location_recording").isEmpty())
+            f.drive(false)
+            assertText(homeStoppedTag, HomeR.string.location_recording_stopped_on_return)
+            visual("host-stopped-home", homeStoppedTag)
+
+            click("home_location_recording")
+            assertText(detailStoppedTag, HomeR.string.location_recording_stopped_on_return)
             waitTag("location_recording_start")
+            compose
+                .onNodeWithTag("location_recording_start")
+                .assertTextContains(instrument.targetContext.getString(HomeR.string.location_recording_restart))
+            visual("host-stopped-detail", detailStoppedTag, "location_recording_start")
             invoke(pausedStart)
             assertEquals(1, f.snapshot(firstSource).runs.size)
+            assertEquals(listOf(firstStream), f.gateway.streams.toList())
+            assertEquals(0, f.gateway.active.get())
             click("location_recording_start")
             val secondRun = f.awaitRecording()
             assertTrue(firstRun.runId != secondRun.runId)
@@ -305,12 +336,16 @@ class LocationRecordingFlowTest {
             val retiredEnable = clickAction("location_recording_start")
             val newest = f.replaceActive(replacement)
             f.awaitDisplayedSource(newest)
+            assertTrue(nodes(detailStoppedTag).isEmpty())
             invoke(retiredEnable)
             assertTrue(f.snapshot(replacement).runs.isEmpty())
             assertTrue(f.snapshot(newest).runs.isEmpty())
             assertEquals(0, f.gateway.active.get())
             f.emit(f.sample(32.5), f.gateway.streams.last())
             assertTrue(f.snapshot(newest).events.isEmpty())
+            click("location_recording_back")
+            waitTag("home_location_recording")
+            assertTrue(nodes(homeStoppedTag).isEmpty())
             f.assertNoPlatformActions()
             phase("CONTROLLED_PAUSE_STOP_SOURCE_REPLACEMENT_RETIRED_ACTIONS")
         }
@@ -2831,6 +2866,7 @@ class LocationRecordingFlowTest {
                                         onHistory = { screen.value = Screen.History },
                                         onPrepareNext = { error("Unexpected preparation change") },
                                         onLocationRecording = { screen.value = Screen.Recording },
+                                        locationRecording = controller.state,
                                     )
                                 Screen.Recording ->
                                     LocationRecordingRoute(
