@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="history_prepare_next">이 연습으로 다음 준비</string>
+    <string name="history_prepare_next_active">진행 중인 연습을 마친 뒤 다음 과제를 고를 수 있어요.</string>
 </resources>

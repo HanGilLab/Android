@@ -378,11 +378,24 @@ internal fun SessionHistoryEntryContent(
                                             viewModel.nextPracticeSource(current.session, current.generation)?.let(onPrepareNext)
                                         }
                                     }
+                                    val enabled = viewModel.canPrepareNext(current.session, current.generation)
+                                    if (exact && current.hasActiveSession) {
+                                        Text(
+                                            stringResource(R.string.history_prepare_next_active),
+                                            Modifier.testTag("history_prepare_next_active"),
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
                                     ParkedButton(
                                         onClick = open,
-                                        enabled = viewModel.canPrepareNext(current.session, current.generation),
+                                        enabled = enabled,
                                         prominent = exact,
-                                        modifier = Modifier.fillMaxWidth().testTag("history_prepare_next").frozenObservationClick(open),
+                                        modifier =
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .testTag("history_prepare_next")
+                                                .frozenObservationClick(open, enabled),
                                     ) {
                                         Text(stringResource(R.string.history_prepare_next), style = MaterialTheme.typography.titleLarge)
                                     }
