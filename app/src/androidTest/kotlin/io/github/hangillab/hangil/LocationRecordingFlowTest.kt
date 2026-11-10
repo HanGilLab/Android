@@ -147,6 +147,9 @@ import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.maplibre.android.MapLibre
+import org.maplibre.android.RenderingEngine
+import org.maplibre.android.WellKnownTileServer
 import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.module.http.HttpRequestUtil
@@ -758,10 +761,18 @@ class LocationRecordingFlowTest {
                         .protocol(Protocol.HTTP_1_1)
                         .code(if (available) 200 else 404)
                         .message(if (available) "OK" else "Not Found")
-                        .header("Cache-Control", "no-store")
+                        .header("Cache-Control", "no-store, must-revalidate")
                         .body((if (available) json else "").toResponseBody())
                         .build()
                 }.build()
+        instrument.runOnMainSync {
+            MapLibre.getInstance(
+                instrument.targetContext.applicationContext,
+                null,
+                WellKnownTileServer.MapLibre,
+                RenderingEngine.Type.OPENGL,
+            )
+        }
         HttpRequestUtil.setOkHttpClient(client)
         try {
             fixture(mapEnabled = true) { f ->
