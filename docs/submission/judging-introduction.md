@@ -34,7 +34,7 @@ Kotlin과 Compose 화면, 도메인, Pleos와 AAOS 어댑터, Room 저장소를 
 
 ## 7. 참고자료
 
-구현 소스와 기존 검증 화면: https://github.com/HanGilLab/Android. 사용 흐름: https://github.com/HanGilLab/Android/blob/main/docs/development/app-usage-flow.md. 최종 시연 영상과 제출용 APK 링크는 이 초안에 아직 첨부하지 않았습니다.
+주요 사용 흐름은 4번에, 구현과 검증 범위는 5번에 정리했습니다.
 
 ## 8. 숏폼 링크
 
