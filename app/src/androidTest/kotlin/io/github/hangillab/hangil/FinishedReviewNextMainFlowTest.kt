@@ -17,6 +17,7 @@ import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -150,13 +151,7 @@ class FinishedReviewNextMainFlowTest {
 
     @Test fun actualMainFinishReviewNextCancelChooseAndSaveWithControlledInputs() {
         val args = InstrumentationRegistry.getArguments()
-        val scale = checkNotNull(args.getString("expectedFontScale")).toFloat()
-        val dark = checkNotNull(args.getString("expectedDark")).toBooleanStrict()
-        check(scale == 1f || scale == 1.3f)
-        val configuration = instrument.targetContext.resources.configuration
-        check(abs(configuration.fontScale - scale) < 0.01f)
-        check((configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES) == dark)
-        check(!instrument.targetContext.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
+        assertDeviceConfiguration()
         hilt.inject()
         check(rows().isEmpty() && selection() == null) { "Start with a fresh isolated database" }
         val course = catalog.courses.first { it.tasks.size >= 2 && it.goalIds.isNotEmpty() }
@@ -317,6 +312,38 @@ class FinishedReviewNextMainFlowTest {
                 if (primary == null) throw cleanup else primary.addSuppressed(cleanup)
             }
         }
+    }
+
+    @Test fun actualMainEmptyHistoryReturnsToPreparationWithControlledInputs() {
+        assertDeviceConfiguration()
+        hilt.inject()
+        check(rows().isEmpty() && selection() == null) { "Start with a fresh isolated database" }
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { host = it }
+            click("home_history")
+            waitTag("history_empty")
+            val emptyMessage =
+                instrument.targetContext.getString(io.github.hangillab.hangil.feature.home.R.string.history_empty)
+            compose.onNodeWithTag("history_empty", useUnmergedTree = true).assertIsDisplayed()
+            compose.onNodeWithText(emptyMessage).assertIsDisplayed()
+            check(nodes("history_ready").isEmpty())
+            click("history_close")
+            waitTag("home_prepare")
+            compose.onNodeWithTag("home_prepare", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
+            check(rows().isEmpty() && selection() == null)
+        }
+        check(sdkCalls.get() == 0)
+    }
+
+    private fun assertDeviceConfiguration() {
+        val args = InstrumentationRegistry.getArguments()
+        val scale = checkNotNull(args.getString("expectedFontScale")).toFloat()
+        val dark = checkNotNull(args.getString("expectedDark")).toBooleanStrict()
+        check(scale == 1f || scale == 1.3f)
+        val configuration = instrument.targetContext.resources.configuration
+        check(abs(configuration.fontScale - scale) < 0.01f)
+        check((configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES) == dark)
+        check(!instrument.targetContext.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
     }
 
     private fun openCompletionConfirmation() {
