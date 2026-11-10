@@ -573,6 +573,27 @@ class LocationRecordingFlowTest {
             val expectedSample = SessionReviewSample.from(recorded.runs.single(), recorded.events[recorded.events.lastIndex - 1])
             val roads = checkNotNull(NextPracticeSeed.resolve(f.store.catalog, ended)).practice.course.roadSnapshots
             val suggestionTag = "stored_location_course_road_suggestion"
+            val previewLegend = "stored_location_course_road_preview_legend"
+            val nearerPreview = "stored_location_course_road_preview_0"
+            val fartherPreview = "stored_location_course_road_preview_1"
+            val sessionsBefore =
+                runBlocking {
+                    f.store.sessions
+                        .observeSessions()
+                        .first()
+                }
+            val preparationBefore =
+                runBlocking {
+                    f.store.preparation
+                        .observeSelection()
+                        .first()
+                }
+            val memoBefore =
+                runBlocking {
+                    f.store.memos
+                        .observe(ended.sessionId)
+                        .first()
+                }
             f.gateway.permission.set(false)
 
             fun savedRoad() =
@@ -587,6 +608,45 @@ class LocationRecordingFlowTest {
                 waitTag("location_history_content")
                 click("location_history_event_previous")
                 click("location_history_point_map")
+            }
+
+            fun previewRoad(
+                tag: String,
+                road: CourseRoadSnapshot,
+            ): MapView {
+                click(tag)
+                waitTag(previewLegend)
+                compose.onNodeWithTag(previewLegend, useUnmergedTree = true).assertTextContains(road.title, substring = true)
+                return awaitStoredMap(recorded.runs.single(), recorded.events, expectedSample.event, road, expectedPreview = true)
+            }
+
+            fun assertPreviewDidNotWrite() {
+                assertNull(savedRoad())
+                assertEquals(recorded, f.snapshot(ended))
+                assertEquals(
+                    sessionsBefore,
+                    runBlocking {
+                        f.store.sessions
+                            .observeSessions()
+                            .first()
+                    },
+                )
+                assertEquals(
+                    preparationBefore,
+                    runBlocking {
+                        f.store.preparation
+                            .observeSelection()
+                            .first()
+                    },
+                )
+                assertEquals(
+                    memoBefore,
+                    runBlocking {
+                        f.store.memos
+                            .observe(ended.sessionId)
+                            .first()
+                    },
+                )
             }
 
             click("home_history")
@@ -621,23 +681,41 @@ class LocationRecordingFlowTest {
                     ).fetchSemanticsNodes()
                     .map { it.config[SemanticsProperties.TestTag] }
             assertEquals(listOf(nearerRoadTag, suggestionTag, fartherRoadTag), comparisonTags)
-            assertNull(savedRoad())
+            assertTrue(nodes(previewLegend).isEmpty())
+            val nearerMap = previewRoad(nearerPreview, roads[1])
+            assertPreviewDidNotWrite()
+            val fartherMap = previewRoad(fartherPreview, roads[0])
+            instrument.runOnMainSync { assertFalse(nearerMap.isAttachedToWindow) }
+            assertPreviewDidNotWrite()
+            click(fartherPreview)
+            assertTrue(nodes(previewLegend).isEmpty())
+            instrument.runOnMainSync { assertFalse(fartherMap.isAttachedToWindow) }
+            assertPreviewDidNotWrite()
+
+            val lockedMap = previewRoad(nearerPreview, roads[1])
             val saveTag = "stored_location_course_road_save_1"
             val stale = clickAction(saveTag)
+            val stalePreview = clickAction(fartherPreview)
             f.drive(true)
             waitTag("location_history_locked")
             assertTrue(nodes(suggestionTag).isEmpty())
+            assertTrue(nodes(previewLegend).isEmpty())
+            assertNoStoredMap(lockedMap)
             invoke(stale)
+            invoke(stalePreview)
             f.drive(false)
             waitTag("location_history_locked")
             assertTrue(nodes(suggestionTag).isEmpty())
             invoke(stale)
-            assertNull(savedRoad())
+            invoke(stalePreview)
+            assertPreviewDidNotWrite()
             click("location_history_back")
             openSample()
             waitTag(saveTag)
             invoke(stale)
-            assertNull(savedRoad())
+            invoke(stalePreview)
+            assertTrue(nodes(previewLegend).isEmpty())
+            assertPreviewDidNotWrite()
             click(saveTag)
             waitTag("review_road_sample_current")
             val linked = checkNotNull(savedRoad())
@@ -1397,20 +1475,23 @@ class LocationRecordingFlowTest {
         selectedEvent: LocationRecordingEvent?,
         expectedRoad: CourseRoadSnapshot? = null,
         expectedTrace: Pair<LocationRecordingEvent, LocationRecordingEvent>? = null,
+        expectedPreview: Boolean = false,
     ): MapView =
         runBlocking {
-            val expectedPoints = expectedEvents.filter { it.reading is LocationUpdateReading.Sample }.associateBy { it.id.toString() }
+            val recordedPoints = expectedEvents.filter { it.reading is LocationUpdateReading.Sample }
             check(
-                expectedPoints.isNotEmpty() &&
+                recordedPoints.isNotEmpty() &&
                     expectedEvents.all { it.runId == expectedRun.runId && it.sessionId == expectedRun.source.sessionId },
             )
             val selectedPoint = selectedEvent?.takeIf { it.reading is LocationUpdateReading.Sample }
+            val visiblePoints = if (expectedPreview) listOf(checkNotNull(selectedPoint)) else recordedPoints
+            val expectedPoints = visiblePoints.associateBy { it.id.toString() }
             waitTag("stored_location_map_counts")
             val countText =
                 instrument.targetContext.getString(
                     MapR.string.stored_map_counts,
-                    expectedPoints.size,
-                    expectedEvents.size - expectedPoints.size,
+                    recordedPoints.size,
+                    expectedEvents.size - recordedPoints.size,
                 )
             assertTrue(nodes("stored_location_map_counts").single().config[SemanticsProperties.Text].any { it.text == countText })
             waitTag("stored_location_map_selected")
@@ -1600,6 +1681,16 @@ class LocationRecordingFlowTest {
                                                 val (from, to) = expectedTrace
                                                 checks["TRACE_MATCHES_ONLY_EXPECTED_RECEIPT_PAIR"] = matchesStoredTrace(map, from, to)
                                             }
+                                            if (expectedPreview) {
+                                                checks.putAll(
+                                                    courseRoadPreviewChecks(
+                                                        map,
+                                                        checkNotNull(expectedRoad),
+                                                        checkNotNull(selectedPoint),
+                                                        viewport,
+                                                    ),
+                                                )
+                                            }
                                             val failed = checks.entries.firstOrNull { !it.value }
                                             observation.put("checks", JSONObject(checks))
                                             observation.put("reason", failed?.let { "FAILED_" + it.key } ?: "MATCHED")
@@ -1626,6 +1717,47 @@ class LocationRecordingFlowTest {
                 throw AssertionError("Stored point native map inspection timed out: " + lastObservation.get())
             }
         }
+
+    private fun courseRoadPreviewChecks(
+        map: org.maplibre.android.maps.MapLibreMap,
+        road: CourseRoadSnapshot,
+        selectedEvent: LocationRecordingEvent,
+        viewport: android.graphics.RectF,
+    ): Map<String, Boolean> {
+        val style = map.style ?: return mapOf("PREVIEW_STYLE_LOADED" to false)
+        val previewSource = "hangil-course-road-nearest-source"
+        val previewLayer = "hangil-course-road-nearest"
+        val expectedSources = setOf(STORED_POINT_SOURCE, "hangil-course-preview-roads", previewSource)
+        val annotationSource = "org.maplibre.annotations"
+        val json = JSONObject(style.json)
+        val jsonSources = json.getJSONObject("sources")
+        val appSources = style.sources.filterNot { it.id == annotationSource }
+        val source = style.getSourceAs<GeoJsonSource>(previewSource)
+        val layer = style.getLayerAs<CircleLayer>(previewLayer)
+        val stored = (selectedEvent.reading as LocationUpdateReading.Sample).sample
+        val samplePoint = map.projection.toScreenLocation(LatLng(stored.latitude, stored.longitude))
+        val roadPath = road.nodes.map { map.projection.toScreenLocation(LatLng(it.latitude, it.longitude)) }
+        val sourcePoints = source?.querySourceFeatures(null).orEmpty()
+        val rendered = if (layer != null) map.queryRenderedFeatures(viewport, previewLayer) else emptyList()
+
+        fun matchesPoint(feature: org.maplibre.geojson.Feature): Boolean {
+            val geometry = feature.geometry() as? GeoJsonPoint ?: return false
+            val point = map.projection.toScreenLocation(LatLng(geometry.latitude(), geometry.longitude()))
+            val distinctFromSample = abs(point.x - samplePoint.x) > 1f || abs(point.y - samplePoint.y) > 1f
+            return viewport.contains(point.x, point.y) && distinctFromSample && onStoredRoadPath(point, roadPath)
+        }
+
+        return linkedMapOf(
+            "PREVIEW_NO_STYLE_RESOURCE_URLS" to (style.uri.isNullOrBlank() && !json.has("sprite") && !json.has("glyphs")),
+            "PREVIEW_NO_EXTERNAL_STYLE_SOURCES" to (jsonSources.length() == 0),
+            // MapLibre itself creates an internal annotation source after a style loads.
+            "PREVIEW_ONLY_EXPECTED_APP_SOURCES" to (appSources.map { it.id }.toSet() == expectedSources),
+            "PREVIEW_APP_SOURCES_ARE_GEOJSON" to appSources.all { it is GeoJsonSource },
+            "PREVIEW_PROJECTED_LAYER_VISIBLE" to (layer != null && layer.sourceId == source?.id && layer.visibility.value != "none"),
+            "PREVIEW_PROJECTED_SOURCE_POINT_MATCHES" to (sourcePoints.isNotEmpty() && sourcePoints.all(::matchesPoint)),
+            "PREVIEW_PROJECTED_RENDERED_POINT_MATCHES" to (rendered.isNotEmpty() && rendered.all(::matchesPoint)),
+        )
+    }
 
     private fun matchesStoredTrace(
         map: org.maplibre.android.maps.MapLibreMap,

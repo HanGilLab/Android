@@ -263,7 +263,7 @@
     <string name="history_memo_reloaded">저장된 메모를 다시 읽었어요.</string>
     <string name="history_memo_entered_text">입력한 내용이에요. 저장 여부는 다시 읽어 확인해 주세요.</string>
     <string name="location_history_point_map">이 기록의 위치 표본 지도</string>
-    <string name="location_history_point_map_notice">지도를 펼치면 이 수집 기록의 모든 표본과 선택 도로 주변의 지도 요청이 외부 지도 서비스에 전달돼요.</string>
+    <string name="location_history_point_map_notice">기본 지도를 펼치면 이 실행의 저장 표본과 저장한 도로 주변의 타일을 외부 지도 서비스에 요청해요. 후보 도로 미리보기는 배경 타일 없이 그려요.</string>
     <string name="location_history_memo">이 연습 전체 메모</string>
   <string name="review_road_title">내가 고른 복습 구간</string>
   <string name="review_road_scope">내가 고른 공개지도 구간이에요. 실제 이동과 현재 통행은 확인하지 않았어요.</string>

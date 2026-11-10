@@ -13,14 +13,31 @@ internal object StoredLocationRoadDistance {
         sample: LocationUpdateSample,
         road: CourseRoadSnapshot,
     ): Double? {
-        val west = minOf(sample.longitude, road.nodes.minOf { it.longitude })
-        val east = maxOf(sample.longitude, road.nodes.maxOf { it.longitude })
-        if (east - west >= 180.0) return null
         val point = Point.fromLngLat(sample.longitude, sample.latitude)
+        val nearest = nearestPoint(point, road) ?: return null
+        return try {
+            TurfMeasurement.distance(point, nearest, UNIT_METRES).takeIf { it.isFinite() && it >= 0 }
+        } catch (_: RuntimeException) {
+            null
+        }
+    }
+
+    fun nearestPoint(
+        sample: LocationUpdateSample,
+        road: CourseRoadSnapshot,
+    ): Point? = nearestPoint(Point.fromLngLat(sample.longitude, sample.latitude), road)
+
+    private fun nearestPoint(
+        point: Point,
+        road: CourseRoadSnapshot,
+    ): Point? {
+        val west = minOf(point.longitude(), road.nodes.minOf { it.longitude })
+        val east = maxOf(point.longitude(), road.nodes.maxOf { it.longitude })
+        if (east - west >= 180.0) return null
         val line = road.nodes.map { Point.fromLngLat(it.longitude, it.latitude) }
         return try {
-            val nearest = TurfMisc.nearestPointOnLine(point, line, UNIT_METRES).geometry() as? Point ?: return null
-            TurfMeasurement.distance(point, nearest, UNIT_METRES).takeIf { it.isFinite() && it >= 0 }
+            (TurfMisc.nearestPointOnLine(point, line, UNIT_METRES).geometry() as? Point)
+                ?.takeIf { it.longitude().isFinite() && it.latitude().isFinite() }
         } catch (_: RuntimeException) {
             null
         }
