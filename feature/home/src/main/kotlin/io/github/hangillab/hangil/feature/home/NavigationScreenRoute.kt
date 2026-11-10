@@ -82,6 +82,11 @@ internal fun NavigationScreenRoute(
             Modifier.testTag("navigation_screen_scope"),
             style = MaterialTheme.typography.bodyLarge,
         )
+        Text(
+            stringResource(R.string.navigation_location_recording_stop),
+            Modifier.testTag("navigation_screen_location_recording_stop"),
+            style = MaterialTheme.typography.bodyLarge,
+        )
         if (displayed.phase == NavigationScreenUiState.Phase.OPENING) {
             Text(
                 stringResource(R.string.navigation_screen_connecting),
@@ -127,6 +132,13 @@ internal fun NavigationScreenRoute(
                 )
             }
             Text(stringResource(R.string.navigation_route_handoff), style = MaterialTheme.typography.bodyLarge)
+            if (course.active != null) {
+                Text(
+                    stringResource(R.string.navigation_location_recording_stop),
+                    Modifier.testTag("navigation_course_location_recording_stop"),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+            }
             if (displayed.routePreparationRevision == course.revision && canUseCourse(course)) {
                 displayed.result?.let { NavigationRequestResult(it, courseRoute = true) }
             }

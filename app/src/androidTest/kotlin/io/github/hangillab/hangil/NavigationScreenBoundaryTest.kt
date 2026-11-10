@@ -184,6 +184,10 @@ class NavigationScreenBoundaryTest {
                 home.text(destination),
             )
 
+            val locationWarning = "navigation_course_location_recording_stop"
+            home.waitTag(locationWarning)
+            assertEquals(compose.activity.getString(HomeR.string.navigation_location_recording_stop), home.text(locationWarning))
+
             val beforeRestriction = home.action(startRoute)
             val unrestricted = home.restrictions.value
             compose.runOnIdle { home.restrictions.value = unrestricted.copy(uxRestrictionState = UxRestrictionState.RESTRICTED) }

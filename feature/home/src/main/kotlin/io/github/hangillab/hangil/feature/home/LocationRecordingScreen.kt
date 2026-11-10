@@ -28,6 +28,8 @@ import io.github.hangillab.hangil.core.designsystem.ParkedButton
 import io.github.hangillab.hangil.core.designsystem.ParkedPage
 import io.github.hangillab.hangil.core.designsystem.ParkedPanel
 import io.github.hangillab.hangil.core.domain.LocationRecordingState
+import io.github.hangillab.hangil.core.domain.LocationRecordingStopReason
+import io.github.hangillab.hangil.core.domain.PracticeSession
 import java.util.concurrent.atomic.AtomicBoolean
 
 @Composable
@@ -219,8 +221,16 @@ private fun LocationRecordingReady(
     val busy =
         recording is LocationRecordingState.Starting || recording is LocationRecordingState.Recording ||
             recording is LocationRecordingState.Stopping || (recording is LocationRecordingState.Failed && recording.storageUnknown)
+    val stoppedByHost = recording.stoppedByHostFor(displayed.source) != null
     ParkedPanel(Modifier.testTag("location_recording_source")) {
         Text(stringResource(R.string.location_recording_target), Modifier.fillMaxWidth(), style = MaterialTheme.typography.titleLarge)
+        if (stoppedByHost) {
+            Text(
+                stringResource(R.string.location_recording_stopped_on_return),
+                Modifier.fillMaxWidth().testTag("location_recording_host_stopped"),
+                style = MaterialTheme.typography.bodyLarge,
+            )
+        }
         Text(displayed.source.goalTitle, Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodyLarge)
         Text(displayed.source.courseTitle, Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodyLarge)
         Text(displayed.source.taskTitle, Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodyLarge)
@@ -252,7 +262,8 @@ private fun LocationRecordingReady(
                 val start: () -> Unit = {
                     if (present() && action.compareAndSet(true, false)) viewModel.start(displayed, present)
                 }
-                LocationRecordingAction(R.string.location_recording_start, "location_recording_start", start)
+                val label = if (stoppedByHost) R.string.location_recording_restart else R.string.location_recording_start
+                LocationRecordingAction(label, "location_recording_start", start)
             } else if (displayed.permission == LocationPermissionState.DENIED) {
                 val request: () -> Unit = {
                     if (present() && viewModel.canRequestPermission(displayed) && action.compareAndSet(true, false) &&
@@ -307,6 +318,13 @@ private fun LocationRecordingAction(
             textAlign = TextAlign.Center,
             style = MaterialTheme.typography.titleMedium,
         )
+    }
+}
+
+internal fun LocationRecordingState.stoppedByHostFor(source: PracticeSession?): LocationRecordingState.Stopped? {
+    if (source?.isActive != true) return null
+    return (this as? LocationRecordingState.Stopped)?.takeIf {
+        it.reason == LocationRecordingStopReason.HOST_STOPPED && it.run.source == source
     }
 }
 
