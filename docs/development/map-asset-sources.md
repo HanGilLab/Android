@@ -6,7 +6,7 @@
 
 | 대상 | 현재 사용 | 출처와 포함 방식 |
 |---|---|---|
-| 지도 렌더러 | MapLibre Native Android 13.5.0, OpenGL | 라이브러리 의존성. BSD 2-Clause 원문은 [앱 assets](../../app/src/main/assets/licenses/maplibre-native.txt)에 포함한다. |
+| 지도 렌더러 | MapLibre Native Android 13.5.0, OpenGL | 렌더러와 번들 구성 요소의 [공식 Android 합본 고지](https://github.com/maplibre/maplibre-native/blob/android-v13.5.0/platform/android/LICENSE.md) 원문을 [앱 assets](../../app/src/main/assets/licenses/maplibre-native.txt)에 포함한다. |
 | 라이트 스타일 | [OpenFreeMap Liberty](https://tiles.openfreemap.org/styles/liberty) | 온라인 style JSON을 읽는다. |
 | 다크 스타일 | [OpenFreeMap Dark](https://tiles.openfreemap.org/styles/dark) | 온라인 style JSON을 읽는다. |
 | 코스 번호 글자 | Noto Sans Regular | 앱의 SymbolLayer가 fontstack을 요구하며 해당 스타일의 원격 glyph endpoint를 사용한다. |
