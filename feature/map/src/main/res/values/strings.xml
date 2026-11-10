@@ -80,6 +80,7 @@
   <string name="stored_map_course_road_meters">%1$s, 약 %2$d m</string>
   <string name="stored_map_course_road_under_one">%1$s, 1 m 미만</string>
   <string name="stored_map_course_road_unknown">%1$s, 거리 미확인</string>
+  <string name="stored_map_course_road_suggestion">연속 위치 표본이 이 도로선에 가까워요.</string>
   <string name="stored_map_course_road_save">%1$s 저장</string>
   <string name="session_review_road_map_scope">고정된 공개 도로 모양이에요. 실제 이동 경로나 위치 표본과 연결한 자료가 아니에요.</string>
   <string name="session_review_road_map_content_description">%1$s 복습의 공개 도로 모양. %2$s. 실제 이동 경로와 현재 위치를 나타내지 않아요.</string>
