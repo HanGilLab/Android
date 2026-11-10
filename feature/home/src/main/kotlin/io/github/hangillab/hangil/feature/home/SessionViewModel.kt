@@ -260,11 +260,22 @@ class SessionViewModel
             return records.none { it.isActive } && records.firstOrNull { !it.isActive }?.sessionId == expectedSessionId
         }
 
-        fun start() {
-            if (!canCommit() || !uiState.value.canStart) return
-            val practice = uiState.value.ready ?: return
+        internal fun start(
+            expected: PreparedPractice,
+            canKeepOpen: () -> Boolean,
+        ) {
+            val accepted =
+                synchronized(disclosureLock) {
+                    uiState.value.canStart && currentRecordsLocked()?.none { it.isActive } == true &&
+                        canCommitStartLocked(expected, canKeepOpen)
+                }
+            if (!accepted) return
             mutate {
-                when (val result = sessions.start(practice, clock.millis(), ::canCommit)) {
+                val result =
+                    sessions.start(expected, clock.millis()) {
+                        synchronized(disclosureLock) { canCommitStartLocked(expected, canKeepOpen) }
+                    }
+                when (result) {
                     is SessionStartResult.Started -> {
                         awaitGuidanceSessionRead(result.session)
                         SessionFeedback.STARTED
@@ -278,6 +289,15 @@ class SessionViewModel
                     SessionStartResult.InvalidTime -> SessionFeedback.INVALID_TIME
                 }
             }
+        }
+
+        private fun canCommitStartLocked(
+            expected: PreparedPractice,
+            canKeepOpen: () -> Boolean,
+        ): Boolean {
+            val preparation = (receivedPreparation as? PreparationLoadState.Loaded)?.preparation as? Preparation.Ready
+            return readerJob?.isActive == true && recordsJob?.isActive == true && preparationJob?.isActive == true &&
+                preparation?.practice == expected && canCommit() && canKeepOpen()
         }
 
         /** Lifecycle presentation ownership is separate from a durable finish acknowledgement. */

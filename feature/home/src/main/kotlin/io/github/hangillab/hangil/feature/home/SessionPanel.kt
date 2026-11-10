@@ -30,6 +30,7 @@ import io.github.hangillab.hangil.core.designsystem.ParkedPanel
 import io.github.hangillab.hangil.core.domain.CourseReviewStatus
 import io.github.hangillab.hangil.core.domain.PracticeSession
 import io.github.hangillab.hangil.core.domain.Preparation
+import io.github.hangillab.hangil.core.domain.PreparedPractice
 import io.github.hangillab.hangil.core.domain.VehicleRecordingState
 import java.time.Instant
 import java.time.ZoneId
@@ -43,6 +44,8 @@ internal fun SessionRoute(
     onPrepare: () -> Unit,
     onPrepareNext: (String) -> Unit,
     canPrepare: Boolean,
+    displayedPreparation: PreparedPractice?,
+    canStartPreparation: () -> Boolean,
     recordingState: VehicleRecordingState,
     onRetryRecording: () -> Unit,
     viewModel: SessionViewModel = hiltViewModel(),
@@ -90,13 +93,19 @@ internal fun SessionRoute(
     val displayedRecentReview = recentReview
     val backgroundViewModel: BackgroundRecordingViewModel = hiltViewModel()
     val displayed = state
+    val startEnabled = displayed.canStart && displayed.ready == displayedPreparation
+    val start = {
+        if (startEnabled && displayedPreparation != null) {
+            viewModel.start(displayedPreparation) { canKeepOpen() && canStartPreparation() }
+        }
+    }
     val background by backgroundViewModel.state.collectAsStateWithLifecycle()
     val ownedBackgroundFailure =
         (background.background as? io.github.hangillab.hangil.core.domain.BackgroundRecordingState.Failed)?.runId != null
     if (state.allowsInteraction) {
         SessionPanel(
-            state,
-            viewModel::start,
+            displayed,
+            start,
             { id ->
                 displayedAction
                     ?.takeIf { it.source == displayed.active && it.source.sessionId == id }
@@ -110,6 +119,7 @@ internal fun SessionRoute(
             canPrepare,
             recordingState,
             onRetryRecording,
+            startEnabled = startEnabled,
             allowRecordingRetry = !ownedBackgroundFailure,
             finishedReviewContent = {
                 if (onFinishedReview != null && displayedReceipt != null && canKeepOpen() &&
@@ -172,6 +182,7 @@ internal fun SessionPanel(
     backgroundContent: @Composable () -> Unit = {},
     finishedReviewContent: @Composable () -> Unit = {},
     recentReviewContent: @Composable (PracticeSession) -> Unit = {},
+    startEnabled: Boolean = state.canStart,
 ) {
     if (!state.allowsInteraction) return
     val outdated = (state.preparation as? PreparationLoadState.Loaded)?.preparation == Preparation.Outdated
@@ -276,13 +287,14 @@ internal fun SessionPanel(
                             if (state.ready != null) {
                                 ParkedButton(
                                     onClick = onStart,
-                                    enabled = state.canStart,
+                                    enabled = startEnabled,
                                     prominent = state.nextStep == HomeJourneyStep.READY,
                                     modifier =
                                         Modifier
                                             .fillMaxWidth()
                                             .heightIn(min = HanGilDimensions.primaryActionMinHeight)
-                                            .testTag("session_start"),
+                                            .testTag("session_start")
+                                            .frozenObservationClick(onStart, startEnabled),
                                 ) {
                                     Text(
                                         stringResource(
