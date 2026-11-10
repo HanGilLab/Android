@@ -1,7 +1,9 @@
 package io.github.hangillab.hangil.feature.map
 
+import io.github.hangillab.hangil.core.domain.LocationRecordingRun
 import io.github.hangillab.hangil.core.domain.LocationUpdateGateway
 import io.github.hangillab.hangil.core.domain.LocationUpdateReading
+import io.github.hangillab.hangil.core.domain.LocationUpdateSample
 import org.maplibre.android.maps.Style
 import org.maplibre.android.style.layers.LineLayer
 import org.maplibre.android.style.layers.PropertyFactory.lineColor
@@ -25,16 +27,7 @@ internal object StoredLocationTrace {
             input.events.zipWithNext().mapNotNull { (before, after) ->
                 val start = (before.reading as? LocationUpdateReading.Sample)?.sample ?: return@mapNotNull null
                 val end = (after.reading as? LocationUpdateReading.Sample)?.sample ?: return@mapNotNull null
-                val startTime = start.receivedAtElapsedRealtimeMillis
-                val endTime = end.receivedAtElapsedRealtimeMillis
-                if (startTime < input.run.startedAtElapsedRealtimeMillis ||
-                    input.run.endedAtElapsedRealtimeMillis?.let { endTime > it } == true ||
-                    endTime - startTime !in 1 until LocationUpdateGateway.NO_UPDATE_TIMEOUT_MILLIS ||
-                    abs(start.longitude - end.longitude) >= 180 ||
-                    (start.latitude == end.latitude && start.longitude == end.longitude)
-                ) {
-                    return@mapNotNull null
-                }
+                if (!canLink(input.run, start, end)) return@mapNotNull null
                 val line =
                     LineString.fromLngLats(
                         listOf(Point.fromLngLat(start.longitude, start.latitude), Point.fromLngLat(end.longitude, end.latitude)),
@@ -45,6 +38,20 @@ internal object StoredLocationTrace {
                 }
             }
         return FeatureCollection.fromFeatures(links)
+    }
+
+    fun canLink(
+        run: LocationRecordingRun,
+        start: LocationUpdateSample,
+        end: LocationUpdateSample,
+    ): Boolean {
+        val startTime = start.receivedAtElapsedRealtimeMillis
+        val endTime = end.receivedAtElapsedRealtimeMillis
+        return startTime >= run.startedAtElapsedRealtimeMillis &&
+            (run.endedAtElapsedRealtimeMillis?.let { endTime <= it } != false) &&
+            endTime - startTime in 1 until LocationUpdateGateway.NO_UPDATE_TIMEOUT_MILLIS &&
+            abs(start.longitude - end.longitude) < 180 &&
+            (start.latitude != end.latitude || start.longitude != end.longitude)
     }
 
     fun add(

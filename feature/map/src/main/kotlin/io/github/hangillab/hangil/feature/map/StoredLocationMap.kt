@@ -216,7 +216,8 @@ fun StoredLocationMap(
                     )
                 } else if (selectedSample != null && input.courseRoads.isNotEmpty()) {
                     key(input, owner) {
-                        StoredLocationCourseRoads(selectedSample, input.courseRoads, permitted, onSaveCourseRoad)
+                        val suggestedRoadId = remember(input) { StoredLocationRoadSuggestion.find(input)?.id }
+                        StoredLocationCourseRoads(selectedSample, input.courseRoads, suggestedRoadId, permitted, onSaveCourseRoad)
                     }
                 }
                 Text(
@@ -338,6 +339,7 @@ fun StoredLocationMap(
 private fun StoredLocationCourseRoads(
     sample: LocationUpdateSample,
     roads: List<CourseRoadSnapshot>,
+    suggestedRoadId: String?,
     permitted: () -> Boolean,
     onSave: ((String) -> Unit)?,
 ) {
@@ -367,6 +369,14 @@ private fun StoredLocationCourseRoads(
                     Modifier.fillMaxWidth().testTag("stored_location_course_road_$index"),
                     style = MaterialTheme.typography.bodyLarge,
                 )
+                if (road.id == suggestedRoadId) {
+                    Text(
+                        stringResource(R.string.stored_map_course_road_suggestion),
+                        Modifier.fillMaxWidth().testTag("stored_location_course_road_suggestion"),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
                 if (onSave != null && meters != null) {
                     ParkedButton(
                         onClick = { if (permitted()) onSave(road.id) },

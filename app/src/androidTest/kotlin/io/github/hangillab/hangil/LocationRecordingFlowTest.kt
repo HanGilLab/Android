@@ -517,19 +517,27 @@ class LocationRecordingFlowTest {
             click("home_location_recording")
             click("location_recording_start")
             f.awaitRecording()
-            // The public test point goes through the controlled update gateway and isolated Room database.
-            val sample = LocationUpdateSample(37.566735, 126.9763, -2.0, 421f, -5f, -42, f.elapsed.incrementAndGet())
-            f.emit(LocationUpdateReading.Sample(sample))
+            // The public test points go through the controlled update gateway and isolated Room database.
+            val first = LocationUpdateSample(37.566735, 126.9759, -2.0, 421f, -5f, -42, f.elapsed.incrementAndGet())
+            f.emit(LocationUpdateReading.Sample(first))
+            for (longitude in listOf(126.9761, 126.9763)) {
+                f.emit(
+                    LocationUpdateReading.Sample(
+                        first.copy(longitude = longitude, receivedAtElapsedRealtimeMillis = f.elapsed.incrementAndGet()),
+                    ),
+                )
+            }
             f.emit(LocationUpdateReading.Empty(f.elapsed.incrementAndGet()))
-            f.awaitEvents(source, 2)
+            f.awaitEvents(source, 4)
             click("location_recording_stop")
             f.awaitTerminal(source, LocationRecordingStopReason.USER_STOP)
             click("location_recording_back")
             click("session_finish")
             val ended = f.ended(source.sessionId)
             val recorded = f.snapshot(ended)
-            val expectedSample = SessionReviewSample.from(recorded.runs.single(), recorded.events.first())
+            val expectedSample = SessionReviewSample.from(recorded.runs.single(), recorded.events[recorded.events.lastIndex - 1])
             val roads = checkNotNull(NextPracticeSeed.resolve(f.store.catalog, ended)).practice.course.roadSnapshots
+            val suggestionTag = "stored_location_course_road_suggestion"
             f.gateway.permission.set(false)
 
             fun savedRoad() =
@@ -553,6 +561,7 @@ class LocationRecordingFlowTest {
             click("location_history_point_map")
             waitTag("stored_location_map_selected")
             assertTrue(nodes("stored_location_course_roads").isEmpty())
+            assertTrue(nodes(suggestionTag).isEmpty())
             assertNull(savedRoad())
             click("location_history_event_previous")
             click("location_history_point_map")
@@ -565,14 +574,28 @@ class LocationRecordingFlowTest {
                     .assertIsDisplayed()
                     .assertTextContains(instrument.targetContext.getString(MapR.string.stored_map_course_road_meters, road.title, meters))
             }
+            assertText(suggestionTag, MapR.string.stored_map_course_road_suggestion)
+            compose.onNodeWithTag(suggestionTag, useUnmergedTree = true).performScrollTo().assertIsDisplayed()
+            val nearerRoadTag = "stored_location_course_road_0"
+            val fartherRoadTag = "stored_location_course_road_1"
+            val comparisonTags =
+                compose
+                    .onAllNodes(
+                        hasTestTag(nearerRoadTag) or hasTestTag(suggestionTag) or hasTestTag(fartherRoadTag),
+                        useUnmergedTree = true,
+                    ).fetchSemanticsNodes()
+                    .map { it.config[SemanticsProperties.TestTag] }
+            assertEquals(listOf(nearerRoadTag, suggestionTag, fartherRoadTag), comparisonTags)
             assertNull(savedRoad())
             val saveTag = "stored_location_course_road_save_1"
             val stale = clickAction(saveTag)
             f.drive(true)
             waitTag("location_history_locked")
+            assertTrue(nodes(suggestionTag).isEmpty())
             invoke(stale)
             f.drive(false)
             waitTag("location_history_locked")
+            assertTrue(nodes(suggestionTag).isEmpty())
             invoke(stale)
             assertNull(savedRoad())
             click("location_history_back")
@@ -586,6 +609,7 @@ class LocationRecordingFlowTest {
             assertEquals(roads.first(), linked.road)
             assertEquals(expectedSample, linked.sampleAnchor)
             assertTrue(nodes("stored_location_course_roads").isEmpty())
+            assertTrue(nodes(suggestionTag).isEmpty())
             assertEquals(recorded, f.snapshot(ended))
             visual("course-road-saved-with-selected-sample", "review_road_sample_current", "stored_location_map")
             val configuration = compose.activity.resources.configuration
