@@ -39,8 +39,13 @@
   <string name="map_navigation_request_point_selection_instruction">지도 번호를 짧게 누르거나 목록에서 내비 요청 장소를 골라 주세요.</string>
   <string name="map_point_waypoint">%1$d. 경유지 %2$s</string>
   <string name="map_point_destination">%1$d. 도착지 %2$s</string>
+  <string name="map_point_segment_start">%1$d. 구간 시작 %2$s</string>
+  <string name="map_point_segment_end">%1$d. 구간 끝 %2$s</string>
+  <string name="map_practice_road_scope">공개 도로의 연습 구간을 시작부터 끝까지 살펴보세요. 통행과 정차는 현장 표지와 통제를 따르세요.</string>
+  <string name="map_practice_road_content_description">%1$s 지도. %2$s</string>
   <string name="map_point_selection_pending">선택한 번호를 지도에 표시하고 있어요.</string>
   <string name="map_selected_point">선택한 시연 지점</string>
+  <string name="map_selected_practice_endpoint">선택한 연습 구간 지점</string>
   <string name="map_selected_point_scope">같은 번호에 테두리를 표시했어요. 장소의 경계 중심이며 출입구, 도로 구간이나 목적지가 아니에요.</string>
   <string name="map_navigation_request_selected_point">선택한 내비 요청 장소</string>
   <string name="map_navigation_request_selected_point_scope">같은 번호에 테두리를 표시했어요. 이 선택으로 길안내를 시작하지 않아요.</string>

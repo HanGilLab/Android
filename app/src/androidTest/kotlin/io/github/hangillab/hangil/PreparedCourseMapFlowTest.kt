@@ -559,7 +559,8 @@ class PreparedCourseMapFlowTest {
         assertReadTag("map_preview_title", preview.title)
         for ((index, point) in preview.points.withIndex()) assertReadTag("map_point_$index", point.title)
         scrollVisible("map_demo_badge")
-        assertAbsent("map_point_3")
+        val visiblePointCount = preview.points.size + if (preview.practiceRoadId == null) 0 else 2
+        assertAbsent("map_point_$visiblePointCount")
         listOf("empty", "outdated", "failed", "retry", "unavailable", "loading").forEach { assertAbsent("map_preparation_$it") }
     }
 
@@ -593,7 +594,11 @@ class PreparedCourseMapFlowTest {
                                         source != null && circles != null && numbers != null &&
                                             circles.sourceId == SOURCE_ID && numbers.sourceId == SOURCE_ID &&
                                             circles.visibility.value != "none" && numbers.visibility.value != "none"
-                                    val features = source?.querySourceFeatures(null).orEmpty()
+                                    val features =
+                                        source?.querySourceFeatures(null).orEmpty().filter {
+                                            it.getStringProperty("point_role") ==
+                                                "LANDMARK"
+                                        }
                                     val expectedIds = preview.points.map { it.id }.toSet()
                                     val foundIds = features.map { it.getStringProperty("point_id") }.toSet()
                                     valid = valid && foundIds == expectedIds

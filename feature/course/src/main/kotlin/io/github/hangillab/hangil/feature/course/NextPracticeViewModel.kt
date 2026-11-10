@@ -834,6 +834,7 @@ class NextPracticeViewModel
                 fields.add(preview.version.toString())
                 fields.add(preview.title)
                 fields.add(preview.source.name)
+                fields.add(preview.practiceRoadId.orEmpty())
                 fields.add(preview.points.size.toString())
                 preview.points.forEach { point ->
                     fields.add(point.id)

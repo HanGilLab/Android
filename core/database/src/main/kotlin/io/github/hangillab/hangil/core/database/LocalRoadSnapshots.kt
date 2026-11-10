@@ -48,4 +48,23 @@ internal object LocalRoadSnapshots {
                     ),
             ),
         )
+
+    val gwanghwamun =
+        CourseRoadSnapshot(
+            id = "osm-way-66662159-v10",
+            title = "새문안로5길",
+            highway = "residential",
+            osmWayId = 66662159L,
+            osmWayVersion = 10,
+            capturedAtEpochMillis = 1794322425829L,
+            nodes =
+                listOf(
+                    CourseRoadSnapshot.Node(436850153L, 9, 37.5740915, 126.9744747),
+                    CourseRoadSnapshot.Node(11377834311L, 1, 37.5744203, 126.9744381),
+                    CourseRoadSnapshot.Node(11377834303L, 1, 37.5753656, 126.9743277),
+                    CourseRoadSnapshot.Node(11202943789L, 2, 37.5754772, 126.9743147),
+                    CourseRoadSnapshot.Node(11202943791L, 2, 37.5755187, 126.9743099),
+                    CourseRoadSnapshot.Node(436850150L, 6, 37.5756733, 126.9742918),
+                ),
+        )
 }

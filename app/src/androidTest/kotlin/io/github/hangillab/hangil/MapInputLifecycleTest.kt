@@ -1003,12 +1003,18 @@ class MapInputLifecycleTest {
     /** Synthetic P/UX and preparation with the real second catalog preview, Route and MapLibre. */
     @Test fun secondCatalogPreviewChoicesMatchNativeCurrentSource() =
         withMap { fixture, initial ->
+            val args = InstrumentationRegistry.getArguments()
+            val scale = (args.getString("expectedFontScale") ?: "1.0").toFloat()
+            val dark = (args.getString("expectedDark") ?: "false").toBooleanStrict()
+            val configuration = compose.activity.resources.configuration
+            assertTrue(scale == 1f || scale == 1.3f)
+            assertTrue(abs(configuration.fontScale - scale) < 0.001f)
+            assertEquals(dark, configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES)
             val original = checkNotNull(fixture.repository.values.value)
             val catalog = LocalPracticeCatalog()
-            val secondCourse =
-                checkNotNull(
-                    catalog.courses.firstOrNull { it.id != original.courseId && it.mapPreview?.points?.size == 3 },
-                )
+            assertEquals("neighborhood", original.courseId)
+            chooseRoad(fixture, initial.view, assertPracticeEndpoints(fixture.preview))
+            val secondCourse = catalog.courses.single { it.id == "intersections" }
             val secondDomainPreview = checkNotNull(secondCourse.mapPreview)
             val secondGoal = catalog.goals.first { it.id in secondCourse.goalIds }
             val secondTask = secondCourse.tasks.first()
@@ -1042,6 +1048,7 @@ class MapInputLifecycleTest {
                 val secondPreview = (fixture.model.uiState.value.preparation as MapPreparationState.Ready).preview
                 val second = awaitPreview(secondPreview)
                 assertTrue("다른 source는 실제 새 native View로 표시돼야 합니다", second.view !== initial.view)
+                val secondRoadIndex = assertPracticeEndpoints(secondPreview)
                 val currentPreparation = fixture.model.uiState.value.preparation as MapPreparationState.Ready
                 assertTrue(
                     "두 번째 카탈로그 source의 목표/과제를 그대로 유지해야 합니다",
@@ -1061,7 +1068,8 @@ class MapInputLifecycleTest {
                                 .singleOrNull()
                                 ?.config
                                 ?.getOrNull(SemanticsProperties.Text)
-                                ?.any { it.text == point.title } == true && nodes("map_selection_pending").isEmpty()
+                                ?.any { it.text == selectedPointTitle(secondPreview, index) } == true &&
+                            nodes("map_selection_pending").isEmpty()
                     }
                     compose.onNodeWithTag("map_view", useUnmergedTree = true).performScrollTo()
                     compose.mainClock.advanceTimeByFrame()
@@ -1099,11 +1107,35 @@ class MapInputLifecycleTest {
                     )
                     assertTrue("현재 bound 필터는 바로 선택한 두 번째 preview 지점의 정확한 식이어야 합니다", filterMatches)
                 }
+                chooseRoad(fixture.copy(preview = secondPreview), second.view, secondRoadIndex)
             } finally {
                 // Only the in-memory synthetic selection changes; the original Room/SDK is never read.
                 onMain { fixture.repository.values.value = original }
             }
         }
+
+    private fun assertPracticeEndpoints(preview: MapPreview): Int {
+        val source = (preview.source as MapPreview.Source.FixedOsm).preview
+        assertEquals(2, preview.version)
+        assertEquals(source.points.map { it.id }, preview.points.take(3).map { it.id })
+        assertEquals(List(3) { MapPreview.Role.LANDMARK }, preview.points.take(3).map { it.role })
+        assertEquals(5, preview.points.size)
+        val roadIndex = preview.roads.indexOfFirst { it.id == source.practiceRoadId }
+        assertTrue("연습 구간은 현재 코스의 공개 도로를 사용해야 합니다", roadIndex >= 0)
+        val road = preview.roads[roadIndex]
+        val start = preview.points[3]
+        val end = preview.points[4]
+        assertEquals("practice:${road.id}:start", start.id)
+        assertEquals("practice:${road.id}:end", end.id)
+        assertEquals(MapPreview.Role.SEGMENT_START, start.role)
+        assertEquals(MapPreview.Role.SEGMENT_END, end.role)
+        assertEquals(road.nodes.first().let { it.latitude to it.longitude }, start.latitude to start.longitude)
+        assertEquals(road.nodes.last().let { it.latitude to it.longitude }, end.latitude to end.longitude)
+        assertPoiText("map_practice_road_scope", compose.activity.getString(MapR.string.map_practice_road_scope))
+        assertPoiText("map_point_3", compose.activity.getString(MapR.string.map_point_segment_start, 4, road.title))
+        assertPoiText("map_point_4", compose.activity.getString(MapR.string.map_point_segment_end, 5, road.title))
+        return roadIndex
+    }
 
     /**
      * A direct public SDK setter/readback probe, not evidence that product selection applied.
@@ -2068,6 +2100,8 @@ class MapInputLifecycleTest {
             MapPreview.Role.LANDMARK -> point.title
             MapPreview.Role.WAYPOINT -> "${index + 1}. 경유지 ${point.title}"
             MapPreview.Role.DESTINATION -> "${index + 1}. 도착지 ${point.title}"
+            MapPreview.Role.SEGMENT_START -> compose.activity.getString(MapR.string.map_point_segment_start, index + 1, point.title)
+            MapPreview.Role.SEGMENT_END -> compose.activity.getString(MapR.string.map_point_segment_end, index + 1, point.title)
         }
     }
 
@@ -2589,7 +2623,10 @@ class MapInputLifecycleTest {
                             val ids = features.map { it.getStringProperty("point_id") }.toSet()
                             val pointCountMatches =
                                 when (val sourceKind = preview.source) {
-                                    is MapPreview.Source.FixedOsm -> preview.points.size == 3 && sourceKind.preview.points.size == 3
+                                    is MapPreview.Source.FixedOsm -> {
+                                        val endpointCount = if (preview.roads.any { it.id == sourceKind.preview.practiceRoadId }) 2 else 0
+                                        preview.points.size == sourceKind.preview.points.size + endpointCount
+                                    }
                                     is MapPreview.Source.NavigationRequest -> preview.points.size == sourceKind.route.waypoints.size + 1
                                     is MapPreview.Source.FixedRoads -> false
                                 }
