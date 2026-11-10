@@ -161,7 +161,7 @@ class SessionViewModelTest {
             observe(model)
             assertTrue(model.uiState.value.canStart)
             vehicle.state.value = VehicleState()
-            model.start()
+            model.startCurrent()
             assertTrue(model.uiState.value.canStart)
             runCurrent()
             assertEquals(0, startCalls)
@@ -194,13 +194,54 @@ class SessionViewModelTest {
             }
             val model = model()
             observe(model)
-            model.start()
+            model.startCurrent()
             runCurrent()
             vehicle.state.value = VehicleState()
             resume.complete(Unit)
             runCurrent()
             assertFeedback(model, SessionFeedback.BLOCKED)
             assertEquals(emptyList<PracticeSession>(), records.value)
+        }
+
+    @Test fun startRejectsStalePreparationAndRevokedHostDuringWrite() =
+        runTest {
+            val nextTask = task.copy(id = "next-task", title = "다음 과제")
+            val nextCourse = course.copy(tasks = listOf(task, nextTask))
+            val nextCatalog =
+                object : PracticeCatalog {
+                    override val goals = listOf(goal)
+                    override val courses = listOf(nextCourse)
+                }
+            val model = model(practiceCatalog = nextCatalog)
+            observe(model)
+            val previous = checkNotNull(model.uiState.value.ready)
+            assertEquals(task, previous.task)
+            selected.value = selection.copy(taskId = nextTask.id)
+            runCurrent()
+            val current = checkNotNull(model.uiState.value.ready)
+            assertEquals(PreparedPractice(goal, nextCourse, nextTask), current)
+
+            model.start(previous) { true }
+            runCurrent()
+            assertEquals(0, startCalls)
+
+            val resume = CompletableDeferred<Unit>()
+            var hostOpen = true
+            startAction = { actual, _, canCommit ->
+                assertEquals(current, actual)
+                assertTrue(canCommit())
+                resume.await()
+                assertFalse(canCommit())
+                SessionStartResult.Blocked
+            }
+            model.start(current) { hostOpen }
+            runCurrent()
+            assertEquals(1, startCalls)
+            hostOpen = false
+            resume.complete(Unit)
+            runCurrent()
+            assertFeedback(model, SessionFeedback.BLOCKED)
+            assertTrue(records.value.isEmpty())
         }
 
     @Test fun `transaction guard sees UX lock while finish is suspended`() =
@@ -245,8 +286,8 @@ class SessionViewModelTest {
             }
             val model = model()
             observe(model)
-            model.start()
-            model.start()
+            model.startCurrent()
+            model.startCurrent()
             assertNull(model.finishActions.value)
             runCurrent()
             assertEquals(1, startCalls)
@@ -283,7 +324,7 @@ class SessionViewModelTest {
             val model = model()
             observe(model)
             assertEquals(SessionLoadState.Failed, model.uiState.value.records)
-            model.start()
+            model.start(practice) { true }
             assertNull(model.finishActions.value)
             runCurrent()
             assertEquals(0, startCalls)
@@ -320,7 +361,7 @@ class SessionViewModelTest {
             val model = model()
             observe(model)
             assertEquals(PreparationLoadState.Failed, model.uiState.value.preparation)
-            model.start()
+            model.start(practice) { true }
             runCurrent()
             assertEquals(0, startCalls)
             preparationReadFails = false
@@ -336,12 +377,12 @@ class SessionViewModelTest {
             val model = model()
             observe(model)
             assertFalse(model.uiState.value.canStart)
-            model.start()
+            model.start(practice) { true }
             runCurrent()
             selected.value = selection.copy(courseVersion = 999)
             runCurrent()
             assertEquals(PreparationLoadState.Loaded(Preparation.Outdated), model.uiState.value.preparation)
-            model.start()
+            model.start(practice) { true }
             runCurrent()
             assertEquals(0, startCalls)
         }
@@ -351,7 +392,7 @@ class SessionViewModelTest {
             startAction = { _, _, _ -> error("disk unavailable") }
             val model = model()
             observe(model)
-            model.start()
+            model.startCurrent()
             runCurrent()
             assertFeedback(model, SessionFeedback.SAVE_FAILED)
             assertTrue(model.uiState.value.canStart)
@@ -360,7 +401,7 @@ class SessionViewModelTest {
                 records.value = listOf(created)
                 SessionStartResult.Started(created)
             }
-            model.start()
+            model.startCurrent()
             runCurrent()
             assertFeedback(model, SessionFeedback.STARTED)
             assertEquals(2, startCalls)
@@ -380,7 +421,7 @@ class SessionViewModelTest {
             }
             val model = model(123_456_789L)
             observe(model)
-            model.start()
+            model.startCurrent()
             runCurrent()
             assertFeedback(model, SessionFeedback.STARTED)
             assertEquals(created, model.uiState.value.active)
@@ -404,7 +445,7 @@ class SessionViewModelTest {
 
             val prepared = checkNotNull(model.courseGuidance.value)
             assertTrue(model.canUseCourseGuidance(prepared))
-            model.start()
+            model.startCurrent()
             runCurrent()
             assertFeedback(model, SessionFeedback.STARTED)
             assertNull(model.courseGuidance.value)
@@ -438,7 +479,7 @@ class SessionViewModelTest {
             }
             val model = model(-17L)
             observe(model)
-            model.start()
+            model.startCurrent()
             runCurrent()
             assertFeedback(model, SessionFeedback.INVALID_TIME)
             assertEquals(emptyList<PracticeSession>(), records.value)
@@ -454,7 +495,7 @@ class SessionViewModelTest {
                 SessionStartResult.Blocked to SessionFeedback.BLOCKED,
             )) {
                 startAction = { _, _, _ -> result }
-                model.start()
+                model.startCurrent()
                 runCurrent()
                 assertFeedback(model, feedback)
             }
@@ -570,7 +611,7 @@ class SessionViewModelTest {
             val model = model()
             observe(model)
             assertTrue(model.canPrepareNext(recent.sessionId))
-            model.start()
+            model.startCurrent()
             assertFalse(model.canPrepareNext(recent.sessionId))
             runCurrent()
             assertFalse(model.canPrepareNext(recent.sessionId))
@@ -895,6 +936,10 @@ class SessionViewModelTest {
         model.setFinishHostResumed(true)
         runCurrent()
         return observation
+    }
+
+    private fun SessionViewModel.startCurrent() {
+        start(checkNotNull(uiState.value.ready)) { true }
     }
 
     private fun assertFeedback(

@@ -10,6 +10,7 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.captureToImage
@@ -185,14 +186,25 @@ class FinishedReviewNextMainFlowTest {
             click("preparation_next")
             waitTag("session_start")
             check(selection() == initialSelection)
+            val staleStart = action("session_start")
+            editTask(editedTask.id)
+            waitTag("saved_task")
+            compose.onNodeWithTag("saved_task", useUnmergedTree = true).assertTextContains(editedTask.title)
+            check(selection() == editedSelection)
+            waitStartEnabled()
+            invoke(staleStart)
+            compose.onNodeWithTag("session_start", useUnmergedTree = true).assertIsEnabled()
+            check(listOf("session_saving", "session_feedback", "session_active").all { nodes(it).isEmpty() }) {
+                "The retired start must not dispatch a session write"
+            }
+            check(rows().isEmpty() && selection() == editedSelection)
+            editTask(firstTask.id)
+            waitTag("session_start")
+            check(selection() == initialSelection)
             click("session_start")
             val started = awaitRows { rows -> rows.any { it.isActive } }.single { it.isActive }
             check(started.selection == initialSelection)
-            click("home_prepare")
-            click("preparation_next")
-            click("preparation_next")
-            click("task_${editedTask.id}")
-            click("preparation_next")
+            editTask(editedTask.id)
             waitTag("session_active_task")
             waitTag("saved_task")
             compose.onNodeWithTag("session_active_task", useUnmergedTree = true).assertTextContains(firstTask.title)
@@ -311,6 +323,22 @@ class FinishedReviewNextMainFlowTest {
             .performClick()
         compose.waitForIdle()
         requireHost()
+    }
+
+    private fun waitStartEnabled() {
+        compose.waitUntil(20_000) {
+            nodes("session_start").singleOrNull()?.config?.getOrNull(SemanticsProperties.Disabled) == null &&
+                nodes("session_start").size == 1
+        }
+        requireHost()
+    }
+
+    private fun editTask(taskId: String) {
+        click("home_prepare")
+        click("preparation_next")
+        click("preparation_next")
+        click("task_$taskId")
+        click("preparation_next")
     }
 
     private fun action(tag: String): () -> Boolean {

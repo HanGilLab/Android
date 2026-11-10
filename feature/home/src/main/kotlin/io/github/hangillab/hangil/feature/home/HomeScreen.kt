@@ -102,12 +102,14 @@ private fun HomeRouteContent(
     onLocationRecording: () -> Unit,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val displayed = state
+    val prepared = ((displayed.preparation as? PreparationLoadState.Loaded)?.preparation as? Preparation.Ready)?.practice
     HomeScreen(
-        state,
+        displayed,
         showDiagnostics,
         viewModel::retryLoading,
         { if (viewModel.canViewMap()) onMapPreview() },
-        { viewModel.canExpandPreparation(it, state.preparationRevision) },
+        { viewModel.canExpandPreparation(it, displayed.preparationRevision) },
         viewModel::canViewMap,
         {
             val sessions: SessionViewModel = hiltViewModel()
@@ -115,7 +117,9 @@ private fun HomeRouteContent(
             SessionRoute(
                 onPrepare = { if (viewModel.canPrepare()) onPrepare() },
                 onPrepareNext = onPrepareNext,
-                canPrepare = state.preparation is PreparationLoadState.Loaded,
+                canPrepare = displayed.preparation is PreparationLoadState.Loaded,
+                displayedPreparation = prepared,
+                canStartPreparation = { prepared != null && viewModel.canExpandPreparation(prepared, displayed.preparationRevision) },
                 recordingState = recordingState,
                 onRetryRecording = onRetryRecording,
                 viewModel = sessions,

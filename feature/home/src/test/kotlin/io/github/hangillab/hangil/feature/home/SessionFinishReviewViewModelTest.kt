@@ -239,7 +239,7 @@ class SessionFinishReviewViewModelTest {
                 release.await()
                 SessionStartResult.Blocked
             }
-            f.model.start()
+            f.model.start(checkNotNull(f.model.uiState.value.ready)) { true }
             runCurrent()
             assertNull(f.model.finishReceipt.value)
             assertFalse(f.model.canReviewFinished(old))
