@@ -42,7 +42,8 @@ fun SessionReviewRoadRoute(
     roadMap: (@Composable (PracticeSession, List<CourseRoadSnapshot>, String?, () -> Boolean, Flow<Unit>) -> Unit)? = null,
     viewModel: SessionReviewRoadViewModel = hiltViewModel(),
     readOnly: Boolean = false,
-    comparisonMap: (@Composable (SessionReviewRoad?, () -> Boolean, Flow<Unit>) -> Unit)? = null,
+    comparisonMap: (@Composable (SessionReviewRoad?, List<CourseRoadSnapshot>, ((String) -> Unit)?, () -> Boolean, Flow<Unit>) -> Unit)? =
+        null,
     sampleCandidate: SessionReviewSample? = null,
     onOpenLinkedSample: ((SessionReviewSample) -> Boolean)? = null,
 ) {
@@ -221,14 +222,29 @@ fun SessionReviewRoadRoute(
                 }
                 if (readOnly) {
                     val saved = displayed.stored
+                    val candidate = sampleCandidate?.takeIf { it.event.sessionId == expectedSource.sessionId }
                     if (comparing && saved != null) {
-                        val candidate = sampleCandidate?.takeIf { it.event.sessionId == expectedSource.sessionId }
                         ReviewSampleControls(displayed, candidate, viewModel, onOpenLinkedSample)
                     }
                     if (comparisonMap != null) {
+                        val saveCourseRoad: ((String) -> Unit)? =
+                            if (saved == null && candidate != null && displayed.canWrite && !displayed.busy) {
+                                { roadId -> viewModel.saveFirstRoadAndSample(displayed.token, roadId, candidate) }
+                            } else {
+                                null
+                            }
+                        if (saved == null && candidate != null && displayed.candidates.isNotEmpty() && !displayed.canWrite) {
+                            Text(
+                                stringResource(if (displayed.busy) R.string.review_road_busy else R.string.review_road_sample_active),
+                                Modifier.fillMaxWidth(),
+                                style = MaterialTheme.typography.bodyLarge,
+                            )
+                        }
                         key(displayed.token) {
                             comparisonMap(
                                 saved,
+                                displayed.candidates,
+                                saveCourseRoad,
                                 { allowed() && viewModel.canRead(displayed.token) },
                                 viewModel.inputChanges,
                             )

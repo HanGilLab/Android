@@ -910,6 +910,7 @@ class SessionReviewRoadViewModelTest {
         val memoText: String,
         val discardMemo: Boolean,
         val discardSample: Boolean,
+        val initialSample: SessionReviewSample?,
         val canCommit: () -> Boolean,
     )
 
@@ -954,9 +955,13 @@ class SessionReviewRoadViewModelTest {
         }
         var saveAction: suspend (SaveRequest) -> SessionReviewRoadWriteResult = { request ->
             val current = request.expectedCurrent
+            val initialSample = request.initialSample
             when {
                 !request.canCommit() -> SessionReviewRoadWriteResult.Blocked
-                value.value != current -> SessionReviewRoadWriteResult.Conflict
+                value.value != current || (current != null && initialSample != null) -> SessionReviewRoadWriteResult.Conflict
+                initialSample != null && initialSample.event.sessionId != request.source.sessionId -> {
+                    SessionReviewRoadWriteResult.SampleChanged
+                }
                 current?.memoText?.isNotEmpty() == true &&
                     current.road != request.road && !request.discardMemo -> {
                     SessionReviewRoadWriteResult.MemoPresent
@@ -967,7 +972,7 @@ class SessionReviewRoadViewModelTest {
                     SessionReviewRoadWriteResult.SamplePresent
                 }
                 else -> {
-                    val retainedSample = current?.takeIf { it.road == request.road }?.sampleAnchor
+                    val retainedSample = current?.takeIf { it.road == request.road }?.sampleAnchor ?: initialSample
                     val review = SessionReviewRoad(request.source, request.road, "version-${saved.size}", request.memoText, retainedSample)
                     value.value = review
                     SessionReviewRoadWriteResult.Saved(review)
@@ -1008,9 +1013,11 @@ class SessionReviewRoadViewModelTest {
             memoText: String,
             discardMemo: Boolean,
             discardSample: Boolean,
+            initialSample: SessionReviewSample?,
             canCommit: () -> Boolean,
         ): SessionReviewRoadWriteResult {
-            val request = SaveRequest(expectedSource, road, expectedCurrent, memoText, discardMemo, discardSample, canCommit)
+            val request =
+                SaveRequest(expectedSource, road, expectedCurrent, memoText, discardMemo, discardSample, initialSample, canCommit)
             saved += request
             return saveAction(request)
         }

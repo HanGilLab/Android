@@ -1,6 +1,7 @@
 package io.github.hangillab.hangil.feature.map
 
 import io.github.hangillab.hangil.core.domain.CourseReviewStatus
+import io.github.hangillab.hangil.core.domain.CourseRoadSnapshot
 import io.github.hangillab.hangil.core.domain.LocationRecordingEvent
 import io.github.hangillab.hangil.core.domain.LocationRecordingRun
 import io.github.hangillab.hangil.core.domain.LocationRecordingRunStatus
@@ -90,7 +91,7 @@ class StoredLocationPointTest {
         val input = StoredLocationMapInput.capture(run, supplied, event)
         supplied[0] = event.copy(reading = sample(38.0, 128.0))
         assertEquals(listOf(event), input.events)
-        assertFalse(input.matches(run, supplied, event))
+        assertFalse(input.matches(run, supplied, event, emptyList()))
         assertThrows(UnsupportedOperationException::class.java) { (input.events as MutableList<LocationRecordingEvent>).clear() }
         assertThrows(IllegalArgumentException::class.java) { StoredLocationMapInput.capture(run, listOf(event), supplied[0]) }
         assertThrows(IllegalArgumentException::class.java) {
@@ -100,6 +101,26 @@ class StoredLocationPointTest {
             StoredLocationMapInput.capture(run, listOf(event, event.copy(ordinal = 2)), event)
         }
         assertThrows(IllegalArgumentException::class.java) { StoredLocationMapInput.capture(run, listOf(event), null) }
+    }
+
+    @Test fun `a changed candidate node version retires the captured comparison`() {
+        val event = event(1, sample(0.0, 0.0))
+        val events = listOf(event)
+        val nodes = mutableListOf(CourseRoadSnapshot.Node(1, 1, 0.0, 0.0), CourseRoadSnapshot.Node(2, 1, 0.0, 0.01))
+        val roads = mutableListOf(CourseRoadSnapshot("road", "Road", "residential", 1, 1, 1, nodes))
+        val input = StoredLocationMapInput.capture(run, events, event, roads)
+        assertTrue(input.matches(run, events, event, roads))
+        nodes[1] = nodes[1].copy(osmNodeVersion = 2)
+        assertFalse(input.matches(run, events, event, roads))
+        assertEquals(
+            1,
+            input.courseRoads
+                .single()
+                .nodes[1]
+                .osmNodeVersion,
+        )
+        roads.clear()
+        assertEquals(1, input.courseRoads.size)
     }
 
     @Test fun `one polar callback makes the whole point source unavailable instead of silently dropping it`() {

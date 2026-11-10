@@ -44,6 +44,7 @@ internal class RoomSessionReviewRoadRepository
             memoText: String,
             discardMemo: Boolean,
             discardSample: Boolean,
+            initialSample: SessionReviewSample?,
             canCommit: () -> Boolean,
         ): SessionReviewRoadWriteResult {
             var pinned: NextPracticeSeed? = null
@@ -55,9 +56,12 @@ internal class RoomSessionReviewRoadRepository
                 if (memoText.isNotEmpty() && !SessionMemoPolicy.isValidText(memoText)) {
                     return@mutate SessionReviewRoadWriteResult.InvalidMemo
                 }
-                val sameRoad = current?.road == road
-                val candidate =
-                    SessionReviewRoad(actual, road, nextVersion(current?.version), memoText, if (sameRoad) current?.sampleAnchor else null)
+                if (initialSample != null) {
+                    if (current != null) return@mutate SessionReviewRoadWriteResult.Conflict
+                    if (!sampleMatches(actual, initialSample)) return@mutate SessionReviewRoadWriteResult.SampleChanged
+                }
+                val sampleAnchor = current?.takeIf { it.road == road }?.sampleAnchor ?: initialSample
+                val candidate = SessionReviewRoad(actual, road, nextVersion(current?.version), memoText, sampleAnchor)
                 if (current != null && current.road == candidate.road) {
                     if (current.memoText == memoText) {
                         return@mutate SessionReviewRoadWriteResult.Saved(current)

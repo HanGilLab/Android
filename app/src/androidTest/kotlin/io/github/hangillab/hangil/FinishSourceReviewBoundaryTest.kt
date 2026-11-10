@@ -74,6 +74,7 @@ import io.github.hangillab.hangil.core.domain.SessionMemoWriteResult
 import io.github.hangillab.hangil.core.domain.SessionReviewRoad
 import io.github.hangillab.hangil.core.domain.SessionReviewRoadRepository
 import io.github.hangillab.hangil.core.domain.SessionReviewRoadWriteResult
+import io.github.hangillab.hangil.core.domain.SessionReviewSample
 import io.github.hangillab.hangil.core.domain.SessionStartResult
 import io.github.hangillab.hangil.core.domain.SessionVehicleObservation
 import io.github.hangillab.hangil.core.domain.UxRestrictionState
@@ -543,6 +544,7 @@ class FinishSourceReviewBoundaryTest {
                                 memoText: String,
                                 discardMemo: Boolean,
                                 discardSample: Boolean,
+                                initialSample: SessionReviewSample?,
                                 canCommit: () -> Boolean,
                             ): SessionReviewRoadWriteResult {
                                 activeWrites.incrementAndGet()
@@ -554,6 +556,7 @@ class FinishSourceReviewBoundaryTest {
                                         memoText,
                                         discardMemo,
                                         discardSample,
+                                        initialSample,
                                         canCommit,
                                     )
                                 } finally {

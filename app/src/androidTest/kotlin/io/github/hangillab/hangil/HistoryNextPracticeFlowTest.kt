@@ -224,6 +224,7 @@ class HistoryNextPracticeFlowTest {
                     memoText: String,
                     discardMemo: Boolean,
                     discardSample: Boolean,
+                    initialSample: SessionReviewSample?,
                     canCommit: () -> Boolean,
                 ): SessionReviewRoadWriteResult = throw AssertionError("A reference road must never be saved by this UI")
 

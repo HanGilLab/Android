@@ -55,6 +55,47 @@ class RoomSessionReviewSampleTest {
     private val catalog = LocalPracticeCatalog()
     private val selection = PracticeSelection("commute", "neighborhood", 1, 1, "sequence")
 
+    @Test fun `first road and sample save together only with the exact stored callback and a live final gate`() =
+        runBlocking {
+            withDatabase { db ->
+                val f = seed(db)
+                val repo = RoomSessionReviewRoadRepository(db, catalog)
+                val locations = RoomLocationRecordingRepository(db)
+                val before = locations.observe(f.source.sessionId).first()
+                assertEquals(SessionReviewRoadWriteResult.Cleared, repo.clear(f.source, f.review) { true })
+                val road = f.review.road
+                val wrongOwner =
+                    SessionReviewSample(
+                        f.anchor.event,
+                        "another process",
+                        f.anchor.startedAtEpochMillis,
+                        f.anchor.startedAtElapsedRealtimeMillis,
+                    )
+                assertEquals(
+                    SessionReviewRoadWriteResult.SampleChanged,
+                    repo.save(f.source, road, null, initialSample = wrongOwner) { true },
+                )
+                assertNull(repo.observe(f.source.sessionId).first())
+                var gates = 0
+                assertEquals(
+                    SessionReviewRoadWriteResult.Blocked,
+                    repo.save(f.source, road, null, initialSample = f.anchor) { ++gates < 3 },
+                )
+                assertEquals(3, gates)
+                assertNull(repo.observe(f.source.sessionId).first())
+                val linked = saved(repo.save(f.source, road, null, initialSample = f.anchor) { true })
+                assertEquals(road, linked.road)
+                assertEquals(f.anchor, linked.sampleAnchor)
+                val second = SessionReviewSample.from(f.run, f.events[1])
+                assertEquals(
+                    SessionReviewRoadWriteResult.Conflict,
+                    repo.save(f.source, road, linked, initialSample = second) { true },
+                )
+                assertEquals(linked, repo.observe(f.source.sessionId).first())
+                assertEquals(before, locations.observe(f.source.sessionId).first())
+            }
+        }
+
     @Test fun `explicit sample identity survives run cleanup while memo replacement and unlink preserve original callbacks`() =
         runBlocking {
             withDatabase { db ->
