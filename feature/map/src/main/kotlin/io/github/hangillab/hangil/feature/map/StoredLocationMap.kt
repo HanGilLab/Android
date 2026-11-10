@@ -191,6 +191,22 @@ fun StoredLocationMap(
                     Modifier.fillMaxWidth().testTag("stored_location_map_selected"),
                     style = MaterialTheme.typography.titleLarge,
                 )
+                val selectedSample = (input.selectedEvent?.reading as? LocationUpdateReading.Sample)?.sample
+                if (reviewRoad != null && selectedSample != null) {
+                    val meters =
+                        remember(selectedSample, reviewRoad.road) {
+                            StoredLocationRoadDistance.meters(selectedSample, reviewRoad.road)
+                        }
+                    Text(
+                        when {
+                            meters == null -> stringResource(R.string.stored_map_road_distance_unknown)
+                            meters < 1 -> stringResource(R.string.stored_map_road_distance_under_one)
+                            else -> stringResource(R.string.stored_map_road_distance_meters, meters.roundToInt())
+                        },
+                        Modifier.fillMaxWidth().testTag("stored_location_map_road_distance"),
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                }
                 Text(
                     stringResource(if (reviewRoad == null) R.string.stored_map_scope else R.string.stored_map_review_road_scope),
                     Modifier.fillMaxWidth().testTag(

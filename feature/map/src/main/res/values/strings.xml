@@ -72,6 +72,9 @@
   <string name="stored_map_review_road_scope">점은 저장한 SDK 표본, 굵은 실선은 직접 고른 공개 도로예요. 실제 이동과 도로 매칭은 미확인이에요.</string>
   <string name="stored_map_review_road_content_description">한 실행의 SDK 표본 %1$d개와 직접 고른 공개 도로 %2$s. %3$s 실제 이동과 도로 매칭을 확인한 결과가 아니에요.</string>
   <string name="stored_map_road_unavailable">고른 도로가 지도의 위도 범위를 벗어나 함께 표시할 수 없어요. 표본 원본과 복습 도로를 따로 확인해 주세요.</string>
+  <string name="stored_map_road_distance_meters">저장한 도로선까지 약 %1$d m</string>
+  <string name="stored_map_road_distance_under_one">저장한 도로선까지 1 m 미만</string>
+  <string name="stored_map_road_distance_unknown">저장한 도로선까지의 거리를 확인하지 못했어요.</string>
   <string name="session_review_road_map_scope">고정된 공개 도로 모양이에요. 실제 이동 경로나 위치 표본과 연결한 자료가 아니에요.</string>
   <string name="session_review_road_map_content_description">%1$s 복습의 공개 도로 모양. %2$s. 실제 이동 경로와 현재 위치를 나타내지 않아요.</string>
   <string name="session_review_road_map_locked">주차와 화면 조작 허용을 확인한 뒤 도로 지도를 다시 열어 주세요.</string>
