@@ -235,6 +235,26 @@ class SessionReviewRoadViewModel
             return true
         }
 
+        fun saveFirstRoadAndSample(
+            token: RoadState.Token,
+            roadId: String,
+            sample: SessionReviewSample,
+        ): Boolean {
+            val job =
+                synchronized(lock) {
+                    val owner = owner(token) ?: return@synchronized null
+                    if (!editable(owner) || owner.stored != null || owner.edit != null || owner.confirmation != null ||
+                        owner.retainedMemo != null || sample.event.sessionId != owner.source.sessionId
+                    ) {
+                        return@synchronized null
+                    }
+                    val road = owner.candidates.singleOrNull { it.id == roadId } ?: return@synchronized null
+                    schedule(owner, road, "", discardMemo = false, memoEdit = false, sampleEdit = true, sample = sample)
+                } ?: return false
+            job.start()
+            return true
+        }
+
         fun cancelDiscard(
             token: RoadState.Token,
             confirmationNonce: Long,
@@ -497,8 +517,8 @@ class SessionReviewRoadViewModel
             try {
                 if (!commit(owner, action, job)) return
                 val result =
-                    if (action.sampleEdit) {
-                        reviews.setSample(owner.source, checkNotNull(action.expected), action.sample) { commit(owner, action, job) }
+                    if (action.sampleEdit && action.expected != null) {
+                        reviews.setSample(owner.source, action.expected, action.sample) { commit(owner, action, job) }
                     } else if (action.road == null) {
                         reviews.clear(
                             owner.source,
@@ -514,6 +534,7 @@ class SessionReviewRoadViewModel
                             action.memoText,
                             action.discardMemo,
                             action.discardSample,
+                            initialSample = action.sample.takeIf { action.expected == null },
                         ) {
                             commit(owner, action, job)
                         }

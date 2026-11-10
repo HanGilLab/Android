@@ -41,9 +41,12 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import io.github.hangillab.hangil.core.designsystem.HanGilDimensions
 import io.github.hangillab.hangil.core.designsystem.HanGilSpacing
+import io.github.hangillab.hangil.core.designsystem.ParkedButton
+import io.github.hangillab.hangil.core.domain.CourseRoadSnapshot
 import io.github.hangillab.hangil.core.domain.LocationRecordingEvent
 import io.github.hangillab.hangil.core.domain.LocationRecordingRun
 import io.github.hangillab.hangil.core.domain.LocationUpdateReading
+import io.github.hangillab.hangil.core.domain.LocationUpdateSample
 import io.github.hangillab.hangil.core.domain.SessionReviewRoad
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -72,16 +75,19 @@ fun StoredLocationMap(
     modifier: Modifier = Modifier,
     reviewRoad: SessionReviewRoad? = null,
     inputChanges: Flow<Unit> = emptyFlow(),
+    courseRoads: List<CourseRoadSnapshot> = emptyList(),
+    onSaveCourseRoad: ((String) -> Unit)? = null,
 ) {
     val input =
-        remember(run, events, selectedEvent) {
-            runCatching { StoredLocationMapInput.capture(run, events, selectedEvent) }.getOrNull()
+        remember(run, events, selectedEvent, courseRoads) {
+            runCatching { StoredLocationMapInput.capture(run, events, selectedEvent, courseRoads) }.getOrNull()
         }
     // Latest inputs may invalidate a captured map, but never replace its captured permission guard.
     val suppliedRun by rememberUpdatedState(run)
     val suppliedEvents by rememberUpdatedState(events)
     val suppliedSelection by rememberUpdatedState(selectedEvent)
     val suppliedReview by rememberUpdatedState(reviewRoad)
+    val suppliedCourseRoads by rememberUpdatedState(courseRoads)
     val owner = LocalLifecycleOwner.current
     val receipt = remember(input, reviewRoad, owner) { AtomicBoolean(true) }
     val withdrawn = remember(input, reviewRoad, owner) { mutableStateOf(false) }
@@ -90,7 +96,9 @@ fun StoredLocationMap(
     val permitted: () -> Boolean =
         remember(input, reviewRoad, owner) {
             {
-                val unchanged = input?.matches(suppliedRun, suppliedEvents, suppliedSelection) != false && reviewRoad == suppliedReview
+                val unchanged =
+                    input?.matches(suppliedRun, suppliedEvents, suppliedSelection, suppliedCourseRoads) != false &&
+                        reviewRoad == suppliedReview
                 if (!unchanged) {
                     inputChanged.value = true
                     receipt.set(false)
@@ -206,6 +214,10 @@ fun StoredLocationMap(
                         Modifier.fillMaxWidth().testTag("stored_location_map_road_distance"),
                         style = MaterialTheme.typography.bodyLarge,
                     )
+                } else if (selectedSample != null && input.courseRoads.isNotEmpty()) {
+                    key(input, owner) {
+                        StoredLocationCourseRoads(selectedSample, input.courseRoads, permitted, onSaveCourseRoad)
+                    }
                 }
                 Text(
                     stringResource(if (reviewRoad == null) R.string.stored_map_scope else R.string.stored_map_review_road_scope),
@@ -297,7 +309,7 @@ fun StoredLocationMap(
                         }
                     }
                 }
-                if (reviewRoad != null) {
+                if (reviewRoad != null || (selectedSample != null && input.courseRoads.isNotEmpty())) {
                     Text(
                         stringResource(R.string.map_road_attribution),
                         Modifier.fillMaxWidth(),
@@ -315,6 +327,53 @@ fun StoredLocationMap(
                     if (load.value == MapLoadState.LOADING) {
                         delay(20_000)
                         if (permitted() && load.value == MapLoadState.LOADING) load.value = MapLoadState.FAILED
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StoredLocationCourseRoads(
+    sample: LocationUpdateSample,
+    roads: List<CourseRoadSnapshot>,
+    permitted: () -> Boolean,
+    onSave: ((String) -> Unit)?,
+) {
+    val distances =
+        remember(sample, roads) {
+            roads
+                .map { road ->
+                    val meters = StoredLocationRoadDistance.meters(sample, road)
+                    road to meters?.let { if (it < 1) 0 else it.roundToInt() }
+                }.sortedBy { (_, meters) -> meters ?: Int.MAX_VALUE }
+        }
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.md)) {
+        Text(
+            stringResource(R.string.stored_map_course_roads),
+            Modifier.fillMaxWidth().testTag("stored_location_course_roads"),
+            style = MaterialTheme.typography.titleLarge,
+        )
+        Text(stringResource(R.string.stored_map_course_roads_scope), style = MaterialTheme.typography.bodyLarge)
+        distances.forEachIndexed { index, (road, meters) ->
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.sm)) {
+                Text(
+                    when (meters) {
+                        null -> stringResource(R.string.stored_map_course_road_unknown, road.title)
+                        0 -> stringResource(R.string.stored_map_course_road_under_one, road.title)
+                        else -> stringResource(R.string.stored_map_course_road_meters, road.title, meters)
+                    },
+                    Modifier.fillMaxWidth().testTag("stored_location_course_road_$index"),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                if (onSave != null && meters != null) {
+                    ParkedButton(
+                        onClick = { if (permitted()) onSave(road.id) },
+                        modifier = Modifier.fillMaxWidth().testTag("stored_location_course_road_save_$index"),
+                        prominent = false,
+                    ) {
+                        Text(stringResource(R.string.stored_map_course_road_save, road.title), style = MaterialTheme.typography.titleMedium)
                     }
                 }
             }

@@ -507,6 +507,95 @@ class LocationRecordingFlowTest {
             phase("CONTROLLED_STORED_STOP_REASONS_OPEN_LOCKS_AND_PRESERVATION")
         }
 
+    @Test fun storedPointOffersCourseRoadsAndSavesTheChosenRoadWithTheExactSample() {
+        val args = InstrumentationRegistry.getArguments()
+        assumeTrue(args.getString("manualStoredLocationMap") == "true")
+        fixture(mapEnabled = true) { f ->
+            click("session_start")
+            val source = f.active()
+            f.awaitSource(source)
+            click("home_location_recording")
+            click("location_recording_start")
+            f.awaitRecording()
+            // The public test point goes through the controlled update gateway and isolated Room database.
+            val sample = LocationUpdateSample(37.566735, 126.9763, -2.0, 421f, -5f, -42, f.elapsed.incrementAndGet())
+            f.emit(LocationUpdateReading.Sample(sample))
+            f.emit(LocationUpdateReading.Empty(f.elapsed.incrementAndGet()))
+            f.awaitEvents(source, 2)
+            click("location_recording_stop")
+            f.awaitTerminal(source, LocationRecordingStopReason.USER_STOP)
+            click("location_recording_back")
+            click("session_finish")
+            val ended = f.ended(source.sessionId)
+            val recorded = f.snapshot(ended)
+            val expectedSample = SessionReviewSample.from(recorded.runs.single(), recorded.events.first())
+            val roads = checkNotNull(NextPracticeSeed.resolve(f.store.catalog, ended)).practice.course.roadSnapshots
+            f.gateway.permission.set(false)
+
+            fun savedRoad() =
+                runBlocking {
+                    f.store.reviewRoads
+                        .observe(ended.sessionId)
+                        .first()
+                }
+
+            fun openSample() {
+                click("history_location_recording")
+                waitTag("location_history_content")
+                click("location_history_event_previous")
+                click("location_history_point_map")
+            }
+
+            click("home_history")
+            click("history_location_recording")
+            waitTag("location_history_content")
+            assertText("location_history_event_state", HomeR.string.location_history_callback_empty)
+            click("location_history_point_map")
+            waitTag("stored_location_map_selected")
+            assertTrue(nodes("stored_location_course_roads").isEmpty())
+            assertNull(savedRoad())
+            click("location_history_event_previous")
+            click("location_history_point_map")
+            val nearestFirst = listOf(roads[1] to 14, roads[0] to 88)
+            for ((index, comparison) in nearestFirst.withIndex()) {
+                val (road, meters) = comparison
+                compose
+                    .onNodeWithTag("stored_location_course_road_$index", useUnmergedTree = true)
+                    .performScrollTo()
+                    .assertIsDisplayed()
+                    .assertTextContains(instrument.targetContext.getString(MapR.string.stored_map_course_road_meters, road.title, meters))
+            }
+            assertNull(savedRoad())
+            val saveTag = "stored_location_course_road_save_1"
+            val stale = clickAction(saveTag)
+            f.drive(true)
+            waitTag("location_history_locked")
+            invoke(stale)
+            f.drive(false)
+            waitTag("location_history_locked")
+            invoke(stale)
+            assertNull(savedRoad())
+            click("location_history_back")
+            openSample()
+            waitTag(saveTag)
+            invoke(stale)
+            assertNull(savedRoad())
+            click(saveTag)
+            waitTag("review_road_sample_current")
+            val linked = checkNotNull(savedRoad())
+            assertEquals(roads.first(), linked.road)
+            assertEquals(expectedSample, linked.sampleAnchor)
+            assertTrue(nodes("stored_location_course_roads").isEmpty())
+            assertEquals(recorded, f.snapshot(ended))
+            visual("course-road-saved-with-selected-sample", "review_road_sample_current", "stored_location_map")
+            val configuration = compose.activity.resources.configuration
+            val dark = configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
+            args.getString("expectedDark")?.let { assertEquals(it.toBooleanStrict(), dark) }
+            args.getString("expectedFontScale")?.let { assertEquals(it.toFloat(), configuration.fontScale, 0.01f) }
+            f.assertNoPlatformActions()
+        }
+    }
+
     @Test fun storedPointMapOpensOnlyForTheSelectedSampleAndNeverReopensAfterSelectionOrAccessChanges() {
         val args = InstrumentationRegistry.getArguments()
         assumeTrue(args.getString("manualStoredLocationMap") == "true")
@@ -2596,8 +2685,17 @@ class LocationRecordingFlowTest {
                             canRead,
                             viewModel = reviewRoadModel,
                             readOnly = true,
-                            comparisonMap = { saved, allowed, changes ->
-                                StoredLocationMap(run, events, selectedEvent, allowed, reviewRoad = saved, inputChanges = changes)
+                            comparisonMap = { saved, courseRoads, saveCourseRoad, allowed, changes ->
+                                StoredLocationMap(
+                                    run,
+                                    events,
+                                    selectedEvent,
+                                    allowed,
+                                    reviewRoad = saved,
+                                    inputChanges = changes,
+                                    courseRoads = courseRoads,
+                                    onSaveCourseRoad = saveCourseRoad,
+                                )
                             },
                             sampleCandidate = candidate,
                             onOpenLinkedSample = openLinked,

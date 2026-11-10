@@ -1,5 +1,6 @@
 package io.github.hangillab.hangil.feature.map
 
+import io.github.hangillab.hangil.core.domain.CourseRoadSnapshot
 import io.github.hangillab.hangil.core.domain.LocationRecordingEvent
 import io.github.hangillab.hangil.core.domain.LocationRecordingRepository
 import io.github.hangillab.hangil.core.domain.LocationRecordingRun
@@ -11,6 +12,7 @@ internal class StoredLocationMapInput private constructor(
     val run: LocationRecordingRun,
     val events: List<LocationRecordingEvent>,
     val selectedEvent: LocationRecordingEvent?,
+    val courseRoads: List<CourseRoadSnapshot>,
 ) {
     val samples: List<LocationRecordingEvent> = Collections.unmodifiableList(events.filter { it.reading is LocationUpdateReading.Sample })
     val trace by lazy { StoredLocationTrace.features(this) }
@@ -21,11 +23,14 @@ internal class StoredLocationMapInput private constructor(
         run: LocationRecordingRun,
         events: List<LocationRecordingEvent>,
         selectedEvent: LocationRecordingEvent?,
-    ): Boolean = this.run == run && this.events == events && this.selectedEvent == selectedEvent
+        courseRoads: List<CourseRoadSnapshot>,
+    ): Boolean = this.run == run && this.events == events && this.selectedEvent == selectedEvent && this.courseRoads == courseRoads
 
-    override fun equals(other: Any?): Boolean = other is StoredLocationMapInput && matches(other.run, other.events, other.selectedEvent)
+    override fun equals(other: Any?): Boolean =
+        other is StoredLocationMapInput && matches(other.run, other.events, other.selectedEvent, other.courseRoads)
 
-    override fun hashCode(): Int = 31 * (31 * run.hashCode() + events.hashCode()) + (selectedEvent?.hashCode() ?: 0)
+    override fun hashCode(): Int =
+        31 * (31 * (31 * run.hashCode() + events.hashCode()) + (selectedEvent?.hashCode() ?: 0)) + courseRoads.hashCode()
 
     override fun toString(): String = "StoredLocationMapInput(snapshot=redacted)"
 
@@ -34,6 +39,7 @@ internal class StoredLocationMapInput private constructor(
             run: LocationRecordingRun,
             events: List<LocationRecordingEvent>,
             selectedEvent: LocationRecordingEvent?,
+            courseRoads: List<CourseRoadSnapshot> = emptyList(),
         ): StoredLocationMapInput {
             val snapshot = Collections.unmodifiableList(ArrayList(events))
             require(snapshot.size <= LocationRecordingRepository.MAX_EVENTS_PER_RUN) { "Too many stored run events" }
@@ -47,7 +53,9 @@ internal class StoredLocationMapInput private constructor(
                     selectedEvent != null && snapshot.singleOrNull { it.id == selectedEvent.id } == selectedEvent
                 }
             require(selectedMatches) { "Selected event is not the exact stored callback" }
-            return StoredLocationMapInput(run, snapshot, selectedEvent)
+            val roads = Collections.unmodifiableList(courseRoads.map { it.copy(nodes = Collections.unmodifiableList(ArrayList(it.nodes))) })
+            require(roads.map { it.id }.distinct().size == roads.size) { "Duplicate course road candidate" }
+            return StoredLocationMapInput(run, snapshot, selectedEvent, roads)
         }
     }
 }

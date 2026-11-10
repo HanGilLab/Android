@@ -1947,6 +1947,7 @@ class NextPracticeViewModelTest {
             memoText: String,
             discardMemo: Boolean,
             discardSample: Boolean,
+            initialSample: SessionReviewSample?,
             canCommit: () -> Boolean,
         ): SessionReviewRoadWriteResult = error("Next preparation cannot write a review")
 

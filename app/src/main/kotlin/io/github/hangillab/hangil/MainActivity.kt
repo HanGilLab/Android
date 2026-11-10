@@ -251,7 +251,7 @@ class MainActivity : ComponentActivity() {
                                             readOnly = true,
                                             sampleCandidate = candidate,
                                             onOpenLinkedSample = openLinkedSample,
-                                            comparisonMap = { saved, allowed, changes ->
+                                            comparisonMap = { saved, courseRoads, saveCourseRoad, allowed, changes ->
                                                 StoredLocationMap(
                                                     run,
                                                     events,
@@ -259,6 +259,8 @@ class MainActivity : ComponentActivity() {
                                                     allowed,
                                                     reviewRoad = saved,
                                                     inputChanges = changes,
+                                                    courseRoads = courseRoads,
+                                                    onSaveCourseRoad = saveCourseRoad,
                                                 )
                                             },
                                         )

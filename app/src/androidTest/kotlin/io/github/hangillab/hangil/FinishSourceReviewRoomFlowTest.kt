@@ -36,6 +36,7 @@ import io.github.hangillab.hangil.core.domain.SessionMemoWriteResult
 import io.github.hangillab.hangil.core.domain.SessionReviewRoad
 import io.github.hangillab.hangil.core.domain.SessionReviewRoadRepository
 import io.github.hangillab.hangil.core.domain.SessionReviewRoadWriteResult
+import io.github.hangillab.hangil.core.domain.SessionReviewSample
 import io.github.hangillab.hangil.core.domain.SessionStartResult
 import io.github.hangillab.hangil.core.domain.SessionVehicleObservation
 import io.github.hangillab.hangil.core.domain.UxRestrictionState
@@ -396,12 +397,23 @@ class FinishSourceReviewRoomFlowTest {
                         memoText: String,
                         discardMemo: Boolean,
                         discardSample: Boolean,
+                        initialSample: SessionReviewSample?,
                         canCommit: () -> Boolean,
                     ): SessionReviewRoadWriteResult {
                         saveCalls.incrementAndGet()
                         if (failBeforeNextSave.getAndSet(false)) throw IOException("Controlled failure before the owned Room write")
                         delegatedSaveCalls.incrementAndGet()
-                        val result = actual.save(expectedSource, road, expectedCurrent, memoText, discardMemo, discardSample, canCommit)
+                        val result =
+                            actual.save(
+                                expectedSource,
+                                road,
+                                expectedCurrent,
+                                memoText,
+                                discardMemo,
+                                discardSample,
+                                initialSample,
+                                canCommit,
+                            )
                         if (result is SessionReviewRoadWriteResult.Saved && loseReply.getAndSet(false)) {
                             throw IOException("Controlled loss of a committed write reply")
                         }
