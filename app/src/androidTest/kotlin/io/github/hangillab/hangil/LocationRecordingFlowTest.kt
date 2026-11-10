@@ -1426,8 +1426,6 @@ class LocationRecordingFlowTest {
                                                         } &&
                                                         original.all { point -> paths.any { onStoredRoadPath(point, it) } }
                                                 }
-                                            val traceMatches =
-                                                expectedTrace?.let { (from, to) -> matchesStoredTrace(map, from, to) } ?: true
                                             observation.put("roadSourceCount", roadFeatures.size)
                                             observation.put("roadMatches", roadMatches)
                                             val checks =
@@ -1442,8 +1440,11 @@ class LocationRecordingFlowTest {
                                                     "RENDERED_ALL_EVENT_IDENTITIES_AND_RAW_PLACEMENTS_MATCH" to renderedMatches,
                                                     "EXACT_SELECTED_EVENT_OR_NO_SELECTION" to selectionMatches,
                                                     "SDK_SOURCE_HAS_NO_LINE_LAYER" to noSdkLine,
-                                                    "TRACE_MATCHES_ONLY_EXPECTED_RECEIPT_PAIR" to traceMatches,
                                                 )
+                                            if (expectedTrace != null) {
+                                                val (from, to) = expectedTrace
+                                                checks["TRACE_MATCHES_ONLY_EXPECTED_RECEIPT_PAIR"] = matchesStoredTrace(map, from, to)
+                                            }
                                             val failed = checks.entries.firstOrNull { !it.value }
                                             observation.put("checks", JSONObject(checks))
                                             observation.put("reason", failed?.let { "FAILED_" + it.key } ?: "MATCHED")
