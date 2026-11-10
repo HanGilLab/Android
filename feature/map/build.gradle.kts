@@ -14,6 +14,7 @@ dependencies {
     implementation(libs.hilt.navigation.compose)
     implementation(libs.coroutines.core)
     implementation(libs.maplibre.android)
+    implementation(libs.maplibre.turf)
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test)
 }
