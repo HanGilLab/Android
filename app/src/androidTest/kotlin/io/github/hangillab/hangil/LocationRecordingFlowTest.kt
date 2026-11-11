@@ -888,8 +888,8 @@ class LocationRecordingFlowTest {
                 .Builder()
                 .addInterceptor { chain ->
                     val request = chain.request()
-                    check(request.url.host == "tiles.openfreemap.org" && request.url.encodedPath.startsWith("/styles/"))
                     requests.incrementAndGet()
+                    check(request.url.host == "tiles.openfreemap.org" && request.url.encodedPath.startsWith("/styles/"))
                     val available = basemapAvailable.get()
                     val json = """{"version":8,"sources":{},"layers":[{"id":"test-remote-background","type":"background"}]}"""
                     Response
@@ -954,31 +954,38 @@ class LocationRecordingFlowTest {
                             .first()
                     }
 
-                fun awaitOffline(road: CourseRoadSnapshot? = null): MapView {
-                    waitTag("stored_location_map_without_background")
-                    assertText("stored_location_map_without_background", MapR.string.stored_map_without_background)
-                    assertTrue(nodes("stored_location_map_failed").isEmpty())
-                    return awaitStoredMap(run, recorded.events, selected, road, trace, expectedOffline = true)
-                }
+                fun awaitLocal(road: CourseRoadSnapshot? = null): MapView =
+                    awaitStoredMap(run, recorded.events, selected, road, trace, expectedOffline = true)
 
                 click("home_history")
                 openSample()
-                val original = awaitOffline()
-                assertTrue("The requested basemap must return an error before fallback", requests.get() > 0)
+                val original = awaitLocal()
+                waitTag("stored_location_map_show_background")
+                assertText("stored_location_map_background_notice", MapR.string.stored_map_background_notice)
+                assertEquals("Opening the stored map must not request an external style", 0, requests.get())
                 assertNull(storedRoad())
                 click("stored_location_course_road_save_0")
                 waitTag("review_road_sample_current")
                 val linked = checkNotNull(storedRoad())
                 assertEquals(expectedRoad, linked.road)
                 assertEquals(expectedSample, linked.sampleAnchor)
-                val afterSave = awaitOffline(expectedRoad)
+                val afterSave = awaitLocal(expectedRoad)
                 instrument.runOnMainSync { assertFalse(original.isAttachedToWindow) }
                 click("location_history_back")
                 assertNoStoredMap(afterSave)
                 openSample()
-                val reopened = awaitOffline(expectedRoad)
-                val staleRetry = clickAction("stored_location_map_retry_background")
+                val reopened = awaitLocal(expectedRoad)
+                assertEquals("Saving or reopening the stored map must not opt in", 0, requests.get())
+                click("stored_location_map_show_background")
+                waitTag("stored_location_map_without_background")
+                assertText("stored_location_map_without_background", MapR.string.stored_map_without_background)
+                assertTrue(nodes("stored_location_map_failed").isEmpty())
+                val fallback = awaitLocal(expectedRoad)
                 val beforeRetry = requests.get()
+                assertTrue("Only the explicit action should request the failing style", beforeRetry > 0)
+                instrument.runOnMainSync { assertFalse(reopened.isAttachedToWindow) }
+
+                val staleRetry = clickAction("stored_location_map_retry_background")
                 basemapAvailable.set(true)
                 click("stored_location_map_retry_background")
                 compose.waitUntil(20_000) {
@@ -986,16 +993,41 @@ class LocationRecordingFlowTest {
                         nodes("stored_location_map_ready").size == 1
                 }
                 val restored = awaitStoredMap(run, recorded.events, selected, expectedRoad, trace)
-                instrument.runOnMainSync { assertFalse(reopened.isAttachedToWindow) }
-                f.drive(true)
-                waitTag("location_history_locked")
-                assertNoStoredMap(restored)
-                invoke(staleRetry)
-                assertNoStoredMap()
-                assertEquals(linked, storedRoad())
-                assertEquals(recorded, f.snapshot(ended))
+                compose
+                    .onNodeWithText(compose.activity.getString(MapR.string.map_sources), useUnmergedTree = true)
+                    .performScrollTo()
+                    .assertIsDisplayed()
                 val configuration = compose.activity.resources.configuration
                 val dark = configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
+                if (dark) {
+                    compose
+                        .onNodeWithTag("map_dark_design_credit", useUnmergedTree = true)
+                        .performScrollTo()
+                        .assertIsDisplayed()
+                        .assertTextContains("CartoDB Basemaps", substring = true)
+                } else {
+                    assertTrue(nodes("map_dark_design_credit").isEmpty())
+                }
+                instrument.runOnMainSync { assertFalse(fallback.isAttachedToWindow) }
+                val staleHide = clickAction("stored_location_map_hide_background")
+                click("stored_location_map_hide_background")
+                val hidden = awaitLocal(expectedRoad)
+                instrument.runOnMainSync { assertFalse(restored.isAttachedToWindow) }
+                val afterHide = requests.get()
+                invoke(staleHide)
+                compose.waitForIdle()
+                assertTrue(nodes("stored_location_map_show_background").size == 1)
+                assertEquals("A retained hide action must not enable the external style", afterHide, requests.get())
+                val staleShow = clickAction("stored_location_map_show_background")
+                f.drive(true)
+                waitTag("location_history_locked")
+                assertNoStoredMap(hidden)
+                invoke(staleRetry)
+                invoke(staleShow)
+                assertNoStoredMap()
+                assertEquals("Retired controls must not request another style", afterHide, requests.get())
+                assertEquals(linked, storedRoad())
+                assertEquals(recorded, f.snapshot(ended))
                 args.getString("expectedDark")?.let { assertEquals(it.toBooleanStrict(), dark) }
                 args.getString("expectedFontScale")?.let { assertEquals(it.toFloat(), configuration.fontScale, 0.01f) }
                 f.assertNoPlatformActions()
@@ -1138,25 +1170,16 @@ class LocationRecordingFlowTest {
             assertTrue(nodes("review_road_save").isEmpty() && nodes("review_road_clear").isEmpty())
             assertTrue(nodes("review_road_memo_edit").isEmpty() && nodes("review_road_memo_create").isEmpty())
             visual("stored-point-and-user-selected-road", "location_history_point_map_notice", "stored_location_map")
-            for (source in listOf(MapR.string.map_sources, MapR.string.map_road_attribution)) {
-                compose
-                    .onNodeWithText(compose.activity.getString(source), useUnmergedTree = true)
-                    .performScrollTo()
-                    .assertIsDisplayed()
-            }
+            compose
+                .onNodeWithText(compose.activity.getString(MapR.string.map_road_attribution), useUnmergedTree = true)
+                .performScrollTo()
+                .assertIsDisplayed()
+            assertFalse(hasTextNode(compose.activity.getString(MapR.string.map_sources)))
+            assertTrue(nodes("map_dark_design_credit").isEmpty())
             val configuration = compose.activity.resources.configuration
             val dark = configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
             args.getString("expectedDark")?.let { assertEquals(it.toBooleanStrict(), dark) }
             args.getString("expectedFontScale")?.let { assertEquals(it.toFloat(), configuration.fontScale, 0.01f) }
-            if (dark) {
-                compose
-                    .onNodeWithTag("map_dark_design_credit", useUnmergedTree = true)
-                    .performScrollTo()
-                    .assertIsDisplayed()
-                    .assertTextContains("CartoDB Basemaps", substring = true)
-            } else {
-                assertTrue(nodes("map_dark_design_credit").isEmpty())
-            }
 
             waitTag("review_road_sample_absent")
             val staleFirstLink = clickAction("review_road_sample_link")

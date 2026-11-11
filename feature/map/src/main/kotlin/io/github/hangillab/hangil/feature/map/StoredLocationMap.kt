@@ -148,19 +148,21 @@ fun StoredLocationMap(
     val previewRoad = preview?.first
     val mapRoad = reviewRoad?.road ?: previewRoad
     val bringMapIntoView = remember(input, owner) { BringIntoViewRequester() }
-    var withoutBackground by remember(input, reviewRoad, preview, owner) { mutableStateOf(false) }
-    val fallback = withoutBackground
+    var backgroundMode by remember(input, reviewRoad, preview, owner) { mutableStateOf(StoredMapBackground.LOCAL) }
+    val background = backgroundMode
+    val online = preview == null && background == StoredMapBackground.ONLINE
+    val fallback = background == StoredMapBackground.FAILED
     var attempt by remember(input, reviewRoad, preview, owner) { mutableIntStateOf(0) }
     val capturedAttempt = attempt
     val mapPermitted: () -> Boolean = {
-        permitted() && previewChoice == preview && withoutBackground == fallback && attempt == capturedAttempt
+        permitted() && previewChoice == preview && backgroundMode == background && attempt == capturedAttempt
     }
-    val load = remember(input, reviewRoad, preview, owner, dark, fontScale, fallback, attempt) { mutableStateOf(MapLoadState.LOADING) }
+    val load = remember(input, reviewRoad, preview, owner, dark, fontScale, background, attempt) { mutableStateOf(MapLoadState.LOADING) }
     val suppliedLoad by rememberUpdatedState(load)
     val onFailed: () -> Unit = {
         if (mapPermitted()) {
-            if (preview == null && !fallback) {
-                withoutBackground = true
+            if (online) {
+                backgroundMode = StoredMapBackground.FAILED
             } else {
                 load.value = MapLoadState.FAILED
             }
@@ -174,7 +176,7 @@ fun StoredLocationMap(
     val roadColor = MaterialTheme.colorScheme.tertiary.toArgb()
     val sectionColor = MaterialTheme.colorScheme.onSurface.toArgb()
     val publicSectionColor = MaterialTheme.colorScheme.secondary.toArgb()
-    val localBackground = pointBorder.takeIf { preview != null || fallback }
+    val localBackground = pointBorder.takeUnless { online }
     val sourceMatches = reviewRoad == null || input == null || reviewRoad.source.copy(endedAtEpochMillis = null) == input.run.source
     Column(modifier.fillMaxWidth().testTag("stored_location_map"), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.lg)) {
         if (inputChanged.value) {
@@ -393,7 +395,7 @@ fun StoredLocationMap(
                             }
                         }
                     } else {
-                        key(input, reviewRoad, preview, owner, dark, fontScale, fallback, attempt) {
+                        key(input, reviewRoad, preview, owner, dark, fontScale, background, attempt) {
                             NativeStoredLocationMap(
                                 input,
                                 mapRoad,
@@ -469,21 +471,37 @@ fun StoredLocationMap(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                if (fallback && load.value == MapLoadState.READY) {
-                    ParkedButton(
-                        onClick = {
-                            if (mapPermitted() && load.value == MapLoadState.READY) {
-                                attempt++
-                                withoutBackground = false
-                            }
-                        },
-                        modifier = Modifier.testTag("stored_location_map_retry_background"),
-                        prominent = false,
-                    ) {
-                        Text(stringResource(R.string.stored_map_retry_background), style = MaterialTheme.typography.titleMedium)
+                if (preview == null && (online || load.value == MapLoadState.READY)) {
+                    if (!online) {
+                        Text(
+                            stringResource(R.string.stored_map_background_notice),
+                            Modifier.fillMaxWidth().testTag("stored_location_map_background_notice"),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    val (action, tag) =
+                        when (background) {
+                            StoredMapBackground.LOCAL -> R.string.stored_map_show_background to "stored_location_map_show_background"
+                            StoredMapBackground.ONLINE -> R.string.stored_map_hide_background to "stored_location_map_hide_background"
+                            StoredMapBackground.FAILED -> R.string.stored_map_retry_background to "stored_location_map_retry_background"
+                        }
+                    key(load) {
+                        ParkedButton(
+                            onClick = {
+                                if (mapPermitted() && suppliedLoad === load && (online || load.value == MapLoadState.READY)) {
+                                    attempt++
+                                    backgroundMode = if (online) StoredMapBackground.LOCAL else StoredMapBackground.ONLINE
+                                }
+                            },
+                            modifier = Modifier.testTag(tag),
+                            prominent = false,
+                        ) {
+                            Text(stringResource(action), style = MaterialTheme.typography.titleMedium)
+                        }
                     }
                 }
-                if (localBackground == null) {
+                if (online) {
                     MapCredits(
                         dark,
                         style = MaterialTheme.typography.bodyLarge,
