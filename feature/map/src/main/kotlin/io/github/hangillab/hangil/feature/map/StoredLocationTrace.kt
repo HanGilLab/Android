@@ -44,14 +44,19 @@ internal object StoredLocationTrace {
         run: LocationRecordingRun,
         start: LocationUpdateSample,
         end: LocationUpdateSample,
+    ): Boolean = isContinuous(run, start, end) && (start.latitude != end.latitude || start.longitude != end.longitude)
+
+    fun isContinuous(
+        run: LocationRecordingRun,
+        start: LocationUpdateSample,
+        end: LocationUpdateSample,
     ): Boolean {
         val startTime = start.receivedAtElapsedRealtimeMillis
         val endTime = end.receivedAtElapsedRealtimeMillis
         return startTime >= run.startedAtElapsedRealtimeMillis &&
             (run.endedAtElapsedRealtimeMillis?.let { endTime <= it } != false) &&
             endTime - startTime in 1 until LocationUpdateGateway.NO_UPDATE_TIMEOUT_MILLIS &&
-            abs(start.longitude - end.longitude) < 180 &&
-            (start.latitude != end.latitude || start.longitude != end.longitude)
+            abs(start.longitude - end.longitude) < 180
     }
 
     fun add(
