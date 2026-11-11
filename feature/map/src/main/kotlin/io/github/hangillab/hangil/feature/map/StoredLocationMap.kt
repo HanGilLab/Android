@@ -486,17 +486,19 @@ fun StoredLocationMap(
                             StoredMapBackground.ONLINE -> R.string.stored_map_hide_background to "stored_location_map_hide_background"
                             StoredMapBackground.FAILED -> R.string.stored_map_retry_background to "stored_location_map_retry_background"
                         }
-                    ParkedButton(
-                        onClick = {
-                            if (mapPermitted() && (online || load.value == MapLoadState.READY)) {
-                                attempt++
-                                backgroundMode = if (online) StoredMapBackground.LOCAL else StoredMapBackground.ONLINE
-                            }
-                        },
-                        modifier = Modifier.testTag(tag),
-                        prominent = false,
-                    ) {
-                        Text(stringResource(action), style = MaterialTheme.typography.titleMedium)
+                    key(load) {
+                        ParkedButton(
+                            onClick = {
+                                if (mapPermitted() && suppliedLoad === load && (online || load.value == MapLoadState.READY)) {
+                                    attempt++
+                                    backgroundMode = if (online) StoredMapBackground.LOCAL else StoredMapBackground.ONLINE
+                                }
+                            },
+                            modifier = Modifier.testTag(tag),
+                            prominent = false,
+                        ) {
+                            Text(stringResource(action), style = MaterialTheme.typography.titleMedium)
+                        }
                     }
                 }
                 if (online) {

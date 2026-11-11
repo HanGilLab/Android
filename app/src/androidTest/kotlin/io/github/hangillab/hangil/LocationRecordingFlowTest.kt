@@ -888,8 +888,8 @@ class LocationRecordingFlowTest {
                 .Builder()
                 .addInterceptor { chain ->
                     val request = chain.request()
-                    check(request.url.host == "tiles.openfreemap.org" && request.url.encodedPath.startsWith("/styles/"))
                     requests.incrementAndGet()
+                    check(request.url.host == "tiles.openfreemap.org" && request.url.encodedPath.startsWith("/styles/"))
                     val available = basemapAvailable.get()
                     val json = """{"version":8,"sources":{},"layers":[{"id":"test-remote-background","type":"background"}]}"""
                     Response
@@ -994,10 +994,15 @@ class LocationRecordingFlowTest {
                 }
                 val restored = awaitStoredMap(run, recorded.events, selected, expectedRoad, trace)
                 instrument.runOnMainSync { assertFalse(fallback.isAttachedToWindow) }
+                val staleHide = clickAction("stored_location_map_hide_background")
                 click("stored_location_map_hide_background")
                 val hidden = awaitLocal(expectedRoad)
                 instrument.runOnMainSync { assertFalse(restored.isAttachedToWindow) }
                 val afterHide = requests.get()
+                invoke(staleHide)
+                compose.waitForIdle()
+                assertTrue(nodes("stored_location_map_show_background").size == 1)
+                assertEquals("A retained hide action must not enable the external style", afterHide, requests.get())
                 val staleShow = clickAction("stored_location_map_show_background")
                 f.drive(true)
                 waitTag("location_history_locked")
