@@ -993,6 +993,21 @@ class LocationRecordingFlowTest {
                         nodes("stored_location_map_ready").size == 1
                 }
                 val restored = awaitStoredMap(run, recorded.events, selected, expectedRoad, trace)
+                compose
+                    .onNodeWithText(compose.activity.getString(MapR.string.map_sources), useUnmergedTree = true)
+                    .performScrollTo()
+                    .assertIsDisplayed()
+                val configuration = compose.activity.resources.configuration
+                val dark = configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
+                if (dark) {
+                    compose
+                        .onNodeWithTag("map_dark_design_credit", useUnmergedTree = true)
+                        .performScrollTo()
+                        .assertIsDisplayed()
+                        .assertTextContains("CartoDB Basemaps", substring = true)
+                } else {
+                    assertTrue(nodes("map_dark_design_credit").isEmpty())
+                }
                 instrument.runOnMainSync { assertFalse(fallback.isAttachedToWindow) }
                 val staleHide = clickAction("stored_location_map_hide_background")
                 click("stored_location_map_hide_background")
@@ -1013,8 +1028,6 @@ class LocationRecordingFlowTest {
                 assertEquals("Retired controls must not request another style", afterHide, requests.get())
                 assertEquals(linked, storedRoad())
                 assertEquals(recorded, f.snapshot(ended))
-                val configuration = compose.activity.resources.configuration
-                val dark = configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
                 args.getString("expectedDark")?.let { assertEquals(it.toBooleanStrict(), dark) }
                 args.getString("expectedFontScale")?.let { assertEquals(it.toFloat(), configuration.fontScale, 0.01f) }
                 f.assertNoPlatformActions()
@@ -1157,25 +1170,16 @@ class LocationRecordingFlowTest {
             assertTrue(nodes("review_road_save").isEmpty() && nodes("review_road_clear").isEmpty())
             assertTrue(nodes("review_road_memo_edit").isEmpty() && nodes("review_road_memo_create").isEmpty())
             visual("stored-point-and-user-selected-road", "location_history_point_map_notice", "stored_location_map")
-            for (source in listOf(MapR.string.map_sources, MapR.string.map_road_attribution)) {
-                compose
-                    .onNodeWithText(compose.activity.getString(source), useUnmergedTree = true)
-                    .performScrollTo()
-                    .assertIsDisplayed()
-            }
+            compose
+                .onNodeWithText(compose.activity.getString(MapR.string.map_road_attribution), useUnmergedTree = true)
+                .performScrollTo()
+                .assertIsDisplayed()
+            assertFalse(hasTextNode(compose.activity.getString(MapR.string.map_sources)))
+            assertTrue(nodes("map_dark_design_credit").isEmpty())
             val configuration = compose.activity.resources.configuration
             val dark = configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
             args.getString("expectedDark")?.let { assertEquals(it.toBooleanStrict(), dark) }
             args.getString("expectedFontScale")?.let { assertEquals(it.toFloat(), configuration.fontScale, 0.01f) }
-            if (dark) {
-                compose
-                    .onNodeWithTag("map_dark_design_credit", useUnmergedTree = true)
-                    .performScrollTo()
-                    .assertIsDisplayed()
-                    .assertTextContains("CartoDB Basemaps", substring = true)
-            } else {
-                assertTrue(nodes("map_dark_design_credit").isEmpty())
-            }
 
             waitTag("review_road_sample_absent")
             val staleFirstLink = clickAction("review_road_sample_link")
