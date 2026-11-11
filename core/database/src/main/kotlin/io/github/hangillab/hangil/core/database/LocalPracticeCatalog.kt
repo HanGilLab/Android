@@ -88,6 +88,7 @@ class LocalPracticeCatalog
                             PracticeTask("stops", "경유지 순서 확인하기", "출발 전에 경유지와 최종 목적지의 순서를 확인해 보세요."),
                         ),
                     goalIds = setOf("commute", "shopping"),
+                    roadSnapshots = listOf(LocalRoadSnapshots.pangyoWaypoint),
                     // POI identifiers and routing coordinates from the official NaviHelper waypoint example.
                     // Pleos resolves the waypoint ID to the Software Dream Center in active guidance.
                     // https://document.pleos.ai/docs/pleos-only/connect-sdk-pleos/NaviHelper/route-with-waypoints

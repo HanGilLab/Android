@@ -142,7 +142,7 @@ class MapInputLifecycleTest {
             val catalog = LocalPracticeCatalog()
             val course = catalog.courses.single { it.id == "pleos-pangyo-yangjae" }
             val route = checkNotNull(course.navigationRoute)
-            assertTrue("시연 preview로 우회하지 않는 현재 nav-only 원본이어야 합니다", course.mapPreview == null)
+            assertTrue("시연 지도 대신 내비 요청 장소 원본을 사용해야 합니다", course.mapPreview == null)
             val source = fixture.preview.source as MapPreview.Source.NavigationRequest
             assertTrue(
                 "전체 요청 원본과 코스 버전을 보존해야 합니다",
@@ -172,6 +172,11 @@ class MapInputLifecycleTest {
             assertTrue("추가 시연 지점을 만들면 안 됩니다", nodes("map_point_2").isEmpty() && nodes("map_demo_badge").isEmpty())
             assertPoiText("map_navigation_request_badge", "내비 요청 장소")
             assertPoiText("map_navigation_request_scope", "내비에 요청할 장소이며 실제 안내 경로와 현재 위치는 표시하지 않아요.")
+            assertEquals(course.roadSnapshots, fixture.preview.roads)
+            assertPoiText("map_road_badge", "공개 OSM 도로 구간")
+            assertPoiText("map_road_0", "1. 창업로40번길")
+            assertPoiText("map_road_attribution", "도로 자료: © OpenStreetMap 기여자, ODbL 1.0")
+            awaitRoadLines(fixture.preview, initial.view, null)
             val directory = File(instrumentation.targetContext.cacheDir, "screenshots/navigation-request-pois-${UUID.randomUUID()}")
             check(directory.mkdirs()) { "POI_MAP_PRIVATE_CACHE" }
             capturePoiRegion(directory, "pois-map.png", "map_view")
