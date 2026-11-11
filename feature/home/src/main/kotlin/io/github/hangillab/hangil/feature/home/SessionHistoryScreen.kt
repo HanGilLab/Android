@@ -541,7 +541,15 @@ private fun HistoryRecord(
         recordingRuns()
         courseCompletion()
         locations()
-        if (allowBrowsing) nextPractice()
+        if (allowBrowsing) {
+            nextPractice()
+            Text(
+                stringResource(R.string.history_retention),
+                Modifier.testTag("history_retention"),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         ParkedButton(
             onClick = onDelete,
             prominent = false,

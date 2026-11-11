@@ -144,6 +144,16 @@ class SessionDeletionFlowTest {
                 emptyLocations.events.isEmpty() && emptyLocations.runs.isEmpty() &&
                     before.recordingRuns.getValue(fixture.seed.latest.sessionId).isEmpty(),
             )
+            bringIntoView("history_retention")
+            val retention = nodes("history_retention").single()
+            val notice =
+                retention.config
+                    .getOrNull(SemanticsProperties.Text)
+                    .orEmpty()
+                    .joinToString("") { it.text }
+            assertTrue("RETENTION_POLICY_VISIBLE", fullyVisible(retention))
+            assertTrue("RETENTION_NO_AUTOMATIC_DELETION_OR_TRANSFER", notice.contains("자동으로 지우거나 새 기기로 옮기지 않아요"))
+            assertLayout(retention, notice)
             openAndReadConfirmation(fixture, fixture.seed.latest)
             touch("history_delete_cancel")
             waitAbsent("history_delete_dialog")

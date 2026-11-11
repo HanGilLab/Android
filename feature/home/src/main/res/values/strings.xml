@@ -157,6 +157,7 @@
     <string name="history_summary_tasks">과제별 기록</string>
     <string name="history_summary_scope">저장 당시 목표와 코스 정보가 같은 기록이에요.</string>
 
+    <string name="history_retention">연습 기록은 이 기기에 남아요. 앱에서 자동으로 지우거나 새 기기로 옮기지 않아요.</string>
     <string name="history_delete">이 기록 삭제</string>
     <string name="history_delete_title">기록을 삭제할까요?</string>
     <string name="history_delete_warning">이 연습과 연결된 차량 관찰, 메모, 배경 실행, 위치 표본과 수집 상태, 마무리 선언을\n이 기기에서 영구 삭제해요. 복구할 수 없어요. 다른 준비나 연습으로 가져온 목표 도로는 남아요.</string>
