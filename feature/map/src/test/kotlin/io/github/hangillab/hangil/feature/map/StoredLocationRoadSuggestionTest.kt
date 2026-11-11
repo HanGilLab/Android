@@ -103,6 +103,7 @@ class StoredLocationRoadSuggestionTest {
                     listOf(
                         nearRoad.nodes.first(),
                         bend,
+                        bend.copy(osmNodeId = 14),
                         CourseRoadSnapshot.Node(13, 1, BASE_LATITUDE + 0.001, bend.longitude),
                     ),
             )
@@ -146,6 +147,25 @@ class StoredLocationRoadSuggestionTest {
         val captured = input(readings, roads = listOf(split))
         val section = checkNotNull(StoredLocationRoadSuggestion.section(captured, linkedReview(captured, split)))
         assertEquals(readings.last().sample.longitude, section.coordinates().last().longitude(), 0.00001)
+    }
+
+    @Test fun `dense nodes on a straight road preserve the same section endpoints`() {
+        val dense =
+            nearRoad.copy(
+                nodes =
+                    (-10..10).mapIndexed { index, offset ->
+                        CourseRoadSnapshot.Node(100L + index, 1, BASE_LATITUDE, BASE_LONGITUDE + offset * 0.000125)
+                    },
+            )
+        val latitude = BASE_LATITUDE + 0.00009
+        val readings = listOf(sample(-0.00037, 1_000, latitude), sample(0.0, 2_000, latitude), sample(0.00037, 3_000, latitude))
+        val sparseInput = input(readings, roads = listOf(nearRoad))
+        val sparse = checkNotNull(StoredLocationRoadSuggestion.section(sparseInput, linkedReview(sparseInput))).coordinates()
+        val denseInput = input(readings, roads = listOf(dense))
+        val detailed = checkNotNull(StoredLocationRoadSuggestion.section(denseInput, linkedReview(denseInput, dense))).coordinates()
+        assertEquals(sparse.first().longitude(), detailed.first().longitude(), 0.00001)
+        assertEquals(sparse.last().longitude(), detailed.last().longitude(), 0.00001)
+        assertTrue(detailed.size > sparse.size)
     }
 
     @Test fun `two nearby arms of the same road cannot resolve a section`() {

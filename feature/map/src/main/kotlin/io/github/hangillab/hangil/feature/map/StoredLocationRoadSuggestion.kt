@@ -88,13 +88,23 @@ internal object StoredLocationRoadSuggestion {
                         if (!meters.isFinite() || !offset.isFinite()) return null
                         Projection(index, point, meters, offset)
                     }
-                val nearest = candidates.minByOrNull { it.meters } ?: return null
+                // A clamped endpoint is a minimum only when its other segment also projects to that vertex.
+                val minima =
+                    candidates.filterIndexed { index, projection ->
+                        val continuesBefore =
+                            projection.point == line[projection.index] &&
+                                index > 0 && candidates[index - 1].point != projection.point
+                        val continuesAfter =
+                            projection.point == line[projection.index + 1] &&
+                                index < candidates.lastIndex && candidates[index + 1].point != projection.point
+                        !continuesBefore && !continuesAfter
+                    }
+                val nearest = minima.minByOrNull { it.meters } ?: return null
                 if (nearest.meters > MAX_ROAD_DISTANCE_METERS ||
-                    candidates.any {
+                    minima.any {
                         it.meters <= MAX_ROAD_DISTANCE_METERS &&
                             it.meters - nearest.meters < MIN_RUNNER_UP_GAP_METERS &&
-                            abs(it.offset - nearest.offset) >= MIN_SPAN_METERS &&
-                            !it.isSharedEndpoint(nearest, line)
+                            abs(it.offset - nearest.offset) >= MIN_SPAN_METERS
                     }
                 ) {
                     return null
@@ -152,11 +162,5 @@ internal object StoredLocationRoadSuggestion {
         val point: Point,
         val meters: Double,
         val offset: Double,
-    ) {
-        // An adjacent segment clamped to its common endpoint does not offer a second road arm.
-        fun isSharedEndpoint(
-            nearest: Projection,
-            line: List<Point>,
-        ): Boolean = abs(index - nearest.index) == 1 && point == line[maxOf(index, nearest.index)]
-    }
+    )
 }
