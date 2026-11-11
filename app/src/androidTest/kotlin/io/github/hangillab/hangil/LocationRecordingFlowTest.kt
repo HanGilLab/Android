@@ -954,31 +954,38 @@ class LocationRecordingFlowTest {
                             .first()
                     }
 
-                fun awaitOffline(road: CourseRoadSnapshot? = null): MapView {
-                    waitTag("stored_location_map_without_background")
-                    assertText("stored_location_map_without_background", MapR.string.stored_map_without_background)
-                    assertTrue(nodes("stored_location_map_failed").isEmpty())
-                    return awaitStoredMap(run, recorded.events, selected, road, trace, expectedOffline = true)
-                }
+                fun awaitLocal(road: CourseRoadSnapshot? = null): MapView =
+                    awaitStoredMap(run, recorded.events, selected, road, trace, expectedOffline = true)
 
                 click("home_history")
                 openSample()
-                val original = awaitOffline()
-                assertTrue("The requested basemap must return an error before fallback", requests.get() > 0)
+                val original = awaitLocal()
+                waitTag("stored_location_map_show_background")
+                assertText("stored_location_map_background_notice", MapR.string.stored_map_background_notice)
+                assertEquals("Opening the stored map must not request an external style", 0, requests.get())
                 assertNull(storedRoad())
                 click("stored_location_course_road_save_0")
                 waitTag("review_road_sample_current")
                 val linked = checkNotNull(storedRoad())
                 assertEquals(expectedRoad, linked.road)
                 assertEquals(expectedSample, linked.sampleAnchor)
-                val afterSave = awaitOffline(expectedRoad)
+                val afterSave = awaitLocal(expectedRoad)
                 instrument.runOnMainSync { assertFalse(original.isAttachedToWindow) }
                 click("location_history_back")
                 assertNoStoredMap(afterSave)
                 openSample()
-                val reopened = awaitOffline(expectedRoad)
-                val staleRetry = clickAction("stored_location_map_retry_background")
+                val reopened = awaitLocal(expectedRoad)
+                assertEquals("Saving or reopening the stored map must not opt in", 0, requests.get())
+                click("stored_location_map_show_background")
+                waitTag("stored_location_map_without_background")
+                assertText("stored_location_map_without_background", MapR.string.stored_map_without_background)
+                assertTrue(nodes("stored_location_map_failed").isEmpty())
+                val fallback = awaitLocal(expectedRoad)
                 val beforeRetry = requests.get()
+                assertTrue("Only the explicit action should request the failing style", beforeRetry > 0)
+                instrument.runOnMainSync { assertFalse(reopened.isAttachedToWindow) }
+
+                val staleRetry = clickAction("stored_location_map_retry_background")
                 basemapAvailable.set(true)
                 click("stored_location_map_retry_background")
                 compose.waitUntil(20_000) {
@@ -986,12 +993,19 @@ class LocationRecordingFlowTest {
                         nodes("stored_location_map_ready").size == 1
                 }
                 val restored = awaitStoredMap(run, recorded.events, selected, expectedRoad, trace)
-                instrument.runOnMainSync { assertFalse(reopened.isAttachedToWindow) }
+                instrument.runOnMainSync { assertFalse(fallback.isAttachedToWindow) }
+                click("stored_location_map_hide_background")
+                val hidden = awaitLocal(expectedRoad)
+                instrument.runOnMainSync { assertFalse(restored.isAttachedToWindow) }
+                val afterHide = requests.get()
+                val staleShow = clickAction("stored_location_map_show_background")
                 f.drive(true)
                 waitTag("location_history_locked")
-                assertNoStoredMap(restored)
+                assertNoStoredMap(hidden)
                 invoke(staleRetry)
+                invoke(staleShow)
                 assertNoStoredMap()
+                assertEquals("Retired controls must not request another style", afterHide, requests.get())
                 assertEquals(linked, storedRoad())
                 assertEquals(recorded, f.snapshot(ended))
                 val configuration = compose.activity.resources.configuration

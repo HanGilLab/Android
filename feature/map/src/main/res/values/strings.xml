@@ -72,7 +72,10 @@
   <string name="stored_map_review_road_scope">점은 저장한 SDK 표본, 굵은 실선은 직접 고른 공개 도로예요. 실제 이동과 도로 매칭은 미확인이에요.</string>
   <string name="stored_map_review_road_content_description">한 실행의 SDK 표본 %1$d개와 직접 고른 공개 도로 %2$s. %3$s 실제 이동과 도로 매칭을 확인한 결과가 아니에요.</string>
   <string name="stored_map_without_background">지도 배경을 불러오지 못해 저장된 자료만 표시해요.</string>
-  <string name="stored_map_retry_background">지도 배경 다시 불러오기</string>
+  <string name="stored_map_background_notice">외부 배경을 켜면 표본과 도로 주변의 지도 타일을 요청해요.</string>
+  <string name="stored_map_show_background">외부 지도 배경 불러오기</string>
+  <string name="stored_map_hide_background">외부 지도 배경 끄기</string>
+  <string name="stored_map_retry_background">외부 지도 배경 다시 불러오기</string>
   <string name="stored_map_road_unavailable">고른 도로가 지도의 위도 범위를 벗어나 함께 표시할 수 없어요. 표본 원본과 복습 도로를 따로 확인해 주세요.</string>
   <string name="stored_map_road_section">가장 굵은 선은 연속 표본에 가까운 도로 구간이에요. 실제로 지나간 길은 미확인이에요.</string>
   <string name="stored_map_public_road_section_preview">굵은 색 점선은 다음 연습에 사용할 수 있는 공개 도로 구간이에요.</string>
