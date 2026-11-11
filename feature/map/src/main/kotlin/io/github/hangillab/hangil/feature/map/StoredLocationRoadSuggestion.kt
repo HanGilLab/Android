@@ -1,5 +1,6 @@
 package io.github.hangillab.hangil.feature.map
 
+import io.github.hangillab.hangil.core.domain.CourseRoadSection
 import io.github.hangillab.hangil.core.domain.CourseRoadSnapshot
 import io.github.hangillab.hangil.core.domain.LocationRecordingEvent
 import io.github.hangillab.hangil.core.domain.LocationUpdateReading
@@ -26,9 +27,10 @@ internal object StoredLocationRoadSuggestion {
     fun section(
         input: StoredLocationMapInput,
         review: SessionReviewRoad,
-    ): LineString? {
+    ): Suggestion? {
         val event = input.selectedEvent ?: return null
-        if (event.reading !is LocationUpdateReading.Sample || SessionReviewSample.from(input.run, event) != review.sampleAnchor) return null
+        val anchor = review.sampleAnchor ?: return null
+        if (event.reading !is LocationUpdateReading.Sample || !anchor.sameCallback(SessionReviewSample.from(input.run, event))) return null
         val match = match(input, event)?.takeIf { it.road == review.road } ?: return null
         return try {
             projectedSection(match)
@@ -70,7 +72,7 @@ internal object StoredLocationRoadSuggestion {
         return if (samples.drop(1).all { nearestRoad(it, input.courseRoads) == nearest }) Match(nearest, samples) else null
     }
 
-    private fun projectedSection(match: Match): LineString? {
+    private fun projectedSection(match: Match): Suggestion? {
         val line = match.road.nodes.map { Point.fromLngLat(it.longitude, it.latitude) }
         val segments = line.zipWithNext()
         val offsets = segments.map { (start, end) -> distance(start, end) }.runningFold(0.0, Double::plus)
@@ -121,7 +123,8 @@ internal object StoredLocationRoadSuggestion {
 
         val section = listOf(first.point) + line.subList(first.index + 1, last.index + 1) + last.point
         val points = section.filterIndexed { index, point -> index == 0 || point != section[index - 1] }
-        return points.takeIf { it.size >= 2 && it.distinct().size == it.size }?.let(LineString::fromLngLats)
+        if (points.size < 2 || points.distinct().size != points.size) return null
+        return Suggestion(LineString.fromLngLats(points), CourseRoadSection(first.index, last.index + 1))
     }
 
     private fun distance(
@@ -151,6 +154,11 @@ internal object StoredLocationRoadSuggestion {
             Point.fromLngLat(first.longitude, first.latitude),
             Point.fromLngLat(last.longitude, last.latitude),
         )
+
+    data class Suggestion(
+        val projected: LineString,
+        val publicRange: CourseRoadSection,
+    )
 
     private data class Match(
         val road: CourseRoadSnapshot,

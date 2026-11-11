@@ -1,5 +1,6 @@
 package io.github.hangillab.hangil.core.database
 
+import io.github.hangillab.hangil.core.domain.CourseRoadSection
 import io.github.hangillab.hangil.core.domain.LocationRecordingEvent
 import io.github.hangillab.hangil.core.domain.LocationUpdateReading
 import io.github.hangillab.hangil.core.domain.LocationUpdateSample
@@ -8,6 +9,7 @@ import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -43,10 +45,35 @@ class SessionReviewSampleJsonTest {
 
     @Test fun `all raw fields and full event owner survive canonical encoding without interpreting SDK units`() {
         val raw = checkNotNull(SessionReviewSampleJson.encode(value))
+        assertTrue(raw.startsWith("{\"format\":1,"))
         assertEquals(value, SessionReviewSampleJson.decode(raw))
         assertEquals(raw, SessionReviewSampleJson.encode(SessionReviewSampleJson.decode(raw)))
         assertNull(SessionReviewSampleJson.decode(null))
         assertNull(SessionReviewSampleJson.encode(null))
+    }
+
+    @Test fun `section links preserve the exact callback and reject noncanonical section fields`() {
+        val linked =
+            SessionReviewSample(
+                value.event,
+                value.processId,
+                value.startedAtEpochMillis,
+                value.startedAtElapsedRealtimeMillis,
+                CourseRoadSection(1, 3),
+            )
+        val raw = checkNotNull(SessionReviewSampleJson.encode(linked))
+        assertTrue(raw.startsWith("{\"format\":2,"))
+        val decoded = checkNotNull(SessionReviewSampleJson.decode(raw))
+        assertEquals(linked, decoded)
+        assertTrue(value.sameCallback(decoded))
+        val invalid =
+            listOf(
+                raw.replace("\"firstNodeIndex\":1", "\"firstNodeIndex\":-1"),
+                raw.replace("\"lastNodeIndex\":3", "\"lastNodeIndex\":4294967299"),
+                raw.replace("\"lastNodeIndex\":3", "\"lastNodeIndex\":1"),
+                JSONObject(raw).apply { remove("section") }.toString(),
+            )
+        invalid.forEach { assertThrows(IllegalStateException::class.java) { SessionReviewSampleJson.decode(it) } }
     }
 
     @Test fun `partial coerced duplicate extra and malformed anchors are errors rather than absence`() {

@@ -46,10 +46,18 @@ import androidx.test.platform.app.InstrumentationRegistry
 import io.github.hangillab.hangil.core.database.OwnedPracticeTestStore
 import io.github.hangillab.hangil.core.designsystem.HanGilTheme
 import io.github.hangillab.hangil.core.domain.ConnectionState
+import io.github.hangillab.hangil.core.domain.CourseRoadSection
 import io.github.hangillab.hangil.core.domain.CourseRoadSnapshot
 import io.github.hangillab.hangil.core.domain.DrivingRestrictions
 import io.github.hangillab.hangil.core.domain.DrivingRestrictionsProvider
 import io.github.hangillab.hangil.core.domain.GearPosition
+import io.github.hangillab.hangil.core.domain.LocationRecordingAppendResult
+import io.github.hangillab.hangil.core.domain.LocationRecordingBeginResult
+import io.github.hangillab.hangil.core.domain.LocationRecordingEndResult
+import io.github.hangillab.hangil.core.domain.LocationRecordingRunStatus
+import io.github.hangillab.hangil.core.domain.LocationRecordingStopReason
+import io.github.hangillab.hangil.core.domain.LocationUpdateReading
+import io.github.hangillab.hangil.core.domain.LocationUpdateSample
 import io.github.hangillab.hangil.core.domain.NextPracticeRepository
 import io.github.hangillab.hangil.core.domain.NextPracticeSaveResult
 import io.github.hangillab.hangil.core.domain.NextPracticeSeed
@@ -132,6 +140,7 @@ class HistoryNextPracticeFlowTest {
     @Test fun selectedOlderSourceManualTaskCancelLocksAndSavePreserveStoredSessions() {
         val args = InstrumentationRegistry.getArguments()
         assumeTrue(args.getString("manualHistoryNextControlled") == "true")
+        val testSection = args.getString("manualHistoryNextSection") == "true"
         val expectedScale = checkNotNull(args.getString("expectedHistoryNextFontScale")).toFloat()
         val expectedDark = checkNotNull(args.getString("expectedHistoryNextDark")).toBooleanStrict()
         check(expectedScale == 1f || expectedScale == 1.3f)
@@ -276,22 +285,44 @@ class HistoryNextPracticeFlowTest {
             val targetTask = course.tasks.last()
 
             fun selection(taskId: String) = PracticeSelection(goal.id, course.id, course.version, course.briefingVersion, taskId)
-            val older = runBlocking { seed(store, previousPractice, 1000) }
+            val section = CourseRoadSection(0, 1).takeIf { testSection }
+            val expectedRoad =
+                if (section == null) {
+                    course.roadSnapshots.first()
+                } else {
+                    course.roadSnapshots.first { it.nodes.size > 2 && section.isValidFor(it) }
+                }
+            val older = runBlocking { seed(store, previousPractice, 1000, expectedRoad.takeIf { testSection }) }
             runBlocking { seed(store, previousPractice.copy(task = targetTask), 3000) }
             var savedRoad =
                 runBlocking {
+                    val anchor =
+                        if (section == null) {
+                            null
+                        } else {
+                            val records = store.locationRecordings.observe(older.sessionId).first()
+                            SessionReviewSample.from(records.runs.single(), records.events.single())
+                        }
                     val result =
                         store.reviewRoads.save(
                             older,
-                            course.roadSnapshots.first(),
+                            expectedRoad,
                             null,
                             memoText = "  지도에서 고른 구간 🧭\n표지를 다시 살펴보기  ",
+                            initialSample = anchor,
                         ) { true }
                     check(result is SessionReviewRoadWriteResult.Saved)
-                    result.review
+                    if (anchor == null) {
+                        result.review
+                    } else {
+                        val selected = store.reviewRoads.setSample(older, result.review, anchor.withRoadSection(section)) { true }
+                        check(selected is SessionReviewRoadWriteResult.Saved)
+                        selected.review
+                    }
                 }
             assertEquals(older, savedRoad.source)
-            assertEquals(course.roadSnapshots.first(), savedRoad.road)
+            assertEquals(expectedRoad, savedRoad.road)
+            assertEquals(section, savedRoad.sampleAnchor?.roadSection)
             val originalPreparation = selection(previousPractice.task.id)
             runBlocking { store.preparation.saveSelection(originalPreparation) { true } }
             val sessionsBefore = runBlocking { store.sessions.observeSessions().first() }
@@ -361,8 +392,15 @@ class HistoryNextPracticeFlowTest {
                                                     canKeepOpen = canKeepOpen,
                                                     readOnly = true,
                                                     viewModel = reference,
-                                                    roadMap = { snapshot, roads, selected, canPresent, changes ->
-                                                        SessionReviewRoadMap(snapshot, roads, selected, canPresent, changes)
+                                                    roadMap = { snapshot, roads, selected, section, canPresent, changes ->
+                                                        SessionReviewRoadMap(
+                                                            snapshot,
+                                                            roads,
+                                                            selected,
+                                                            canPresent,
+                                                            changes,
+                                                            section = section,
+                                                        )
                                                     },
                                                 )
                                             }
@@ -426,7 +464,7 @@ class HistoryNextPracticeFlowTest {
             assertMissing("review_road_content")
             click("next_practice_review_road")
             assertReferenceRoad(savedRoad)
-            var firstRoadMap = awaitReferenceMap(savedRoad.road)
+            var firstRoadMap = awaitReferenceMap(savedRoad)
             captureReferenceMap()
             for (source in listOf(MapR.string.map_sources, MapR.string.map_road_attribution)) {
                 compose
@@ -464,7 +502,7 @@ class HistoryNextPracticeFlowTest {
             compose.onNodeWithTag("next_practice_save").performScrollTo().assertIsNotEnabled()
             click("next_practice_review_road")
             assertReferenceRoad(savedRoad)
-            val resumedRoadMap = awaitReferenceMap(savedRoad.road)
+            val resumedRoadMap = awaitReferenceMap(savedRoad)
             assertTrue(resumedRoadMap !== firstRoadMap)
             firstRoadMap = resumedRoadMap
             for (task in course.tasks) {
@@ -485,7 +523,7 @@ class HistoryNextPracticeFlowTest {
             instrument.runOnMainSync { assertFalse(firstRoadMap.isAttachedToWindow) }
             click("next_practice_review_road")
             assertReferenceRoad(savedRoad)
-            assertTrue(awaitReferenceMap(savedRoad.road) !== firstRoadMap)
+            assertTrue(awaitReferenceMap(savedRoad) !== firstRoadMap)
             compose.onNodeWithTag("next_task_${targetTask.id}").assertIsSelected()
             waitTag("next_practice_target_road_use")
             val staleUseTarget = clickAction("next_practice_target_road_use")
@@ -636,6 +674,13 @@ class HistoryNextPracticeFlowTest {
             assertEquals(savedRoad.source.sessionId, planned.sourceSessionId)
             assertEquals(savedRoad.version, planned.reviewVersion)
             assertEquals(savedRoad.road, planned.road)
+            assertEquals(section, planned.section)
+            if (section != null) assertTextFits("next_practice_target_road_section")
+            val planSummary =
+                instrument.targetContext.getString(
+                    if (section == null) HomeR.string.planned_road_summary else HomeR.string.planned_road_section_summary,
+                    planned.road.title,
+                )
             assertTextFits("next_practice_save")
             click("next_practice_save")
             waitTag("history_prepare_next")
@@ -684,14 +729,14 @@ class HistoryNextPracticeFlowTest {
             homeUi.waitTag("saved_planned_road")
             compose
                 .onNodeWithTag("saved_planned_road", useUnmergedTree = true)
-                .assertTextEquals(instrument.targetContext.getString(HomeR.string.planned_road_summary, planned.road.title))
+                .assertTextEquals(planSummary)
             assertTextFits("saved_planned_road")
             homeUi.touch("session_start")
             homeUi.waitTag("session_active")
             homeUi.waitTag("session_planned_road")
             compose
                 .onNodeWithTag("session_planned_road", useUnmergedTree = true)
-                .assertTextEquals(instrument.targetContext.getString(HomeR.string.planned_road_summary, planned.road.title))
+                .assertTextEquals(planSummary)
             assertTextFits("session_planned_road")
             val started =
                 runBlocking {
@@ -707,7 +752,7 @@ class HistoryNextPracticeFlowTest {
             homeUi.waitTag("session_latest_planned_road")
             compose
                 .onNodeWithTag("session_latest_planned_road", useUnmergedTree = true)
-                .assertTextEquals(instrument.targetContext.getString(HomeR.string.planned_road_summary, planned.road.title))
+                .assertTextEquals(planSummary)
             assertTextFits("session_latest_planned_road")
             val finished =
                 runBlocking {
@@ -749,7 +794,7 @@ class HistoryNextPracticeFlowTest {
             homeUi.waitTag("history_planned_road")
             compose
                 .onNodeWithTag("history_planned_road", useUnmergedTree = true)
-                .assertTextEquals(instrument.targetContext.getString(HomeR.string.planned_road_summary, planned.road.title))
+                .assertTextEquals(planSummary)
             assertTextFits("history_planned_road")
             assertHost()
         } catch (failure: Throwable) {
@@ -846,8 +891,10 @@ class HistoryNextPracticeFlowTest {
         assertTextFits("review_road_reference_scope")
     }
 
-    private fun awaitReferenceMap(road: CourseRoadSnapshot): MapView =
+    private fun awaitReferenceMap(review: SessionReviewRoad): MapView =
         runBlocking {
+            val road = review.road
+            val publicNodes = review.sampleAnchor?.roadSection?.nodesOf(road)
             waitTag("session_review_road_map_view")
             compose.onNodeWithTag("session_review_road_map_view", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
             withTimeout(90_000) {
@@ -879,6 +926,23 @@ class HistoryNextPracticeFlowTest {
 
                                     // Native tiles may split or simplify the line. Check observed vertices
                                     // against the stored shape in screen pixels, not a node count or GPS accuracy.
+                                    fun onShape(
+                                        actual: android.graphics.PointF,
+                                        shape: List<android.graphics.PointF>,
+                                    ): Boolean =
+                                        shape.zipWithNext().any { (start, end) ->
+                                            val dx = (end.x - start.x).toDouble()
+                                            val dy = (end.y - start.y).toDouble()
+                                            val length = dx * dx + dy * dy
+                                            val along =
+                                                if (length == 0.0) {
+                                                    0.0
+                                                } else {
+                                                    (((actual.x - start.x) * dx + (actual.y - start.y) * dy) / length).coerceIn(0.0, 1.0)
+                                                }
+                                            hypot(actual.x - start.x - along * dx, actual.y - start.y - along * dy) <= 1.0
+                                        }
+
                                     fun matches(feature: Feature): Boolean {
                                         val line = feature.geometry() as? LineString ?: return false
                                         if (feature.getStringProperty("road_id") != road.id ||
@@ -890,22 +954,10 @@ class HistoryNextPracticeFlowTest {
                                         }
                                         return line.coordinates().size >= 2 &&
                                             line.coordinates().all { point ->
-                                                val actual = map.projection.toScreenLocation(LatLng(point.latitude(), point.longitude()))
-                                                expectedShape.zipWithNext().any { (start, end) ->
-                                                    val dx = (end.x - start.x).toDouble()
-                                                    val dy = (end.y - start.y).toDouble()
-                                                    val length = dx * dx + dy * dy
-                                                    val along =
-                                                        if (length == 0.0) {
-                                                            0.0
-                                                        } else {
-                                                            (((actual.x - start.x) * dx + (actual.y - start.y) * dy) / length).coerceIn(
-                                                                0.0,
-                                                                1.0,
-                                                            )
-                                                        }
-                                                    hypot(actual.x - start.x - along * dx, actual.y - start.y - along * dy) <= 1.0
-                                                }
+                                                onShape(
+                                                    map.projection.toScreenLocation(LatLng(point.latitude(), point.longitude())),
+                                                    expectedShape,
+                                                )
                                             }
                                     }
                                     val rendered =
@@ -913,8 +965,46 @@ class HistoryNextPracticeFlowTest {
                                             RectF(0f, 0f, view.width.toFloat(), view.height.toFloat()),
                                             "hangil-course-preview-road-selection",
                                         )
+                                    val publicSource = style?.getSourceAs<GeoJsonSource>("hangil-planned-road-section")
+                                    val publicLayer = style?.getLayerAs<LineLayer>("hangil-planned-road-section-line")
+                                    val rangeMatches =
+                                        if (publicNodes == null) {
+                                            publicSource == null && publicLayer == null
+                                        } else {
+                                            val shape =
+                                                publicSource?.querySourceFeatures(null).orEmpty().flatMap {
+                                                    (it.geometry() as? LineString)?.coordinates().orEmpty()
+                                                }
+                                            val publicRendered =
+                                                map.queryRenderedFeatures(
+                                                    RectF(0f, 0f, view.width.toFloat(), view.height.toFloat()),
+                                                    "hangil-planned-road-section-line",
+                                                )
+                                            val expectedRange =
+                                                publicNodes.map { node ->
+                                                    map.projection.toScreenLocation(LatLng(node.latitude, node.longitude))
+                                                }
+                                            publicLayer?.sourceId == "hangil-planned-road-section" && publicRendered.isNotEmpty() &&
+                                                shape.size >= 2 &&
+                                                shape.all { point ->
+                                                    onShape(
+                                                        map.projection.toScreenLocation(LatLng(point.latitude(), point.longitude())),
+                                                        expectedRange,
+                                                    )
+                                                } &&
+                                                publicNodes.all { node ->
+                                                    val expected = map.projection.toScreenLocation(LatLng(node.latitude, node.longitude))
+                                                    shape.any { point ->
+                                                        val actual =
+                                                            map.projection.toScreenLocation(
+                                                                LatLng(point.latitude(), point.longitude()),
+                                                            )
+                                                        hypot((actual.x - expected.x).toDouble(), (actual.y - expected.y).toDouble()) <= 1.0
+                                                    }
+                                                }
+                                        }
                                     val valid =
-                                        view.isAttachedToWindow && style?.isFullyLoaded == true && features.isNotEmpty() &&
+                                        rangeMatches && view.isAttachedToWindow && style?.isFullyLoaded == true && features.isNotEmpty() &&
                                             features.all(::matches) && rendered.isNotEmpty() && rendered.all(::matches) &&
                                             selected?.sourceId == "hangil-course-preview-roads" &&
                                             selected?.filter?.toArray()?.contentDeepEquals(expectedFilter.toArray()) == true &&
@@ -963,6 +1053,7 @@ class HistoryNextPracticeFlowTest {
         store: OwnedPracticeTestStore,
         practice: PreparedPractice,
         started: Long,
+        recordedRoad: CourseRoadSnapshot? = null,
     ): PracticeSession {
         val selection =
             PracticeSelection(
@@ -974,6 +1065,27 @@ class HistoryNextPracticeFlowTest {
             )
         store.preparation.saveSelection(selection) { true }
         val source = (store.sessions.start(practice, started) { true } as SessionStartResult.Started).session
+        if (recordedRoad != null) {
+            val begun = store.locationRecordings.begin(source, "owned-next-section", "controlled-next-section", started + 20, 10) { true }
+            check(begun is LocationRecordingBeginResult.Begun)
+            val node = recordedRoad.nodes.first()
+            val sample = LocationUpdateSample(node.latitude, node.longitude, 0.0, 0f, 0f, 30, 20)
+            check(
+                store.locationRecordings.append(source, begun.run, LocationUpdateReading.Sample(sample), started + 40) {
+                    true
+                } is LocationRecordingAppendResult.Appended,
+            )
+            check(
+                store.locationRecordings.end(
+                    begun.run,
+                    LocationRecordingRunStatus.STOPPED,
+                    LocationRecordingStopReason.USER_STOP,
+                    started + 50,
+                    30,
+                ) is
+                    LocationRecordingEndResult.Ended,
+            )
+        }
         return (store.sessions.finish(source.sessionId, started + 500) { true } as SessionFinishResult.Finished).session
     }
 

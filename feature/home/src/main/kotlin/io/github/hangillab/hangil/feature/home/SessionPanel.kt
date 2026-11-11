@@ -251,12 +251,7 @@ internal fun SessionPanel(
                     )
                     Text(active.taskTitle, Modifier.testTag("session_active_task"), style = MaterialTheme.typography.titleLarge)
                     active.selection.plannedRoad?.let { plan ->
-                        Text(
-                            stringResource(R.string.planned_road_summary, plan.road.title),
-                            Modifier.testTag("session_planned_road"),
-                            style = MaterialTheme.typography.titleLarge,
-                        )
-                        Text(stringResource(R.string.planned_road_scope), style = MaterialTheme.typography.bodyLarge)
+                        PlannedRoadSummary(plan, "session_planned_road")
                     }
                     if (active.courseReviewStatus == CourseReviewStatus.DEMO) ParkedBadge(stringResource(R.string.demo_course))
                     VehicleRecordingStatus(recordingState, onRetryRecording, allowRecordingRetry)
@@ -414,12 +409,7 @@ private fun LatestSessionPanel(
             Text(stringResource(R.string.session_latest), style = MaterialTheme.typography.titleLarge)
             Text(latest.courseTitle, Modifier.testTag("session_latest_course"), style = MaterialTheme.typography.headlineSmall)
             latest.selection.plannedRoad?.let { plan ->
-                Text(
-                    stringResource(R.string.planned_road_summary, plan.road.title),
-                    Modifier.testTag("session_latest_planned_road"),
-                    style = MaterialTheme.typography.titleLarge,
-                )
-                Text(stringResource(R.string.planned_road_scope), style = MaterialTheme.typography.bodyLarge)
+                PlannedRoadSummary(plan, "session_latest_planned_road")
             }
             if (latest.courseReviewStatus == CourseReviewStatus.DEMO) ParkedBadge(stringResource(R.string.demo_course))
             latest.endedAtEpochMillis?.let {

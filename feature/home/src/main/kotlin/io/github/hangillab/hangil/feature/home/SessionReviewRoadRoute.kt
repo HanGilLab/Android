@@ -26,6 +26,7 @@ import io.github.hangillab.hangil.core.designsystem.HanGilSpacing
 import io.github.hangillab.hangil.core.designsystem.ParkedButton
 import io.github.hangillab.hangil.core.designsystem.ParkedChoice
 import io.github.hangillab.hangil.core.designsystem.ParkedDisclosure
+import io.github.hangillab.hangil.core.domain.CourseRoadSection
 import io.github.hangillab.hangil.core.domain.CourseRoadSnapshot
 import io.github.hangillab.hangil.core.domain.PracticeSession
 import io.github.hangillab.hangil.core.domain.SessionReviewRoad
@@ -39,11 +40,20 @@ import io.github.hangillab.hangil.feature.home.SessionReviewRoadUiState as RoadS
 fun SessionReviewRoadRoute(
     expectedSource: PracticeSession,
     canKeepOpen: () -> Boolean,
-    roadMap: (@Composable (PracticeSession, List<CourseRoadSnapshot>, String?, () -> Boolean, Flow<Unit>) -> Unit)? = null,
+    roadMap: (@Composable (PracticeSession, List<CourseRoadSnapshot>, String?, CourseRoadSection?, () -> Boolean, Flow<Unit>) -> Unit)? =
+        null,
     viewModel: SessionReviewRoadViewModel = hiltViewModel(),
     readOnly: Boolean = false,
-    comparisonMap: (@Composable (SessionReviewRoad?, List<CourseRoadSnapshot>, ((String) -> Unit)?, () -> Boolean, Flow<Unit>) -> Unit)? =
-        null,
+    comparisonMap: (
+        @Composable (
+            SessionReviewRoad?,
+            List<CourseRoadSnapshot>,
+            ((String) -> Unit)?,
+            ((CourseRoadSection?) -> Unit)?,
+            () -> Boolean,
+            Flow<Unit>,
+        ) -> Unit
+    )? = null,
     sampleCandidate: SessionReviewSample? = null,
     onOpenLinkedSample: ((SessionReviewSample) -> Boolean)? = null,
 ) {
@@ -186,7 +196,9 @@ fun SessionReviewRoadRoute(
                 val anchor = displayed.stored?.sampleAnchor
                 if (!comparing && anchor != null) {
                     Text(
-                        stringResource(R.string.review_road_sample_present),
+                        stringResource(
+                            if (anchor.roadSection == null) R.string.review_road_sample_present else R.string.review_road_section_present,
+                        ),
                         Modifier.fillMaxWidth().testTag("review_road_sample_present"),
                         style = MaterialTheme.typography.bodyLarge,
                     )
@@ -228,8 +240,18 @@ fun SessionReviewRoadRoute(
                     }
                     if (comparisonMap != null) {
                         val saveCourseRoad: ((String) -> Unit)? =
-                            if (saved == null && candidate != null && displayed.canWrite && !displayed.busy) {
+                            if (saved == null && candidate != null && displayed.canChangeSample) {
                                 { roadId -> viewModel.saveFirstRoadAndSample(displayed.token, roadId, candidate) }
+                            } else {
+                                null
+                            }
+                        val onSetRoadSection: ((CourseRoadSection?) -> Unit)? =
+                            if (candidate != null && anchor?.sameCallback(candidate) == true && displayed.canChangeSample) {
+                                { section ->
+                                    if (allowed() && viewModel.canRead(displayed.token)) {
+                                        viewModel.setSample(displayed.token, candidate.withRoadSection(section))
+                                    }
+                                }
                             } else {
                                 null
                             }
@@ -245,6 +267,7 @@ fun SessionReviewRoadRoute(
                                 saved,
                                 displayed.candidates,
                                 saveCourseRoad,
+                                onSetRoadSection,
                                 { allowed() && viewModel.canRead(displayed.token) },
                                 viewModel.inputChanges,
                             )
@@ -255,6 +278,7 @@ fun SessionReviewRoadRoute(
                                 expectedSource,
                                 listOf(saved.road),
                                 saved.road.id,
+                                saved.sampleAnchor?.roadSection,
                                 { allowed() && viewModel.canRead(displayed.token) },
                                 viewModel.inputChanges,
                             )
@@ -403,6 +427,10 @@ fun SessionReviewRoadRoute(
                                     expectedSource,
                                     roads,
                                     displayed.draftRoadId,
+                                    displayed.stored
+                                        ?.takeIf { it.road == displayed.draft }
+                                        ?.sampleAnchor
+                                        ?.roadSection,
                                     { allowed() && viewModel.canRead(displayed.token) },
                                     viewModel.inputChanges,
                                 )
@@ -574,10 +602,11 @@ private fun ReviewSampleControls(
 ) {
     val stored = checkNotNull(state.stored)
     val anchor = stored.sampleAnchor
+    val isCurrentSample = candidate != null && anchor?.sameCallback(candidate) == true
     val status =
         when {
             anchor == null -> R.string.review_road_sample_absent to "review_road_sample_absent"
-            candidate != null && anchor == candidate -> R.string.review_road_sample_current to "review_road_sample_current"
+            isCurrentSample -> R.string.review_road_sample_current to "review_road_sample_current"
             else -> R.string.review_road_sample_other to "review_road_sample_other"
         }
     Text(stringResource(status.first), Modifier.fillMaxWidth().testTag(status.second), style = MaterialTheme.typography.titleLarge)
@@ -603,7 +632,7 @@ private fun ReviewSampleControls(
             )
         else -> Unit
     }
-    if (anchor != null && anchor != candidate && onOpenLinkedSample != null) {
+    if (anchor != null && !isCurrentSample && onOpenLinkedSample != null) {
         var openFailed by remember(state.token, anchor) { mutableStateOf(false) }
         val open = {
             openFailed = !viewModel.canRead(state.token) || !onOpenLinkedSample(anchor)
@@ -630,7 +659,7 @@ private fun ReviewSampleControls(
             )
         }
     }
-    val canChange = state.canWrite && !state.busy && state.confirmation == null && state.edit == null && state.retainedMemo == null
+    val canChange = state.canChangeSample
     if (state.busy) {
         Text(
             stringResource(R.string.review_road_busy),
@@ -640,7 +669,7 @@ private fun ReviewSampleControls(
     } else if (!state.canWrite) {
         Text(stringResource(R.string.review_road_sample_active), Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodyLarge)
     }
-    if (candidate != null && anchor != candidate) {
+    if (candidate != null && !isCurrentSample) {
         val link = {
             viewModel.setSample(state.token, candidate)
             Unit

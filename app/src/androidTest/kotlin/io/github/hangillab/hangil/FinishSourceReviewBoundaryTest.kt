@@ -617,8 +617,15 @@ class FinishSourceReviewBoundaryTest {
                                                         SessionReviewRoadRoute(
                                                             source,
                                                             allowed,
-                                                            roadMap = { snapshot, roads, selected, canPresent, changes ->
-                                                                SessionReviewRoadMap(snapshot, roads, selected, canPresent, changes)
+                                                            roadMap = { snapshot, roads, selected, section, canPresent, changes ->
+                                                                SessionReviewRoadMap(
+                                                                    snapshot,
+                                                                    roads,
+                                                                    selected,
+                                                                    canPresent,
+                                                                    changes,
+                                                                    section = section,
+                                                                )
                                                             },
                                                             viewModel = checkNotNull(roadModel),
                                                         )

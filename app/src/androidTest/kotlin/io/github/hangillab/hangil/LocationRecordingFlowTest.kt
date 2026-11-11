@@ -802,22 +802,67 @@ class LocationRecordingFlowTest {
                 }
             assertEquals(road, saved.road)
             assertEquals(SessionReviewSample.from(run, selected), saved.sampleAnchor)
+            awaitSection()
+            waitTag("stored_location_map_public_road_section_preview")
+            click("stored_location_map_use_road_section")
+            val withSection =
+                runBlocking {
+                    withTimeout(20_000) {
+                        checkNotNull(
+                            f.store.reviewRoads
+                                .observe(ended.sessionId)
+                                .first { it?.sampleAnchor?.roadSection != null },
+                        )
+                    }
+                }
+            val chosen = checkNotNull(withSection.sampleAnchor?.roadSection)
+            assertEquals(road, withSection.road)
+            assertEquals(saved.sampleAnchor?.withRoadSection(chosen), withSection.sampleAnchor)
+            assertTrue(chosen.isValidFor(road))
+            assertTrue(chosen.nodesOf(road).size < road.nodes.size)
             val firstMap = awaitSection()
+            waitTag("stored_location_map_public_road_section_saved")
             click("location_history_back")
             assertNoStoredMap(firstMap)
             openLinkedSample()
+            awaitSection()
+            waitTag("stored_location_map_public_road_section_saved")
+            click("stored_location_map_use_whole_road")
+            waitTag("stored_location_map_use_road_section")
+            val wholeRoad =
+                runBlocking {
+                    checkNotNull(
+                        f.store.reviewRoads
+                            .observe(ended.sessionId)
+                            .first(),
+                    )
+                }
+            assertEquals(saved.sampleAnchor, wholeRoad.sampleAnchor)
+            click("stored_location_map_use_road_section")
             val reopened = awaitSection()
+            waitTag("stored_location_map_public_road_section_saved")
+            val savedAgain =
+                runBlocking {
+                    checkNotNull(
+                        f.store.reviewRoads
+                            .observe(ended.sessionId)
+                            .first(),
+                    )
+                }
+            assertEquals(chosen, savedAgain.sampleAnchor?.roadSection)
 
             click("location_history_event_previous")
             assertNoStoredMap(reopened)
             click("location_history_point_map")
             assertTrue(nodes("stored_location_map_road_section").isEmpty())
+            assertTrue(nodes("stored_location_map_use_road_section").isEmpty())
+            assertTrue(nodes("stored_location_map_use_whole_road").isEmpty())
             val otherSample = awaitStoredMap(run, recorded.events, recorded.events[1], road)
             f.drive(true)
             waitTag("location_history_locked")
             assertNoStoredMap(otherSample)
             assertEquals(
-                saved,
+                savedAgain,
                 runBlocking {
                     f.store.reviewRoads
                         .observe(ended.sessionId)
@@ -3140,7 +3185,7 @@ class LocationRecordingFlowTest {
                             canRead,
                             viewModel = reviewRoadModel,
                             readOnly = true,
-                            comparisonMap = { saved, courseRoads, saveCourseRoad, allowed, changes ->
+                            comparisonMap = { saved, courseRoads, saveCourseRoad, setRoadSection, allowed, changes ->
                                 StoredLocationMap(
                                     run,
                                     events,
@@ -3150,6 +3195,7 @@ class LocationRecordingFlowTest {
                                     inputChanges = changes,
                                     courseRoads = courseRoads,
                                     onSaveCourseRoad = saveCourseRoad,
+                                    onSetRoadSection = setRoadSection,
                                 )
                             },
                             sampleCandidate = candidate,

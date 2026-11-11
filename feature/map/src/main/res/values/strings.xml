@@ -75,6 +75,10 @@
   <string name="stored_map_retry_background">지도 배경 다시 불러오기</string>
   <string name="stored_map_road_unavailable">고른 도로가 지도의 위도 범위를 벗어나 함께 표시할 수 없어요. 표본 원본과 복습 도로를 따로 확인해 주세요.</string>
   <string name="stored_map_road_section">가장 굵은 선은 연속 표본에 가까운 도로 구간이에요. 실제로 지나간 길은 미확인이에요.</string>
+  <string name="stored_map_public_road_section_preview">굵은 색 점선은 다음 연습에 사용할 수 있는 공개 도로 구간이에요.</string>
+  <string name="stored_map_public_road_section_saved">굵은 색 선으로 표시한 공개 도로 구간을 다음 연습에 사용할 수 있어요.</string>
+  <string name="stored_map_use_road_section">다음 연습에 이 구간 사용</string>
+  <string name="stored_map_use_whole_road">다음 연습에 전체 도로 사용</string>
   <string name="stored_map_road_distance_meters">저장한 도로선까지 약 %1$d m</string>
   <string name="stored_map_road_distance_under_one">저장한 도로선까지 1 m 미만</string>
   <string name="stored_map_road_distance_unknown">저장한 도로선까지의 거리를 확인하지 못했어요.</string>
@@ -89,6 +93,7 @@
   <string name="stored_map_course_road_preview_legend">%1$s 미리보기. 큰 점은 선택한 저장 표본이고 작은 테두리 점은 선택 표본에 가장 가까운 도로선 위 지점이에요. 이 미리보기는 배경 타일 없이 그려요.</string>
   <string name="stored_map_course_road_save">%1$s 저장</string>
   <string name="session_review_road_map_scope">고정된 공개 도로 모양이에요. 실제 이동 경로나 위치 표본과 연결한 자료가 아니에요.</string>
+  <string name="session_review_road_map_public_road_section">색으로 강조한 공개 도로 구간을 다음 연습에 사용할 수 있어요.</string>
   <string name="session_review_road_map_content_description">%1$s 복습의 공개 도로 모양. %2$s. 실제 이동 경로와 현재 위치를 나타내지 않아요.</string>
   <string name="session_review_road_map_locked">주차와 화면 조작 허용을 확인한 뒤 도로 지도를 다시 열어 주세요.</string>
   <string name="session_review_road_map_unavailable">도로 자료나 선택을 지도에 표시할 수 없어요. 복습을 다시 열어 주세요.</string>

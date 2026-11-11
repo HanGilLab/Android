@@ -50,6 +50,8 @@ sealed interface SessionReviewRoadUiState {
         val retainedMemo: Edit? = null,
     ) : SessionReviewRoadUiState {
         val draftRoadId: String? get() = draft?.id
+        val canChangeSample: Boolean
+            get() = canWrite && !busy && confirmation == null && edit == null && retainedMemo == null
     }
 
     data class Edit(

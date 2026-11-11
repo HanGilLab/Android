@@ -29,6 +29,7 @@ import org.maplibre.android.geometry.LatLngBounds
 import org.maplibre.android.maps.MapLibreMapOptions
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.tile.TileOperation
+import org.maplibre.geojson.LineString
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.roundToInt
 
@@ -53,6 +54,8 @@ internal fun DemoMap(
     onNativeSelect: (String, () -> Boolean) -> Unit,
     modifier: Modifier = Modifier,
     canRender: () -> Boolean = { true },
+    publicRoadSection: LineString? = null,
+    publicRoadSectionColor: Int = pointFill,
 ) {
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
@@ -71,6 +74,8 @@ internal fun DemoMap(
                 pointFill,
                 pointText,
                 pointBorder,
+                publicRoadSection,
+                publicRoadSectionColor,
                 canInteract = {
                     active.get() && owner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) &&
                         canInteract(attempt, token)
@@ -155,6 +160,8 @@ private fun createMap(
     pointFill: Int,
     pointText: Int,
     pointBorder: Int,
+    publicRoadSection: LineString?,
+    publicRoadSectionColor: Int,
     canInteract: () -> Boolean,
     canRender: () -> Boolean,
     onRendered: () -> Unit,
@@ -196,6 +203,14 @@ private fun createMap(
                         if (active.get()) {
                             try {
                                 RoadPreviewLayers.add(style, preview.roads, pointFill)
+                                publicRoadSection?.let {
+                                    StoredLocationRoadSection.addPublic(
+                                        style,
+                                        it,
+                                        publicRoadSectionColor,
+                                        candidate = false,
+                                    )
+                                }
                                 CoursePreviewLayers.add(style, preview, pointFill, pointText, pointBorder, fontScale)
                                 styleLoaded.set(true)
                                 val coordinates =

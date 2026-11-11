@@ -1,6 +1,7 @@
 package io.github.hangillab.hangil.feature.map
 
 import io.github.hangillab.hangil.core.domain.CourseReviewStatus
+import io.github.hangillab.hangil.core.domain.CourseRoadSection
 import io.github.hangillab.hangil.core.domain.CourseRoadSnapshot
 import io.github.hangillab.hangil.core.domain.LocationRecordingEvent
 import io.github.hangillab.hangil.core.domain.LocationRecordingRun
@@ -122,7 +123,9 @@ class StoredLocationRoadSuggestionTest {
                 roads = listOf(curved, otherRoad),
             )
         val section = checkNotNull(StoredLocationRoadSuggestion.section(forward, linkedReview(forward, curved)))
-        val points = section.coordinates()
+        val points = section.projected.coordinates()
+        assertEquals(CourseRoadSection(0, 2), section.publicRange)
+        assertEquals(curved.nodes, section.publicRange.nodesOf(curved))
         assertEquals(3, points.size)
         assertEquals(Point.fromLngLat(bend.longitude, bend.latitude), points[1])
         assertEquals(readings.first().sample.longitude, points.first().longitude(), 0.00001)
@@ -146,7 +149,14 @@ class StoredLocationRoadSuggestionTest {
         val readings = listOf(sample(-0.00005, 1_000, latitude), sample(0.00010, 2_000, latitude), sample(0.00025, 3_000, latitude))
         val captured = input(readings, roads = listOf(split))
         val section = checkNotNull(StoredLocationRoadSuggestion.section(captured, linkedReview(captured, split)))
-        assertEquals(readings.last().sample.longitude, section.coordinates().last().longitude(), 0.00001)
+        assertEquals(
+            readings.last().sample.longitude,
+            section.projected
+                .coordinates()
+                .last()
+                .longitude(),
+            0.00001,
+        )
     }
 
     @Test fun `dense nodes on a straight road preserve the same section endpoints`() {
@@ -160,12 +170,15 @@ class StoredLocationRoadSuggestionTest {
         val latitude = BASE_LATITUDE + 0.00009
         val readings = listOf(sample(-0.00037, 1_000, latitude), sample(0.0, 2_000, latitude), sample(0.00037, 3_000, latitude))
         val sparseInput = input(readings, roads = listOf(nearRoad))
-        val sparse = checkNotNull(StoredLocationRoadSuggestion.section(sparseInput, linkedReview(sparseInput))).coordinates()
+        val sparse = checkNotNull(StoredLocationRoadSuggestion.section(sparseInput, linkedReview(sparseInput))).projected.coordinates()
         val denseInput = input(readings, roads = listOf(dense))
-        val detailed = checkNotNull(StoredLocationRoadSuggestion.section(denseInput, linkedReview(denseInput, dense))).coordinates()
-        assertEquals(sparse.first().longitude(), detailed.first().longitude(), 0.00001)
-        assertEquals(sparse.last().longitude(), detailed.last().longitude(), 0.00001)
-        assertTrue(detailed.size > sparse.size)
+        val detailed = checkNotNull(StoredLocationRoadSuggestion.section(denseInput, linkedReview(denseInput, dense)))
+        assertEquals(CourseRoadSection(7, 13), detailed.publicRange)
+        assertEquals(dense.nodes.subList(7, 14), detailed.publicRange.nodesOf(dense))
+        val points = detailed.projected.coordinates()
+        assertEquals(sparse.first().longitude(), points.first().longitude(), 0.00001)
+        assertEquals(sparse.last().longitude(), points.last().longitude(), 0.00001)
+        assertTrue(points.size > sparse.size)
     }
 
     @Test fun `two nearby arms of the same road cannot resolve a section`() {

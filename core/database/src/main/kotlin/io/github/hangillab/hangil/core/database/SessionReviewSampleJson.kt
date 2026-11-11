@@ -13,7 +13,7 @@ internal object SessionReviewSampleJson {
         val event = value.event
         val sample = value.sample
         return objectValue(
-            "format" to "1",
+            "format" to if (value.roadSection == null) "1" else "2",
             "origin" to JSONObject.quote(value.origin),
             "processId" to JSONObject.quote(value.processId),
             "startedAtEpochMillis" to value.startedAtEpochMillis.toString(),
@@ -37,6 +37,7 @@ internal object SessionReviewSampleJson {
                             "receivedAtElapsedRealtimeMillis" to sample.receivedAtElapsedRealtimeMillis.toString(),
                         ),
                 ),
+            *CourseRoadSectionJson.fields(value.roadSection),
         )
     }
 
@@ -44,7 +45,8 @@ internal object SessionReviewSampleJson {
         if (raw == null) return null
         try {
             val root = JSONObject(raw)
-            check(integer(root, "format") == 1L && text(root, "origin") == "USER_LINKED_STORED_SAMPLE")
+            check(text(root, "origin") == "USER_LINKED_STORED_SAMPLE")
+            val section = CourseRoadSectionJson.decode(root, integer(root, "format"))
             val event = root.get("event") as? JSONObject ?: error("Invalid linked event object")
             val sample = event.get("sample") as? JSONObject ?: error("Invalid linked sample object")
             check(text(sample, "source") == "SDK_UPDATE")
@@ -73,6 +75,7 @@ internal object SessionReviewSampleJson {
                     text(root, "processId"),
                     integer(root, "startedAtEpochMillis"),
                     integer(root, "startedAtElapsedRealtimeMillis"),
+                    section,
                 )
             check(encode(value) == raw)
             return value

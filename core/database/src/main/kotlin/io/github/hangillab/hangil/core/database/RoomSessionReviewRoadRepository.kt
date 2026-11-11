@@ -58,7 +58,9 @@ internal class RoomSessionReviewRoadRepository
                 }
                 if (initialSample != null) {
                     if (current != null) return@mutate SessionReviewRoadWriteResult.Conflict
-                    if (!sampleMatches(actual, initialSample)) return@mutate SessionReviewRoadWriteResult.SampleChanged
+                    if (initialSample.roadSection != null || !sampleMatches(actual, initialSample)) {
+                        return@mutate SessionReviewRoadWriteResult.SampleChanged
+                    }
                 }
                 val sampleAnchor = current?.takeIf { it.road == road }?.sampleAnchor ?: initialSample
                 val candidate = SessionReviewRoad(actual, road, nextVersion(current?.version), memoText, sampleAnchor)
@@ -123,7 +125,7 @@ internal class RoomSessionReviewRoadRepository
             mutate(expectedSource, expectedCurrent, canCommit) { actual, current ->
                 if (current == null) {
                     SessionReviewRoadWriteResult.Conflict
-                } else if (sample != null && !sampleMatches(actual, sample)) {
+                } else if (sample != null && !validSampleChange(actual, current, sample)) {
                     SessionReviewRoadWriteResult.SampleChanged
                 } else if (current.sampleAnchor == sample) {
                     SessionReviewRoadWriteResult.Saved(current)
@@ -248,6 +250,16 @@ internal class RoomSessionReviewRoadRepository
             source: PracticeSession,
             sample: SessionReviewSample,
         ): Boolean = SessionReviewRoadRow.sampleMatches(database, source, sample)
+
+        private suspend fun validSampleChange(
+            source: PracticeSession,
+            current: SessionReviewRoad,
+            sample: SessionReviewSample,
+        ): Boolean {
+            val section = sample.roadSection
+            if (section != null && (current.sampleAnchor?.sameCallback(sample) != true || !section.isValidFor(current.road))) return false
+            return sampleMatches(source, sample)
+        }
 
         private suspend fun readSource(sessionId: String): PracticeSession? {
             val sessions = database.practiceSessionDao()

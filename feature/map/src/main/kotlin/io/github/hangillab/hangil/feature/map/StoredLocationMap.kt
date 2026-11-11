@@ -44,12 +44,14 @@ import androidx.lifecycle.repeatOnLifecycle
 import io.github.hangillab.hangil.core.designsystem.HanGilDimensions
 import io.github.hangillab.hangil.core.designsystem.HanGilSpacing
 import io.github.hangillab.hangil.core.designsystem.ParkedButton
+import io.github.hangillab.hangil.core.domain.CourseRoadSection
 import io.github.hangillab.hangil.core.domain.CourseRoadSnapshot
 import io.github.hangillab.hangil.core.domain.LocationRecordingEvent
 import io.github.hangillab.hangil.core.domain.LocationRecordingRun
 import io.github.hangillab.hangil.core.domain.LocationUpdateReading
 import io.github.hangillab.hangil.core.domain.LocationUpdateSample
 import io.github.hangillab.hangil.core.domain.SessionReviewRoad
+import io.github.hangillab.hangil.core.domain.SessionReviewSample
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -82,6 +84,7 @@ fun StoredLocationMap(
     inputChanges: Flow<Unit> = emptyFlow(),
     courseRoads: List<CourseRoadSnapshot> = emptyList(),
     onSaveCourseRoad: ((String) -> Unit)? = null,
+    onSetRoadSection: ((CourseRoadSection?) -> Unit)? = null,
 ) {
     val input =
         remember(run, events, selectedEvent, courseRoads) {
@@ -93,6 +96,7 @@ fun StoredLocationMap(
     val suppliedSelection by rememberUpdatedState(selectedEvent)
     val suppliedReview by rememberUpdatedState(reviewRoad)
     val suppliedCourseRoads by rememberUpdatedState(courseRoads)
+    val suppliedSetRoadSection by rememberUpdatedState(onSetRoadSection)
     val owner = LocalLifecycleOwner.current
     val receipt = remember(input, reviewRoad, owner) { AtomicBoolean(true) }
     val withdrawn = remember(input, reviewRoad, owner) { mutableStateOf(false) }
@@ -152,6 +156,7 @@ fun StoredLocationMap(
         permitted() && previewChoice == preview && withoutBackground == fallback && attempt == capturedAttempt
     }
     val load = remember(input, reviewRoad, preview, owner, dark, fontScale, fallback, attempt) { mutableStateOf(MapLoadState.LOADING) }
+    val suppliedLoad by rememberUpdatedState(load)
     val onFailed: () -> Unit = {
         if (mapPermitted()) {
             if (preview == null && !fallback) {
@@ -168,6 +173,7 @@ fun StoredLocationMap(
     val pointBorder = MaterialTheme.colorScheme.surface.toArgb()
     val roadColor = MaterialTheme.colorScheme.tertiary.toArgb()
     val sectionColor = MaterialTheme.colorScheme.onSurface.toArgb()
+    val publicSectionColor = MaterialTheme.colorScheme.secondary.toArgb()
     val localBackground = pointBorder.takeIf { preview != null || fallback }
     val sourceMatches = reviewRoad == null || input == null || reviewRoad.source.copy(endedAtEpochMillis = null) == input.run.source
     Column(modifier.fillMaxWidth().testTag("stored_location_map"), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.lg)) {
@@ -227,11 +233,46 @@ fun StoredLocationMap(
                 )
                 val selectedSample = (input.selectedEvent?.reading as? LocationUpdateReading.Sample)?.sample
                 val section = remember(input, reviewRoad) { reviewRoad?.let { StoredLocationRoadSuggestion.section(input, it) } }
+                val anchor = reviewRoad?.sampleAnchor
+                val savedSection = anchor?.roadSection
+                val publicSection =
+                    remember(section, reviewRoad, savedSection) {
+                        (savedSection ?: section?.publicRange)?.let { range ->
+                            reviewRoad?.let { StoredLocationRoadSection.publicLine(it.road, range) }
+                        }
+                    }
+                val publicSectionLegend =
+                    publicSection?.let {
+                        stringResource(
+                            if (savedSection ==
+                                null
+                            ) {
+                                R.string.stored_map_public_road_section_preview
+                            } else {
+                                R.string.stored_map_public_road_section_saved
+                            },
+                        )
+                    }
                 val sectionLegend = section?.let { stringResource(R.string.stored_map_road_section) }
                 if (sectionLegend != null && load.value == MapLoadState.READY) {
                     Text(
                         sectionLegend,
                         Modifier.fillMaxWidth().testTag("stored_location_map_road_section"),
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                }
+                if (publicSectionLegend != null && load.value == MapLoadState.READY) {
+                    Text(
+                        publicSectionLegend,
+                        Modifier.fillMaxWidth().testTag(
+                            if (savedSection ==
+                                null
+                            ) {
+                                "stored_location_map_public_road_section_preview"
+                            } else {
+                                "stored_location_map_public_road_section_saved"
+                            },
+                        ),
                         style = MaterialTheme.typography.bodyLarge,
                     )
                 }
@@ -357,7 +398,9 @@ fun StoredLocationMap(
                                 input,
                                 mapRoad,
                                 preview?.second,
-                                section,
+                                section?.projected,
+                                publicSection,
+                                savedSection == null,
                                 localBackground,
                                 dark,
                                 fontScale,
@@ -365,12 +408,13 @@ fun StoredLocationMap(
                                 pointBorder,
                                 roadColor,
                                 sectionColor,
+                                publicSectionColor,
                                 mapPermitted,
                                 inputChanges = inputChanges,
                                 canInteract = { mapPermitted() && load.value == MapLoadState.READY },
                                 onRendered = { if (mapPermitted() && load.value == MapLoadState.LOADING) load.value = MapLoadState.READY },
                                 onFailed = onFailed,
-                                contentDescription = if (sectionLegend == null) description else "$description $sectionLegend",
+                                contentDescription = listOfNotNull(description, sectionLegend, publicSectionLegend).joinToString(" "),
                                 modifier = Modifier.matchParentSize().testTag("stored_location_map_view"),
                             )
                         }
@@ -384,6 +428,37 @@ fun StoredLocationMap(
                                 Text(stringResource(R.string.map_loading), style = MaterialTheme.typography.bodyLarge)
                             }
                         }
+                    }
+                }
+                val exactAnchor =
+                    selectedSample != null && anchor?.sameCallback(SessionReviewSample.from(run, checkNotNull(selectedEvent))) == true
+                if (onSetRoadSection != null && publicSection != null && exactAnchor && load.value == MapLoadState.READY) {
+                    ParkedButton(
+                        onClick = {
+                            if (mapPermitted() && suppliedLoad === load && load.value == MapLoadState.READY &&
+                                suppliedSetRoadSection != null
+                            ) {
+                                onSetRoadSection(if (savedSection == null) section?.publicRange else null)
+                            }
+                        },
+                        modifier =
+                            Modifier.testTag(
+                                if (savedSection == null) "stored_location_map_use_road_section" else "stored_location_map_use_whole_road",
+                            ),
+                        prominent = false,
+                    ) {
+                        Text(
+                            stringResource(
+                                if (savedSection ==
+                                    null
+                                ) {
+                                    R.string.stored_map_use_road_section
+                                } else {
+                                    R.string.stored_map_use_whole_road
+                                },
+                            ),
+                            style = MaterialTheme.typography.titleMedium,
+                        )
                     }
                 }
                 if (reviewRoad != null || (selectedSample != null && input.courseRoads.isNotEmpty())) {
@@ -510,6 +585,8 @@ private fun NativeStoredLocationMap(
     road: CourseRoadSnapshot?,
     nearest: Point?,
     section: LineString?,
+    publicSection: LineString?,
+    publicSectionIsCandidate: Boolean,
     localBackground: Int?,
     dark: Boolean,
     fontScale: Float,
@@ -517,6 +594,7 @@ private fun NativeStoredLocationMap(
     pointBorder: Int,
     roadColor: Int,
     sectionColor: Int,
+    publicSectionColor: Int,
     canRender: () -> Boolean,
     inputChanges: Flow<Unit>,
     canInteract: () -> Boolean,
@@ -537,6 +615,8 @@ private fun NativeStoredLocationMap(
                 road,
                 nearest,
                 section,
+                publicSection,
+                publicSectionIsCandidate,
                 localBackground,
                 dark,
                 fontScale,
@@ -544,6 +624,7 @@ private fun NativeStoredLocationMap(
                 pointBorder,
                 roadColor,
                 sectionColor,
+                publicSectionColor,
                 savedState,
                 active,
                 current = { active.get() && canRender() },
@@ -597,6 +678,8 @@ private fun createStoredMap(
     road: CourseRoadSnapshot?,
     nearest: Point?,
     section: LineString?,
+    publicSection: LineString?,
+    publicSectionIsCandidate: Boolean,
     localBackground: Int?,
     dark: Boolean,
     fontScale: Float,
@@ -604,6 +687,7 @@ private fun createStoredMap(
     pointBorder: Int,
     roadColor: Int,
     sectionColor: Int,
+    publicSectionColor: Int,
     savedState: MapViewSavedState,
     active: AtomicBoolean,
     current: () -> Boolean,
@@ -663,6 +747,9 @@ private fun createStoredMap(
                                     RoadPreviewLayers.select(loaded, it.id)
                                 }
                                 section?.let { StoredLocationRoadSection.add(loaded, it, sectionColor) }
+                                publicSection?.let {
+                                    StoredLocationRoadSection.addPublic(loaded, it, publicSectionColor, publicSectionIsCandidate)
+                                }
                                 val isPreview = nearest != null
                                 if (!isPreview) StoredLocationTrace.add(loaded, input, pointFill)
                                 StoredLocationPoint.add(loaded, input, pointFill, pointBorder, fontScale, selectedOnly = isPreview)
