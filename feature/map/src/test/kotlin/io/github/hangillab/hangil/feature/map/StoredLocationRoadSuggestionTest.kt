@@ -124,7 +124,7 @@ class StoredLocationRoadSuggestionTest {
             )
         val section = checkNotNull(StoredLocationRoadSuggestion.section(forward, linkedReview(forward, curved)))
         val points = section.projected.coordinates()
-        assertEquals(CourseRoadSection(0, 2), section.publicRange)
+        assertEquals(CourseRoadSection(0, curved.nodes.lastIndex), section.publicRange)
         assertEquals(curved.nodes, section.publicRange.nodesOf(curved))
         assertEquals(3, points.size)
         assertEquals(Point.fromLngLat(bend.longitude, bend.latitude), points[1])
