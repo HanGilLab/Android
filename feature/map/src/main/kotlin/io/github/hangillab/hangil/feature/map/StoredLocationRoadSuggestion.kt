@@ -51,7 +51,7 @@ internal object StoredLocationRoadSuggestion {
         var last = selected
         for (neighbor in index - 1 downTo maxOf(0, index - NEIGHBORS_PER_SIDE)) {
             val previous = (input.events[neighbor].reading as? LocationUpdateReading.Sample)?.sample ?: break
-            if (!StoredLocationTrace.canLink(input.run, previous, last)) break
+            if (!StoredLocationTrace.isContinuous(input.run, previous, last)) break
             samples.add(previous)
             last = previous
         }
@@ -60,16 +60,20 @@ internal object StoredLocationRoadSuggestion {
         last = selected
         for (neighbor in index + 1..minOf(input.events.lastIndex, index + NEIGHBORS_PER_SIDE)) {
             val next = (input.events[neighbor].reading as? LocationUpdateReading.Sample)?.sample ?: break
-            if (!StoredLocationTrace.canLink(input.run, last, next)) break
+            if (!StoredLocationTrace.isContinuous(input.run, last, next)) break
             samples.add(next)
             last = next
         }
-        if (samples.size < MIN_SAMPLES) return null
-        val span = spanMeters(samples.first(), samples.last())
+        val movingSamples =
+            samples.filterIndexed { index, sample ->
+                index == 0 || samples[index - 1].let { it.latitude != sample.latitude || it.longitude != sample.longitude }
+            }
+        if (movingSamples.size < MIN_SAMPLES) return null
+        val span = spanMeters(movingSamples.first(), movingSamples.last())
         if (!span.isFinite() || span < MIN_SPAN_METERS) return null
 
-        val nearest = nearestRoad(samples.first(), input.courseRoads) ?: return null
-        return if (samples.drop(1).all { nearestRoad(it, input.courseRoads) == nearest }) Match(nearest, samples) else null
+        val nearest = nearestRoad(movingSamples.first(), input.courseRoads) ?: return null
+        return if (movingSamples.drop(1).all { nearestRoad(it, input.courseRoads) == nearest }) Match(nearest, movingSamples) else null
     }
 
     private fun projectedSection(match: Match): Suggestion? {

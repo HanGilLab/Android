@@ -50,6 +50,46 @@ class StoredLocationRoadSuggestionTest {
         assertEquals(nearRoad, StoredLocationRoadSuggestion.find(captured))
     }
 
+    @Test fun `stationary repeats preserve the section around either stored callback`() {
+        val readings = listOf(sample(0.0, 1_000), sample(0.00015, 2_000), sample(0.00015, 3_000), sample(0.00030, 4_000))
+        val first = input(readings, selectedIndex = 1)
+        val second = input(readings, selectedIndex = 2)
+        val section = checkNotNull(StoredLocationRoadSuggestion.section(first, linkedReview(first)))
+
+        assertEquals(nearRoad, StoredLocationRoadSuggestion.find(first))
+        assertEquals(nearRoad, StoredLocationRoadSuggestion.find(second))
+        assertEquals(CourseRoadSection(0, 1), section.publicRange)
+        assertEquals(section, StoredLocationRoadSuggestion.section(second, linkedReview(second)))
+        assertNull(StoredLocationRoadSuggestion.section(second, linkedReview(first)))
+    }
+
+    @Test fun `stationary repeats cannot extend the sample window or supply a third moving position`() {
+        val readings =
+            listOf(
+                sample(0.0, 1_000),
+                sample(0.00030, 2_000),
+                sample(0.00030, 3_000),
+                sample(0.00030, 4_000),
+                sample(0.00060, 5_000),
+            )
+
+        assertNull(StoredLocationRoadSuggestion.find(input(readings)))
+        assertNull(StoredLocationRoadSuggestion.find(input(readings.dropLast(1))))
+    }
+
+    @Test fun `a timeout still breaks continuity between identical positions`() {
+        val timeout = LocationUpdateGateway.NO_UPDATE_TIMEOUT_MILLIS
+        val readings =
+            listOf(
+                sample(0.0, 1_000),
+                sample(0.00015, 2_000),
+                sample(0.00015, 2_000 + timeout),
+                sample(0.00030, 3_000 + timeout),
+            )
+
+        assertNull(StoredLocationRoadSuggestion.find(input(readings)))
+    }
+
     @Test fun `an empty callback separates the samples and cannot be a selection`() {
         val (first, second, third) = movingSamples()
         val interrupted = listOf(first, LocationUpdateReading.Empty(1_500), second, third)
