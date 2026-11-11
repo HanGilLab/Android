@@ -741,6 +741,98 @@ class LocationRecordingFlowTest {
         }
     }
 
+    @Test fun savedRoadSectionFollowsLinkedSampleAcrossReopen() {
+        val args = InstrumentationRegistry.getArguments()
+        assumeTrue(args.getString("manualStoredLocationMap") == "true")
+        fixture(mapEnabled = true) { f ->
+            click("session_start")
+            val source = f.active()
+            f.awaitSource(source)
+            click("home_location_recording")
+            click("location_recording_start")
+            f.awaitRecording()
+            val first = LocationUpdateSample(37.566735, 126.9759, -2.0, 421f, -5f, -42, f.elapsed.incrementAndGet())
+            f.emit(LocationUpdateReading.Sample(first))
+            for (longitude in listOf(126.97608, 126.9763)) {
+                f.emit(
+                    LocationUpdateReading.Sample(
+                        first.copy(longitude = longitude, receivedAtElapsedRealtimeMillis = f.elapsed.incrementAndGet()),
+                    ),
+                )
+            }
+            f.emit(LocationUpdateReading.Empty(f.elapsed.incrementAndGet()))
+            f.awaitEvents(source, 4)
+            click("location_recording_stop")
+            f.awaitTerminal(source, LocationRecordingStopReason.USER_STOP)
+            click("location_recording_back")
+            click("session_finish")
+            val ended = f.ended(source.sessionId)
+            val recorded = f.snapshot(ended)
+            val run = recorded.runs.single()
+            val selected = recorded.events[2]
+            val road = checkNotNull(NextPracticeSeed.resolve(f.store.catalog, ended)).practice.course.roadSnapshots[1]
+            val bounds = first.longitude..((selected.reading as LocationUpdateReading.Sample).sample.longitude)
+            f.gateway.permission.set(false)
+
+            fun openLinkedSample() {
+                click("history_location_recording")
+                click("location_history_event_previous")
+                click("location_history_point_map")
+            }
+
+            fun awaitSection(): MapView {
+                val map = awaitStoredMap(run, recorded.events, selected, road, expectedSectionBounds = bounds)
+                waitTag("stored_location_map_road_section")
+                assertText("stored_location_map_road_section", MapR.string.stored_map_road_section)
+                return map
+            }
+
+            click("home_history")
+            openLinkedSample()
+            assertText("stored_location_course_road_suggestion", MapR.string.stored_map_course_road_suggestion)
+            click("stored_location_course_road_save_0")
+            waitTag("review_road_sample_current")
+            val saved =
+                runBlocking {
+                    checkNotNull(
+                        f.store.reviewRoads
+                            .observe(ended.sessionId)
+                            .first(),
+                    )
+                }
+            assertEquals(road, saved.road)
+            assertEquals(SessionReviewSample.from(run, selected), saved.sampleAnchor)
+            val firstMap = awaitSection()
+            click("location_history_back")
+            assertNoStoredMap(firstMap)
+            openLinkedSample()
+            val reopened = awaitSection()
+
+            click("location_history_event_previous")
+            assertNoStoredMap(reopened)
+            click("location_history_point_map")
+            assertTrue(nodes("stored_location_map_road_section").isEmpty())
+            val otherSample = awaitStoredMap(run, recorded.events, recorded.events[1], road)
+            f.drive(true)
+            waitTag("location_history_locked")
+            assertNoStoredMap(otherSample)
+            assertEquals(
+                saved,
+                runBlocking {
+                    f.store.reviewRoads
+                        .observe(ended.sessionId)
+                        .first()
+                },
+            )
+            assertEquals(recorded, f.snapshot(ended))
+            val configuration = compose.activity.resources.configuration
+            val dark = configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
+            args.getString("expectedDark")?.let { assertEquals(it.toBooleanStrict(), dark) }
+            args.getString("expectedFontScale")?.let { assertEquals(it.toFloat(), configuration.fontScale, 0.01f) }
+            f.assertNoPlatformActions()
+        }
+    }
+
     @Test fun storedReviewMapKeepsRoadAndSamplesWhenTheBasemapFails() {
         val args = InstrumentationRegistry.getArguments()
         assumeTrue(args.getString("manualStoredLocationOffline") == "true")
@@ -1612,6 +1704,7 @@ class LocationRecordingFlowTest {
         expectedTrace: Pair<LocationRecordingEvent, LocationRecordingEvent>? = null,
         expectedPreview: Boolean = false,
         expectedOffline: Boolean = false,
+        expectedSectionBounds: ClosedFloatingPointRange<Double>? = null,
     ): MapView =
         runBlocking {
             val recordedPoints = expectedEvents.filter { it.reading is LocationUpdateReading.Sample }
@@ -1838,6 +1931,8 @@ class LocationRecordingFlowTest {
                                                     style?.sources?.all { it.id == "org.maplibre.annotations" || it is GeoJsonSource } ==
                                                     true
                                             }
+                                            checks["LINKED_ROAD_SECTION_MATCHES"] =
+                                                matchesRoadSection(map, viewport, expectedRoad, expectedSectionBounds)
                                             val failed = checks.entries.firstOrNull { !it.value }
                                             observation.put("checks", JSONObject(checks))
                                             observation.put("reason", failed?.let { "FAILED_" + it.key } ?: "MATCHED")
@@ -1904,6 +1999,28 @@ class LocationRecordingFlowTest {
             "PREVIEW_PROJECTED_SOURCE_POINT_MATCHES" to (sourcePoints.isNotEmpty() && sourcePoints.all(::matchesPoint)),
             "PREVIEW_PROJECTED_RENDERED_POINT_MATCHES" to (rendered.isNotEmpty() && rendered.all(::matchesPoint)),
         )
+    }
+
+    private fun matchesRoadSection(
+        map: org.maplibre.android.maps.MapLibreMap,
+        viewport: android.graphics.RectF,
+        road: CourseRoadSnapshot?,
+        bounds: ClosedFloatingPointRange<Double>?,
+    ): Boolean {
+        val style = map.style ?: return false
+        val source = style.getSourceAs<GeoJsonSource>("hangil-stored-location-road-section")
+        val layer = style.getLayerAs<LineLayer>("hangil-stored-location-road-section-line")
+        if (bounds == null) return source == null && layer == null
+        if (source == null || layer == null || layer.sourceId != source.id || layer.visibility.value == "none" || road == null) return false
+        val lines = source.querySourceFeatures(null).map { it.geometry() as? LineString ?: return false }
+        if (lines.isEmpty() || map.queryRenderedFeatures(viewport, layer.id).isEmpty()) return false
+        val points = lines.flatMap { it.coordinates() }
+        val path = road.nodes.map { map.projection.toScreenLocation(LatLng(it.latitude, it.longitude)) }
+        val tolerance = 0.00008
+        return points.size >= 2 &&
+            abs(points.minOf { it.longitude() } - bounds.start) < tolerance &&
+            abs(points.maxOf { it.longitude() } - bounds.endInclusive) < tolerance &&
+            points.all { onStoredRoadPath(map.projection.toScreenLocation(LatLng(it.latitude(), it.longitude())), path) }
     }
 
     private fun matchesStoredTrace(
