@@ -74,6 +74,7 @@
   <string name="stored_map_without_background">지도 배경을 불러오지 못해 저장된 자료만 표시해요.</string>
   <string name="stored_map_retry_background">지도 배경 다시 불러오기</string>
   <string name="stored_map_road_unavailable">고른 도로가 지도의 위도 범위를 벗어나 함께 표시할 수 없어요. 표본 원본과 복습 도로를 따로 확인해 주세요.</string>
+  <string name="stored_map_road_section">가장 굵은 선은 연속 표본에 가까운 도로 구간이에요. 실제로 지나간 길은 미확인이에요.</string>
   <string name="stored_map_road_distance_meters">저장한 도로선까지 약 %1$d m</string>
   <string name="stored_map_road_distance_under_one">저장한 도로선까지 1 m 미만</string>
   <string name="stored_map_road_distance_unknown">저장한 도로선까지의 거리를 확인하지 못했어요.</string>

@@ -11,10 +11,13 @@ import io.github.hangillab.hangil.core.domain.LocationUpdateReading
 import io.github.hangillab.hangil.core.domain.LocationUpdateSample
 import io.github.hangillab.hangil.core.domain.PracticeSelection
 import io.github.hangillab.hangil.core.domain.PracticeSession
+import io.github.hangillab.hangil.core.domain.SessionReviewRoad
+import io.github.hangillab.hangil.core.domain.SessionReviewSample
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.maplibre.geojson.Point
 
 class StoredLocationRoadSuggestionTest {
     private val run =
@@ -91,6 +94,113 @@ class StoredLocationRoadSuggestionTest {
         assertTrue(distance < otherDistance)
         assertNull(StoredLocationRoadSuggestion.find(input(listOf(point), selectedIndex = 0)))
     }
+
+    @Test fun `the linked section follows a bend and excludes the rest of the road in both directions`() {
+        val bend = CourseRoadSnapshot.Node(12, 1, BASE_LATITUDE, BASE_LONGITUDE + 0.00015)
+        val curved =
+            nearRoad.copy(
+                nodes =
+                    listOf(
+                        nearRoad.nodes.first(),
+                        bend,
+                        bend.copy(osmNodeId = 14),
+                        CourseRoadSnapshot.Node(13, 1, BASE_LATITUDE + 0.001, bend.longitude),
+                    ),
+            )
+        val readings =
+            listOf(
+                sample(-0.00015, 1_000, BASE_LATITUDE + 0.00002),
+                sample(0.00005, 2_000, BASE_LATITUDE + 0.00002),
+                sample(0.00017, 3_000, BASE_LATITUDE + 0.00040),
+            )
+        val forward = input(readings, roads = listOf(curved, otherRoad))
+        val reversed =
+            input(
+                readings.reversed().mapIndexed { index, reading ->
+                    LocationUpdateReading.Sample(reading.sample.copy(receivedAtElapsedRealtimeMillis = 1_000L * (index + 1)))
+                },
+                roads = listOf(curved, otherRoad),
+            )
+        val section = checkNotNull(StoredLocationRoadSuggestion.section(forward, linkedReview(forward, curved)))
+        val points = section.coordinates()
+        assertEquals(3, points.size)
+        assertEquals(Point.fromLngLat(bend.longitude, bend.latitude), points[1])
+        assertEquals(readings.first().sample.longitude, points.first().longitude(), 0.00001)
+        assertEquals(readings.last().sample.latitude, points.last().latitude(), 0.00001)
+        assertEquals(section, StoredLocationRoadSuggestion.section(reversed, linkedReview(reversed, curved)))
+    }
+
+    @Test fun `nearby points do not highlight a section across a gap or direction reversal`() {
+        val (first, second, third) = movingSamples()
+        val gap = input(listOf(first, LocationUpdateReading.Empty(1_500), second, third), selectedIndex = 2)
+        assertNull(StoredLocationRoadSuggestion.section(gap, linkedReview(gap)))
+        val reversed = input(listOf(first, second, sample(0.00005, 3_000), sample(0.00040, 4_000)))
+        assertEquals(nearRoad, StoredLocationRoadSuggestion.find(reversed))
+        assertNull(StoredLocationRoadSuggestion.section(reversed, linkedReview(reversed)))
+    }
+
+    @Test fun `a shared node on a straight road is not a second route`() {
+        val intermediate = CourseRoadSnapshot.Node(12, 1, BASE_LATITUDE, BASE_LONGITUDE + 0.00050)
+        val split = nearRoad.copy(nodes = listOf(nearRoad.nodes.first(), intermediate, nearRoad.nodes.last()))
+        val latitude = BASE_LATITUDE + 0.00010
+        val readings = listOf(sample(-0.00005, 1_000, latitude), sample(0.00010, 2_000, latitude), sample(0.00025, 3_000, latitude))
+        val captured = input(readings, roads = listOf(split))
+        val section = checkNotNull(StoredLocationRoadSuggestion.section(captured, linkedReview(captured, split)))
+        assertEquals(readings.last().sample.longitude, section.coordinates().last().longitude(), 0.00001)
+    }
+
+    @Test fun `dense nodes on a straight road preserve the same section endpoints`() {
+        val dense =
+            nearRoad.copy(
+                nodes =
+                    (-10..10).mapIndexed { index, offset ->
+                        CourseRoadSnapshot.Node(100L + index, 1, BASE_LATITUDE, BASE_LONGITUDE + offset * 0.000125)
+                    },
+            )
+        val latitude = BASE_LATITUDE + 0.00009
+        val readings = listOf(sample(-0.00037, 1_000, latitude), sample(0.0, 2_000, latitude), sample(0.00037, 3_000, latitude))
+        val sparseInput = input(readings, roads = listOf(nearRoad))
+        val sparse = checkNotNull(StoredLocationRoadSuggestion.section(sparseInput, linkedReview(sparseInput))).coordinates()
+        val denseInput = input(readings, roads = listOf(dense))
+        val detailed = checkNotNull(StoredLocationRoadSuggestion.section(denseInput, linkedReview(denseInput, dense))).coordinates()
+        assertEquals(sparse.first().longitude(), detailed.first().longitude(), 0.00001)
+        assertEquals(sparse.last().longitude(), detailed.last().longitude(), 0.00001)
+        assertTrue(detailed.size > sparse.size)
+    }
+
+    @Test fun `two nearby arms of the same road cannot resolve a section`() {
+        val first = nearRoad.nodes.first()
+        val last = nearRoad.nodes.last()
+        val folded =
+            nearRoad.copy(
+                nodes =
+                    nearRoad.nodes +
+                        listOf(
+                            last.copy(osmNodeId = 12, latitude = BASE_LATITUDE + 0.00010),
+                            first.copy(osmNodeId = 13, latitude = BASE_LATITUDE + 0.00010),
+                        ),
+            )
+        val captured = input(movingSamples(), roads = listOf(folded))
+        assertEquals(folded, StoredLocationRoadSuggestion.find(captured))
+        assertNull(StoredLocationRoadSuggestion.section(captured, linkedReview(captured, folded)))
+    }
+
+    @Test fun `only the exact linked sample and saved road can disclose the section`() {
+        val readings = movingSamples()
+        val captured = input(readings)
+        assertNull(StoredLocationRoadSuggestion.section(input(readings, selectedIndex = 2), linkedReview(captured)))
+        assertNull(StoredLocationRoadSuggestion.section(captured, linkedReview(captured, otherRoad)))
+    }
+
+    private fun linkedReview(
+        input: StoredLocationMapInput,
+        road: CourseRoadSnapshot = nearRoad,
+    ) = SessionReviewRoad(
+        input.run.source.copy(endedAtEpochMillis = 2_000),
+        road,
+        "version",
+        sampleAnchor = SessionReviewSample.from(input.run, checkNotNull(input.selectedEvent)),
+    )
 
     private fun input(
         readings: List<LocationUpdateReading>,

@@ -65,6 +65,7 @@ import org.maplibre.android.geometry.LatLngBounds
 import org.maplibre.android.maps.MapLibreMapOptions
 import org.maplibre.android.maps.Style
 import org.maplibre.android.tile.TileOperation
+import org.maplibre.geojson.LineString
 import org.maplibre.geojson.Point
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.roundToInt
@@ -166,6 +167,7 @@ fun StoredLocationMap(
     val pointFill = MaterialTheme.colorScheme.primary.toArgb()
     val pointBorder = MaterialTheme.colorScheme.surface.toArgb()
     val roadColor = MaterialTheme.colorScheme.tertiary.toArgb()
+    val sectionColor = MaterialTheme.colorScheme.onSurface.toArgb()
     val localBackground = pointBorder.takeIf { preview != null || fallback }
     val sourceMatches = reviewRoad == null || input == null || reviewRoad.source.copy(endedAtEpochMillis = null) == input.run.source
     Column(modifier.fillMaxWidth().testTag("stored_location_map"), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.lg)) {
@@ -224,6 +226,15 @@ fun StoredLocationMap(
                     style = MaterialTheme.typography.titleLarge,
                 )
                 val selectedSample = (input.selectedEvent?.reading as? LocationUpdateReading.Sample)?.sample
+                val section = remember(input, reviewRoad) { reviewRoad?.let { StoredLocationRoadSuggestion.section(input, it) } }
+                val sectionLegend = section?.let { stringResource(R.string.stored_map_road_section) }
+                if (sectionLegend != null && load.value == MapLoadState.READY) {
+                    Text(
+                        sectionLegend,
+                        Modifier.fillMaxWidth().testTag("stored_location_map_road_section"),
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                }
                 if (reviewRoad != null && selectedSample != null) {
                     val meters =
                         remember(selectedSample, reviewRoad.road) {
@@ -346,18 +357,20 @@ fun StoredLocationMap(
                                 input,
                                 mapRoad,
                                 preview?.second,
+                                section,
                                 localBackground,
                                 dark,
                                 fontScale,
                                 pointFill,
                                 pointBorder,
                                 roadColor,
+                                sectionColor,
                                 mapPermitted,
                                 inputChanges = inputChanges,
                                 canInteract = { mapPermitted() && load.value == MapLoadState.READY },
                                 onRendered = { if (mapPermitted() && load.value == MapLoadState.LOADING) load.value = MapLoadState.READY },
                                 onFailed = onFailed,
-                                contentDescription = description,
+                                contentDescription = if (sectionLegend == null) description else "$description $sectionLegend",
                                 modifier = Modifier.matchParentSize().testTag("stored_location_map_view"),
                             )
                         }
@@ -496,12 +509,14 @@ private fun NativeStoredLocationMap(
     input: StoredLocationMapInput,
     road: CourseRoadSnapshot?,
     nearest: Point?,
+    section: LineString?,
     localBackground: Int?,
     dark: Boolean,
     fontScale: Float,
     pointFill: Int,
     pointBorder: Int,
     roadColor: Int,
+    sectionColor: Int,
     canRender: () -> Boolean,
     inputChanges: Flow<Unit>,
     canInteract: () -> Boolean,
@@ -521,12 +536,14 @@ private fun NativeStoredLocationMap(
                 input,
                 road,
                 nearest,
+                section,
                 localBackground,
                 dark,
                 fontScale,
                 pointFill,
                 pointBorder,
                 roadColor,
+                sectionColor,
                 savedState,
                 active,
                 current = { active.get() && canRender() },
@@ -579,12 +596,14 @@ private fun createStoredMap(
     input: StoredLocationMapInput,
     road: CourseRoadSnapshot?,
     nearest: Point?,
+    section: LineString?,
     localBackground: Int?,
     dark: Boolean,
     fontScale: Float,
     pointFill: Int,
     pointBorder: Int,
     roadColor: Int,
+    sectionColor: Int,
     savedState: MapViewSavedState,
     active: AtomicBoolean,
     current: () -> Boolean,
@@ -643,6 +662,7 @@ private fun createStoredMap(
                                     RoadPreviewLayers.add(loaded, listOf(it), roadColor)
                                     RoadPreviewLayers.select(loaded, it.id)
                                 }
+                                section?.let { StoredLocationRoadSection.add(loaded, it, sectionColor) }
                                 val isPreview = nearest != null
                                 if (!isPreview) StoredLocationTrace.add(loaded, input, pointFill)
                                 StoredLocationPoint.add(loaded, input, pointFill, pointBorder, fontScale, selectedOnly = isPreview)
