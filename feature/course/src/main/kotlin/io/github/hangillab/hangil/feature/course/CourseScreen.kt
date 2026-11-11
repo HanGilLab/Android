@@ -128,7 +128,16 @@ internal fun CourseScreen(
                 }
                 state.plannedRoad?.let { plan ->
                     Text(
-                        stringResource(R.string.preparation_planned_road_title, plan.road.title),
+                        stringResource(
+                            if (plan.section ==
+                                null
+                            ) {
+                                R.string.preparation_planned_road_title
+                            } else {
+                                R.string.preparation_planned_road_section_title
+                            },
+                            plan.road.title,
+                        ),
                         Modifier.testTag("preparation_planned_road"),
                         style = MaterialTheme.typography.titleLarge,
                     )

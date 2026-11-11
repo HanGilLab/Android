@@ -46,5 +46,8 @@ internal fun PracticeSelection?.savedFields(): ArrayList<String> {
     road.nodes.forEach {
         fields.addAll(listOf(it.osmNodeId.toString(), it.osmNodeVersion.toString(), it.latitude.toString(), it.longitude.toString()))
     }
+    plan.section?.let { section ->
+        fields.addAll(listOf("road-section", section.firstNodeIndex.toString(), section.lastNodeIndex.toString()))
+    }
     return fields
 }

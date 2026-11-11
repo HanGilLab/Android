@@ -6,6 +6,7 @@ class SessionReviewSample(
     val processId: String,
     val startedAtEpochMillis: Long,
     val startedAtElapsedRealtimeMillis: Long,
+    val roadSection: CourseRoadSection? = null,
 ) {
     val origin: String get() = "USER_LINKED_STORED_SAMPLE"
     val sample: LocationUpdateSample get() = (event.reading as LocationUpdateReading.Sample).sample
@@ -20,13 +21,21 @@ class SessionReviewSample(
         }
     }
 
-    override fun equals(other: Any?): Boolean =
-        other is SessionReviewSample && event == other.event && processId == other.processId &&
+    /** Compares the immutable callback and run owner, independent of the public road choice. */
+    fun sameCallback(other: SessionReviewSample): Boolean =
+        event == other.event && processId == other.processId &&
             startedAtEpochMillis == other.startedAtEpochMillis && startedAtElapsedRealtimeMillis == other.startedAtElapsedRealtimeMillis
 
+    fun withRoadSection(section: CourseRoadSection?): SessionReviewSample =
+        SessionReviewSample(event, processId, startedAtEpochMillis, startedAtElapsedRealtimeMillis, section)
+
+    override fun equals(other: Any?): Boolean = other is SessionReviewSample && sameCallback(other) && roadSection == other.roadSection
+
     override fun hashCode(): Int =
-        31 * (31 * (31 * event.hashCode() + processId.hashCode()) + startedAtEpochMillis.hashCode()) +
-            startedAtElapsedRealtimeMillis.hashCode()
+        31 * (
+            31 * (31 * (31 * event.hashCode() + processId.hashCode()) + startedAtEpochMillis.hashCode()) +
+                startedAtElapsedRealtimeMillis.hashCode()
+        ) + (roadSection?.hashCode() ?: 0)
 
     override fun toString(): String = "SessionReviewSample(origin=$origin, snapshot=redacted)"
 

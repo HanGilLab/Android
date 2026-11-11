@@ -217,7 +217,15 @@ private fun NextPracticeChoices(
             val target = state.targetReview
             if (target != null) {
                 Text(target.road.title, Modifier.testTag("next_practice_target_road"), style = MaterialTheme.typography.titleLarge)
-                Text(stringResource(R.string.next_practice_target_road_scope), style = MaterialTheme.typography.bodyLarge)
+                if (target.sampleAnchor?.roadSection != null) {
+                    Text(
+                        stringResource(R.string.next_practice_target_road_section_scope),
+                        Modifier.testTag("next_practice_target_road_section"),
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                } else {
+                    Text(stringResource(R.string.next_practice_target_road_scope), style = MaterialTheme.typography.bodyLarge)
+                }
             }
             if (state.targetChoiceRequired) {
                 Text(
@@ -277,7 +285,16 @@ private fun NextPracticeChoices(
                                         "next_practice_target_road_use",
                                     ).frozenNextClick(useRoad, !state.saving),
                         ) {
-                            Text(stringResource(R.string.next_practice_target_road_use), style = MaterialTheme.typography.titleLarge)
+                            Text(
+                                stringResource(
+                                    if (road.review.sampleAnchor?.roadSection == null) {
+                                        R.string.next_practice_target_road_use
+                                    } else {
+                                        R.string.next_practice_target_road_use_section
+                                    },
+                                ),
+                                style = MaterialTheme.typography.titleLarge,
+                            )
                         }
                     }
                 }

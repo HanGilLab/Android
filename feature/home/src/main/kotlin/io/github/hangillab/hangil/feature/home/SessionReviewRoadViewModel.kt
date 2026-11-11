@@ -229,6 +229,12 @@ class SessionReviewRoadViewModel
                     ) {
                         return@synchronized null
                     }
+                    if (sample != null) {
+                        val section = sample.roadSection
+                        if (section != null && (!section.isValidFor(stored.road) || stored.sampleAnchor?.sameCallback(sample) != true)) {
+                            return@synchronized null
+                        }
+                    }
                     schedule(owner, stored.road, stored.memoText, discardMemo = false, memoEdit = false, sampleEdit = true, sample = sample)
                 } ?: return false
             job.start()
@@ -244,7 +250,7 @@ class SessionReviewRoadViewModel
                 synchronized(lock) {
                     val owner = owner(token) ?: return@synchronized null
                     if (!editable(owner) || owner.stored != null || owner.edit != null || owner.confirmation != null ||
-                        owner.retainedMemo != null || sample.event.sessionId != owner.source.sessionId
+                        owner.retainedMemo != null || sample.event.sessionId != owner.source.sessionId || sample.roadSection != null
                     ) {
                         return@synchronized null
                     }

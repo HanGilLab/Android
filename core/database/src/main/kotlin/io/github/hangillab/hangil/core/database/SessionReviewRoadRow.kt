@@ -48,7 +48,7 @@ internal data class SessionReviewRoadRow(
             ) {
                 return false
             }
-            return SessionReviewSample.from(run, event) == sample
+            return SessionReviewSample.from(run, event).sameCallback(sample)
         }
 
         fun review(rows: List<SessionReviewRoadRow>): SessionReviewRoad? {

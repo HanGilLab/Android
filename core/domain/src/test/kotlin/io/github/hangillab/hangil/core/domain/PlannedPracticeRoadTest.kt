@@ -22,4 +22,22 @@ class PlannedPracticeRoadTest {
         assertFalse(target.toString().contains("private"))
         assertFalse(target.toString().contains("127"))
     }
+
+    @Test fun `target distinguishes the saved public section from a whole road`() {
+        val nodes =
+            listOf(
+                CourseRoadSnapshot.Node(1, 1, 37.5, 127.0),
+                CourseRoadSnapshot.Node(2, 1, 37.5, 127.001),
+                CourseRoadSnapshot.Node(3, 1, 37.5, 127.002),
+            )
+        val road = CourseRoadSnapshot("road", "Road", "residential", 9, 2, 100, nodes)
+        val section = CourseRoadSection(1, 2)
+        val target = PlannedPracticeRoad("source", "version", road, section)
+        assertEquals(nodes, target.road.nodes)
+        assertEquals(nodes.drop(1), section.nodesOf(target.road))
+        assertNotEquals(target, PlannedPracticeRoad("source", "version", road))
+        assertThrows(IllegalArgumentException::class.java) {
+            PlannedPracticeRoad("source", "version", road, CourseRoadSection(1, 3))
+        }
+    }
 }

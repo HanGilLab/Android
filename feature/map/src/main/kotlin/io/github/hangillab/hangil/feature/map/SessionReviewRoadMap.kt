@@ -19,6 +19,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -31,6 +32,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import io.github.hangillab.hangil.core.designsystem.HanGilDimensions
 import io.github.hangillab.hangil.core.designsystem.HanGilSpacing
+import io.github.hangillab.hangil.core.domain.CourseRoadSection
 import io.github.hangillab.hangil.core.domain.CourseRoadSnapshot
 import io.github.hangillab.hangil.core.domain.PracticeSession
 import kotlinx.coroutines.delay
@@ -51,9 +53,17 @@ fun SessionReviewRoadMap(
     canPresent: () -> Boolean,
     inputChanges: Flow<Unit>,
     modifier: Modifier = Modifier,
+    section: CourseRoadSection? = null,
 ) {
     // Snapshot on each composition so mutations of an external list cannot mutate remembered keys.
     val preview = MapPreview.from(source, roads)
+    val sectionRoad = preview.roads.singleOrNull { it.id == selectedRoadId }
+    val publicRoadSection =
+        remember(sectionRoad, section) {
+            if (sectionRoad == null || section == null) null else StoredLocationRoadSection.publicLine(sectionRoad, section)
+        }
+    val sectionOwner = section?.let { selectedRoadId to it }
+    val suppliedSectionOwner by rememberUpdatedState(sectionOwner)
     val owner = LocalLifecycleOwner.current
     val receipt = remember(preview, owner) { AtomicBoolean(true) }
     val withdrawn = remember(preview, owner) { mutableStateOf(false) }
@@ -94,13 +104,13 @@ fun SessionReviewRoadMap(
     val fontScale = LocalDensity.current.fontScale
     var attempt by remember(preview, owner) { mutableIntStateOf(0) }
     val capturedAttempt = attempt
-    val load = remember(preview, owner, dark, fontScale, capturedAttempt) { mutableStateOf(MapLoadState.LOADING) }
+    val load = remember(preview, owner, dark, fontScale, capturedAttempt, sectionOwner) { mutableStateOf(MapLoadState.LOADING) }
     val renderer = remember(load) { AtomicBoolean(true) }
     val tokens = remember(preview, owner) { AtomicLong() }
     val token = remember(load) { tokens.incrementAndGet() }
     val current: () -> Boolean =
         remember(load) {
-            { renderer.get() && attempt == capturedAttempt && permitted() }
+            { renderer.get() && attempt == capturedAttempt && sectionOwner == suppliedSectionOwner && permitted() }
         }
     DisposableEffect(renderer) { onDispose { renderer.set(false) } }
     val nonces = remember(preview, owner) { AtomicLong() }
@@ -177,7 +187,7 @@ fun SessionReviewRoadMap(
                         ) { Text(stringResource(R.string.map_retry), style = MaterialTheme.typography.titleMedium) }
                     }
                 } else {
-                    key(preview, owner, dark, fontScale, capturedAttempt) {
+                    key(preview, owner, dark, fontScale, capturedAttempt, sectionOwner) {
                         DemoMap(
                             attempt = capturedAttempt,
                             preview = preview,
@@ -226,6 +236,8 @@ fun SessionReviewRoadMap(
                             },
                             onNativeSelect = { _, _ -> },
                             canRender = { current() && load.value != MapLoadState.FAILED },
+                            publicRoadSection = publicRoadSection,
+                            publicRoadSectionColor = MaterialTheme.colorScheme.secondary.toArgb(),
                             modifier = Modifier.matchParentSize().testTag("session_review_road_map_view"),
                         )
                     }
@@ -236,6 +248,13 @@ fun SessionReviewRoadMap(
                         }
                     }
                 }
+            }
+            if (publicRoadSection != null && load.value == MapLoadState.READY) {
+                Text(
+                    stringResource(R.string.session_review_road_map_public_road_section),
+                    Modifier.testTag("session_review_road_map_public_road_section"),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
             }
             if (choice != null) {
                 Text(

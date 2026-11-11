@@ -25,6 +25,7 @@ class SessionReviewRoad(
         require(version.isNotBlank()) { "Invalid review road version" }
         require(memoText.isEmpty() || SessionMemoPolicy.isValidText(memoText)) { "Invalid review road memo" }
         require(sampleAnchor == null || sampleAnchor.event.sessionId == source.sessionId) { "Foreign linked review sample" }
+        require(sampleAnchor?.roadSection?.isValidFor(this.road) != false) { "Invalid linked public road section" }
     }
 
     override fun equals(other: Any?): Boolean =

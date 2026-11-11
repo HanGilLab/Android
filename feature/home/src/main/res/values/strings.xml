@@ -309,6 +309,7 @@
   <string name="review_road_memo_keep">그대로 유지</string>
   <string name="history_delete_review_road_memo_present">저장한 복습 구간: %1$s (구간 메모 포함)</string>
     <string name="planned_road_summary">연습 전 목표 도로: %1$s</string>
+    <string name="planned_road_section_summary">연습 전 목표 구간 %1$s</string>
     <string name="planned_road_scope">실제 주행이나 내비 경로가 아닌 연습 목표예요.</string>
     <string name="review_road_sample_absent">이 도로에 연결한 표본이 없어요.</string>
     <string name="review_road_sample_current">지금 보는 표본을 이 도로에 연결했어요.</string>
@@ -321,6 +322,7 @@
     <string name="review_road_sample_cleared">표본 연결을 해제했어요. 저장한 표본 원본은 남아 있어요.</string>
     <string name="review_road_sample_active">연습 중에는 표본 연결을 바꿀 수 없어요.</string>
     <string name="review_road_sample_present">이 도로에 직접 연결한 저장 표본이 있어요. 실제 이동 매칭은 미확인이에요.</string>
+    <string name="review_road_section_present">이 도로에서 복습 구간과 연결 표본을 직접 골랐어요. 실제 이동은 미확인이에요.</string>
     <string name="review_road_sample_discard_title">이 도로의 연결 내용을 지울까요?</string>
     <string name="review_road_sample_discard_warning">직접 연결한 표본도 해제돼요. 표본 원본은 지워지지 않으며 새 도로에 자동으로 옮기지 않아요.</string>
     <string name="review_road_sample_details">연결한 표본 원본</string>

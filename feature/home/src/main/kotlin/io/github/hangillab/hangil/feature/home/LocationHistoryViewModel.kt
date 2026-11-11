@@ -214,7 +214,7 @@ class LocationHistoryViewModel
                     } catch (_: IllegalArgumentException) {
                         return@synchronized false
                     }
-                if (actual != anchor || this.owner(token) !== owner || owner.queryJob !== query ||
+                if (!actual.sameCallback(anchor) || this.owner(token) !== owner || owner.queryJob !== query ||
                     owner.states.value !== ready
                 ) {
                     return@synchronized false

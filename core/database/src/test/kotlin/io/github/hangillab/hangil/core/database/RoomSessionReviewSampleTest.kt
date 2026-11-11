@@ -2,6 +2,7 @@ package io.github.hangillab.hangil.core.database
 
 import androidx.room.Room
 import androidx.room.withTransaction
+import io.github.hangillab.hangil.core.domain.CourseRoadSection
 import io.github.hangillab.hangil.core.domain.LocationRecordingAppendResult
 import io.github.hangillab.hangil.core.domain.LocationRecordingBeginResult
 import io.github.hangillab.hangil.core.domain.LocationRecordingEvent
@@ -74,6 +75,10 @@ class RoomSessionReviewSampleTest {
                 assertEquals(
                     SessionReviewRoadWriteResult.SampleChanged,
                     repo.save(f.source, road, null, initialSample = wrongOwner) { true },
+                )
+                assertEquals(
+                    SessionReviewRoadWriteResult.SampleChanged,
+                    repo.save(f.source, road, null, initialSample = f.anchor.withSection(CourseRoadSection(1, 2))) { true },
                 )
                 assertNull(repo.observe(f.source.sessionId).first())
                 var gates = 0
@@ -197,6 +202,35 @@ class RoomSessionReviewSampleTest {
             }
         }
 
+    @Test fun `a section can only be written on the current linked callback and road under the final gate`() =
+        runBlocking {
+            withDatabase { db ->
+                val f = seed(db)
+                val repo = RoomSessionReviewRoadRepository(db, catalog)
+                val section = CourseRoadSection(1, 2)
+                val anchorWithSection = f.anchor.withSection(section)
+                assertEquals(SessionReviewRoadWriteResult.SampleChanged, repo.setSample(f.source, f.review, anchorWithSection) { true })
+                val linked = saved(repo.setSample(f.source, f.review, f.anchor) { true })
+                val second = SessionReviewSample.from(f.run, f.events[1]).withSection(section)
+                assertEquals(SessionReviewRoadWriteResult.SampleChanged, repo.setSample(f.source, linked, second) { true })
+                val outside = f.anchor.withSection(CourseRoadSection(1, linked.road.nodes.size))
+                assertEquals(SessionReviewRoadWriteResult.SampleChanged, repo.setSample(f.source, linked, outside) { true })
+                var gates = 0
+                assertEquals(SessionReviewRoadWriteResult.Blocked, repo.setSample(f.source, linked, anchorWithSection) { ++gates < 3 })
+                assertEquals(linked, repo.observe(f.source.sessionId).first())
+
+                val withSection = saved(repo.setSample(f.source, linked, anchorWithSection) { true })
+                assertNotEquals(linked.version, withSection.version)
+                assertEquals(anchorWithSection, withSection.sampleAnchor)
+                assertEquals(SessionReviewRoadWriteResult.Conflict, repo.setSample(f.source, linked, f.anchor) { true })
+                val withMemo = saved(repo.save(f.source, withSection.road, withSection, memoText = "section memo") { true })
+                assertEquals(anchorWithSection, withMemo.sampleAnchor)
+                val replaced = saved(repo.setSample(f.source, withMemo, SessionReviewSample.from(f.run, f.events[1])) { true })
+                assertNull(replaced.sampleAnchor?.roadSection)
+                assertEquals(f.events, RoomLocationRecordingRepository(db).observe(f.source.sessionId).first().events)
+            }
+        }
+
     @Test fun `changed or deleted events fail observers and reject target and deletion writes`() =
         runBlocking {
             for (delete in listOf(false, true)) {
@@ -261,11 +295,12 @@ class RoomSessionReviewSampleTest {
             }
         }
 
-    @Test fun `reopen preserves links while next targets omit samples and source deletion cascades`() =
+    @Test fun `reopen preserves links while next targets copy only the public section and source deletion cascades`() =
         runBlocking {
             val context = RuntimeEnvironment.getApplication()
             val name = "review-sample-${UUID.randomUUID()}.db"
             check(!context.getDatabasePath(name).exists())
+            val section = CourseRoadSection(1, 2)
 
             fun open() = Room.databaseBuilder(context, PreparationDatabase::class.java, name).build()
             try {
@@ -274,7 +309,9 @@ class RoomSessionReviewSampleTest {
                 val first = open()
                 try {
                     f = seed(first)
-                    linked = saved(RoomSessionReviewRoadRepository(first, catalog).setSample(f.source, f.review, f.anchor) { true })
+                    val repo = RoomSessionReviewRoadRepository(first, catalog)
+                    val withoutSection = saved(repo.setSample(f.source, f.review, f.anchor) { true })
+                    linked = saved(repo.setSample(f.source, withoutSection, f.anchor.withSection(section)) { true })
                 } finally {
                     first.close()
                 }
@@ -291,13 +328,14 @@ class RoomSessionReviewSampleTest {
                         ) { true },
                     )
                     val publicTarget = checkNotNull(reopened.preparationDao().current()?.plannedRoadJson)
+                    assertEquals(section, PlannedPracticeRoadJson.decode(publicTarget)?.section)
                     assertFalse(
                         publicTarget.contains("\"event\"") || publicTarget.contains("sdkTimestampMillis") ||
                             publicTarget.contains(f.anchor.processId),
                     )
                     val deletions = RoomSessionDeletionRepository(reopened)
                     val original = (deletions.prepare(f.source) { true } as SessionDeletionPreparation.Ready).target
-                    assertEquals(f.anchor, original.reviewRoad?.sampleAnchor)
+                    assertEquals(f.anchor.withSection(section), original.reviewRoad?.sampleAnchor)
                     assertEquals(SessionDeletionResult.Deleted, deletions.delete(original) { true })
                     assertNull(RoomSessionReviewRoadRepository(reopened, catalog).observe(f.source.sessionId).first())
                     assertTrue(
@@ -347,6 +385,9 @@ class RoomSessionReviewSampleTest {
     }
 
     private fun saved(result: SessionReviewRoadWriteResult): SessionReviewRoad = (result as SessionReviewRoadWriteResult.Saved).review
+
+    private fun SessionReviewSample.withSection(section: CourseRoadSection): SessionReviewSample =
+        SessionReviewSample(event, processId, startedAtEpochMillis, startedAtElapsedRealtimeMillis, section)
 
     private suspend fun withDatabase(block: suspend (PreparationDatabase) -> Unit) {
         val db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), PreparationDatabase::class.java).build()

@@ -140,8 +140,15 @@ class MainActivity : ComponentActivity() {
                         composable("history") { historyEntry ->
                             SessionHistoryRoute(
                                 reviewRoad = { source, allowed ->
-                                    SessionReviewRoadRoute(source, allowed, roadMap = { snapshot, roads, selected, canPresent, changes ->
-                                        SessionReviewRoadMap(snapshot, roads, selected, canPresent, changes)
+                                    SessionReviewRoadRoute(source, allowed, roadMap = {
+                                        snapshot,
+                                        roads,
+                                        selected,
+                                        section,
+                                        canPresent,
+                                        changes,
+                                        ->
+                                        SessionReviewRoadMap(snapshot, roads, selected, canPresent, changes, section = section)
                                     })
                                 },
                                 onClose = { navigation.popBackStack() },
@@ -176,8 +183,15 @@ class MainActivity : ComponentActivity() {
                             val expected = finishedReviewEntry?.source(token)
                             FinishedSessionReviewRoute(
                                 reviewRoad = { source, allowed ->
-                                    SessionReviewRoadRoute(source, allowed, roadMap = { snapshot, roads, selected, canPresent, changes ->
-                                        SessionReviewRoadMap(snapshot, roads, selected, canPresent, changes)
+                                    SessionReviewRoadRoute(source, allowed, roadMap = {
+                                        snapshot,
+                                        roads,
+                                        selected,
+                                        section,
+                                        canPresent,
+                                        changes,
+                                        ->
+                                        SessionReviewRoadMap(snapshot, roads, selected, canPresent, changes, section = section)
                                     })
                                 },
                                 expectedSource = expected,
@@ -259,7 +273,7 @@ class MainActivity : ComponentActivity() {
                                             readOnly = true,
                                             sampleCandidate = candidate,
                                             onOpenLinkedSample = openLinkedSample,
-                                            comparisonMap = { saved, courseRoads, saveCourseRoad, allowed, changes ->
+                                            comparisonMap = { saved, courseRoads, saveCourseRoad, setRoadSection, allowed, changes ->
                                                 StoredLocationMap(
                                                     run,
                                                     events,
@@ -269,6 +283,7 @@ class MainActivity : ComponentActivity() {
                                                     inputChanges = changes,
                                                     courseRoads = courseRoads,
                                                     onSaveCourseRoad = saveCourseRoad,
+                                                    onSetRoadSection = setRoadSection,
                                                 )
                                             },
                                         )
@@ -287,10 +302,11 @@ class MainActivity : ComponentActivity() {
                                         snapshot,
                                         roads,
                                         selected,
+                                        section,
                                         canPresent,
                                         changes,
                                         ->
-                                        SessionReviewRoadMap(snapshot, roads, selected, canPresent, changes)
+                                        SessionReviewRoadMap(snapshot, roads, selected, canPresent, changes, section = section)
                                     })
                                 },
                                 onClose = { navigation.popBackStack() },
@@ -345,10 +361,11 @@ class MainActivity : ComponentActivity() {
                                             snapshot,
                                             roads,
                                             selected,
+                                            section,
                                             canPresent,
                                             changes,
                                             ->
-                                            SessionReviewRoadMap(snapshot, roads, selected, canPresent, changes)
+                                            SessionReviewRoadMap(snapshot, roads, selected, canPresent, changes, section = section)
                                         })
                                     },
                                     expectedHistorySource = expected,

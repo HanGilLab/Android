@@ -249,7 +249,9 @@ private fun LocationHistoryReady(
         val anchor = linkedSampleToPresent ?: return@LaunchedEffect
         // Consume before suspending or validating so a rejected focus request never waits for a later selection.
         onLinkedSamplePresented()
-        if (event == null || event.reading !is LocationUpdateReading.Sample || SessionReviewSample.from(run, event) != anchor) {
+        if (event == null || event.reading !is LocationUpdateReading.Sample ||
+            !SessionReviewSample.from(run, event).sameCallback(anchor)
+        ) {
             return@LaunchedEffect
         }
         if (!viewModel.canRead(state.token)) return@LaunchedEffect

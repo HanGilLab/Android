@@ -20,7 +20,7 @@ internal object PlannedPracticeRoadJson {
                 )
             }
         return objectValue(
-            "format" to "1",
+            "format" to if (value.section == null) "1" else "2",
             "origin" to JSONObject.quote(value.origin),
             "sourceSessionId" to JSONObject.quote(value.sourceSessionId),
             "reviewVersion" to JSONObject.quote(value.reviewVersion),
@@ -34,6 +34,7 @@ internal object PlannedPracticeRoadJson {
                     "capturedAt" to road.capturedAtEpochMillis.toString(),
                     "nodes" to nodes,
                 ),
+            *CourseRoadSectionJson.fields(value.section),
         )
     }
 
@@ -44,7 +45,8 @@ internal object PlannedPracticeRoadJson {
         if (raw == null) return null
         try {
             val root = JSONObject(raw)
-            check(integer(root, "format") == 1L && text(root, "origin") == "USER_REVIEW_SELECTION")
+            check(text(root, "origin") == "USER_REVIEW_SELECTION")
+            val section = CourseRoadSectionJson.decode(root, integer(root, "format"))
             val road = root.get("road") as? JSONObject ?: error("Invalid road object")
             val nodes = road.get("nodes") as? JSONArray ?: error("Invalid road nodes")
             val decoded =
@@ -68,6 +70,7 @@ internal object PlannedPracticeRoadJson {
                             )
                         },
                     ),
+                    section,
                 )
             check(encode(decoded) == raw)
             return decoded
