@@ -127,38 +127,25 @@ reader = owner
 ended = null
 ```
 
-### 2. 확인한 종료 기록과 연결 자료를 함께 삭제하기
+### 2. 복습에서 위치 기록을 한 번만 읽기
 
-**문제** 삭제 확인창을 띄운 뒤 같은 문장을 다시 저장해도 메모 버전이 바뀝니다. 세션 ID만으로 지우면 확인창을 열 때 없던 변경까지 삭제할 수 있었습니다.
+**문제** 위치 표본이 많은 연습을 복습에서 열면 Room이 같은 기록을 반복해서 읽었습니다.
 
-**원인** 확인 화면을 열 때 읽은 값과 실제로 지울 때의 값 사이에 변경이 들어올 수 있었습니다. 이력에서 행이 사라졌다는 알림도 DB의 삭제 응답보다 먼저 올 수 있었습니다.
+**원인** 실행과 표본을 조회하는 두 Flow의 결과를 버리고, 변경 알림을 받은 뒤 두 목록을 트랜잭션에서 다시 읽었습니다. 첫 구독부터 같은 실행과 표본이 두 번 조회됐습니다.
 
-**해결** 확인 시점의 종료 기록, 차량 관찰 수, 메모 버전과 위치 기록 등을 Room 트랜잭션에서 다시 대조했습니다. 부모 행이 삭제되면 외래 키로 연결 자료도 함께 삭제합니다.
+**해결** Room의 테이블 변경 알림을 직접 구독합니다. 두 테이블 중 하나가 바뀌면 한 트랜잭션에서 두 목록을 읽고 기록 순서와 소유 관계를 검증합니다.
 
-**결과** 확인한 내용이 바뀌면 다시 확인을 요청합니다. 쓰기 후 커밋 검사를 통과하지 못하면 연결 자료도 함께 되돌립니다. Pleos 에뮬레이터 Android 14(API 34), JDK 17 debug, 기본 라이트와 글꼴 1.0에서 예열 5회 후 이력 진입을 전후 각 30회 측정했습니다. 중앙값은 263.03ms에서 260.93ms로 바뀌었습니다. 원자료 기준 2.11ms(0.80%) 차이이며, 사분위 범위가 겹쳐 성능 향상 여부는 미확정입니다.
+**결과** 같은 Pleos API 34 에뮬레이터의 debug 빌드에서 합성 위치 표본 256개를 저장한 뒤, 첫 스냅샷 반환까지 중앙값이 28.83ms에서 16.20ms로 줄었습니다. 12.63ms(43.8%) 감소했고 p95는 41.10ms에서 23.10ms로 줄었습니다. 전후 APK를 번갈아 실행했고, 실행마다 예열 10회를 거쳐 전후 각 80회를 측정했습니다.
 
-**대체안/회고** 삭제 버튼을 잠가도 다른 화면의 메모 저장은 막을 수 없어 DB에서 대조했습니다. 삭제 완료 표시는 저장소의 성공 응답을 기다리도록 했습니다.
+**대체안/회고** 두 Flow가 반환한 목록을 바로 쓰면 별도로 읽힌 두 목록이 서로 다른 시점의 상태를 담을 수 있습니다. 변경 알림과 조회를 나눠 하나의 트랜잭션에서 읽었습니다. 측정 범위는 저장소 응답까지입니다.
 
 **코드**
 
 ```kotlin
-database.withTransaction {
-    requirePermission(canCommit)
-    val actual = findCheckedSession(target.session.sessionId)
-    val result =
-        when {
-            actual == null -> SessionDeletionResult.Missing
-            actual.isActive -> SessionDeletionResult.Active
-            actual != target.session -> SessionDeletionResult.Changed
-            readTarget(actual) != target -> SessionDeletionResult.Changed
-            else -> {
-                check(database.practiceSessionDao().deleteFinished(actual.sessionId) == 1)
-                SessionDeletionResult.Deleted
-            }
-        }
-    requirePermission(canCommit)
-    result
-}
+override fun observe(sessionId: String) =
+    database.invalidationTracker
+        .createFlow("location_recording_run", "location_recording_event")
+        .map { database.withTransaction { readSnapshot(sessionId) } }
 ```
 
 ### 3. 주행으로 바뀐 뒤 이전 지도 입력 차단하기
