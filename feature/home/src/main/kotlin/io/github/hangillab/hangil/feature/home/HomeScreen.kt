@@ -31,6 +31,7 @@ import io.github.hangillab.hangil.core.designsystem.ParkedDisclosure
 import io.github.hangillab.hangil.core.designsystem.ParkedLockedNotice
 import io.github.hangillab.hangil.core.designsystem.ParkedPage
 import io.github.hangillab.hangil.core.designsystem.ParkedPanel
+import io.github.hangillab.hangil.core.domain.ConnectionState
 import io.github.hangillab.hangil.core.domain.LocationRecordingState
 import io.github.hangillab.hangil.core.domain.PracticeSession
 import io.github.hangillab.hangil.core.domain.Preparation
@@ -191,7 +192,14 @@ internal fun HomeScreen(
                     Modifier.testTag("home_locked_title"),
                     style = MaterialTheme.typography.titleLarge,
                 )
-                ParkedLockedNotice()
+                if (state.vehicle.connection == ConnectionState.PERMISSION_DENIED) {
+                    ParkedLockedNotice(
+                        titleRes = R.string.home_vehicle_permission_locked_title,
+                        descriptionRes = R.string.home_vehicle_permission_locked_description,
+                    )
+                } else {
+                    ParkedLockedNotice()
+                }
             } else {
                 HomeHeader()
                 HomeDashboard(first = sessionContent, second = {
