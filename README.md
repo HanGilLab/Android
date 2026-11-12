@@ -127,25 +127,27 @@ reader = owner
 ended = null
 ```
 
-### 2. 복습에서 위치 기록을 한 번만 읽기
+### 2. 위치 표본이 쌓여도 저장 지연 줄이기
 
-**문제** 위치 표본이 많은 연습을 복습에서 열면 Room이 같은 기록을 반복해서 읽었습니다.
+**문제** 연습 중 위치 표본을 추가할 때마다, 이미 저장한 표본이 많을수록 쓰기 트랜잭션이 오래 걸렸습니다.
 
-**원인** 실행과 표본을 조회하는 두 Flow의 결과를 버리고, 변경 알림을 받은 뒤 두 목록을 트랜잭션에서 다시 읽었습니다. 첫 구독부터 같은 실행과 표본이 두 번 조회됐습니다.
+**원인** 다음 순번과 직전 수신 시각을 결정하려고 같은 연습의 모든 표본을 Kotlin 객체로 변환하고, 실행별로 다시 묶었습니다.
 
-**해결** Room의 테이블 변경 알림을 직접 구독합니다. 두 테이블 중 하나가 바뀌면 한 트랜잭션에서 두 목록을 읽고 기록 순서와 소유 관계를 검증합니다.
+**해결** 정상 형태의 기존 행은 SQL에서 자료형, 시간과 순번을 검사하고 현재 실행의 마지막 표본만 변환합니다. SQL에서 확정할 수 없는 행은 기존 전체 검증으로 넘깁니다. 다음 표본 추가와 커밋 직전 권한 확인은 같은 트랜잭션에서 합니다.
 
-**결과** 같은 Pleos API 34 에뮬레이터의 debug 빌드에서 합성 위치 표본 256개를 저장한 뒤, 첫 스냅샷 반환까지 중앙값이 28.83ms에서 16.20ms로 줄었습니다. 12.63ms(43.8%) 감소했고 p95는 41.10ms에서 23.10ms로 줄었습니다. 전후 APK를 번갈아 실행했고, 실행마다 예열 10회를 거쳐 전후 각 80회를 측정했습니다.
+**결과** Pleos API 34 에뮬레이터의 debug 빌드에서 합성 표본이 1,023개인 실행에 다음 표본을 저장했습니다. 커밋까지 중앙값은 23.69ms에서 9.18ms로 줄어 14.51ms(61.3%) 감소했고, p95는 33.36ms에서 13.18ms로 줄었습니다. 전후 APK를 번갈아 두 번씩 실행하고, 매번 예열 10회 뒤 전후 각 80회를 측정했습니다.
 
-**대체안/회고** 두 Flow가 반환한 목록을 바로 쓰면 별도로 읽힌 두 목록이 서로 다른 시점의 상태를 담을 수 있습니다. 변경 알림과 조회를 나눠 하나의 트랜잭션에서 읽었습니다. 측정 범위는 저장소 응답까지입니다.
+**대체안/회고** 마지막 행만 읽으면 그보다 앞선 행의 손상이나 순번 누락을 놓칩니다. 기존 행은 계속 검사하되, 정상 표본을 매번 객체로 만들던 비용을 줄였습니다. 오류 메타데이터가 있어 전체 검증으로 돌아가는 입력은 이 측정에 포함하지 않았습니다.
 
 **코드**
 
 ```kotlin
-override fun observe(sessionId: String) =
-    database.invalidationTracker
-        .createFlow("location_recording_run", "location_recording_event")
-        .map { database.withTransaction { readSnapshot(sessionId) } }
+val runs = readRuns(sessionId)
+return if (dao.needsEventDecoding(sessionId, LocationRecordingRepository.MAX_EVENTS_PER_RUN)) {
+    readEvents(sessionId, runs).lastOrNull { it.runId == runId }
+} else {
+    dao.lastEvent(sessionId, runId)?.event()
+}
 ```
 
 ### 3. 주행으로 바뀐 뒤 이전 지도 입력 차단하기
