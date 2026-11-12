@@ -72,3 +72,15 @@ dist/
 hs_err_pid*
 replay_pid*
 private/
+
+# Keep only public media in docs. Internal notes and submission material stay local.
+/docs/*
+!/docs/images/
+/scripts/
+*.doc
+*.docx
+*.hwp
+*.hwpx
+*.odt
+*.pdf
+*.rtf
