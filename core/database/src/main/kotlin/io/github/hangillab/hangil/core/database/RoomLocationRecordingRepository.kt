@@ -4,6 +4,7 @@ import androidx.room.withTransaction
 import io.github.hangillab.hangil.core.domain.LocationRecordingAppendResult
 import io.github.hangillab.hangil.core.domain.LocationRecordingBeginResult
 import io.github.hangillab.hangil.core.domain.LocationRecordingEndResult
+import io.github.hangillab.hangil.core.domain.LocationRecordingEvent
 import io.github.hangillab.hangil.core.domain.LocationRecordingRepository
 import io.github.hangillab.hangil.core.domain.LocationRecordingRun
 import io.github.hangillab.hangil.core.domain.LocationRecordingRunStatus
@@ -29,11 +30,23 @@ internal class RoomLocationRecordingRepository
                 .map { database.withTransaction { readSnapshot(sessionId) } }
 
         internal suspend fun readSnapshot(sessionId: String): LocationRecordingSnapshot {
+            val runs = readRuns(sessionId)
+            return LocationRecordingSnapshot(runs.values.toList(), readEvents(sessionId, runs))
+        }
+
+        private suspend fun readRuns(sessionId: String): Map<String, LocationRecordingRun> {
             val runs = dao.runs(sessionId).map { it.run() }
-            val events = dao.events(sessionId).map { it.event() }
             check(runs.all { it.source.sessionId == sessionId }) { "Foreign location source" }
             val byRun = runs.associateBy { it.runId }
             check(byRun.size == runs.size && runs.count { it.status == LocationRecordingRunStatus.OPEN } <= 1)
+            return byRun
+        }
+
+        private suspend fun readEvents(
+            sessionId: String,
+            byRun: Map<String, LocationRecordingRun>,
+        ): List<LocationRecordingEvent> {
+            val events = dao.events(sessionId).map { it.event() }
             check(events.all { it.sessionId == sessionId && it.runId in byRun }) { "Orphan location event" }
             for ((runId, rows) in events.groupBy { it.runId }) {
                 val run = checkNotNull(byRun[runId])
@@ -48,7 +61,19 @@ internal class RoomLocationRecordingRepository
                 val endedElapsed = run.endedAtElapsedRealtimeMillis
                 check(endedElapsed == null || endedElapsed >= previous)
             }
-            return LocationRecordingSnapshot(runs, events)
+            return events
+        }
+
+        private suspend fun readAppendTail(
+            sessionId: String,
+            runId: String,
+        ): LocationRecordingEvent? {
+            val runs = readRuns(sessionId)
+            return if (dao.needsEventDecoding(sessionId, LocationRecordingRepository.MAX_EVENTS_PER_RUN)) {
+                readEvents(sessionId, runs).lastOrNull { it.runId == runId }
+            } else {
+                dao.lastEvent(sessionId, runId)?.event()
+            }
         }
 
         override suspend fun begin(
@@ -127,27 +152,27 @@ internal class RoomLocationRecordingRepository
                             stored.status != LocationRecordingRunStatus.OPEN -> LocationRecordingAppendResult.RunClosed
                             else -> {
                                 check(database.practiceSessionDao().unfinishedCount() == 1L) { "Invalid active location source count" }
-                                val rows = readSnapshot(expectedSource.sessionId).events.filter { it.runId == stored.runId }
-                                val previous =
-                                    rows.lastOrNull()?.reading?.receivedAtElapsedRealtimeMillis ?: stored.startedAtElapsedRealtimeMillis
+                                val tail = readAppendTail(expectedSource.sessionId, stored.runId)
+                                val ordinal = tail?.ordinal ?: 0
+                                val previous = tail?.reading?.receivedAtElapsedRealtimeMillis ?: stored.startedAtElapsedRealtimeMillis
                                 when {
                                     reading.receivedAtElapsedRealtimeMillis < previous -> LocationRecordingAppendResult.InvalidTime
-                                    rows.lastOrNull()?.reading?.isTerminal() == true -> LocationRecordingAppendResult.RunClosed
-                                    rows.size >= LocationRecordingRepository.MAX_EVENTS_PER_RUN ->
+                                    tail?.reading?.isTerminal() == true -> LocationRecordingAppendResult.RunClosed
+                                    ordinal >= LocationRecordingRepository.MAX_EVENTS_PER_RUN ->
                                         LocationRecordingAppendResult.LimitReached
                                     else -> {
                                         val entity =
                                             LocationRecordingEventEntity.from(
                                                 expectedSource.sessionId,
                                                 stored.runId,
-                                                rows.size + 1,
+                                                ordinal + 1,
                                                 observedAtEpochMillis,
                                                 reading,
                                             )
                                         val id = dao.insertEvent(entity)
                                         LocationRecordingAppendResult.Appended(
                                             entity.copy(id = id).event(),
-                                            rows.size + 1 == LocationRecordingRepository.MAX_EVENTS_PER_RUN,
+                                            ordinal + 1 == LocationRecordingRepository.MAX_EVENTS_PER_RUN,
                                         )
                                     }
                                 }

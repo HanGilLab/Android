@@ -327,6 +327,26 @@ class RoomLocationRecordingRepositoryTest {
             }
         }
 
+    @Test fun `append rejects a malformed earlier event even when the tail is valid`() =
+        runBlocking {
+            withDatabase { db ->
+                val source = seed(db)
+                val repo = RoomLocationRecordingRepository(db)
+                val run = begun(repo.begin(source, "run", "process", 2_000, 100) { true })
+                appended(repo.append(source, run, sample(101), 2_100) { true })
+                val tail = appended(repo.append(source, run, sample(102), 2_200) { true }).event
+
+                db.openHelper.writableDatabase.execSQL("UPDATE location_recording_event SET latitude = 99.0 WHERE ordinal = 1")
+                val beforeSequence = sequence(db)
+                expectInvalid { repo.append(source, run, sample(103), 2_300) { true } }
+
+                val rows = db.locationRecordingDao().events(source.sessionId)
+                assertEquals(2, rows.size)
+                assertEquals(tail, rows.last().event())
+                assertEquals(beforeSequence, sequence(db))
+            }
+        }
+
     @Test fun `append requires the frozen open owner and exact active source`() =
         runBlocking {
             withDatabase { db ->
