@@ -61,14 +61,32 @@ Kotlin, Jetpack Compose, Coroutines, Hilt, Room, MapLibre, Pleos Vehicle SDK, Fu
 
 ## 🏛️ 시스템 아키텍처
 
-| 모듈 | 역할 |
-|---|---|
-| `app` | 앱 진입점, 화면 전환, Hilt 연결 |
-| `feature:home`, `feature:course`, `feature:map` | 화면과 ViewModel |
-| `core:domain`, `core:designsystem` | Kotlin 모델과 계약, 공통 UI |
-| `core:database`, `core:vehicle` | Room 저장소, Pleos SDK와 AAOS 연동 |
+```mermaid
+flowchart TB
+    App["app<br/>MainActivity, 화면 전환, Hilt"]
+    Feature["feature:home / course / map<br/>Compose 화면과 ViewModel"]
+    Database["core:database<br/>Room 저장소"]
+    Vehicle["core:vehicle<br/>Pleos SDK와 AAOS"]
+    Domain["core:domain<br/>Kotlin 모델과 계약"]
+    Design["core:designsystem<br/>공통 Compose UI"]
 
-기능 모듈은 도메인 계약을 사용합니다. `app`에서 Room과 차량 어댑터를 연결합니다.
+    App --> Feature
+    App --> Database
+    App --> Vehicle
+    Feature --> Domain
+    Feature --> Design
+    Database --> Domain
+    Vehicle --> Domain
+
+    classDef mint fill:#D8F0E6,stroke:#237561,color:#10382F
+    classDef cream fill:#FFF3D9,stroke:#79633D,color:#392D18
+    class App,Domain mint
+    class Feature,Design,Database,Vehicle cream
+```
+
+화살표는 주요 모듈 의존 방향입니다. `app`이 Hilt로 Room 저장소와 Pleos 어댑터를 연결하고, 화면의 ViewModel은 `core:domain` 계약을 사용합니다.
+
+차량 어댑터가 읽은 기어와 AAOS 제한으로 상세 조작을 판정합니다. 복습을 열면 Room에서 선택한 종료 기록과 연결된 차량 관찰, 위치 표본, 메모를 읽습니다.
 
 <a id="problem-solving"></a>
 
