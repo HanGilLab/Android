@@ -28,6 +28,10 @@
 
 ## 🚘 핵심 기능
 
+**Pleos 에뮬레이터 시연 (1분 57초)**
+
+https://github.com/user-attachments/assets/6311a39f-d6a9-47ab-af7c-41844c479160
+
 | 홈 | 오늘의 과제 |
 |:---:|:---:|
 | [<img src="docs/images/screenshots/hangil-home.png" alt="첫 연습 준비 버튼이 있는 홈" width="400" />](docs/images/screenshots/hangil-home.png) | [<img src="docs/images/screenshots/hangil-task.png" alt="시연 코스에서 과제를 고르는 화면" width="400" />](docs/images/screenshots/hangil-task.png) |
