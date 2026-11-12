@@ -76,6 +76,64 @@ import io.github.hangillab.hangil.feature.home.R as HomeR
 class FinishSourceReviewRoomFlowTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentCatalogActivity>()
 
+    @Test fun nativeNavigationCourseKeepsTheSelectedPublicRoadAfterRoomReopen() {
+        assumeManual()
+        fixture(courseId = "pleos-pangyo-yangjae") { f ->
+            val ended =
+                runBlocking {
+                    val result = f.store.sessions.finish(f.active, TIME + 90_000) { true }
+                    check(result is SessionFinishResult.Finished)
+                    result.session
+                }
+            val course = checkNotNull(NextPracticeSeed.resolve(f.store.catalog, ended)).practice.course
+            check(course.navigationRoute != null)
+            val road = course.roadSnapshots.single()
+            check(road.id == "osm-way-619101472-v5")
+            val before = f.snapshot()
+            var ui = f.mount(f.store.sessions, f.store.reviewRoads)
+            ui.openExact(ended)
+            ui.ready(ended)
+            ui.touch("history_review_road")
+            ui.waitTag("review_road_empty")
+            ui.touch("review_road_candidate_0")
+            check(
+                runBlocking {
+                    f.store.reviewRoads
+                        .observe(ended.sessionId)
+                        .first()
+                } == null,
+            )
+            ui.touch("review_road_save")
+            ui.waitTag("review_road_stored_title")
+            check(ui.text("review_road_stored_title") == road.title)
+            val saved =
+                checkNotNull(
+                    runBlocking {
+                        f.store.reviewRoads
+                            .observe(ended.sessionId)
+                            .first()
+                    },
+                )
+            check(saved.source == ended && saved.road == road && saved.origin == "USER_SELECTION" && saved.sampleAnchor == null)
+            ui.dispose()
+            runBlocking { f.store.reopen() }
+            ui = f.mount(f.store.sessions, f.store.reviewRoads)
+            ui.openExact(ended)
+            ui.ready(ended)
+            ui.touch("history_review_road")
+            ui.waitTag("review_road_stored_title")
+            check(ui.text("review_road_stored_title") == road.title)
+            check(
+                runBlocking {
+                    f.store.reviewRoads
+                        .observe(ended.sessionId)
+                        .first()
+                } == saved,
+            )
+            check(f.snapshot() == before)
+        }
+    }
+
     @Test fun committedFlowBeforeAcknowledgementReviewsTheFinishedSourceEvenAfterANewerRecordExists() {
         assumeManual()
         fixture { f ->
@@ -846,11 +904,14 @@ class FinishSourceReviewRoomFlowTest {
         }
     }
 
-    private fun fixture(body: (Fixture) -> Unit) {
+    private fun fixture(
+        courseId: String? = null,
+        body: (Fixture) -> Unit,
+    ) {
         val f = Fixture(OwnedPracticeTestStore.create(InstrumentationRegistry.getInstrumentation().targetContext))
         var primary: Throwable? = null
         try {
-            f.seed()
+            f.seed(courseId)
             body(f)
         } catch (failure: Throwable) {
             primary = failure
@@ -894,7 +955,7 @@ class FinishSourceReviewRoomFlowTest {
         var ui: FinishSourceReviewBoundaryTest.Driver? = null
         val memoQueries = ConcurrentLinkedQueue<String>()
 
-        fun seed() =
+        fun seed(courseId: String?) =
             runBlocking {
                 check(
                     store.schemaVersion() == SCHEMA_VERSION &&
@@ -904,7 +965,7 @@ class FinishSourceReviewRoomFlowTest {
                             .isEmpty(),
                 )
                 check(store.preparation.observeSelection().first() == null)
-                val practice = prepared(0)
+                val practice = prepared(0, courseId)
                 val start = store.sessions.start(practice, TIME + 1_000) { true }
                 check(start is SessionStartResult.Started)
                 active = start.session
@@ -917,8 +978,11 @@ class FinishSourceReviewRoomFlowTest {
                 check(store.courseCompletions.observe(active.sessionId).first() == null)
             }
 
-        private suspend fun prepared(taskIndex: Int): io.github.hangillab.hangil.core.domain.PreparedPractice {
-            val course = store.catalog.courses.first()
+        private suspend fun prepared(
+            taskIndex: Int,
+            courseId: String? = null,
+        ): io.github.hangillab.hangil.core.domain.PreparedPractice {
+            val course = if (courseId == null) store.catalog.courses.first() else store.catalog.courses.single { it.id == courseId }
             val goal = store.catalog.goals.first { it.id in course.goalIds }
             check(course.tasks.size > taskIndex)
             val selection = PracticeSelection(goal.id, course.id, course.version, course.briefingVersion, course.tasks[taskIndex].id)

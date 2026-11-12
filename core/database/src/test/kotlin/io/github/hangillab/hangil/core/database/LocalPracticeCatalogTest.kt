@@ -73,6 +73,10 @@ class LocalPracticeCatalogTest {
         assertEquals("36khp37hh8gqcm5nqhe5", route.destination.poiId)
         assertEquals(listOf("36khp2hdj2cfcm5nqhe3"), route.waypoints.map { it.poiId })
         assertEquals(null, prepared.course.mapPreview)
+        val road = prepared.course.roadSnapshots.single()
+        assertEquals("osm-way-619101472-v5", road.id)
+        assertEquals("창업로40번길", road.title)
+        assertEquals(76, road.nodes.size)
         assertTrue(catalog.courses.filter { it.mapPreview != null }.all { it.navigationRoute == null })
     }
 
