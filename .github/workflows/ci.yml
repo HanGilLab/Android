@@ -6,6 +6,7 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -22,8 +23,59 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Check tracked files for private content
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import os
+          from pathlib import Path
+          import re
+          import subprocess
+
+          private_paths = ("private/", "scripts/")
+          private_files = {"local.properties"}
+          image_extensions = {".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".avif"}
+          private_extensions = {".doc", ".docx", ".hwp", ".hwpx", ".odt", ".pdf", ".rtf", ".db", ".sqlite", ".sqlite3",
+                                ".jks", ".keystore", ".p12", ".pfx"}
+          patterns = {
+              "private planning URL": rb"https?://(?:app\.)?notion\.(?:com|so)/",
+              "personal absolute path": rb"(?:/Users/|[A-Z]:\\Users\\)[A-Za-z0-9_.-]+",
+              "private key": rb"-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----",
+              "credential token": rb"(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,}|AKIA[0-9A-Z]{16})",
+              "personal email address": rb"[A-Z0-9._%+-]+@(?:gmail|naver|daum|hanmail|hotmail|outlook|icloud)\.(?:com|net)\b",
+              "mobile phone number": rb"(?<!\d)(?:010|\+82[ -]?10)[ -]\d{4}[ -]\d{4}(?!\d)",
+          }
+          compiled = {label: re.compile(pattern, re.IGNORECASE) for label, pattern in patterns.items()}
+          license_contacts = {
+              Path("app/src/main/assets/licenses/maplibre-native.txt"): "db3cc41e2c79f394a1dddd890c55c263426175029a898d5167820498ddebf152",
+          }
+          findings = set()
+          for name in subprocess.check_output(["git", "ls-files", "-z"]).split(b"\0"):
+              if not name:
+                  continue
+              path = Path(os.fsdecode(name))
+              private_doc = path.parts[0] == "docs" and (
+                  path.parts[:2] != ("docs", "images") or path.suffix.lower() not in image_extensions
+              )
+              if private_doc or str(path).startswith(private_paths) or str(path) in private_files or path.suffix.lower() in private_extensions:
+                  findings.add("private file type or path")
+                  continue
+              if path.is_symlink():
+                  data = os.fsencode(os.readlink(path))
+              elif path.is_file():
+                  data = path.read_bytes()
+              else:
+                  continue
+              for label, pattern in compiled.items():
+                  if pattern.search(name) or pattern.search(data):
+                      if label == "personal email address" and license_contacts.get(path) == hashlib.sha256(data).hexdigest():
+                          continue
+                      findings.add(label)
+          if findings:
+              raise SystemExit("Public content check failed: " + ", ".join(sorted(findings)) + ".")
+          PY
       - uses: ./.github/actions/setup
-      - run: ./scripts/verify.sh quality
+      - run: ./gradlew --no-daemon --console=plain spotlessCheck checkModuleBoundaries lintDebug
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -40,7 +92,58 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
-      - run: ./scripts/verify.sh test
+      - run: ./gradlew --no-daemon --console=plain -p build-logic check
+      - run: ./gradlew --no-daemon --console=plain :core:domain:test testDebugUnitTest
+      - name: Verify required regression test reports
+        run: |
+          python3 - <<'PY'
+          from datetime import datetime
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+
+          reports = {
+              "core/domain/build/test-results/test": (
+                  "DrivingRestrictionsTest", "PracticeRecordingControllerTest",
+              ),
+              "core/database/build/test-results/testDebugUnitTest": (
+                  "RecordingControllerPersistenceBoundaryTest", "RecordingRunMigrationTest", "RoomCourseCompletionRepositoryTest",
+                  "RoomPracticeSessionRepositoryTest", "RoomRecordingRunRepositoryTest", "RoomSessionDeletionRepositoryTest",
+                  "RoomVehicleObservationRepositoryTest", "VehicleObservationMigrationTest",
+              ),
+              "feature/home/build/test-results/testDebugUnitTest": (
+                  "SessionFinishedReviewViewModelTest", "SessionFinishReviewViewModelTest", "SessionHistoryDeletionViewModelTest",
+                  "SessionRecordingViewModelTest",
+              ),
+              "feature/map/build/test-results/testDebugUnitTest": ("MapInputEpochTest", "MapViewModelTest"),
+          }
+
+          def passed(directory, name):
+              files = list(Path(directory).glob(f"TEST-*.{name}.xml"))
+              if len(files) != 1:
+                  return False
+              try:
+                  suite = ET.parse(files[0]).getroot()
+                  tests = suite.findall("testcase")
+                  names = {test.get("name", "").strip() for test in tests}
+                  timestamp = datetime.fromisoformat(suite.attrib["timestamp"].replace("Z", "+00:00"))
+                  return (
+                      suite.tag == "testsuite" and suite.attrib["name"].endswith("." + name)
+                      and timestamp.tzinfo is not None and tests and "" not in names and len(names) == len(tests)
+                      and int(suite.attrib["tests"]) == len(tests)
+                      and all(int(suite.attrib[key]) == 0 for key in ("failures", "errors", "skipped"))
+                      and all(
+                          t.get("classname") == suite.attrib["name"]
+                          and not any(t.find(tag) is not None for tag in ("failure", "error", "skipped"))
+                          for t in tests
+                      )
+                  )
+              except (OSError, ET.ParseError, KeyError, ValueError):
+                  return False
+
+          invalid = [name for directory, suites in reports.items() for name in suites if not passed(directory, name)]
+          if invalid:
+              raise SystemExit("Missing, invalid or unsuccessful regression reports: " + ", ".join(invalid))
+          PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -59,7 +162,10 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
-      - run: ./scripts/verify.sh build
+      - name: Build debug and unsigned release APKs
+        run: |
+          env -u HANGIL_KEYSTORE_PATH -u HANGIL_KEYSTORE_PASSWORD -u HANGIL_KEY_ALIAS -u HANGIL_KEY_PASSWORD \
+            ./gradlew --no-daemon --console=plain :app:assembleDebug :app:assembleRelease
       - uses: actions/upload-artifact@v4
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         with:
