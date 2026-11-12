@@ -63,11 +63,11 @@ Kotlin, Jetpack Compose, Coroutines, Hilt, Room, MapLibre, Pleos Vehicle SDK, Fu
 
 ```mermaid
 flowchart TB
-    App["app<br/>MainActivity, 화면 전환, Hilt"]
-    Feature["feature:home / course / map<br/>Compose 화면과 ViewModel"]
+    App["app<br/>화면 전환과 Hilt"]
+    Feature["feature<br/>home / course / map<br/>화면과 ViewModel"]
     Database["core:database<br/>Room 저장소"]
-    Vehicle["core:vehicle<br/>Pleos SDK와 AAOS"]
-    Domain["core:domain<br/>Kotlin 모델과 계약"]
+    Vehicle["core:vehicle<br/>SDK와 AAOS"]
+    Domain["core:domain<br/>Kotlin 계약"]
     Design["core:designsystem<br/>공통 Compose UI"]
 
     App --> Feature
