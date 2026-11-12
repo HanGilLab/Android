@@ -2,6 +2,8 @@
 <resources>
     <string name="map_preview">시연 지도 보기</string>
   <string name="home_title">한길졸업</string>
+  <string name="home_vehicle_permission_locked_title">차량 상태를 확인할 수 없어요</string>
+  <string name="home_vehicle_permission_locked_description">차량 정보를 읽을 권한이 없어 준비와 복습을 잠갔어요.</string>
   <string name="home_tagline">내가 매일 가야 하는 길 하나부터, 내 힘으로.</string>
   <string name="home_intro">출발 전 준비부터 주차 후 복습까지, 생활 경로 하나를 익히는 연습을 준비하고 있어요.</string>
   <string name="connection_vehicle">차량 연결</string>

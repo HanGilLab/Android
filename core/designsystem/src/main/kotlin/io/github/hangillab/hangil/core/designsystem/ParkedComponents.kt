@@ -1,5 +1,6 @@
 package io.github.hangillab.hangil.core.designsystem
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -124,14 +125,17 @@ fun ParkedChoice(
 }
 
 @Composable
-fun ParkedLockedNotice() {
+fun ParkedLockedNotice(
+    @StringRes titleRes: Int = R.string.practice_locked_title,
+    @StringRes descriptionRes: Int = R.string.practice_locked_description,
+) {
     ParkedPanel {
         Text(
-            stringResource(R.string.practice_locked_title),
+            stringResource(titleRes),
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.SemiBold,
         )
-        Text(stringResource(R.string.practice_locked_description), style = MaterialTheme.typography.bodyLarge)
+        Text(stringResource(descriptionRes), style = MaterialTheme.typography.bodyLarge)
         Text(
             stringResource(R.string.practice_locked_saved),
             style = MaterialTheme.typography.bodyLarge,
