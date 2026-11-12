@@ -13,7 +13,6 @@ import io.github.hangillab.hangil.core.domain.LocationUpdateReading
 import io.github.hangillab.hangil.core.domain.PracticeSession
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 
@@ -25,7 +24,8 @@ internal class RoomLocationRecordingRepository
         private val dao get() = database.locationRecordingDao()
 
         override fun observe(sessionId: String) =
-            combine(dao.observeRuns(sessionId), dao.observeEvents(sessionId)) { _, _ -> Unit }
+            database.invalidationTracker
+                .createFlow("location_recording_run", "location_recording_event")
                 .map { database.withTransaction { readSnapshot(sessionId) } }
 
         internal suspend fun readSnapshot(sessionId: String): LocationRecordingSnapshot {

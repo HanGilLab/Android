@@ -3,7 +3,6 @@ package io.github.hangillab.hangil.core.database
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.Query
-import kotlinx.coroutines.flow.Flow
 
 private const val RUN_SELECT =
     "SELECT location_recording_run.*, CASE WHEN typeof(rowId) = 'integer' AND typeof(runId) = 'text' AND " +
@@ -32,12 +31,6 @@ private const val EVENT_SELECT =
 
 @Dao
 internal interface LocationRecordingDao {
-    @Query(RUN_SELECT + " WHERE sessionId = :sessionId ORDER BY rowId ASC")
-    fun observeRuns(sessionId: String): Flow<List<LocationRecordingRunRow>>
-
-    @Query(EVENT_SELECT + " WHERE sessionId = :sessionId ORDER BY id ASC")
-    fun observeEvents(sessionId: String): Flow<List<LocationRecordingEventRow>>
-
     @Query(RUN_SELECT + " WHERE sessionId = :sessionId ORDER BY rowId ASC")
     suspend fun runs(sessionId: String): List<LocationRecordingRunRow>
 

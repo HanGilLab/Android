@@ -24,7 +24,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -43,6 +45,43 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class RoomLocationRecordingRepositoryTest {
+    @Test fun `one location history subscription sees event writes run changes and cascade deletion`() =
+        runBlocking {
+            withDatabase { db ->
+                val source = seed(db)
+                val repo = RoomLocationRecordingRepository(db)
+                val empty = LocationRecordingSnapshot(emptyList(), emptyList())
+                withTimeout(10_000) {
+                    val snapshots = Channel<LocationRecordingSnapshot>(Channel.UNLIMITED)
+                    val observer =
+                        launch {
+                            repo.observe(source.sessionId).distinctUntilChanged().collect { snapshots.send(it) }
+                        }
+                    try {
+                        assertEquals(empty, snapshots.receive())
+                        val run = begun(repo.begin(source, "run", "process", 2_000, 100) { true })
+                        assertEquals(LocationRecordingSnapshot(listOf(run), emptyList()), snapshots.receive())
+                        val event = appended(repo.append(source, run, sample(101), 2_100) { true }).event
+                        assertEquals(LocationRecordingSnapshot(listOf(run), listOf(event)), snapshots.receive())
+
+                        val endedRun =
+                            repo.end(run, LocationRecordingRunStatus.STOPPED, LocationRecordingStopReason.USER_STOP, 2_200, 102)
+                                as LocationRecordingEndResult.Ended
+                        assertEquals(LocationRecordingSnapshot(listOf(endedRun.run), listOf(event)), snapshots.receive())
+
+                        db.practiceSessionDao().finish(source.sessionId, 3_000)
+                        val ended = checkNotNull(db.practiceSessionDao().find(source.sessionId)).session()
+                        val deletions = RoomSessionDeletionRepository(db)
+                        val target = (deletions.prepare(ended) { true } as SessionDeletionPreparation.Ready).target
+                        assertEquals(SessionDeletionResult.Deleted, deletions.delete(target) { true })
+                        assertEquals(empty, snapshots.receive())
+                    } finally {
+                        observer.cancelAndJoin()
+                    }
+                }
+            }
+        }
+
     @Test fun `raw update payload and append order survive positive wall clock reversal`() =
         runBlocking {
             withDatabase { db ->
