@@ -10,7 +10,11 @@ import io.github.hangillab.hangil.core.domain.PracticeSession
 
 @Entity(
     tableName = "practice_session",
-    indices = [Index(value = ["sessionId"], unique = true), Index(value = ["activeSlot"], unique = true)],
+    indices = [
+        Index(value = ["sessionId"], unique = true),
+        Index(value = ["activeSlot"], unique = true),
+        Index(value = ["endedAtEpochMillis"]),
+    ],
 )
 internal data class PracticeSessionEntity(
     @PrimaryKey(autoGenerate = true) val rowId: Long = 0,

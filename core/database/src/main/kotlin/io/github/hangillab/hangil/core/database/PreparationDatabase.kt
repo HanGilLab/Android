@@ -16,7 +16,7 @@ import androidx.room.RoomDatabase
         SessionReviewRoadEntity::class,
         SessionReviewRoadNodeEntity::class,
     ],
-    version = 11,
+    version = 12,
     exportSchema = true,
 )
 internal abstract class PreparationDatabase : RoomDatabase() {

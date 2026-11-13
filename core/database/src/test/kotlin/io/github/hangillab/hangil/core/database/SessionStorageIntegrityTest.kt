@@ -106,6 +106,21 @@ class SessionStorageIntegrityTest {
             }
         }
 
+    @Test fun `unfinished count includes inconsistent rows once and excludes finished rows without slots`() =
+        runBlocking {
+            memoryDatabase().useDatabase { database ->
+                val dao = database.practiceSessionDao()
+                dao.insert(entity("finished"))
+                assertEquals(0L, dao.unfinishedCount())
+                dao.insert(entity("active").copy(endedAtEpochMillis = null, activeSlot = 1))
+                assertEquals(1L, dao.unfinishedCount())
+                dao.insert(entity("ended-with-slot").copy(activeSlot = 2))
+                assertEquals(2L, dao.unfinishedCount())
+                dao.insert(entity("missing-slot").copy(endedAtEpochMillis = null))
+                assertEquals(3L, dao.unfinishedCount())
+            }
+        }
+
     @Test fun `normal history keeps insertion order historical versions and exact course context`() =
         runBlocking {
             memoryDatabase().useDatabase { database ->

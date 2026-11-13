@@ -146,7 +146,7 @@ class RoomSessionDeletionRepositoryTest {
                 assertTrue(database.vehicleRecordingRunDao().forSession(source.sessionId).isEmpty())
                 assertEquals(unrelated, snapshot(database, excluding = source.sessionId))
                 assertEquals(schema, schema(database.openHelper.writableDatabase))
-                assertEquals(11, database.openHelper.writableDatabase.version)
+                assertEquals(12, database.openHelper.writableDatabase.version)
                 database.openHelper.writableDatabase
                     .query("PRAGMA foreign_key_check")
                     .use { assertEquals(0, it.count) }

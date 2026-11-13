@@ -37,7 +37,7 @@ class VehicleObservationMigrationTest {
                 verifyVersionThreeBoundary(name, before)
                 open(name).useDatabase { database ->
                     val sqlite = database.openHelper.writableDatabase
-                    assertEquals(11, sqlite.version)
+                    assertEquals(12, sqlite.version)
                     assertEquals(before.getValue("preparation"), rows(sqlite, "preparation", "slot"))
                     assertEquals(before.getValue("practice_session"), rows(sqlite, "practice_session", "rowId"))
                     assertEquals(emptyList<List<Any?>>(), rows(sqlite, "vehicle_observation", "id"))
@@ -69,7 +69,7 @@ class VehicleObservationMigrationTest {
                 val before = createLegacy(name, 1)
                 open(name).useDatabase { database ->
                     val sqlite = database.openHelper.writableDatabase
-                    assertEquals(11, sqlite.version)
+                    assertEquals(12, sqlite.version)
                     assertEquals(before.getValue("preparation"), rows(sqlite, "preparation", "slot"))
                     assertTrue(rows(sqlite, "practice_session", "rowId").isEmpty())
                     assertTrue(rows(sqlite, "vehicle_observation", "id").isEmpty())
@@ -103,6 +103,7 @@ class VehicleObservationMigrationTest {
                 PreparationMigration8To9,
                 PreparationMigration9To10,
                 PreparationMigration10To11,
+                PreparationMigration11To12,
             ).build()
 
     /** Keep the original v2 to v3 contract explicit although the production Room target is v4. */

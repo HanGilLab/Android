@@ -173,6 +173,7 @@ class OwnedPracticeTestStore private constructor(
                     PreparationMigration8To9,
                     PreparationMigration9To10,
                     PreparationMigration10To11,
+                    PreparationMigration11To12,
                 ).build()
         }
     }
