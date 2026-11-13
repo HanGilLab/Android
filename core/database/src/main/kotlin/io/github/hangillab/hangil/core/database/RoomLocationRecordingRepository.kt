@@ -46,22 +46,29 @@ internal class RoomLocationRecordingRepository
             sessionId: String,
             byRun: Map<String, LocationRecordingRun>,
         ): List<LocationRecordingEvent> {
-            val events = dao.events(sessionId).map { it.event() }
-            check(events.all { it.sessionId == sessionId && it.runId in byRun }) { "Orphan location event" }
-            for ((runId, rows) in events.groupBy { it.runId }) {
-                val run = checkNotNull(byRun[runId])
-                check(rows.size <= LocationRecordingRepository.MAX_EVENTS_PER_RUN)
-                var previous = run.startedAtElapsedRealtimeMillis
-                rows.forEachIndexed { index, event ->
-                    check(event.ordinal == index + 1) { "Invalid location append order" }
-                    check(event.reading.receivedAtElapsedRealtimeMillis >= previous) { "Location receipt clock regressed" }
-                    check(index == rows.lastIndex || !event.reading.isTerminal()) { "Event follows terminal location metadata" }
-                    previous = event.reading.receivedAtElapsedRealtimeMillis
-                }
-                val endedElapsed = run.endedAtElapsedRealtimeMillis
-                check(endedElapsed == null || endedElapsed >= previous)
+            val previousByRun = mutableMapOf<String, LocationRecordingEvent>()
+            return dao.events(sessionId).map { row ->
+                row.event().also { validateEvent(it, byRun, previousByRun) }
             }
-            return events
+        }
+
+        // Both readers visit events in id order. The event model already bounds each ordinal.
+        private fun validateEvent(
+            event: LocationRecordingEvent,
+            byRun: Map<String, LocationRecordingRun>,
+            previousByRun: MutableMap<String, LocationRecordingEvent>,
+        ) {
+            val run = checkNotNull(byRun[event.runId]) { "Orphan location event" }
+            check(event.sessionId == run.source.sessionId) { "Orphan location event" }
+            val previous = previousByRun[event.runId]
+            val previousElapsed = previous?.reading?.receivedAtElapsedRealtimeMillis ?: run.startedAtElapsedRealtimeMillis
+            val elapsed = event.reading.receivedAtElapsedRealtimeMillis
+            check(event.ordinal == (previous?.ordinal ?: 0) + 1) { "Invalid location append order" }
+            check(elapsed >= previousElapsed) { "Location receipt clock regressed" }
+            check(previous?.reading?.isTerminal() != true) { "Event follows terminal location metadata" }
+            val endedElapsed = run.endedAtElapsedRealtimeMillis
+            check(endedElapsed == null || elapsed <= endedElapsed)
+            previousByRun[event.runId] = event
         }
 
         private suspend fun readAppendTail(
@@ -249,7 +256,7 @@ internal class RoomLocationRecordingRepository
                 currentCoroutineContext().ensureActive()
                 val runs = dao.allRuns().map { it.run() }
                 check(runs.count { it.status == LocationRecordingRunStatus.OPEN } <= 1) { "Multiple location owners" }
-                runs.map { it.source.sessionId }.distinct().forEach { readSnapshot(it) }
+                validateRecoveryEvents(runs)
                 for (run in runs) {
                     if (run.status == LocationRecordingRunStatus.OPEN && run.processId != currentProcessId) {
                         check(
@@ -265,6 +272,29 @@ internal class RoomLocationRecordingRepository
                     }
                 }
                 currentCoroutineContext().ensureActive()
+            }
+        }
+
+        private suspend fun validateRecoveryEvents(runs: List<LocationRecordingRun>) {
+            if (runs.isEmpty()) return
+            val runsBySession =
+                runs.groupBy { it.source.sessionId }.mapValues { (_, rows) ->
+                    rows.associateBy { it.runId }.also { check(it.size == rows.size) }
+                }
+            val previousBySession = mutableMapOf<String, MutableMap<String, LocationRecordingEvent>>()
+            // Start at the smallest possible row ID so corrupt nonpositive IDs are still decoded.
+            var firstId = Long.MIN_VALUE
+            while (true) {
+                val rows = dao.recoveryEvents(firstId, RECOVERY_PAGE_SIZE)
+                for (row in rows) {
+                    val event = row.event()
+                    val byRun = checkNotNull(runsBySession[event.sessionId]) { "Foreign location source" }
+                    validateEvent(event, byRun, previousBySession.getOrPut(event.sessionId) { mutableMapOf() })
+                }
+                if (rows.size < RECOVERY_PAGE_SIZE) return
+                val lastId = rows.last().entity.id
+                if (lastId == Long.MAX_VALUE) return
+                firstId = lastId + 1
             }
         }
 
@@ -315,4 +345,8 @@ internal class RoomLocationRecordingRepository
         }
 
         private class WriteBlocked : RuntimeException()
+
+        private companion object {
+            const val RECOVERY_PAGE_SIZE = 512
+        }
     }
