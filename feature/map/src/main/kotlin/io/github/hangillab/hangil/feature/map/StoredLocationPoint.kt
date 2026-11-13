@@ -21,6 +21,7 @@ internal object StoredLocationPoint {
     const val SOURCE = "hangil-stored-location-point"
     const val LAYER = "hangil-stored-location-circle"
     const val SELECTION = "hangil-stored-location-selection"
+    const val RENDER_GENERATION = "render_generation"
     private const val MERCATOR_LATITUDE_LIMIT = 85.0511287798066
 
     fun canProject(input: StoredLocationMapInput): Boolean =
@@ -29,6 +30,7 @@ internal object StoredLocationPoint {
     fun features(
         input: StoredLocationMapInput,
         selectedOnly: Boolean = false,
+        renderGeneration: Long? = null,
     ): FeatureCollection {
         require(canProject(input)) { "A stored sample is outside the map projection" }
         val samples =
@@ -45,6 +47,9 @@ internal object StoredLocationPoint {
                     addStringProperty("event_id", event.id.toString())
                     addStringProperty("run_id", event.runId)
                     addNumberProperty("ordinal", event.ordinal)
+                    if (renderGeneration != null && event.id == input.selectedEvent?.id) {
+                        addStringProperty(RENDER_GENERATION, renderGeneration.toString())
+                    }
                 }
             },
         )

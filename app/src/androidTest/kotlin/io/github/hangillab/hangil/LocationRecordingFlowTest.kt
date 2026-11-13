@@ -693,11 +693,18 @@ class LocationRecordingFlowTest {
             val nearerMap = previewRoad(nearerPreview, roads[1])
             assertPreviewDidNotWrite()
             val fartherMap = previewRoad(fartherPreview, roads[0])
-            instrument.runOnMainSync { assertFalse(nearerMap.isAttachedToWindow) }
+            instrument.runOnMainSync {
+                assertTrue("Switching local road previews should reuse the attached map", nearerMap === fartherMap)
+                assertTrue(fartherMap.isAttachedToWindow)
+            }
             assertPreviewDidNotWrite()
             click(fartherPreview)
             assertTrue(nodes(previewLegend).isEmpty())
-            instrument.runOnMainSync { assertFalse(fartherMap.isAttachedToWindow) }
+            val normalMap = awaitStoredMap(recorded.runs.single(), recorded.events, expectedSample.event)
+            instrument.runOnMainSync {
+                assertFalse("Closing the preview should detach its renderer", fartherMap.isAttachedToWindow)
+                assertTrue(normalMap.isAttachedToWindow)
+            }
             assertPreviewDidNotWrite()
 
             val lockedMap = previewRoad(nearerPreview, roads[1])
