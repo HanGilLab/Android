@@ -18,6 +18,9 @@ internal interface PracticeSessionDao {
     @Query(PracticeSessionStorageSql.CHECKED_SELECT + " WHERE sessionId = :sessionId")
     fun observeSessionChecked(sessionId: String): Flow<PracticeSessionRow?>
 
+    @Query(PracticeSessionStorageSql.CHECKED_SELECT + " WHERE sessionId = :sessionId")
+    suspend fun findChecked(sessionId: String): PracticeSessionRow?
+
     @Query(PracticeSessionStorageSql.CHECKED_SELECT + " WHERE " + UNFINISHED_PREDICATE)
     fun observeUnfinishedChecked(): Flow<List<PracticeSessionRow>>
 
