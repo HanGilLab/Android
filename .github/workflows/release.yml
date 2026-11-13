@@ -2,15 +2,15 @@ name: Release APK
 
 on:
   push:
-    tags: ['v*', '!v*-preview*']
+    tags: ['v*']
   workflow_dispatch:
     inputs:
-      preview_tag:
-        description: Published preview release tag
+      release_tag:
+        description: Published release tag
         required: true
         type: string
       apk_sha256:
-        description: SHA-256 of the preview release APK
+        description: SHA-256 of the published release APK
         required: true
         type: string
 
@@ -60,6 +60,7 @@ jobs:
       - uses: ./.github/actions/setup
       - name: Build and verify signed APK
         id: apk
+        if: env.ANDROID_KEYSTORE_BASE64 != ''
         shell: bash
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -93,7 +94,11 @@ jobs:
           cp "$apk" "dist/hangil-$version.apk"
           (cd dist && sha256sum "hangil-$version.apk" > SHA256SUMS.txt)
           awk '{print "sha256=" $1}' dist/SHA256SUMS.txt >> "$GITHUB_OUTPUT"
+      - name: Report local signing mode
+        if: steps.apk.outcome == 'skipped'
+        run: echo 'The release signing secret is absent. Attach the locally signed APK before publishing it to GitHub Packages.'
       - name: Publish APK and checksum
+        if: steps.apk.outcome == 'success'
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "$GITHUB_REF_NAME" dist/*.apk dist/SHA256SUMS.txt --verify-tag --generate-notes
@@ -102,7 +107,7 @@ jobs:
     needs: publish
     if: >-
       !cancelled() &&
-      ((github.event_name == 'push' && needs.publish.result == 'success') ||
+      ((github.event_name == 'push' && needs.publish.result == 'success' && needs.publish.outputs.apk-sha256 != '') ||
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -118,20 +123,19 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           APK_SHA256: ${{ needs.publish.outputs.apk-sha256 || inputs.apk_sha256 }}
-          RELEASE_TAG: ${{ inputs.preview_tag || github.ref_name }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
         run: |
           set -euo pipefail
           [[ "$APK_SHA256" =~ ^[a-f0-9]{64}$ ]]
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
           if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
-            [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-preview\.[1-9][0-9]*$ ]]
             gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease \
-              --jq '.isPrerelease and (.isDraft | not)' | grep -qx true
+              --jq '(.isPrerelease or .isDraft) | not' | grep -qx true
             revision="$(gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_TAG" --jq .sha)"
             [[ "$revision" =~ ^[a-f0-9]{40}$ ]]
             gh api "repos/$GITHUB_REPOSITORY/compare/$revision...main" --jq .status \
               | grep -Eq '^(identical|ahead)$'
           else
-            [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
             revision="$GITHUB_SHA"
           fi
           umask 077
