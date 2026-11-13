@@ -15,17 +15,28 @@ internal object StoredLocationRoadDistance {
     ): Double? {
         val point = Point.fromLngLat(sample.longitude, sample.latitude)
         val nearest = nearestPoint(point, road) ?: return null
-        return try {
+        return distanceMeters(point, nearest)
+    }
+
+    fun project(
+        sample: LocationUpdateSample,
+        road: CourseRoadSnapshot,
+    ): Projection? {
+        val point = Point.fromLngLat(sample.longitude, sample.latitude)
+        val nearest = nearestPoint(point, road) ?: return null
+        val distance = distanceMeters(point, nearest) ?: return null
+        return Projection(nearest, distance)
+    }
+
+    private fun distanceMeters(
+        point: Point,
+        nearest: Point,
+    ): Double? =
+        try {
             TurfMeasurement.distance(point, nearest, UNIT_METRES).takeIf { it.isFinite() && it >= 0 }
         } catch (_: RuntimeException) {
             null
         }
-    }
-
-    fun nearestPoint(
-        sample: LocationUpdateSample,
-        road: CourseRoadSnapshot,
-    ): Point? = nearestPoint(Point.fromLngLat(sample.longitude, sample.latitude), road)
 
     private fun nearestPoint(
         point: Point,
@@ -42,4 +53,9 @@ internal object StoredLocationRoadDistance {
             null
         }
     }
+
+    data class Projection(
+        val nearest: Point,
+        val meters: Double,
+    )
 }

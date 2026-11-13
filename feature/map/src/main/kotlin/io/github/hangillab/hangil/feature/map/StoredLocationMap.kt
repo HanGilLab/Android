@@ -343,13 +343,13 @@ fun StoredLocationMap(
                             roadGeometry?.suggestedRoadId,
                             previewRoad,
                             permitted,
-                            onPreview = { road ->
+                            onPreview = { road, nearest ->
                                 if (permitted()) {
                                     val next =
                                         if (previewChoice?.first == road) {
                                             null
                                         } else {
-                                            StoredLocationRoadDistance.nearestPoint(selectedSample, road)?.let { road to it }
+                                            road to nearest
                                         }
                                     if (next != previewChoice) {
                                         previewSerial.longValue++
@@ -591,16 +591,14 @@ private fun StoredLocationCourseRoads(
     suggestedRoadId: String?,
     preview: CourseRoadSnapshot?,
     permitted: () -> Boolean,
-    onPreview: (CourseRoadSnapshot) -> Unit,
+    onPreview: (CourseRoadSnapshot, Point) -> Unit,
     onSave: ((String) -> Unit)?,
 ) {
-    val distances =
+    val candidates =
         remember(sample, roads) {
             roads
-                .map { road ->
-                    val meters = StoredLocationRoadDistance.meters(sample, road)
-                    road to meters?.let { if (it < 1) 0 else it.roundToInt() }
-                }.sortedBy { (_, meters) -> meters ?: Int.MAX_VALUE }
+                .map { road -> road to StoredLocationRoadDistance.project(sample, road) }
+                .sortedBy { (_, projection) -> projection?.roundedMeters ?: Int.MAX_VALUE }
         }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.md)) {
         Text(
@@ -609,7 +607,8 @@ private fun StoredLocationCourseRoads(
             style = MaterialTheme.typography.titleLarge,
         )
         Text(stringResource(R.string.stored_map_course_roads_scope), style = MaterialTheme.typography.bodyLarge)
-        distances.forEachIndexed { index, (road, meters) ->
+        candidates.forEachIndexed { index, (road, projection) ->
+            val meters = projection?.roundedMeters
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(HanGilSpacing.sm)) {
                 Text(
                     when (meters) {
@@ -628,9 +627,9 @@ private fun StoredLocationCourseRoads(
                         color = MaterialTheme.colorScheme.primary,
                     )
                 }
-                if (meters != null && road.canProjectRoad()) {
+                if (projection != null && road.canProjectRoad()) {
                     ParkedButton(
-                        onClick = { onPreview(road) },
+                        onClick = { onPreview(road, projection.nearest) },
                         modifier = Modifier.fillMaxWidth().testTag("stored_location_course_road_preview_$index"),
                         prominent = false,
                     ) {
@@ -1023,3 +1022,6 @@ private val STORED_OVERLAY_SOURCES =
     )
 
 private fun CourseRoadSnapshot.canProjectRoad(): Boolean = nodes.all { it.latitude in -85.0511287798066..85.0511287798066 }
+
+private val StoredLocationRoadDistance.Projection.roundedMeters: Int
+    get() = if (meters < 1) 0 else meters.roundToInt()
