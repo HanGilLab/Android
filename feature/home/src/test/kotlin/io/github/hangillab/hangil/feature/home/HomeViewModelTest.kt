@@ -14,6 +14,7 @@ import io.github.hangillab.hangil.core.domain.PracticeSelection
 import io.github.hangillab.hangil.core.domain.PracticeTask
 import io.github.hangillab.hangil.core.domain.Preparation
 import io.github.hangillab.hangil.core.domain.PreparedPractice
+import io.github.hangillab.hangil.core.domain.TurnSignalState
 import io.github.hangillab.hangil.core.domain.UxRestrictionState
 import io.github.hangillab.hangil.core.domain.VehicleGateway
 import io.github.hangillab.hangil.core.domain.VehicleReading
@@ -309,6 +310,47 @@ class HomeViewModelTest {
             assertTrue(seen.none { it == PreparationLoadState.Failed })
             assertEquals(2, reads)
             assertEquals(0, writes)
+        }
+
+    @Test fun `diagnostic readings do not republish home while gear and permission still control the lock`() =
+        runTest {
+            val model = HomeViewModel(vehicle, navigation, restrictions, repository, catalog)
+            val states = mutableListOf<HomeUiState>()
+            backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { model.uiState.collect { states += it } }
+            runCurrent()
+            val parked = vehicle.state.value
+            assertTrue(model.uiState.value.allowsDetailedInteraction)
+            val previous = states.size
+
+            val updated =
+                parked.copy(
+                    turnSignal = VehicleReading.Available(TurnSignalState.LEFT),
+                    brakePressed = VehicleReading.Available(true),
+                )
+            vehicle.state.value = updated
+            navigation.connection.value = ConnectionState.CONNECTED
+            runCurrent()
+            assertEquals(previous, states.size)
+            assertEquals(updated, model.diagnosticVehicle.value)
+            assertEquals(ConnectionState.CONNECTED, model.diagnosticNavigation.value)
+
+            vehicle.state.value = parked.copy(gear = VehicleReading.Available(GearPosition.DRIVE))
+            assertFalse(model.canViewMap())
+            runCurrent()
+            assertFalse(model.uiState.value.allowsDetailedInteraction)
+            assertFalse(model.uiState.value.vehiclePermissionDenied)
+
+            vehicle.state.value = parked.copy(connection = ConnectionState.PERMISSION_DENIED)
+            assertFalse(model.canViewMap())
+            runCurrent()
+            assertFalse(model.uiState.value.allowsDetailedInteraction)
+            assertTrue(model.uiState.value.vehiclePermissionDenied)
+
+            vehicle.state.value = parked.copy(connection = ConnectionState.DISCONNECTED)
+            runCurrent()
+            assertFalse(model.uiState.value.allowsDetailedInteraction)
+            assertFalse(model.uiState.value.vehiclePermissionDenied)
+            assertFalse(HomeUiState().allowsDetailedInteraction)
         }
 
     @Test fun `diagnostic disclosure live read gate rejects stale parked UI without extra IO`() =

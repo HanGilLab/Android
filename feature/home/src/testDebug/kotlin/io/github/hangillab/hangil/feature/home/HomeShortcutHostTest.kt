@@ -30,11 +30,7 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import io.github.hangillab.hangil.core.designsystem.HanGilTheme
-import io.github.hangillab.hangil.core.domain.ConnectionState
 import io.github.hangillab.hangil.core.domain.CourseReviewStatus
-import io.github.hangillab.hangil.core.domain.DrivingRestrictions
-import io.github.hangillab.hangil.core.domain.GearPosition
-import io.github.hangillab.hangil.core.domain.ParkingState
 import io.github.hangillab.hangil.core.domain.PracticeCourse
 import io.github.hangillab.hangil.core.domain.PracticeGoal
 import io.github.hangillab.hangil.core.domain.PracticeSelection
@@ -42,10 +38,7 @@ import io.github.hangillab.hangil.core.domain.PracticeSession
 import io.github.hangillab.hangil.core.domain.PracticeTask
 import io.github.hangillab.hangil.core.domain.Preparation
 import io.github.hangillab.hangil.core.domain.PreparedPractice
-import io.github.hangillab.hangil.core.domain.UxRestrictionState
-import io.github.hangillab.hangil.core.domain.VehicleReading
 import io.github.hangillab.hangil.core.domain.VehicleRecordingState
-import io.github.hangillab.hangil.core.domain.VehicleState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -236,20 +229,12 @@ class HomeShortcutHostTest {
                     val current = state.value
                     HomeScreen(
                         HomeUiState(
-                            vehicle =
-                                if (current.allowsInteraction) {
-                                    VehicleState(ConnectionState.CONNECTED, VehicleReading.Available(GearPosition.PARK))
-                                } else {
-                                    VehicleState()
-                                },
-                            restrictions = DrivingRestrictions(ParkingState.PARKED, UxRestrictionState.UNRESTRICTED),
+                            allowsDetailedInteraction = current.allowsInteraction,
                             preparation = current.preparation,
                         ),
-                        showDiagnostics = false,
                         onRetry = { retries++ },
                         onMapPreview = {},
                         canExpandPreparation = { false },
-                        canExpandDiagnostics = { false },
                         sessionContent = {
                             SessionPanel(
                                 current,

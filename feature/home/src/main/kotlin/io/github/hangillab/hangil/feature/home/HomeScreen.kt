@@ -31,7 +31,6 @@ import io.github.hangillab.hangil.core.designsystem.ParkedDisclosure
 import io.github.hangillab.hangil.core.designsystem.ParkedLockedNotice
 import io.github.hangillab.hangil.core.designsystem.ParkedPage
 import io.github.hangillab.hangil.core.designsystem.ParkedPanel
-import io.github.hangillab.hangil.core.domain.ConnectionState
 import io.github.hangillab.hangil.core.domain.LocationRecordingState
 import io.github.hangillab.hangil.core.domain.PracticeSession
 import io.github.hangillab.hangil.core.domain.Preparation
@@ -115,12 +114,16 @@ private fun HomeRouteContent(
     val prepared = ((displayed.preparation as? PreparationLoadState.Loaded)?.preparation as? Preparation.Ready)?.practice
     HomeScreen(
         displayed,
-        showDiagnostics,
         viewModel::retryLoading,
         { if (viewModel.canViewMap()) onMapPreview() },
         { viewModel.canExpandPreparation(it, displayed.preparationRevision) },
-        viewModel::canViewMap,
-        {
+        diagnostics =
+            if (showDiagnostics) {
+                { HomeDiagnosticsDisclosure(viewModel) }
+            } else {
+                null
+            },
+        sessionContent = {
             val sessions: SessionViewModel = hiltViewModel()
             val courseGuidance by sessions.courseGuidance.collectAsStateWithLifecycle()
             val session by sessions.uiState.collectAsStateWithLifecycle()
@@ -177,11 +180,10 @@ private fun HomeRouteContent(
 @Composable
 internal fun HomeScreen(
     state: HomeUiState,
-    showDiagnostics: Boolean,
     onRetry: () -> Unit,
     onMapPreview: () -> Unit,
     canExpandPreparation: (PreparedPractice) -> Boolean,
-    canExpandDiagnostics: () -> Boolean,
+    diagnostics: (@Composable () -> Unit)? = null,
     sessionContent: @Composable () -> Unit,
 ) {
     key(state.allowsDetailedInteraction) {
@@ -192,7 +194,7 @@ internal fun HomeScreen(
                     Modifier.testTag("home_locked_title"),
                     style = MaterialTheme.typography.titleLarge,
                 )
-                if (state.vehicle.connection == ConnectionState.PERMISSION_DENIED) {
+                if (state.vehiclePermissionDenied) {
                     ParkedLockedNotice(
                         titleRes = R.string.home_vehicle_permission_locked_title,
                         descriptionRes = R.string.home_vehicle_permission_locked_description,
@@ -283,15 +285,7 @@ internal fun HomeScreen(
                         Text(stringResource(R.string.map_preview), style = MaterialTheme.typography.titleLarge)
                     }
                 })
-                if (showDiagnostics) {
-                    ParkedDisclosure(
-                        title = stringResource(R.string.vehicle_diagnostics),
-                        canExpand = canExpandDiagnostics,
-                        modifier = Modifier.testTag("home_diagnostics_details"),
-                    ) {
-                        Column(Modifier.testTag("home_diagnostics_content")) { VehicleDiagnostics(state) }
-                    }
-                }
+                diagnostics?.invoke()
             }
         }
     }
