@@ -47,10 +47,11 @@ class LocationRecordingMigrationTest {
                     PreparationMigration8To9,
                     PreparationMigration9To10,
                     PreparationMigration10To11,
+                    PreparationMigration11To12,
                 ).build()
                 .useDatabase { db ->
                     val sqlite = db.openHelper.writableDatabase
-                    assertEquals(11, sqlite.version)
+                    assertEquals(12, sqlite.version)
                     assertTrue("Original schema6 rows/types/order/sequence must remain exact", before == snapshot(sqlite))
                     for (table in listOf("location_recording_run", "location_recording_event")) {
                         sqlite.query("SELECT COUNT(*) FROM $table").use {
@@ -80,11 +81,16 @@ class LocationRecordingMigrationTest {
             val before = createLegacy(name, 7)
             Room
                 .databaseBuilder(context, PreparationDatabase::class.java, name)
-                .addMigrations(PreparationMigration7To8, PreparationMigration8To9, PreparationMigration9To10, PreparationMigration10To11)
-                .build()
+                .addMigrations(
+                    PreparationMigration7To8,
+                    PreparationMigration8To9,
+                    PreparationMigration9To10,
+                    PreparationMigration10To11,
+                    PreparationMigration11To12,
+                ).build()
                 .useDatabase { db ->
                     val sqlite = db.openHelper.writableDatabase
-                    assertEquals(11, sqlite.version)
+                    assertEquals(12, sqlite.version)
                     assertTrue("Original rows, types, order and sequence must remain exact", before == snapshot(sqlite, tables(7)))
                     for (table in listOf("session_review_road", "session_review_road_node")) {
                         sqlite.query("SELECT COUNT(*) FROM $table").use {
@@ -107,11 +113,11 @@ class LocationRecordingMigrationTest {
             val before = createLegacy(name, 8)
             Room
                 .databaseBuilder(context, PreparationDatabase::class.java, name)
-                .addMigrations(PreparationMigration8To9, PreparationMigration9To10, PreparationMigration10To11)
+                .addMigrations(PreparationMigration8To9, PreparationMigration9To10, PreparationMigration10To11, PreparationMigration11To12)
                 .build()
                 .useDatabase { db ->
                     val sqlite = db.openHelper.writableDatabase
-                    assertEquals(11, sqlite.version)
+                    assertEquals(12, sqlite.version)
                     val after = snapshot(sqlite, tables(8), excludeMemo = true)
                     assertTrue("Original rows, types, order and sequence must remain exact", before == after)
                     sqlite.query("SELECT memoText, typeof(memoText) FROM session_review_road").use {
@@ -134,11 +140,11 @@ class LocationRecordingMigrationTest {
             val before = createLegacy(name, 9)
             Room
                 .databaseBuilder(context, PreparationDatabase::class.java, name)
-                .addMigrations(PreparationMigration9To10, PreparationMigration10To11)
+                .addMigrations(PreparationMigration9To10, PreparationMigration10To11, PreparationMigration11To12)
                 .build()
                 .useDatabase { db ->
                     val sqlite = db.openHelper.writableDatabase
-                    assertEquals(11, sqlite.version)
+                    assertEquals(12, sqlite.version)
                     assertEquals(before, snapshot(sqlite, tables(9)))
                     for (table in listOf(
                         "preparation",
@@ -169,16 +175,42 @@ class LocationRecordingMigrationTest {
             val before = createLegacy(name, 10)
             Room
                 .databaseBuilder(context, PreparationDatabase::class.java, name)
-                .addMigrations(PreparationMigration10To11)
+                .addMigrations(PreparationMigration10To11, PreparationMigration11To12)
                 .build()
                 .useDatabase { db ->
                     val sqlite = db.openHelper.writableDatabase
-                    assertEquals(11, sqlite.version)
+                    assertEquals(12, sqlite.version)
                     assertEquals(before, snapshot(sqlite, tables(10), excludePlannedRoad = false))
                     sqlite.query("SELECT sampleAnchorJson, typeof(sampleAnchorJson) FROM session_review_road").use { rows ->
                         check(rows.moveToFirst())
                         assertTrue(rows.isNull(0))
                         assertEquals("null", rows.getString(1))
+                    }
+                    sqlite.query("PRAGMA foreign_key_check").use { assertEquals(0, it.count) }
+                }
+        } finally {
+            if (context.getDatabasePath(name).exists()) check(context.deleteDatabase(name))
+        }
+    }
+
+    @Test fun `schema eleven adds the end time index and preserves existing history and sequences`() {
+        val context = RuntimeEnvironment.getApplication()
+        val name = "unfinished-index-migration-${UUID.randomUUID()}.db"
+        check(!context.getDatabasePath(name).exists())
+        try {
+            val before = createLegacy(name, 11)
+            Room
+                .databaseBuilder(context, PreparationDatabase::class.java, name)
+                .addMigrations(PreparationMigration11To12)
+                .build()
+                .useDatabase { db ->
+                    val sqlite = db.openHelper.writableDatabase
+                    assertEquals(12, sqlite.version)
+                    assertEquals(before, snapshot(sqlite, tables(11), excludePlannedRoad = false, excludeSampleAnchor = false))
+                    sqlite.query("PRAGMA index_info('index_practice_session_endedAtEpochMillis')").use { rows ->
+                        check(rows.moveToFirst())
+                        assertEquals("endedAtEpochMillis", rows.getString(rows.getColumnIndexOrThrow("name")))
+                        assertTrue(!rows.moveToNext())
                     }
                     sqlite.query("PRAGMA foreign_key_check").use { assertEquals(0, it.count) }
                 }
@@ -318,6 +350,7 @@ class LocationRecordingMigrationTest {
                 tables(version),
                 excludePlannedRoad =
                     version < 10,
+                excludeSampleAnchor = version < 11,
             )
         }
     }
@@ -343,6 +376,7 @@ class LocationRecordingMigrationTest {
         tables: List<String> = oldTables,
         excludeMemo: Boolean = false,
         excludePlannedRoad: Boolean = true,
+        excludeSampleAnchor: Boolean = true,
     ): Map<String, List<List<Any?>>> =
         tables.associateWith { table ->
             db.query("SELECT * FROM $table ORDER BY rowid").use { cursor ->
@@ -351,7 +385,7 @@ class LocationRecordingMigrationTest {
                         add(
                             (0 until cursor.columnCount)
                                 .filterNot { column ->
-                                    cursor.getColumnName(column) == "sampleAnchorJson" ||
+                                    (excludeSampleAnchor && cursor.getColumnName(column) == "sampleAnchorJson") ||
                                         (excludePlannedRoad && cursor.getColumnName(column) == "plannedRoadJson") ||
                                         (excludeMemo && table == "session_review_road" && cursor.getColumnName(column) == "memoText")
                                 }.flatMap { column ->

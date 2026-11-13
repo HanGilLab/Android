@@ -30,7 +30,12 @@ internal interface PracticeSessionDao {
     @Query("SELECT * FROM practice_session WHERE activeSlot = 1 LIMIT 1")
     suspend fun active(): PracticeSessionEntity?
 
-    @Query("SELECT COUNT(*) FROM practice_session WHERE " + UNFINISHED_PREDICATE)
+    // UNION counts a row matching both ownership signals once and retains inconsistent rows.
+    @Query(
+        "SELECT COUNT(*) FROM (" +
+            "SELECT rowId FROM practice_session WHERE endedAtEpochMillis IS NULL " +
+            "UNION SELECT rowId FROM practice_session WHERE activeSlot IS NOT NULL)",
+    )
     suspend fun unfinishedCount(): Long
 
     @Query("SELECT * FROM practice_session WHERE endedAtEpochMillis IS NOT NULL ORDER BY rowId DESC LIMIT 1")
