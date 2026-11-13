@@ -3,6 +3,7 @@ package io.github.hangillab.hangil.feature.home
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import io.github.hangillab.hangil.core.domain.ConnectionState
 import io.github.hangillab.hangil.core.domain.DrivingRestrictionsProvider
 import io.github.hangillab.hangil.core.domain.NavigationGateway
 import io.github.hangillab.hangil.core.domain.PracticeCatalog
@@ -19,6 +20,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
@@ -83,9 +85,19 @@ class HomeViewModel
                         }
                     }
             }
+        internal val diagnosticVehicle = vehicleGateway.state
+        internal val diagnosticNavigation = navigationGateway.connection
+
+        private val access =
+            combine(vehicleGateway.state, restrictionsProvider.restrictions) { vehicle, restrictions ->
+                val allowed = allowsPracticeInteraction(vehicle, restrictions)
+                val permissionDenied = vehicle.connection == ConnectionState.PERMISSION_DENIED
+                allowed to permissionDenied
+            }.distinctUntilChanged()
+
         val uiState =
-            combine(vehicleGateway.state, navigationGateway.connection, restrictionsProvider.restrictions, preparation) { v, n, r, p ->
-                HomeUiState(v, n, r, p.first, p.second)
+            combine(access, preparation) { (allowed, permissionDenied), (load, revision) ->
+                HomeUiState(allowed, permissionDenied, load, revision)
             }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(0, 0), HomeUiState())
 
         fun canPrepare(): Boolean =
