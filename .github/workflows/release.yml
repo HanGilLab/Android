@@ -2,7 +2,17 @@ name: Release APK
 
 on:
   push:
-    tags: ['v*']
+    tags: ['v*', '!v*-preview*']
+  workflow_dispatch:
+    inputs:
+      preview_tag:
+        description: Published preview release tag
+        required: true
+        type: string
+      apk_sha256:
+        description: SHA-256 of the preview release APK
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -13,6 +23,7 @@ concurrency:
 
 jobs:
   validate:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -89,6 +100,10 @@ jobs:
 
   publish-package:
     needs: publish
+    if: >-
+      !cancelled() &&
+      ((github.event_name == 'push' && needs.publish.result == 'success') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -102,23 +117,33 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          APK_SHA256: ${{ needs.publish.outputs.apk-sha256 }}
+          APK_SHA256: ${{ needs.publish.outputs.apk-sha256 || inputs.apk_sha256 }}
+          RELEASE_TAG: ${{ inputs.preview_tag || github.ref_name }}
         run: |
           set -euo pipefail
-          if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ || ! "$APK_SHA256" =~ ^[a-f0-9]{64}$ ]]; then
-            echo 'Invalid release tag or APK SHA-256.'
-            exit 1
+          [[ "$APK_SHA256" =~ ^[a-f0-9]{64}$ ]]
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-preview\.[1-9][0-9]*$ ]]
+            gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease \
+              --jq '.isPrerelease and (.isDraft | not)' | grep -qx true
+            revision="$(gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_TAG" --jq .sha)"
+            [[ "$revision" =~ ^[a-f0-9]{40}$ ]]
+            gh api "repos/$GITHUB_REPOSITORY/compare/$revision...main" --jq .status \
+              | grep -Eq '^(identical|ahead)$'
+          else
+            [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+            revision="$GITHUB_SHA"
           fi
           umask 077
           temp_dir="$(mktemp -d)"
           trap 'rm -rf "$temp_dir"' EXIT
           config="$temp_dir/registry.json"
-          apk="hangil-${GITHUB_REF_NAME#v}.apk"
+          apk="hangil-${RELEASE_TAG#v}.apk"
           repository="$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
           package="ghcr.io/$repository-apk"
-          ref="$package:$GITHUB_REF_NAME"
+          ref="$package:$RELEASE_TAG"
 
-          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
             --dir "$temp_dir/release" --pattern "$apk" --pattern SHA256SUMS.txt
           cd "$temp_dir/release"
           printf '%s  %s\n' "$APK_SHA256" "$apk" | cmp - SHA256SUMS.txt
@@ -130,8 +155,8 @@ jobs:
           oras push --registry-config "$config" \
             --artifact-type application/vnd.hangillab.android.release.v1 \
             --annotation "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
-            --annotation "org.opencontainers.image.revision=$GITHUB_SHA" \
-            --annotation "org.opencontainers.image.version=${GITHUB_REF_NAME#v}" \
+            --annotation "org.opencontainers.image.revision=$revision" \
+            --annotation "org.opencontainers.image.version=${RELEASE_TAG#v}" \
             "$ref" "$apk:application/vnd.android.package-archive" SHA256SUMS.txt:text/plain
 
           digest="$(oras resolve --registry-config "$config" "$ref")"
