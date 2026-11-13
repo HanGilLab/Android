@@ -30,19 +30,19 @@
 
 **Pleos 에뮬레이터 시연 (1분 57초)**
 
-https://github.com/user-attachments/assets/6311a39f-d6a9-47ab-af7c-41844c479160
+https://github.com/user-attachments/assets/0e64d5e8-d067-486d-baa3-100aca1bc36e
 
 | 홈 | 오늘의 과제 |
 |:---:|:---:|
-| [<img src="docs/images/screenshots/hangil-home.png" alt="첫 연습 준비 버튼이 있는 홈" width="400" />](docs/images/screenshots/hangil-home.png) | [<img src="docs/images/screenshots/hangil-task.png" alt="시연 코스에서 과제를 고르는 화면" width="400" />](docs/images/screenshots/hangil-task.png) |
+| [<img src="docs/images/screenshots/pleos-home.png" alt="첫 연습 준비 버튼이 있는 홈" width="400" />](docs/images/screenshots/pleos-home.png) | [<img src="docs/images/screenshots/pleos-task.png" alt="시연 코스에서 과제를 고르는 화면" width="400" />](docs/images/screenshots/pleos-task.png) |
 
 | 연습 중 | 연습 마무리 |
 |:---:|:---:|
-| [<img src="docs/images/screenshots/hangil-recording.png" alt="진행 중인 연습과 차량 상태 기록 안내" width="400" />](docs/images/screenshots/hangil-recording.png) | [<img src="docs/images/screenshots/hangil-practice-finished.png" alt="마친 연습을 복습하는 버튼" width="400" />](docs/images/screenshots/hangil-practice-finished.png) |
+| [<img src="docs/images/screenshots/pleos-recording.png" alt="진행 중인 연습과 차량 상태 기록 안내" width="400" />](docs/images/screenshots/pleos-recording.png) | [<img src="docs/images/screenshots/pleos-practice-finished.png" alt="마친 연습을 복습하는 버튼" width="400" />](docs/images/screenshots/pleos-practice-finished.png) |
 
 | 저장된 차량 기록 | 다음 과제 저장 |
 |:---:|:---:|
-| [<img src="docs/images/screenshots/hangil-vehicle-review.png" alt="시연 코스와 저장된 SDK 차량 관찰을 구분한 복습 화면" width="400" />](docs/images/screenshots/hangil-vehicle-review.png) | [<img src="docs/images/screenshots/hangil-next-practice-saved.png" alt="새 과제를 저장한 뒤의 홈" width="400" />](docs/images/screenshots/hangil-next-practice-saved.png) |
+| [<img src="docs/images/screenshots/pleos-vehicle-review.png" alt="시연 코스와 저장된 SDK 차량 관찰을 구분한 복습 화면" width="400" />](docs/images/screenshots/pleos-vehicle-review.png) | [<img src="docs/images/screenshots/pleos-next-practice-saved.png" alt="새 과제를 저장한 뒤의 홈" width="400" />](docs/images/screenshots/pleos-next-practice-saved.png) |
 
 - **준비** 목표, 코스, 과제를 저장합니다. 판교를 거쳐 양재까지 코스는 경유지와 도착지를 Pleos 기본 내비에 보낼 수 있습니다.
 - **연습** 시작과 종료 시각, SDK가 전달한 기어, 방향지시등, 브레이크를 기록합니다. 위치 표본은 직접 켜면 한길 화면에서 기록합니다. 내비 사용 중에도 차량 상태를 기록하려면 별도로 켭니다.
