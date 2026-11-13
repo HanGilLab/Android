@@ -318,6 +318,31 @@ class SessionViewModelTest {
             assertFeedback(model, SessionFeedback.BLOCKED)
         }
 
+    @Test fun `ambiguous records retire the old finish action until a valid list arrives`() =
+        runTest {
+            val active = session("active")
+            val finished = session("finished").copy(endedAtEpochMillis = 1_500L)
+            val valid = listOf(active, finished)
+            records.value = valid
+            val model = model()
+            observe(model)
+
+            for (invalid in listOf(valid + finished, valid + session("other-active"))) {
+                val old = checkNotNull(model.finishActions.value)
+                records.value = invalid
+                runCurrent()
+                assertNull(model.finishActions.value)
+                assertFalse(model.finish(old) { true })
+
+                records.value = valid
+                runCurrent()
+                assertNotSame(old, checkNotNull(model.finishActions.value))
+                assertFalse(model.finish(old) { true })
+            }
+
+            assertEquals(0, finishCalls)
+        }
+
     @Test fun `session read failure blocks writes and a parked retry reloads records`() =
         runTest {
             sessionReadFails = true
