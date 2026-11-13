@@ -25,6 +25,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -52,22 +53,24 @@ import io.github.hangillab.hangil.core.domain.LocationUpdateReading
 import io.github.hangillab.hangil.core.domain.LocationUpdateSample
 import io.github.hangillab.hangil.core.domain.SessionReviewRoad
 import io.github.hangillab.hangil.core.domain.SessionReviewSample
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.maplibre.android.MapLibre
 import org.maplibre.android.RenderingEngine
 import org.maplibre.android.WellKnownTileServer
 import org.maplibre.android.camera.CameraUpdateFactory
-import org.maplibre.android.geometry.LatLng
-import org.maplibre.android.geometry.LatLngBounds
 import org.maplibre.android.maps.MapLibreMapOptions
 import org.maplibre.android.maps.Style
 import org.maplibre.android.tile.TileOperation
-import org.maplibre.geojson.LineString
 import org.maplibre.geojson.Point
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.roundToInt
@@ -222,6 +225,28 @@ fun StoredLocationMap(
                     style = MaterialTheme.typography.bodyLarge,
                 )
             } else {
+                val geometryResult = remember(load) { CompletableDeferred<StoredLocationMapGeometry>() }
+                var roadGeometry by remember(load) { mutableStateOf<StoredLocationMapGeometry?>(null) }
+                LaunchedEffect(geometryResult) {
+                    try {
+                        val prepared =
+                            withContext(Dispatchers.Default) {
+                                StoredLocationMapGeometry.prepare(input, mapRoad, reviewRoad, preview != null)
+                            }
+                        if (suppliedLoad === load && load.value == MapLoadState.LOADING && mapPermitted()) {
+                            if (reviewRoad != null || input.courseRoads.isNotEmpty()) roadGeometry = prepared
+                            geometryResult.complete(prepared)
+                        }
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        if (suppliedLoad === load && load.value == MapLoadState.LOADING) onFailed()
+                    } catch (_: LinkageError) {
+                        if (suppliedLoad === load && load.value == MapLoadState.LOADING) onFailed()
+                    } finally {
+                        if (!geometryResult.isCompleted) geometryResult.cancel()
+                    }
+                }
                 val selectedDescription =
                     if (input.selectedEvent?.reading is LocationUpdateReading.Sample) {
                         stringResource(R.string.stored_map_selected_sample, input.selectedEvent.ordinal)
@@ -234,15 +259,10 @@ fun StoredLocationMap(
                     style = MaterialTheme.typography.titleLarge,
                 )
                 val selectedSample = (input.selectedEvent?.reading as? LocationUpdateReading.Sample)?.sample
-                val section = remember(input, reviewRoad) { reviewRoad?.let { StoredLocationRoadSuggestion.section(input, it) } }
+                val section = roadGeometry?.section
                 val anchor = reviewRoad?.sampleAnchor
                 val savedSection = anchor?.roadSection
-                val publicSection =
-                    remember(section, reviewRoad, savedSection) {
-                        (savedSection ?: section?.publicRange)?.let { range ->
-                            reviewRoad?.let { StoredLocationRoadSection.publicLine(it.road, range) }
-                        }
-                    }
+                val publicSection = roadGeometry?.publicSection
                 val publicSectionLegend =
                     publicSection?.let {
                         stringResource(
@@ -278,11 +298,8 @@ fun StoredLocationMap(
                         style = MaterialTheme.typography.bodyLarge,
                     )
                 }
-                if (reviewRoad != null && selectedSample != null) {
-                    val meters =
-                        remember(selectedSample, reviewRoad.road) {
-                            StoredLocationRoadDistance.meters(selectedSample, reviewRoad.road)
-                        }
+                if (reviewRoad != null && selectedSample != null && roadGeometry != null) {
+                    val meters = roadGeometry?.reviewDistance
                     Text(
                         when {
                             meters == null -> stringResource(R.string.stored_map_road_distance_unknown)
@@ -292,13 +309,12 @@ fun StoredLocationMap(
                         Modifier.fillMaxWidth().testTag("stored_location_map_road_distance"),
                         style = MaterialTheme.typography.bodyLarge,
                     )
-                } else if (selectedSample != null && input.courseRoads.isNotEmpty()) {
+                } else if (reviewRoad == null && selectedSample != null && input.courseRoads.isNotEmpty()) {
                     key(input, owner) {
-                        val suggestedRoadId = remember(input) { StoredLocationRoadSuggestion.find(input)?.id }
                         StoredLocationCourseRoads(
                             selectedSample,
                             input.courseRoads,
-                            suggestedRoadId,
+                            roadGeometry?.suggestedRoadId,
                             previewRoad,
                             permitted,
                             onPreview = { road ->
@@ -330,7 +346,8 @@ fun StoredLocationMap(
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                if (preview == null && !input.trace.features().isNullOrEmpty()) {
+                val hasTrace = remember(input) { StoredLocationTrace.hasLinks(input) }
+                if (preview == null && hasTrace) {
                     Text(
                         stringResource(R.string.stored_map_trace_scope),
                         Modifier.fillMaxWidth().testTag("stored_location_map_trace_scope"),
@@ -398,10 +415,9 @@ fun StoredLocationMap(
                         key(input, reviewRoad, preview, owner, dark, fontScale, background, attempt) {
                             NativeStoredLocationMap(
                                 input,
+                                geometryResult,
                                 mapRoad,
                                 preview?.second,
-                                section?.projected,
-                                publicSection,
                                 savedSection == null,
                                 localBackground,
                                 dark,
@@ -411,10 +427,16 @@ fun StoredLocationMap(
                                 roadColor,
                                 sectionColor,
                                 publicSectionColor,
-                                mapPermitted,
+                                canRender = { suppliedLoad === load && load.value != MapLoadState.FAILED && mapPermitted() },
                                 inputChanges = inputChanges,
                                 canInteract = { mapPermitted() && load.value == MapLoadState.READY },
-                                onRendered = { if (mapPermitted() && load.value == MapLoadState.LOADING) load.value = MapLoadState.READY },
+                                onRendered = {
+                                    if (mapPermitted() &&
+                                        load.value == MapLoadState.LOADING
+                                    ) {
+                                        load.value = MapLoadState.READY
+                                    }
+                                },
                                 onFailed = onFailed,
                                 contentDescription = listOfNotNull(description, sectionLegend, publicSectionLegend).joinToString(" "),
                                 modifier = Modifier.matchParentSize().testTag("stored_location_map_view"),
@@ -509,8 +531,9 @@ fun StoredLocationMap(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                LaunchedEffect(preview) {
-                    if (preview != null && mapPermitted()) bringMapIntoView.bringIntoView()
+                val previewPrepared = preview != null && (roadGeometry != null || load.value == MapLoadState.FAILED)
+                LaunchedEffect(preview, previewPrepared) {
+                    if (previewPrepared && mapPermitted()) bringMapIntoView.bringIntoView()
                 }
                 LaunchedEffect(load, load.value) {
                     if (load.value == MapLoadState.LOADING) {
@@ -600,10 +623,9 @@ private fun StoredLocationCourseRoads(
 @Composable
 private fun NativeStoredLocationMap(
     input: StoredLocationMapInput,
+    geometry: Deferred<StoredLocationMapGeometry>,
     road: CourseRoadSnapshot?,
     nearest: Point?,
-    section: LineString?,
-    publicSection: LineString?,
     publicSectionIsCandidate: Boolean,
     localBackground: Int?,
     dark: Boolean,
@@ -625,15 +647,16 @@ private fun NativeStoredLocationMap(
     val owner = LocalLifecycleOwner.current
     val active = remember(input, road, owner) { AtomicBoolean(true) }
     val savedState = remember(input, road, owner) { MapViewSavedState() }
+    val bindingScope = rememberCoroutineScope()
     val result =
-        remember(context, input, road, owner) {
+        remember(context, input, road, owner, geometry) {
             createStoredMap(
                 context,
                 input,
+                geometry,
+                bindingScope,
                 road,
                 nearest,
-                section,
-                publicSection,
                 publicSectionIsCandidate,
                 localBackground,
                 dark,
@@ -657,7 +680,11 @@ private fun NativeStoredLocationMap(
         owner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             inputChanges.collect {
                 withContext(Dispatchers.Main.immediate) {
-                    if (active.get() && owner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) view.recheckInput()
+                    if (active.get() && owner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+                        // Latch revocation even before the native map is bound.
+                        canRender()
+                        view.recheckInput()
+                    }
                 }
             }
         }
@@ -693,10 +720,10 @@ private fun NativeStoredLocationMap(
 private fun createStoredMap(
     context: Context,
     input: StoredLocationMapInput,
+    geometry: Deferred<StoredLocationMapGeometry>,
+    bindingScope: CoroutineScope,
     road: CourseRoadSnapshot?,
     nearest: Point?,
-    section: LineString?,
-    publicSection: LineString?,
     publicSectionIsCandidate: Boolean,
     localBackground: Int?,
     dark: Boolean,
@@ -735,8 +762,13 @@ private fun createStoredMap(
         view.addOnGlyphsErrorListener { _, _, _ -> fail() }
         view.addOnSpriteErrorListener { _, _ -> fail() }
         view.addOnTileActionListener { operation, _, _, _, _, _, _ -> if (operation == TileOperation.Error) fail() }
-        view.addOnDidFinishRenderingMapListener { fully ->
-            if (current() && styled.get() && cameraFitted.get() && fully) onRendered()
+        val rendered = AtomicBoolean(false)
+        view.addOnDidFinishRenderingFrameListener { fully, _, _ ->
+            if (fully && styled.get() && cameraFitted.get() && rendered.compareAndSet(false, true)) {
+                bindingScope.launch(Dispatchers.Main.immediate) {
+                    if (current()) onRendered()
+                }
+            }
         }
         view.onCreate(savedState.bundle)
         savedState.attach(view)
@@ -759,71 +791,67 @@ private fun createStoredMap(
                     }
                     map.setStyle(style) { loaded ->
                         if (current()) {
-                            try {
-                                road?.let {
-                                    RoadPreviewLayers.add(loaded, listOf(it), roadColor)
-                                    RoadPreviewLayers.select(loaded, it.id)
-                                }
-                                section?.let { StoredLocationRoadSection.add(loaded, it, sectionColor) }
-                                publicSection?.let {
-                                    StoredLocationRoadSection.addPublic(loaded, it, publicSectionColor, publicSectionIsCandidate)
-                                }
-                                val isPreview = nearest != null
-                                if (!isPreview) StoredLocationTrace.add(loaded, input, pointFill)
-                                StoredLocationPoint.add(loaded, input, pointFill, pointBorder, fontScale, selectedOnly = isPreview)
-                                nearest?.let { StoredLocationRoadProjection.add(loaded, it, roadColor, pointBorder, fontScale) }
-                                styled.set(true)
-                                val shownSamples = if (isPreview) listOf(checkNotNull(input.selectedEvent)) else input.samples
-                                val coordinates =
-                                    shownSamples.map { event ->
-                                        val sample = (event.reading as LocationUpdateReading.Sample).sample
-                                        LatLng(sample.latitude, sample.longitude)
-                                    } +
-                                        road
-                                            ?.nodes
-                                            .orEmpty()
-                                            .map { LatLng(it.latitude, it.longitude) }
-                                val sameCoordinate =
-                                    coordinates.all {
-                                        it.latitude == coordinates.first().latitude && it.longitude == coordinates.first().longitude
+                            bindingScope.launch(Dispatchers.Main.immediate) {
+                                try {
+                                    val prepared = geometry.await()
+                                    if (!current()) return@launch
+                                    road?.let {
+                                        RoadPreviewLayers.add(loaded, listOf(it), roadColor)
+                                        RoadPreviewLayers.select(loaded, it.id)
                                     }
-                                val bounds =
-                                    if (sameCoordinate) {
-                                        null
-                                    } else {
-                                        LatLngBounds.Builder().includes(coordinates).build()
+                                    prepared.section?.projected?.let { StoredLocationRoadSection.add(loaded, it, sectionColor) }
+                                    prepared.publicSection?.let {
+                                        StoredLocationRoadSection.addPublic(loaded, it, publicSectionColor, publicSectionIsCandidate)
                                     }
-                                val padding =
-                                    (
-                                        CoursePreviewLayers.viewportPaddingDp(
-                                            fontScale,
-                                        ) * context.resources.displayMetrics.density
-                                    ).roundToInt()
-                                var layout: View.OnLayoutChangeListener? = null
-                                val fitCamera = {
-                                    if (current() && !cameraFitted.get() && view.width > padding * 2 && view.height > padding * 2) {
-                                        try {
-                                            val camera =
-                                                if (sameCoordinate) {
-                                                    CameraUpdateFactory.newLatLngZoom(coordinates.first(), 15.0)
-                                                } else {
-                                                    CameraUpdateFactory.newLatLngBounds(checkNotNull(bounds), padding)
-                                                }
-                                            map.moveCamera(camera)
-                                            cameraFitted.set(true)
-                                            layout?.let(view::removeOnLayoutChangeListener)
-                                        } catch (_: Exception) {
-                                            fail()
+                                    prepared.trace?.let { StoredLocationTrace.add(loaded, it, pointFill) }
+                                    StoredLocationPoint.add(
+                                        loaded,
+                                        prepared.points,
+                                        input.selectedSampleId,
+                                        pointFill,
+                                        pointBorder,
+                                        fontScale,
+                                    )
+                                    nearest?.let {
+                                        StoredLocationRoadProjection.add(loaded, it, roadColor, pointBorder, fontScale)
+                                    }
+                                    styled.set(true)
+                                    val bounds = prepared.bounds
+                                    val padding =
+                                        (
+                                            CoursePreviewLayers.viewportPaddingDp(
+                                                fontScale,
+                                            ) * context.resources.displayMetrics.density
+                                        ).roundToInt()
+                                    var layout: View.OnLayoutChangeListener? = null
+                                    val fitCamera = {
+                                        if (current() && !cameraFitted.get() && view.width > padding * 2 && view.height > padding * 2) {
+                                            try {
+                                                val camera =
+                                                    if (bounds == null) {
+                                                        CameraUpdateFactory.newLatLngZoom(prepared.center, 15.0)
+                                                    } else {
+                                                        CameraUpdateFactory.newLatLngBounds(bounds, padding)
+                                                    }
+                                                map.moveCamera(camera)
+                                                cameraFitted.set(true)
+                                                layout?.let(view::removeOnLayoutChangeListener)
+                                                map.triggerRepaint()
+                                            } catch (_: Exception) {
+                                                fail()
+                                            }
                                         }
                                     }
+                                    layout = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> fitCamera() }
+                                    view.addOnLayoutChangeListener(checkNotNull(layout))
+                                    fitCamera()
+                                } catch (cancelled: CancellationException) {
+                                    throw cancelled
+                                } catch (_: Exception) {
+                                    fail()
+                                } catch (_: LinkageError) {
+                                    fail()
                                 }
-                                layout = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> fitCamera() }
-                                view.addOnLayoutChangeListener(checkNotNull(layout))
-                                fitCamera()
-                            } catch (_: Exception) {
-                                fail()
-                            } catch (_: LinkageError) {
-                                fail()
                             }
                         }
                     }

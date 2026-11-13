@@ -43,14 +43,16 @@ internal class StoredLocationMapInput private constructor(
         ): StoredLocationMapInput {
             val snapshot = Collections.unmodifiableList(ArrayList(events))
             require(snapshot.size <= LocationRecordingRepository.MAX_EVENTS_PER_RUN) { "Too many stored run events" }
-            require(snapshot.all { it.sessionId == run.source.sessionId && it.runId == run.runId }) { "Foreign stored run event" }
-            require(snapshot.zipWithNext().all { (before, after) -> before.id < after.id }) { "Invalid stored event order" }
-            require(snapshot.withIndex().all { (index, event) -> event.ordinal == index + 1 }) { "Invalid stored event ordinal" }
+            for ((index, event) in snapshot.withIndex()) {
+                require(event.sessionId == run.source.sessionId && event.runId == run.runId) { "Foreign stored run event" }
+                require(index == 0 || snapshot[index - 1].id < event.id) { "Invalid stored event order" }
+                require(event.ordinal == index + 1) { "Invalid stored event ordinal" }
+            }
             val selectedMatches =
                 if (snapshot.isEmpty()) {
                     selectedEvent == null
                 } else {
-                    selectedEvent != null && snapshot.singleOrNull { it.id == selectedEvent.id } == selectedEvent
+                    selectedEvent != null && snapshot.getOrNull(selectedEvent.ordinal - 1) == selectedEvent
                 }
             require(selectedMatches) { "Selected event is not the exact stored callback" }
             val roads = Collections.unmodifiableList(courseRoads.map { it.copy(nodes = Collections.unmodifiableList(ArrayList(it.nodes))) })

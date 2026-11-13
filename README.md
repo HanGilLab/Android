@@ -150,30 +150,28 @@ return if (dao.needsEventDecoding(sessionId, LocationRecordingRepository.MAX_EVE
 }
 ```
 
-### 3. 주행으로 바뀐 뒤 이전 지도 입력 차단하기
+### 3. 저장 위치가 많은 복습 지도 열기
 
-**문제** 제어 입력으로 주행 상태를 전달했을 때 화면에 이전 주차 지도가 잠시 남았습니다. 이때 드래그하면 카메라가 움직였습니다.
+**문제** 긴 연습 기록의 복습 지도를 열면 점, 수신 순서 선, 카메라 범위를 한꺼번에 계산해야 했습니다. 표본이 많을수록 지도 초기화와 화면 작업이 같은 스레드에서 시간을 나눠 썼습니다.
 
-**원인** Compose에 잠금이 그려지기 전에 MapView가 입력을 받았습니다. 코스가 바뀐 뒤 이전 View에서 늦게 도착한 렌더 완료도 새 지도 상태에 영향을 줄 수 있었습니다.
+**원인** Compose에서 선 데이터를 만들고 MapLibre 스타일 콜백에서 점과 범위를 다시 준비했습니다. 처음에 계산을 별도 스레드로만 옮겼을 때는 지도가 그 결과를 기다려 작은 입력의 렌더링이 늦어졌습니다.
 
-**해결** 조회와 렌더 완료에 현재 준비 원본과 View 토큰을 연결했습니다. 네이티브 전달 직전에 최신 주차 상태와 조작 허용 여부를 읽고, 같은 첫 터치에서 이어진 입력인지 검사했습니다.
+**해결** 저장 기록을 고정한 뒤 도형 준비와 지도 초기화를 동시에 시작합니다. 스타일에 레이어를 붙일 때는 메인 스레드에서 최신 주차 허용과 화면을 다시 확인합니다. 카메라와 레이어가 적용된 뒤 완전히 그려진 프레임에서만 준비를 완료합니다.
 
-**결과** 제어 입력에서 이전 화면의 드래그와 휠을 막았습니다. 실제 Pleos에서 P→D→P로 바꿔 지도 제거와 복귀를 확인했습니다. 위와 같은 환경에서 예열 5회 후 지도 진입을 전후 각 30회 측정했습니다. 중앙값은 2127.52ms에서 2000.33ms로 127.19ms(5.98%) 차이가 났습니다. 사분위 범위가 겹쳐 성능 향상 여부는 미확정입니다.
+**결과** Pleos API 34 에뮬레이터의 debug 빌드, 로컬 배경, 합성 표본 1,024개에서 열기부터 첫 렌더 완료까지 중앙값이 255.74ms에서 166.78ms로 줄었습니다. 88.97ms(34.8%) 차이입니다. 메인 스레드 CPU 시간은 81.95ms에서 65.22ms로 16.73ms(20.4%) 줄었습니다. 전후 APK를 번갈아 두 번 실행하고 각 실행에서 예열 10회 뒤 전후 각 80회를 측정했습니다. 프레임 완료 시간의 사분위 범위는 겹쳤습니다.
 
-**대체안/회고** 터치 리스너만으로는 자식 View 입력과 이미 예약된 지도 작업까지 정리하기 어려웠습니다. 네이티브 전달 지점에서 입력을 검사하고 허용이 끝나면 진행 중인 제스처를 취소했습니다.
+**대체안/회고** 기존 MapView를 여러 복습 기록에 공유하면 이전 콜백을 정리해야 할 범위가 커집니다. 지도 수명은 화면에 묶어 두고 순수 계산만 분리했습니다. 원격 타일을 가져오는 시간은 이 결과에 포함되지 않습니다.
 
 **코드**
 
 ```kotlin
-return current.id == attempt && current.token == token && current.load == MapLoadState.READY &&
-    canRender(current) && render.value === current
-```
-
-```kotlin
-validTime(downTime, eventTime, now) && downTime >= permittedAt &&
-    touch?.let {
-        owns(it.epoch) && it.downTime == downTime && it.deviceId == deviceId && it.source == source
-    } == true
+val prepared = withContext(Dispatchers.Default) {
+    StoredLocationMapGeometry.prepare(input, mapRoad, reviewRoad, preview != null)
+}
+if (suppliedLoad === load && load.value == MapLoadState.LOADING && mapPermitted()) {
+    if (reviewRoad != null || input.courseRoads.isNotEmpty()) roadGeometry = prepared
+    geometryResult.complete(prepared)
+}
 ```
 
 ### 4. 내비에서 돌아온 뒤 차량 기록 상태 복원하기
