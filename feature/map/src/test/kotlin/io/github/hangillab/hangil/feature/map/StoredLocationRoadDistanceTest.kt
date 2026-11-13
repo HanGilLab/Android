@@ -24,8 +24,11 @@ class StoredLocationRoadDistanceTest {
 
     @Test fun `coordinates beyond a segment use its end and unsupported longitude spans are unknown`() {
         val sample = LocationUpdateSample(0.0, 0.0101, 0.0, 0f, 0f, 0, 100)
-        assertEquals(11.12, checkNotNull(StoredLocationRoadDistance.meters(sample, road(-0.01, 0.01))), 0.03)
-        assertNull(StoredLocationRoadDistance.meters(sample.copy(longitude = 179.99), road(179.9, -179.9)))
+        val projection = checkNotNull(StoredLocationRoadDistance.project(sample, road(-0.01, 0.01)))
+        assertEquals(0.01, projection.nearest.longitude(), 0.0)
+        assertEquals(0.0, projection.nearest.latitude(), 0.0)
+        assertEquals(11.12, projection.meters, 0.03)
+        assertNull(StoredLocationRoadDistance.project(sample.copy(longitude = 179.99), road(179.9, -179.9)))
     }
 
     private fun road(vararg longitudes: Double) =
