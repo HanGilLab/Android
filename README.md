@@ -92,39 +92,34 @@ flowchart TB
 
 ## 🔎 문제 해결
 
-### 1. 방금 마친 연습을 복습에서 다시 열기
+### 1. 앱을 다시 켰을 때 중단된 위치 기록 복구하기
 
-**문제** 연습을 마친 뒤 이력을 열면, 그 사이 저장된 다른 연습이 표시될 수 있었습니다. 방금 마친 기록을 바로 여는 경로를 붙인 뒤에는 이미 닫힌 화면의 조회가 정상 복습 화면을 잠그는 문제도 재현됐습니다.
+**문제** 앱이 종료되면 이전 프로세스가 남긴 위치 기록을 중단 상태로 정리합니다. 연습 이력이 쌓일수록 이 복구가 오래 걸렸습니다.
 
-**원인** 마침 응답에 종료 기록이 있었지만 화면에는 완료 메시지만 남았습니다. 새 조회는 Job과 화면 상태를 확인하기 전에 공유 reader를 교체했습니다.
+**원인** 실행 목록을 읽은 뒤, 연습마다 같은 실행과 그 표본을 다시 조회했습니다. 여러 실행의 표본이 한 연습에 쌓이면 한 번에 읽는 행 수도 늘어났습니다.
 
-**해결** Room 트랜잭션에서 종료 전에 기록 전체를 대조했습니다. 저장 응답과 이력에서 읽은 종료 원본이 일치할 때 복습 요청을 한 번 소비하고, 조회 Job과 화면이 유효할 때만 reader를 등록했습니다.
+**해결** 실행 목록은 한 번 읽고 표본은 저장 순서대로 512행씩 읽습니다. 페이지 사이에서도 실행별 직전 표본을 유지해 수신 시각과 순번을 확인합니다. 전체 검증을 통과하면 같은 트랜잭션에서 이전 프로세스가 남긴 열린 실행을 중단 처리합니다.
 
-**결과** 다른 종료 기록이 생겨도 방금 마친 연습이 열렸습니다. 주행 중 잠겼다가 주차와 조작 허용이 돌아오면 같은 기록에서 복습을 이어갔습니다. 취소된 조회도 정상 조회를 덮지 못했습니다. 전후 성능은 미측정입니다.
+**결과** Pleos API 34 에뮬레이터의 debug 빌드에서 합성 연습 128개에 실행 두 개와 실행당 표본 32개를 저장했습니다. 복구 트랜잭션 중앙값은 131.97ms에서 92.73ms로 줄어 39.24ms(29.7%) 감소했고, p95는 162.10ms에서 115.12ms로 줄었습니다. 전후 APK를 번갈아 두 번씩 실행하고 각 실행에서 예열 10회 뒤 전후 각 80회를 측정했습니다. 손상된 표본을 발견하면 기존 실행과 표본을 그대로 보존합니다.
 
-**대체안/회고** ID가 같아도 코스나 과제 내용이 바뀔 수 있어 기록 전체를 대조했습니다. 화면은 앱이 DB에서 받아 온 변경을 기준으로 복습을 허용합니다.
+**대체안/회고** 열린 실행만 확인하면 보관된 기록의 손상을 놓칩니다. 전체 검증을 유지하고 중복 조회와 한 번에 불러오는 표본 수를 줄였습니다. 이 수치는 앱 시작 전체 시간 중 복구 트랜잭션에 해당합니다.
 
 **코드**
 
 ```kotlin
-if (mutation.isLocked || operation.value == SessionOperationState.Saving ||
-    receipts.value !== receipt || !finishAccessLocked(canKeepOpen) || receipts.value !== receipt ||
-    currentRecordsLocked()?.singleOrNull { it.sessionId == receipt.source.sessionId } != receipt.source
-) {
-    return@synchronized null
+var firstId = Long.MIN_VALUE
+while (true) {
+    val rows = dao.recoveryEvents(firstId, RECOVERY_PAGE_SIZE)
+    for (row in rows) {
+        val event = row.event()
+        val byRun = checkNotNull(runsBySession[event.sessionId]) { "Foreign location source" }
+        validateEvent(event, byRun, previousBySession.getOrPut(event.sessionId) { mutableMapOf() })
+    }
+    if (rows.size < RECOVERY_PAGE_SIZE) return
+    val lastId = rows.last().entity.id
+    if (lastId == Long.MAX_VALUE) return
+    firstId = lastId + 1
 }
-receipts.value = null
-acknowledgedFinish = null
-receipt.source
-```
-
-```kotlin
-owner.job.ensureActive()
-if (entry is SessionHistoryEntry.FinishedReview && !hostAllowed(owner)) return@synchronized false
-owner.job.ensureActive()
-invalidateDeletionLocked()
-reader = owner
-ended = null
 ```
 
 ### 2. 위치 표본이 쌓여도 저장 지연 줄이기

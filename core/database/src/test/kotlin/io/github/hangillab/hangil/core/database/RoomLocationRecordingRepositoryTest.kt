@@ -592,6 +592,63 @@ class RoomLocationRecordingRepositoryTest {
             }
         }
 
+    @Test fun `corruption at the first id or after the first page leaves the old owner open`() =
+        runBlocking {
+            withDatabase { db ->
+                val repo = RoomLocationRecordingRepository(db)
+                val archivedSource = seed(db, "archived-source")
+                val archived = begun(repo.begin(archivedSource, "archived", "old-process", 2_000, 100) { true })
+                repo.end(archived, LocationRecordingRunStatus.STOPPED, LocationRecordingStopReason.USER_STOP, 3_000, 700)
+                db.practiceSessionDao().finish(archivedSource.sessionId, 3_100)
+                val activeSource = seed(db, "active-source")
+                val stale = begun(repo.begin(activeSource, "stale", "old-process", 4_000, 800) { true })
+                val staleEvent = appended(repo.append(activeSource, stale, sample(801), 4_100) { true }).event
+
+                val dao = db.locationRecordingDao()
+                val archivedIds =
+                    db.withTransaction {
+                        (1..513).map { ordinal ->
+                            dao.insertEvent(
+                                LocationRecordingEventEntity.from(
+                                    archivedSource.sessionId,
+                                    archived.runId,
+                                    ordinal,
+                                    2_000L + ordinal,
+                                    sample(100L + ordinal),
+                                ),
+                            )
+                        }
+                    }
+                val sequenceBefore = sequence(db)
+                val sqlite = db.openHelper.writableDatabase
+                val firstArchivedId = archivedIds.first()
+                sqlite.execSQL("UPDATE location_recording_event SET id = ? WHERE id = ?", arrayOf(Long.MIN_VALUE, firstArchivedId))
+                expectInvalid { repo.recoverInterrupted("new-process") }
+                assertEquals(stale, dao.findRun(stale.runId)?.run())
+                assertEquals(staleEvent, dao.findEvent(staleEvent.id)?.event())
+                assertEquals(sequenceBefore, sequence(db))
+                sqlite.execSQL("UPDATE location_recording_event SET id = ? WHERE id = ?", arrayOf(firstArchivedId, Long.MIN_VALUE))
+
+                val firstOnSecondPage = archivedIds[511]
+                sqlite.execSQL(
+                    "UPDATE location_recording_event SET receivedAtElapsedRealtimeMillis = 610 WHERE id = ?",
+                    arrayOf(firstOnSecondPage),
+                )
+                expectInvalid { repo.recoverInterrupted("new-process") }
+                assertEquals(stale, dao.findRun(stale.runId)?.run())
+                assertEquals(staleEvent, dao.findEvent(staleEvent.id)?.event())
+                assertEquals(sequenceBefore, sequence(db))
+                sqlite.execSQL(
+                    "UPDATE location_recording_event SET receivedAtElapsedRealtimeMillis = 612 WHERE id = ?",
+                    arrayOf(firstOnSecondPage),
+                )
+
+                repo.recoverInterrupted("new-process")
+                assertEquals(LocationRecordingRunStatus.INTERRUPTED, dao.findRun(stale.runId)?.run()?.status)
+                assertEquals(staleEvent, dao.findEvent(staleEvent.id)?.event())
+            }
+        }
+
     @Test fun `deletion compares full location children and cascade cannot resurrect them`() =
         runBlocking {
             withDatabase { db ->

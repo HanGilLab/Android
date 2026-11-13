@@ -80,6 +80,16 @@ internal interface LocationRecordingDao {
     @Query(EVENT_SELECT + " WHERE sessionId = :sessionId ORDER BY id ASC")
     suspend fun events(sessionId: String): List<LocationRecordingEventRow>
 
+    @Query(
+        EVENT_SELECT + " WHERE id >= :firstId AND EXISTS (" +
+            "SELECT 1 FROM location_recording_run WHERE location_recording_run.sessionId = location_recording_event.sessionId" +
+            ") ORDER BY id ASC LIMIT :limit",
+    )
+    suspend fun recoveryEvents(
+        firstId: Long,
+        limit: Int,
+    ): List<LocationRecordingEventRow>
+
     @Query(NEEDS_EVENT_DECODING)
     suspend fun needsEventDecoding(
         sessionId: String,
