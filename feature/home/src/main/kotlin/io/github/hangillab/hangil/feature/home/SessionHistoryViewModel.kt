@@ -78,7 +78,7 @@ class SessionHistoryViewModel
         private var generation = 0L
         private var selectedId: String? = null
         private var selectionLost = false
-        private var ended: List<PracticeSession>? = null
+        private var ended: SessionCourseSummary.Snapshot? = null
         private val deletionPublished = MutableStateFlow<SessionDeletionUiState>(SessionDeletionUiState.Idle)
         val deletionState: StateFlow<SessionDeletionUiState> = deletionPublished.asStateFlow()
         private var deletionNonce = 0L
@@ -181,7 +181,7 @@ class SessionHistoryViewModel
                 val records = ended ?: return@synchronized false
                 !selectionLost && selectedId == expectedSessionId &&
                     current.session.sessionId == expectedSessionId && current.generation == expectedGeneration &&
-                    records.getOrNull(current.index) == current.session && current.summary.source == current.session
+                    records.finished.getOrNull(current.index) == current.session && current.summary.source == current.session
             }
 
         fun canPrepareNext(
@@ -681,7 +681,7 @@ class SessionHistoryViewModel
             val records = ended ?: return null
             return current.takeIf {
                 it.session.sessionId == expectedSessionId && it.generation == expectedGeneration &&
-                    records.getOrNull(it.index) == it.session && it.summary.source == it.session
+                    records.finished.getOrNull(it.index) == it.session && it.summary.source == it.session
             }
         }
 
@@ -770,8 +770,8 @@ class SessionHistoryViewModel
                 val records = ended ?: return@synchronized false
                 invalidateDeletionLocked()
                 selectionLost = false
-                selectedId = records.firstOrNull()?.sessionId
-                publishSelectionLocked(records)
+                selectedId = records.finished.firstOrNull()?.sessionId
+                publishSelectionLocked(records, 0)
                 true
             }
 
@@ -805,10 +805,10 @@ class SessionHistoryViewModel
                 }
                 val records = ended ?: return@synchronized false
                 val index = current.index + offset
-                if (index !in records.indices) return@synchronized false
+                if (index !in records.finished.indices) return@synchronized false
                 invalidateDeletionLocked()
-                selectedId = records[index].sessionId
-                publishSelectionLocked(records)
+                selectedId = records.finished[index].sessionId
+                publishSelectionLocked(records, index)
                 true
             }
 
@@ -926,11 +926,10 @@ class SessionHistoryViewModel
             }
             publishLocked(SessionHistoryUiState.Loading)
             val snapshot = records.toList()
-            validate(snapshot)
+            val history = SessionCourseSummary.Snapshot.capture(snapshot) ?: throw InvalidSessions()
             receivedHasActiveSession = snapshot.any { it.isActive }
             if (!preserveDeletionReceiptLocked(owner, query, snapshot)) invalidateDeletionLocked()
-            val finished = snapshot.filterNot { it.isActive }
-            ended = finished
+            ended = history
             val exact = owner.entry as? SessionHistoryEntry.FinishedReview
             if (exact != null) {
                 val expected = exact.expectedSource
@@ -942,9 +941,10 @@ class SessionHistoryViewModel
                 selectedId = expected.sessionId
                 selectionLost = false
             }
-            if (selectedId != null && finished.none { it.sessionId == selectedId }) selectionLost = true
-            if (selectedId == null && !selectionLost) selectedId = finished.firstOrNull()?.sessionId
-            publishSelectionLocked(finished)
+            if (selectedId == null && !selectionLost) selectedId = history.finished.firstOrNull()?.sessionId
+            val index = history.indexOf(selectedId)
+            if (selectedId != null && index < 0) selectionLost = true
+            publishSelectionLocked(history, index)
         }
 
         /** Caller holds lock and has already observed a denied live value. */
@@ -983,12 +983,15 @@ class SessionHistoryViewModel
             publishLocked(SessionHistoryUiState.Failed(reason))
         }
 
-        private fun publishSelectionLocked(records: List<PracticeSession>) {
+        private fun publishSelectionLocked(
+            snapshot: SessionCourseSummary.Snapshot,
+            index: Int,
+        ) {
             storedObservations.invalidate()
             storedMemos.invalidate()
             storedRecordingRuns.invalidate()
             courseCompletion.invalidate()
-            val index = records.indexOfFirst { it.sessionId == selectedId }
+            val records = snapshot.finished
             val nextGeneration = nextGenerationLocked()
             published.value =
                 when {
@@ -997,7 +1000,7 @@ class SessionHistoryViewModel
                     index < 0 -> SessionHistoryUiState.SelectionChanged(nextGeneration)
                     else -> {
                         val session = records[index]
-                        val summary = SessionCourseSummary.from(session, records) ?: throw InvalidSessions()
+                        val summary = snapshot.summaryAt(index)
                         SessionHistoryUiState.Ready(
                             session,
                             index,
@@ -1031,22 +1034,6 @@ class SessionHistoryViewModel
             owner: Reader,
             query: Query,
         ): Boolean = currentReader(owner, query.epoch) && owner.query === query && query.job.isActive
-
-        private fun validate(records: List<PracticeSession>) {
-            if (records.map { it.sessionId }.distinct().size != records.size) throw InvalidSessions()
-            for (record in records) {
-                val selection = record.selection
-                val endedAt = record.endedAtEpochMillis
-                if (record.sessionId.isBlank() || selection.goalId.isBlank() ||
-                    selection.courseId.isBlank() || selection.taskId.isBlank() ||
-                    selection.courseVersion <= 0 || selection.briefingVersion <= 0 || record.goalTitle.isBlank() ||
-                    record.courseTitle.isBlank() || record.taskTitle.isBlank() || record.startedAtEpochMillis <= 0 ||
-                    (endedAt != null && endedAt < record.startedAtEpochMillis)
-                ) {
-                    throw InvalidSessions()
-                }
-            }
-        }
 
         private class DeletionAction(
             val nonce: Long,

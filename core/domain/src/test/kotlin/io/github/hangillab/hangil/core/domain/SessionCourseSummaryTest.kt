@@ -175,6 +175,30 @@ class SessionCourseSummaryTest {
         assertNotEquals(first, SessionCourseSummary.from(otherSource, listOf(source, otherSource)))
     }
 
+    @Test fun `history summaries reuse totals only for the exact course and captured records`() {
+        val source = session("source")
+        val active = session("active").copy(endedAtEpochMillis = null)
+        val secondTask = session("other-task").copy(taskTitle = "다른 당시 과제")
+        val changedVersion = session("other-course").copy(selection = source.selection.copy(courseVersion = 2))
+        val records = mutableListOf(active, secondTask, source, changedVersion)
+        val snapshot = checkNotNull(SessionCourseSummary.Snapshot.capture(records))
+        assertEquals(-1, snapshot.indexOf(active.sessionId))
+        assertEquals(1, snapshot.indexOf(source.sessionId))
+        val first = snapshot.summaryAt(0)
+        val second = snapshot.summaryAt(1)
+        assertEquals(secondTask, first.source)
+        assertEquals(source, second.source)
+        assertEquals(listOf(SessionTaskCount("task", "다른 당시 과제", 1), SessionTaskCount("task", "저장 과제", 1)), second.tasks)
+        assertEquals(first.tasks, second.tasks)
+        assertEquals(1, snapshot.summaryAt(2).sessionCount)
+
+        records.remove(secondTask)
+        val updated = checkNotNull(SessionCourseSummary.Snapshot.capture(records))
+        assertEquals(1, updated.summaryAt(0).sessionCount)
+        assertEquals(2, snapshot.summaryAt(1).sessionCount)
+        assertNull(SessionCourseSummary.Snapshot.capture(listOf(source, source.copy(endedAtEpochMillis = null))))
+    }
+
     @Test fun `task count objects reject blank identities titles and nonpositive counts`() {
         val invalid =
             listOf<() -> SessionTaskCount>(
