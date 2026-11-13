@@ -174,6 +174,35 @@ class RoomPracticeSessionRepositoryTest {
             }
         }
 
+    @Test fun `scoped observers validate their rows and reject ambiguous unfinished ownership`() =
+        runBlocking {
+            memoryDatabase().useDatabase { db ->
+                RoomPracticeRepository(db).saveSelection(selection) { true }
+                val repository = RoomPracticeSessionRepository(db, catalog)
+                val source = (repository.start(practice, 1_000) { true } as SessionStartResult.Started).session
+                val dao = db.practiceSessionDao()
+                val active = checkNotNull(dao.find(source.sessionId))
+                assertEquals(source, repository.observeActiveSession().first())
+                assertEquals(null, repository.observeSession("missing").first())
+
+                val broken =
+                    listOf(
+                        active.copy(rowId = 0, sessionId = "missing-slot", activeSlot = null),
+                        active.copy(rowId = 0, sessionId = "unexpected-slot", endedAtEpochMillis = 2_000, activeSlot = 2),
+                    )
+                for (candidate in broken) {
+                    dao.insert(candidate)
+                    assertEquals(source, repository.observeSession(source.sessionId).first())
+                    val exactFailure = runCatching { repository.observeSession(candidate.sessionId).first() }.exceptionOrNull()
+                    assertTrue(exactFailure is IllegalStateException)
+                    val activeFailure = runCatching { repository.observeActiveSession().first() }.exceptionOrNull()
+                    assertTrue(activeFailure is IllegalStateException)
+                    assertEquals("Invalid unfinished session ownership", activeFailure?.message)
+                    db.openHelper.writableDatabase.execSQL("DELETE FROM practice_session WHERE sessionId = ?", arrayOf(candidate.sessionId))
+                }
+            }
+        }
+
     @Test fun `stale changed or outdated preparation cannot start a session`() =
         runBlocking {
             memoryDatabase().useDatabase {

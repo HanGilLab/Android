@@ -169,29 +169,29 @@ if (suppliedLoad === load && load.value == MapLoadState.LOADING && mapPermitted(
 }
 ```
 
-### 4. 내비에서 돌아온 뒤 차량 기록 상태 복원하기
+### 4. 복습과 차량 기록에 필요한 연습만 조회하기
 
-**문제** Pleos에서 시스템 런처로 기본 내비를 열자 같은 연습에 차량 기록이 계속 쌓였습니다. 한길로 돌아와 배경 기록을 끄면 전면 기록은 다시 저장됐지만 화면에는 일시 중지가 남았습니다.
+**문제** 복습에서 지정한 연습 한 건을 확인하거나 전면 차량 기록을 시작할 때, 종료 이력이 쌓일수록 원본을 읽는 시간이 늘어났습니다.
 
-**원인** 소유권을 반환하자 StateFlow를 보던 전면 수집이 즉시 재개됐습니다. 배경 실행의 정리 코드가 뒤에서 Paused를 써 새 상태를 덮었습니다.
+**원인** Room에서 전체 연습 목록을 읽어 각 행의 저장 도로 JSON을 해석한 뒤, 화면과 기록 제어기가 필요한 행만 골랐습니다.
 
-**해결** 배경 실행을 정리하고 화면 상태를 먼저 쓴 뒤 마지막에 소유권을 반환했습니다. 이전 프로세스가 종료 기록을 남기지 못한 실행은 다시 열 때 종료 시각을 알 수 없는 중단으로 표시했습니다.
+**해결** 복습은 기존 세션 ID 인덱스로 원본 한 건을 읽습니다. 전면 차량 기록은 종료 시각이나 활성 슬롯을 기준으로 활성 후보만 읽습니다. 손상된 원본이나 후보가 여러 개인 경우에는 읽기 오류를 전달합니다.
 
-**결과** Pleos 기본 라이트와 확대 다크에서 배경 기록을 끈 뒤 같은 연습의 전면 수집과 화면 표시가 함께 돌아왔습니다. 앱 프로세스를 종료한 시험에서는 재실행 후 이전 기록이 중단 상태로 남았습니다. 전후 성능은 미측정입니다.
+**결과** Pleos API 34 에뮬레이터의 debug 빌드에서 합성 도로를 가진 이전 연습 128개를 저장했습니다. 복습 원본의 첫 반환 중앙값은 93.36ms에서 8.07ms로 85.29ms(91.4%) 줄었고, p95는 128.51ms에서 11.78ms로 줄었습니다. 활성 연습의 첫 반환 중앙값은 96.46ms에서 8.03ms로 줄었습니다. 실행마다 예열 10회를 거쳐 전후 각 80회를 측정했습니다.
 
-**대체안/회고** 기록을 끈 직후 무조건 기록 중으로 표시하면 활성 연습이 없는 경우도 틀립니다. 전면 수집기가 현재 연습을 확인해 다음 상태를 정하도록 했습니다.
+**대체안/회고** 전체 목록을 캐시에 두면 조회 범위는 그대로이고 원본 교체와 삭제 때 캐시를 맞춰야 합니다. 소비자별로 조회 범위를 줄였습니다. 활성 후보 조건은 SQLite에서 테이블을 훑을 수 있지만 Room은 해당 후보만 변환합니다. 수치는 저장소 첫 응답까지입니다.
 
 **코드**
 
 ```kotlin
-currentBackground.value =
-    if (cleanupFailed) {
-        BackgroundRecordingState.Failed(null, request.source.sessionId, checkNotNull(failure))
-    } else {
-        BackgroundRecordingState.Disabled
+override fun observeSession(sessionId: String) =
+    database.practiceSessionDao().observeSessionChecked(sessionId).map { it?.session() }
+
+override fun observeActiveSession() =
+    database.practiceSessionDao().observeUnfinishedChecked().map { rows ->
+        check(rows.size <= 1) { "Invalid unfinished session ownership" }
+        rows.singleOrNull()?.session()
     }
-currentState.value = VehicleRecordingState.Paused
-owner.value = null
 ```
 
 <a id="developer"></a>

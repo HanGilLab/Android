@@ -309,14 +309,13 @@ class LocationHistoryViewModel
                     val self = currentCoroutineContext()[Job]
                     try {
                         if (!synchronized(lock) { owner.sourceJob === self && context(owner, requireSource = false) }) return@launch
-                        sessions.observeSessions().collect { rows ->
+                        sessions.observeSession(owner.source.sessionId).collect { actual ->
                             synchronized(lock) {
                                 if (owner.sourceJob !== self || !context(owner, requireSource = false)) return@synchronized
-                                val matches = rows.filter { it.sessionId == owner.source.sessionId }
-                                if (matches.size != 1 || matches.single() != owner.source) {
+                                if (actual != owner.source) {
                                     revoke(owner, false)
                                 } else {
-                                    owner.actualSource = matches.single()
+                                    owner.actualSource = actual
                                     if (!owner.failed && owner.queryJob == null) startQuery(owner)
                                 }
                             }

@@ -86,7 +86,7 @@ class LocationHistoryRecreationFlowTest {
             val model =
                 LocationHistoryViewModel(
                     object : PracticeSessionRepository by sessions {
-                        override fun observeSessions() = tracked(sessions.observeSessions())
+                        override fun observeSession(sessionId: String) = tracked(sessions.observeSession(sessionId))
                     },
                     object : LocationRecordingRepository by locations {
                         override fun observe(sessionId: String) =

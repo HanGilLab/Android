@@ -553,10 +553,9 @@ class PracticeRecordingController(
             currentState.value = VehicleRecordingState.Loading
             try {
                 sessionRepository
-                    .observeSessions()
+                    .observeActiveSession()
                     .onCompletion { cause -> if (cause == null) error("Session observation completed") }
-                    .map { sessions ->
-                        val active = activeSession(sessions)
+                    .map { active ->
                         updateSource(sourceOwner, active)
                         active?.sessionId
                     }.distinctUntilChanged()

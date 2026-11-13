@@ -22,6 +22,15 @@ internal class RoomPracticeSessionRepository
     ) : PracticeSessionRepository {
         override fun observeSessions() = database.practiceSessionDao().observeChecked().map { rows -> rows.map { it.session() } }
 
+        override fun observeSession(sessionId: String) =
+            database.practiceSessionDao().observeSessionChecked(sessionId).map { it?.session() }
+
+        override fun observeActiveSession() =
+            database.practiceSessionDao().observeUnfinishedChecked().map { rows ->
+                check(rows.size <= 1) { "Invalid unfinished session ownership" }
+                rows.singleOrNull()?.session()
+            }
+
         override suspend fun start(
             practice: PreparedPractice,
             startedAtEpochMillis: Long,
