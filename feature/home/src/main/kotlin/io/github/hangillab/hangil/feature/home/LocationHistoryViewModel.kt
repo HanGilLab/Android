@@ -5,6 +5,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import io.github.hangillab.hangil.core.domain.ConnectionState
 import io.github.hangillab.hangil.core.domain.DrivingRestrictionsProvider
 import io.github.hangillab.hangil.core.domain.GearPosition
+import io.github.hangillab.hangil.core.domain.LocationRecordingEvent
 import io.github.hangillab.hangil.core.domain.LocationRecordingRepository
 import io.github.hangillab.hangil.core.domain.LocationRecordingRun
 import io.github.hangillab.hangil.core.domain.LocationRecordingRunStatus
@@ -35,6 +36,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
+import java.util.Collections
 import javax.inject.Inject
 
 /** Read-only reader for one captured ended source. Location runtime permission is not a read gate. */
@@ -222,7 +224,7 @@ class LocationHistoryViewModel
                 if (ready.run.runId == run.runId && ready.event == event) return@synchronized true
                 owner.selectedRun = run.runId
                 owner.selectedEvent = event.id
-                publishReady(owner, ready.snapshot)
+                publishReady(owner)
                 val selected = owner.states.value as? LocationHistoryUiState.Ready
                 selected != null && selected.run.runId == run.runId && selected.event == event
             }
@@ -281,7 +283,7 @@ class LocationHistoryViewModel
                 if (target !in ready.snapshot.runs.indices) return@synchronized false
                 owner.selectedRun = ready.snapshot.runs[target].runId
                 owner.selectedEvent = null
-                publishReady(owner, ready.snapshot)
+                publishReady(owner)
                 true
             }
 
@@ -361,10 +363,12 @@ class LocationHistoryViewModel
                                     return@synchronized
                                 }
                                 val snapshot = LocationRecordingSnapshot(received.runs.toList(), received.events.toList())
+                                val eventsByRun = validatedEventsByRun(owner.source, snapshot)
                                 val reason =
                                     when {
-                                        !valid(owner.source, snapshot) -> FailureReason.INVALID_SNAPSHOT
-                                        owner.lastSnapshot?.let { !progresses(it, snapshot) } == true -> FailureReason.SNAPSHOT_REGRESSED
+                                        eventsByRun == null -> FailureReason.INVALID_SNAPSHOT
+                                        owner.lastSnapshot?.let { !progresses(it.snapshot, snapshot) } == true ->
+                                            FailureReason.SNAPSHOT_REGRESSED
                                         owner.selectedRun != null &&
                                             snapshot.runs.none {
                                                 it.runId == owner.selectedRun
@@ -380,7 +384,7 @@ class LocationHistoryViewModel
                                 if (reason != null) {
                                     fail(owner, reason)
                                 } else {
-                                    if (owner.lastSnapshot == snapshot &&
+                                    if (owner.lastSnapshot?.snapshot == snapshot &&
                                         (
                                             owner.states.value is LocationHistoryUiState.Ready ||
                                                 owner.states.value is LocationHistoryUiState.Empty
@@ -388,11 +392,11 @@ class LocationHistoryViewModel
                                     ) {
                                         return@synchronized
                                     }
-                                    owner.lastSnapshot = snapshot
+                                    owner.lastSnapshot = ValidatedSnapshot(snapshot, checkNotNull(eventsByRun))
                                     if (snapshot.runs.isEmpty()) {
                                         publish(owner, LocationHistoryUiState.Empty(owner.source, nextToken(owner)))
                                     } else {
-                                        publishReady(owner, snapshot)
+                                        publishReady(owner)
                                     }
                                 }
                             }
@@ -414,11 +418,10 @@ class LocationHistoryViewModel
             job.start()
         }
 
-        private fun publishReady(
-            owner: Reader,
-            snapshot: LocationRecordingSnapshot,
-        ) {
+        private fun publishReady(owner: Reader) {
             if (!context(owner) || owner.failed) return
+            val received = checkNotNull(owner.lastSnapshot)
+            val snapshot = received.snapshot
             val runIndex =
                 if (owner.selectedRun ==
                     null
@@ -431,7 +434,7 @@ class LocationHistoryViewModel
                 fail(owner, FailureReason.SELECTED_MISSING)
                 return
             }
-            val rows = snapshot.events.filter { it.runId == snapshot.runs[runIndex].runId }
+            val rows = received.eventsByRun[snapshot.runs[runIndex].runId].orEmpty()
             val eventIndex = if (owner.selectedEvent == null) rows.lastIndex else rows.indexOfFirst { it.id == owner.selectedEvent }
             if (owner.selectedEvent != null && eventIndex < 0) {
                 fail(owner, FailureReason.SELECTED_MISSING)
@@ -439,7 +442,18 @@ class LocationHistoryViewModel
             }
             owner.selectedRun = snapshot.runs[runIndex].runId
             owner.selectedEvent = rows.getOrNull(eventIndex)?.id
-            publish(owner, LocationHistoryUiState.Ready(owner.source, nextToken(owner), snapshot, runIndex, eventIndex))
+            publish(
+                owner,
+                LocationHistoryUiState.Ready(
+                    owner.source,
+                    nextToken(owner),
+                    snapshot,
+                    runIndex,
+                    eventIndex,
+                    rows,
+                    rows.count { it.reading is LocationUpdateReading.Sample },
+                ),
+            )
         }
 
         private fun owner(token: Token): Reader? {
@@ -553,46 +567,47 @@ class LocationHistoryViewModel
                 source.courseTitle.isNotBlank() && source.taskTitle.isNotBlank()
         }
 
-        private fun valid(
+        private fun validatedEventsByRun(
             source: PracticeSession,
             snapshot: LocationRecordingSnapshot,
-        ): Boolean {
+        ): Map<String, List<LocationRecordingEvent>>? {
             if (snapshot.runs
                     .map { it.runId }
                     .distinct()
                     .size != snapshot.runs.size ||
                 snapshot.runs.count { it.status == LocationRecordingRunStatus.OPEN } > 1
             ) {
-                return false
+                return null
             }
-            if (snapshot.runs.any { it.source != source.copy(endedAtEpochMillis = null) }) return false
+            if (snapshot.runs.any { it.source != source.copy(endedAtEpochMillis = null) }) return null
             if (snapshot.events
                     .map { it.id }
                     .distinct()
                     .size != snapshot.events.size ||
                 snapshot.events.zipWithNext().any { (a, b) -> a.id >= b.id }
             ) {
-                return false
+                return null
             }
             val runs = snapshot.runs.associateBy { it.runId }
-            if (snapshot.events.any { it.sessionId != source.sessionId || it.runId !in runs }) return false
-            for ((runId, rows) in snapshot.events.groupBy { it.runId }) {
+            if (snapshot.events.any { it.sessionId != source.sessionId || it.runId !in runs }) return null
+            val eventsByRun = snapshot.events.groupBy { it.runId }
+            for ((runId, rows) in eventsByRun) {
                 val run = checkNotNull(runs[runId])
-                if (rows.size > LocationRecordingRepository.MAX_EVENTS_PER_RUN) return false
+                if (rows.size > LocationRecordingRepository.MAX_EVENTS_PER_RUN) return null
                 var elapsed = run.startedAtElapsedRealtimeMillis
                 for ((index, event) in rows.withIndex()) {
-                    if (event.ordinal != index + 1 || event.reading.receivedAtElapsedRealtimeMillis < elapsed) return false
+                    if (event.ordinal != index + 1 || event.reading.receivedAtElapsedRealtimeMillis < elapsed) return null
                     if (index < rows.lastIndex && event.reading !is LocationUpdateReading.Sample &&
                         event.reading !is LocationUpdateReading.Empty
                     ) {
-                        return false
+                        return null
                     }
                     elapsed = event.reading.receivedAtElapsedRealtimeMillis
                 }
                 val endedElapsed = run.endedAtElapsedRealtimeMillis
-                if (endedElapsed != null && endedElapsed < elapsed) return false
+                if (endedElapsed != null && endedElapsed < elapsed) return null
             }
-            return true
+            return eventsByRun.mapValues { (_, rows) -> Collections.unmodifiableList(rows) }
         }
 
         private fun progresses(
@@ -639,6 +654,11 @@ class LocationHistoryViewModel
             super.onCleared()
         }
 
+        private class ValidatedSnapshot(
+            val snapshot: LocationRecordingSnapshot,
+            val eventsByRun: Map<String, List<LocationRecordingEvent>>,
+        )
+
         private class Reader(
             val id: Long,
             val source: PracticeSession,
@@ -656,7 +676,7 @@ class LocationHistoryViewModel
             var queryJob: Job? = null
             var selectedRun: String? = null
             var selectedEvent: Long? = null
-            var lastSnapshot: LocationRecordingSnapshot? = null
+            var lastSnapshot: ValidatedSnapshot? = null
             val states = MutableStateFlow<LocationHistoryUiState>(LocationHistoryUiState.Loading(source, Token(id, 0, 0)))
         }
     }

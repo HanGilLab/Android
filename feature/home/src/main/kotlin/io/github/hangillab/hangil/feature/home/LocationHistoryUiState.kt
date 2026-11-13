@@ -48,9 +48,10 @@ sealed interface LocationHistoryUiState {
         val snapshot: LocationRecordingSnapshot,
         val runIndex: Int,
         val eventIndex: Int,
+        val events: List<LocationRecordingEvent>,
+        internal val sampleCount: Int,
     ) : LocationHistoryUiState {
         val run: LocationRecordingRun get() = snapshot.runs[runIndex]
-        val events: List<LocationRecordingEvent> get() = snapshot.events.filter { it.runId == run.runId }
         val event: LocationRecordingEvent? get() = events.getOrNull(eventIndex)
         val canPreviousRun: Boolean get() = runIndex > 0
         val canNextRun: Boolean get() = runIndex + 1 < snapshot.runs.size

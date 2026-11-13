@@ -358,9 +358,7 @@ private fun LocationHistoryReady(
         Text(
             stringResource(
                 R.string.location_history_counts,
-                events.count {
-                    it.reading is LocationUpdateReading.Sample
-                },
+                state.sampleCount,
                 events.size,
             ),
             modifier = Modifier.fillMaxWidth(),
