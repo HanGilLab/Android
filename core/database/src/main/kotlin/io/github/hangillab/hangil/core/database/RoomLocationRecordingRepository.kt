@@ -71,7 +71,7 @@ internal class RoomLocationRecordingRepository
             previousByRun[event.runId] = event
         }
 
-        private suspend fun readAppendTail(
+        private suspend fun readValidatedTail(
             sessionId: String,
             runId: String,
         ): LocationRecordingEvent? {
@@ -159,7 +159,7 @@ internal class RoomLocationRecordingRepository
                             stored.status != LocationRecordingRunStatus.OPEN -> LocationRecordingAppendResult.RunClosed
                             else -> {
                                 check(database.practiceSessionDao().unfinishedCount() == 1L) { "Invalid active location source count" }
-                                val tail = readAppendTail(expectedSource.sessionId, stored.runId)
+                                val tail = readValidatedTail(expectedSource.sessionId, stored.runId)
                                 val ordinal = tail?.ordinal ?: 0
                                 val previous = tail?.reading?.receivedAtElapsedRealtimeMillis ?: stored.startedAtElapsedRealtimeMillis
                                 when {
@@ -218,7 +218,12 @@ internal class RoomLocationRecordingRepository
                         !sameEndOwner(stored, expectedRun) -> LocationRecordingEndResult.OwnerChanged
                         stored.status != LocationRecordingRunStatus.OPEN -> LocationRecordingEndResult.AlreadyEnded(stored)
                         else -> {
-                            val latest = readSnapshot(stored.source.sessionId).events.lastOrNull { it.runId == stored.runId }
+                            val latest =
+                                if (status == LocationRecordingRunStatus.STOPPED) {
+                                    readValidatedTail(stored.source.sessionId, stored.runId)
+                                } else {
+                                    readSnapshot(stored.source.sessionId).events.lastOrNull { it.runId == stored.runId }
+                                }
                             if (endedAtElapsedRealtimeMillis != null && latest != null &&
                                 endedAtElapsedRealtimeMillis < latest.reading.receivedAtElapsedRealtimeMillis
                             ) {

@@ -573,6 +573,38 @@ class RoomLocationRecordingRepositoryTest {
             }
         }
 
+    @Test fun `end rejects an earlier malformed event and can later retain terminal SDK error metadata`() =
+        runBlocking {
+            withDatabase { db ->
+                val source = seed(db)
+                val repo = RoomLocationRecordingRepository(db)
+                val run = begun(repo.begin(source, "terminal-run", "process", 2_000, 100) { true })
+                val earlier = appended(repo.append(source, run, sample(101), 2_100) { true }).event
+                val reading = LocationUpdateReading.Error(LocationUpdateErrorOrigin.SDK_CALLBACK, "java.lang.IllegalStateException", 102)
+                val tail = appended(repo.append(source, run, reading, 2_200) { true }).event
+
+                val sqlite = db.openHelper.writableDatabase
+                val dao = db.locationRecordingDao()
+                val beforeSequence = sequence(db)
+                sqlite.execSQL("UPDATE location_recording_event SET latitude = 99.0 WHERE id = ?", arrayOf(earlier.id))
+                expectInvalid {
+                    repo.end(run, LocationRecordingRunStatus.FAILED, LocationRecordingStopReason.SDK_ERROR, 2_300, 103)
+                }
+                assertEquals(run, dao.findRun(run.runId)?.run())
+                assertEquals(tail, dao.findEvent(tail.id)?.event())
+                assertEquals(beforeSequence, sequence(db))
+
+                val latitude = (earlier.reading as LocationUpdateReading.Sample).sample.latitude
+                sqlite.execSQL("UPDATE location_recording_event SET latitude = ? WHERE id = ?", arrayOf(latitude, earlier.id))
+                val ended =
+                    repo.end(run, LocationRecordingRunStatus.FAILED, LocationRecordingStopReason.SDK_ERROR, 2_300, 103)
+                        as LocationRecordingEndResult.Ended
+                assertEquals(LocationRecordingStopReason.SDK_ERROR, ended.run.stopReason)
+                assertEquals(LocationRecordingSnapshot(listOf(ended.run), listOf(earlier, tail)), repo.observe(source.sessionId).first())
+                assertEquals(beforeSequence, sequence(db))
+            }
+        }
+
     @Test fun `recovery preserves events and old interruption while never inventing an end`() =
         runBlocking {
             withDatabase { db ->
