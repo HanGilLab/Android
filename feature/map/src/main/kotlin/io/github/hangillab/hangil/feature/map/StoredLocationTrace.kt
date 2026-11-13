@@ -24,21 +24,34 @@ internal object StoredLocationTrace {
     fun features(input: StoredLocationMapInput): FeatureCollection {
         require(StoredLocationPoint.canProject(input)) { "A stored sample is outside the map projection" }
         val links =
-            input.events.zipWithNext().mapNotNull { (before, after) ->
-                val start = (before.reading as? LocationUpdateReading.Sample)?.sample ?: return@mapNotNull null
-                val end = (after.reading as? LocationUpdateReading.Sample)?.sample ?: return@mapNotNull null
-                if (!canLink(input.run, start, end)) return@mapNotNull null
-                val line =
-                    LineString.fromLngLats(
-                        listOf(Point.fromLngLat(start.longitude, start.latitude), Point.fromLngLat(end.longitude, end.latitude)),
+            buildList {
+                for (index in 1 until input.events.size) {
+                    val before = input.events[index - 1]
+                    val after = input.events[index]
+                    val start = (before.reading as? LocationUpdateReading.Sample)?.sample ?: continue
+                    val end = (after.reading as? LocationUpdateReading.Sample)?.sample ?: continue
+                    if (!canLink(input.run, start, end)) continue
+                    val line =
+                        LineString.fromLngLats(
+                            listOf(Point.fromLngLat(start.longitude, start.latitude), Point.fromLngLat(end.longitude, end.latitude)),
+                        )
+                    add(
+                        Feature.fromGeometry(line).apply {
+                            addNumberProperty("from_ordinal", before.ordinal)
+                            addNumberProperty("to_ordinal", after.ordinal)
+                        },
                     )
-                Feature.fromGeometry(line).apply {
-                    addNumberProperty("from_ordinal", before.ordinal)
-                    addNumberProperty("to_ordinal", after.ordinal)
                 }
             }
         return FeatureCollection.fromFeatures(links)
     }
+
+    fun hasLinks(input: StoredLocationMapInput): Boolean =
+        (1 until input.events.size).any { index ->
+            val start = (input.events[index - 1].reading as? LocationUpdateReading.Sample)?.sample ?: return@any false
+            val end = (input.events[index].reading as? LocationUpdateReading.Sample)?.sample ?: return@any false
+            canLink(input.run, start, end)
+        }
 
     fun canLink(
         run: LocationRecordingRun,
@@ -61,10 +74,9 @@ internal object StoredLocationTrace {
 
     fun add(
         style: Style,
-        input: StoredLocationMapInput,
+        trace: FeatureCollection,
         color: Int,
     ) {
-        val trace = input.trace
         if (trace.features().isNullOrEmpty()) return
         style.addSource(GeoJsonSource(SOURCE, trace))
         style.addLayer(LineLayer(LAYER, SOURCE).withProperties(lineColor(color), lineWidth(4f), lineDasharray(arrayOf(1f, 2f))))

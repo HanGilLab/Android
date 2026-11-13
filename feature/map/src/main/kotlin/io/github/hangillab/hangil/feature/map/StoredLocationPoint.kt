@@ -55,13 +55,13 @@ internal object StoredLocationPoint {
 
     fun add(
         style: Style,
-        input: StoredLocationMapInput,
+        points: FeatureCollection,
+        selectedSampleId: String?,
         fill: Int,
         border: Int,
         fontScale: Float,
-        selectedOnly: Boolean = false,
     ) {
-        style.addSource(GeoJsonSource(SOURCE, features(input, selectedOnly)))
+        style.addSource(GeoJsonSource(SOURCE, points))
         style.addLayer(
             CircleLayer(LAYER, SOURCE).withProperties(
                 circleRadius(14f * fontScale),
@@ -77,7 +77,7 @@ internal object StoredLocationPoint {
                     circleOpacity(0f),
                     circleStrokeColor(fill),
                     circleStrokeWidth(4f),
-                ).withFilter(selectionFilter(input.selectedSampleId)),
+                ).withFilter(selectionFilter(selectedSampleId)),
         )
     }
 }
