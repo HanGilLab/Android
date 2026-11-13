@@ -92,34 +92,29 @@ flowchart TB
 
 ## 🔎 문제 해결
 
-### 1. 앱을 다시 켰을 때 중단된 위치 기록 복구하기
+### 1. 복습과 차량 기록에 필요한 연습만 조회하기
 
-**문제** 앱이 종료되면 이전 프로세스가 남긴 위치 기록을 중단 상태로 정리합니다. 연습 이력이 쌓일수록 이 복구가 오래 걸렸습니다.
+**문제** 복습에서 지정한 연습 한 건을 확인하거나 전면 차량 기록을 시작할 때, 종료 이력이 쌓일수록 원본을 읽는 시간이 늘어났습니다.
 
-**원인** 실행 목록을 읽은 뒤, 연습마다 같은 실행과 그 표본을 다시 조회했습니다. 여러 실행의 표본이 한 연습에 쌓이면 한 번에 읽는 행 수도 늘어났습니다.
+**원인** Room에서 전체 연습 목록을 읽어 각 행의 저장 도로 JSON을 해석한 뒤, 화면과 기록 제어기가 필요한 행만 골랐습니다.
 
-**해결** 실행 목록은 한 번 읽고 표본은 저장 순서대로 512행씩 읽습니다. 페이지 사이에서도 실행별 직전 표본을 유지해 수신 시각과 순번을 확인합니다. 전체 검증을 통과하면 같은 트랜잭션에서 이전 프로세스가 남긴 열린 실행을 중단 처리합니다.
+**해결** 복습은 기존 세션 ID 인덱스로 원본 한 건을 읽습니다. 전면 차량 기록은 종료 시각이나 활성 슬롯을 기준으로 활성 후보만 읽습니다. 손상된 원본이나 후보가 여러 개인 경우에는 읽기 오류를 전달합니다.
 
-**결과** Pleos API 34 에뮬레이터의 debug 빌드에서 합성 연습 128개에 실행 두 개와 실행당 표본 32개를 저장했습니다. 복구 트랜잭션 중앙값은 131.97ms에서 92.73ms로 줄어 39.24ms(29.7%) 감소했고, p95는 162.10ms에서 115.12ms로 줄었습니다. 전후 APK를 번갈아 두 번씩 실행하고 각 실행에서 예열 10회 뒤 전후 각 80회를 측정했습니다. 손상된 표본을 발견하면 기존 실행과 표본을 그대로 보존합니다.
+**결과** Pleos API 34 에뮬레이터의 debug 빌드에서 합성 도로를 가진 이전 연습 128개를 저장했습니다. 복습 원본의 첫 반환 중앙값은 93.36ms에서 8.07ms로 85.29ms(91.4%) 줄었고, p95는 128.51ms에서 11.78ms로 줄었습니다. 활성 연습의 첫 반환 중앙값은 96.46ms에서 8.03ms로 줄었습니다. 실행마다 예열 10회를 거쳐 전후 각 80회를 측정했습니다.
 
-**대체안/회고** 열린 실행만 확인하면 보관된 기록의 손상을 놓칩니다. 전체 검증을 유지하고 중복 조회와 한 번에 불러오는 표본 수를 줄였습니다. 이 수치는 앱 시작 전체 시간 중 복구 트랜잭션에 해당합니다.
+**대체안/회고** 전체 목록을 캐시에 두면 조회 범위는 그대로이고 원본 교체와 삭제 때 캐시를 맞춰야 합니다. 소비자별로 조회 범위를 줄였습니다. 활성 후보 조건은 SQLite에서 테이블을 훑을 수 있지만 Room은 해당 후보만 변환합니다. 수치는 저장소 첫 응답까지입니다.
 
 **코드**
 
 ```kotlin
-var firstId = Long.MIN_VALUE
-while (true) {
-    val rows = dao.recoveryEvents(firstId, RECOVERY_PAGE_SIZE)
-    for (row in rows) {
-        val event = row.event()
-        val byRun = checkNotNull(runsBySession[event.sessionId]) { "Foreign location source" }
-        validateEvent(event, byRun, previousBySession.getOrPut(event.sessionId) { mutableMapOf() })
+override fun observeSession(sessionId: String) =
+    database.practiceSessionDao().observeSessionChecked(sessionId).map { it?.session() }
+
+override fun observeActiveSession() =
+    database.practiceSessionDao().observeUnfinishedChecked().map { rows ->
+        check(rows.size <= 1) { "Invalid unfinished session ownership" }
+        rows.singleOrNull()?.session()
     }
-    if (rows.size < RECOVERY_PAGE_SIZE) return
-    val lastId = rows.last().entity.id
-    if (lastId == Long.MAX_VALUE) return
-    firstId = lastId + 1
-}
 ```
 
 ### 2. 위치 표본이 쌓여도 저장 지연 줄이기
@@ -167,31 +162,6 @@ if (suppliedLoad === load && load.value == MapLoadState.LOADING && mapPermitted(
     if (reviewRoad != null || input.courseRoads.isNotEmpty()) roadGeometry = prepared
     geometryResult.complete(prepared)
 }
-```
-
-### 4. 복습과 차량 기록에 필요한 연습만 조회하기
-
-**문제** 복습에서 지정한 연습 한 건을 확인하거나 전면 차량 기록을 시작할 때, 종료 이력이 쌓일수록 원본을 읽는 시간이 늘어났습니다.
-
-**원인** Room에서 전체 연습 목록을 읽어 각 행의 저장 도로 JSON을 해석한 뒤, 화면과 기록 제어기가 필요한 행만 골랐습니다.
-
-**해결** 복습은 기존 세션 ID 인덱스로 원본 한 건을 읽습니다. 전면 차량 기록은 종료 시각이나 활성 슬롯을 기준으로 활성 후보만 읽습니다. 손상된 원본이나 후보가 여러 개인 경우에는 읽기 오류를 전달합니다.
-
-**결과** Pleos API 34 에뮬레이터의 debug 빌드에서 합성 도로를 가진 이전 연습 128개를 저장했습니다. 복습 원본의 첫 반환 중앙값은 93.36ms에서 8.07ms로 85.29ms(91.4%) 줄었고, p95는 128.51ms에서 11.78ms로 줄었습니다. 활성 연습의 첫 반환 중앙값은 96.46ms에서 8.03ms로 줄었습니다. 실행마다 예열 10회를 거쳐 전후 각 80회를 측정했습니다.
-
-**대체안/회고** 전체 목록을 캐시에 두면 조회 범위는 그대로이고 원본 교체와 삭제 때 캐시를 맞춰야 합니다. 소비자별로 조회 범위를 줄였습니다. 활성 후보 조건은 SQLite에서 테이블을 훑을 수 있지만 Room은 해당 후보만 변환합니다. 수치는 저장소 첫 응답까지입니다.
-
-**코드**
-
-```kotlin
-override fun observeSession(sessionId: String) =
-    database.practiceSessionDao().observeSessionChecked(sessionId).map { it?.session() }
-
-override fun observeActiveSession() =
-    database.practiceSessionDao().observeUnfinishedChecked().map { rows ->
-        check(rows.size <= 1) { "Invalid unfinished session ownership" }
-        rows.singleOrNull()?.session()
-    }
 ```
 
 <a id="developer"></a>
