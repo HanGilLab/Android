@@ -25,6 +25,7 @@ internal class StoredLocationMapGeometry(
             road: CourseRoadSnapshot?,
             reviewRoad: SessionReviewRoad?,
             preview: Boolean,
+            renderGeneration: Long? = null,
         ): StoredLocationMapGeometry {
             val selectedSample = (input.selectedEvent?.reading as? LocationUpdateReading.Sample)?.sample
             val shownSamples = if (preview) listOf(checkNotNull(input.selectedEvent)) else input.samples
@@ -57,7 +58,7 @@ internal class StoredLocationMapGeometry(
                     null
                 }
             return StoredLocationMapGeometry(
-                points = StoredLocationPoint.features(input, selectedOnly = preview),
+                points = StoredLocationPoint.features(input, selectedOnly = preview, renderGeneration = renderGeneration),
                 trace = if (preview) null else input.trace,
                 center = center,
                 bounds = bounds,
